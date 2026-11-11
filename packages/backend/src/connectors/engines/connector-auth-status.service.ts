@@ -148,8 +148,11 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
    * each at most. The first time a connector needs a new sign-in, its
    * workspace owner is emailed.
    */
-  async mark(connectorId: string, issue: AuthIssue): Promise<void> {
+  async mark(connectorId: string, issue: AuthIssue, opts: { notify?: boolean } = {}): Promise<void> {
     if (parseCredentialKey(connectorId).userId) return this.markUser(connectorId, issue);
+    // notify: false records the status for the dashboard and the assistant
+    // only: the incident counts as told, so no email goes out for it.
+    const notify = opts.notify !== false;
     try {
       const current = await this.prisma.connector.findUnique({
         where: { id: connectorId },
@@ -172,7 +175,7 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
             authStatusCode: issue.code,
             authStatusMessage: issue.message,
             authStatusRef: issue.ref ?? null,
-            ...(newIncident ? { authStatusAt: new Date(), authNotifiedAt: null } : {}),
+            ...(newIncident ? { authStatusAt: new Date(), authNotifiedAt: notify ? null : new Date() } : {}),
           },
         });
         this.logger.log(
@@ -180,7 +183,7 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
         );
       }
       // Not awaited: the caller may hold the refresh lock, and SMTP can be slow.
-      if (issue.status === 'needs_reauth') {
+      if (issue.status === 'needs_reauth' && notify) {
         void this.notifyOnce(connectorId).catch((err) =>
           this.logger.warn(`Could not email about connector ${connectorId}: ${err?.message ?? err}`),
         );

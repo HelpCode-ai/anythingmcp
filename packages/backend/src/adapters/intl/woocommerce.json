@@ -2,7 +2,7 @@
   "slug": "woocommerce",
   "name": "WooCommerce",
   "description": "AI-native commerce operations for any WooCommerce store. Semantic tools for products, variations, inventory, orders, refunds, customers, categories, and reports — plus documented multi-step recipes (inventory optimisation, SEO refresh, upsell/cross-sell, abandoned-order triage, revenue analysis).",
-  "instructions": "This connector talks to the WooCommerce REST API v3 (`/wp-json/wc/v3`). Works against any WordPress + WooCommerce site. HTTPS required.\n\n## Setup\n\n1. **`WOOCOMMERCE_URL`** — site root (e.g. `https://shop.example.com`). Do NOT include `/wp-json`; the adapter appends `/wp-json/wc/v3`.\n2. **`WOOCOMMERCE_CONSUMER_KEY`** + **`WOOCOMMERCE_CONSUMER_SECRET`** — generate in WP admin → WooCommerce → Settings → Advanced → REST API → Add key. Use **Read/Write** for full functionality.\n\nThe key and secret travel as the `consumer_key` / `consumer_secret` query parameters, the method WooCommerce documents for servers that drop the Authorization header (common behind Apache with CGI/FastCGI and some firewalls). That is only allowed over HTTPS, so the site must use https://.\n\n## Pagination\n\nList endpoints default to `per_page=10`, max `100`. Pass explicit `per_page` + iterate `page` for full catalog scans. Total counts are in `X-WP-Total` / `X-WP-TotalPages` headers (not returned in the JSON body).\n\n## Bulk writes\n\nFor ≥ 3 product updates use `woocommerce_batch_update_products` (one call, up to 100 entries). Don't fan out single `update_product` calls.\n\n## SEO meta (Yoast / Rank Math) on products\n\nMeta lives in the `meta_data` array on the product. Set it via `woocommerce_update_product`:\n\n```json\n\"meta_data\": [\n  { \"key\": \"_yoast_wpseo_metadesc\", \"value\": \"...\" },\n  { \"key\": \"_yoast_wpseo_focuskw\", \"value\": \"...\" }\n]\n```\n\nRank Math: `rank_math_description`, `rank_math_focus_keyword`, `rank_math_title`. Full reference: `wordpress_list_seo_meta_keys` (sibling WordPress connector).\n\n## Multi-step workflows\n\nFor inventory optimisation, product SEO, upsell/cross-sell, low-conversion analysis, abandoned-order triage, or KPI snapshots → call the dedicated **`woocommerce_skill_*`** tool. It returns the step-by-step playbook on demand. Don't preload that knowledge here.\n\n## Enum reference cards\n\nValid values for order status / product type / stock status / report period / payment methods → call **`woocommerce_list_*_options`**.\n\n## Permissions cheat-sheet\n\n- All list / get / reports: Read-only key.\n- Product create/update/delete, order update, refund, batch: Read/Write key.\n- Customer create / coupon create: Read/Write key.",
+  "instructions": "This connector talks to the WooCommerce REST API v3 (`/wp-json/wc/v3`). Works against any WordPress + WooCommerce site. HTTPS required.\n\n## Setup\n\n1. **`WOOCOMMERCE_URL`** — site root (e.g. `https://shop.example.com`). Do NOT include `/wp-json`; the adapter appends `/wp-json/wc/v3`.\n2. **`WOOCOMMERCE_CONSUMER_KEY`** + **`WOOCOMMERCE_CONSUMER_SECRET`** — generate in WP admin → WooCommerce → Settings → Advanced → REST API → Add key. Pick an administrator or shop manager as the key's user. **Read** is enough to look at orders, products and customers; **Read/Write** is needed to change them.\n\nThe key and secret travel as the `consumer_key` / `consumer_secret` query parameters, the method WooCommerce documents for servers that drop the Authorization header (common behind Apache with CGI/FastCGI and some firewalls). That is only allowed over HTTPS, so the site must use https://.\n\n## Pagination\n\nList endpoints default to `per_page=10`, max `100`. A full order or product can weigh 50-100 KB, so `woocommerce_list_orders` and `woocommerce_search_products` return a compact form by default (no meta_data, descriptions or images). Pass `_fields` with the fields you need, `_fields: \"\"` for complete objects, or read one object with the get tool. For a recurring sync, ask only for what changed with `modified_after` (the time of the previous run) instead of re-reading every page. Total counts are in `X-WP-Total` / `X-WP-TotalPages` headers (not returned in the JSON body).\n\n## Bulk writes\n\nFor ≥ 3 product updates use `woocommerce_batch_update_products` (one call, up to 100 entries). Don't fan out single `update_product` calls.\n\n## SEO meta (Yoast / Rank Math) on products\n\nMeta lives in the `meta_data` array on the product. Set it via `woocommerce_update_product`:\n\n```json\n\"meta_data\": [\n  { \"key\": \"_yoast_wpseo_metadesc\", \"value\": \"...\" },\n  { \"key\": \"_yoast_wpseo_focuskw\", \"value\": \"...\" }\n]\n```\n\nRank Math: `rank_math_description`, `rank_math_focus_keyword`, `rank_math_title`. Full reference: `wordpress_list_seo_meta_keys` (sibling WordPress connector).\n\n## Multi-step workflows\n\nFor inventory optimisation, product SEO, upsell/cross-sell, low-conversion analysis, abandoned-order triage, or KPI snapshots → call the dedicated **`woocommerce_skill_*`** tool. It returns the step-by-step playbook on demand. Don't preload that knowledge here.\n\n## Enum reference cards\n\nValid values for order status / product type / stock status / report period / payment methods → call **`woocommerce_list_*_options`**.\n\n## Permissions cheat-sheet\n\n- All list / get / reports: Read-only key.\n- Product create/update/delete, order update, refund, batch: Read/Write key.\n- Customer create / coupon create: Read/Write key.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "woocommerce",
@@ -14,9 +14,10 @@
   ],
   "priority": 50,
   "probe": {
-    "tool": "woocommerce_search_products",
+    "tool": "woocommerce_list_orders",
     "params": {
-      "per_page": 1
+      "per_page": 1,
+      "_fields": "id"
     }
   },
   "envVarMeta": {
@@ -31,7 +32,7 @@
     "WOOCOMMERCE_CONSUMER_KEY": {
       "label": "Consumer key",
       "kind": "credential",
-      "help": "WP admin → WooCommerce → Settings → Advanced → REST API → Add key. Permissions: Read/Write.",
+      "help": "WP admin → WooCommerce → Settings → Advanced → REST API → Add key. Pick an administrator or shop manager as the user. Permissions: Read is enough to look at orders and products; Read/Write to change them.",
       "pattern": "^ck_[a-f0-9]{40}$",
       "patternMessage": "A consumer key starts with ck_ followed by 40 characters."
     },
@@ -45,7 +46,10 @@
   },
   "verifyHints": {
     "401": "WooCommerce refused the key. Check that key and secret belong to the same REST API key, that it is not revoked, and that its user is an administrator or shop manager.",
-    "404": "No WooCommerce REST API at this address. Check the site address, and that permalinks are not set to Plain (Settings → Permalinks)."
+    "404": "No WooCommerce REST API at this address. Check the site address, and that permalinks are not set to Plain (Settings → Permalinks).",
+    "403": "The site refused the call before WooCommerce saw it. A firewall or security plugin (Cloudflare, Wordfence, Sucuri or the host's own) is blocking it: allow requests to /wp-json/wc/ from the address of your AnythingMCP server (on AnythingMCP Cloud: 104.248.242.235).",
+    "unreachable": "No site answered at this address, or its certificate is not valid. Check the spelling and that the shop opens with https:// in a browser. WooCommerce keys only work over https with a valid certificate.",
+    "upstream_error": "The shop answered with a server error. Check WooCommerce → Status → Logs in WordPress: a plugin conflict is the usual cause."
   },
   "setupGuide": {
     "effort": "api_key",
@@ -138,8 +142,8 @@
         "type": "object",
         "properties": {
           "page": { "type": "integer", "description": "1-based page." },
-          "per_page": { "type": "integer", "description": "1-100 (WooCommerce default 10). Full products carry descriptions and images: use 20-50, or pass `_fields` for a long list." },
-          "_fields": { "type": "string", "description": "Comma-separated top-level fields to return, e.g. `id,name,sku,status,price,regular_price,sale_price,stock_status,stock_quantity,permalink`. Leave empty for complete products." },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 100, "description": "1-100 (WooCommerce default 10). Full products carry descriptions and images: use 20-50, or pass `_fields` for a long list." },
+          "_fields": { "type": "string", "default": "id,name,sku,type,status,price,regular_price,sale_price,on_sale,stock_status,stock_quantity,manage_stock,categories.id,categories.name,permalink,date_modified", "description": "Comma-separated fields to return; dots reach nested fields (`categories.name`). Left out, a compact product is returned (ids, name, SKU, prices, stock, categories, link). Pass \"\" (empty) for complete products with descriptions, images, attributes and meta_data, or read one with woocommerce_get_product." },
           "search": { "type": "string", "description": "Free-text search across product name/description/SKU." },
           "sku": { "type": "string", "description": "Filter by exact SKU." },
           "slug": { "type": "string", "description": "Filter by exact slug." },
@@ -231,6 +235,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/products",
+        "timeoutMs": 90000,
         "bodyMapping": {
           "name": "$name",
           "slug": "$slug",
@@ -296,6 +301,7 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/products/{productId}",
+        "timeoutMs": 90000,
         "bodyMapping": {
           "name": "$name",
           "slug": "$slug",
@@ -357,6 +363,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/products/batch",
+        "timeoutMs": 90000,
         "bodyMapping": {
           "create": "$create",
           "update": "$update",
@@ -576,14 +583,17 @@
         "type": "object",
         "properties": {
           "page": { "type": "integer" },
-          "per_page": { "type": "integer", "description": "1-100 (WooCommerce default 10). Use 20-50: 100 full orders can be 5-9 MB and slow or time out." },
-          "_fields": { "type": "string", "description": "Comma-separated top-level fields to return, e.g. `id,number,status,date_created,total,currency,customer_id,billing,line_items`. Leave empty for complete orders." },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 100, "description": "1-100 (WooCommerce default 10). Use 20-50: 100 full orders can be 5-9 MB and slow or time out." },
+          "_fields": { "type": "string", "default": "id,number,status,currency,date_created,date_modified,date_paid,date_completed,total,total_tax,shipping_total,discount_total,customer_id,customer_note,payment_method,payment_method_title,billing,shipping,line_items.id,line_items.name,line_items.product_id,line_items.variation_id,line_items.sku,line_items.quantity,line_items.subtotal,line_items.total,shipping_lines.method_title,shipping_lines.total,coupon_lines.code,refunds", "description": "Comma-separated fields to return; dots reach nested fields (`line_items.name`). Left out, a compact order is returned (status, dates, totals, payment method, billing and shipping address, line items without meta, shipping, coupons, refunds): about 1-2 KB instead of 50-100 KB. Pass \"\" (empty) for complete orders including meta_data (plugin data such as tracking or invoice numbers), or add meta_data to the list, or read one order with woocommerce_get_order." },
           "search": { "type": "string" },
           "status": { "type": "string", "description": "Comma-separated: any | pending | processing | on-hold | completed | cancelled | refunded | failed | trash." },
           "customer": { "type": "integer", "description": "Customer user id." },
           "product": { "type": "integer", "description": "Filter to orders that include this product id." },
           "after": { "type": "string", "description": "ISO 8601." },
           "before": { "type": "string", "description": "ISO 8601." },
+          "modified_after": { "type": "string", "description": "Only orders changed after this moment, ISO 8601 (e.g. 2026-11-10T14:00:00). For a recurring sync pass the time of the previous run: one page instead of re-reading every order. Needs WooCommerce 5.8 or later." },
+          "modified_before": { "type": "string", "description": "Only orders changed before this moment, ISO 8601." },
+          "dates_are_gmt": { "type": "boolean", "description": "true to read after, before, modified_after and modified_before as UTC instead of the shop's time zone." },
           "orderby": { "type": "string", "description": "date | id | include | title | slug." },
           "order": { "type": "string" }
         }
@@ -601,6 +611,9 @@
           "product": "$product",
           "after": "$after",
           "before": "$before",
+          "modified_after": "$modified_after",
+          "modified_before": "$modified_before",
+          "dates_are_gmt": "$dates_are_gmt",
           "orderby": "$orderby",
           "order": "$order"
         }

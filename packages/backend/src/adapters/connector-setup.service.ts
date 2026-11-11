@@ -28,6 +28,7 @@ import { searchCatalog } from './catalog-search';
 import { fileSearchSetupPath } from './file-search-setup';
 import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
 import { inspectOdooAddress } from './odoo-database-hint';
+import { WOOCOMMERCE_SLUG, WOOCOMMERCE_URL_VAR } from './woocommerce-setup';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -48,6 +49,14 @@ const ODOO_SLUGS = new Set([JSON2_SLUG, JSONRPC_SLUG]);
 const READY_CHECK_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** At most this many setup checks per setup_get_status call (each is a call to the provider). */
 const READY_CHECKS_PER_STATUS = 3;
+/** setup_get_status points out a catalog connector still waiting for its values after this long. */
+const UNFINISHED_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/** Installed from the catalog (not hand-built). */
+function isCatalogConnector(config: unknown): boolean {
+  const slug = (config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
+  return typeof slug === 'string' && slug !== '';
+}
 
 /**
  * Where providers send the browser back after sign-in: the URL a user must
@@ -319,7 +328,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       // An address typed without https:// (`acme.odoo.com`) gets it when the
       // field's pattern wants it, as on the setup page (address-fix.ts).
       const typed = value !== undefined && value !== null ? String(value).trim() : '';
-      const text = typed ? normalizeAdapterEnvValue(d, typed) : '';
+      const text = typed ? normalizeAdapterEnvValue(d, typed, slug) : '';
       // A shop URL with `?access_token=…`, a tenant field holding a key: the
       // chat is the wrong place for it, whatever the setting is called.
       if (text && findSecretLiterals(text).length > 0) {
@@ -349,7 +358,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     // installed. 315 Odoo connectors came from a chat in two weeks of Oct-Nov
     // 2026, often with the subdomain as the database name and the JSON-2
     // connector on an Odoo below 19; both were only found on the setup page.
-    let odooNotes: string[] = [];
+    let addressNotes: string[] = [];
     if (ODOO_SLUGS.has(slug) && settings.ODOO_URL) {
       const checked = await this.checkOdooAddress(ctx, slug, settings);
       if ('error' in checked) return { isError: true, body: checked.error };
@@ -359,7 +368,17 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         // Labels for what the user still enters (the JSON-RPC one adds the user id).
         for (const d of describeAdapterEnvVars(definition)) descriptors.set(d.name, d);
       }
-      odooNotes = checked.notes;
+      addressNotes = checked.notes;
+    }
+    // WooCommerce: the shop is asked, without a key, the same way as on the
+    // setup page: its own address is used, a name that does not exist is
+    // refused so the assistant asks again, and anything the user must change
+    // in WordPress first (Plain permalinks, WooCommerce inactive, a firewall)
+    // is said before they create the key.
+    if (slug === WOOCOMMERCE_SLUG && settings[WOOCOMMERCE_URL_VAR]) {
+      const checked = await this.checkWooCommerceAddress(settings);
+      if ('error' in checked) return { isError: true, body: checked.error };
+      addressNotes = checked.notes;
     }
 
     if (!this.takeInstallSlot(ctx.userId)) {
@@ -405,7 +424,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           installed: definition.name,
           status: 'ready',
           tools: definition.tools.length,
-          ...(odooNotes.length ? { checkedTheAddress: odooNotes.join(' ') } : {}),
+          ...(addressNotes.length ? { checkedTheAddress: addressNotes.join(' ') } : {}),
           ...(imported.probe ? { firstCall: imported.probe.ok ? 'worked' : imported.probe.message } : {}),
           next: 'Its tools are available now: find them with anythingmcp_search_tools.',
         },
@@ -416,7 +435,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       body: {
         installed: definition.name,
         status: state.status,
-        ...(odooNotes.length ? { checkedTheAddress: odooNotes.join(' ') } : {}),
+        ...(addressNotes.length ? { checkedTheAddress: addressNotes.join(' ') } : {}),
         ...(needsBrowserAuthorization(definition) && !registersItsOwnClient(definition)
           ? providerApp(definition)
           : {}),
@@ -536,6 +555,43 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     return { slug: target, notes };
   }
 
+  /**
+   * What a WooCommerce address says about itself, applied to a chat install
+   * (woocommerce-setup.ts): WordPress's own address replaces the one passed;
+   * no such host is refused; a problem the user fixes in WordPress (Plain
+   * permalinks, WooCommerce inactive or too old, a firewall, no https) goes
+   * into the notes, so the assistant tells it with the link. Nothing changes
+   * when the address says nothing.
+   */
+  private async checkWooCommerceAddress(
+    settings: Record<string, string>,
+  ): Promise<{ notes: string[] } | { error: Record<string, unknown> }> {
+    const typed = settings[WOOCOMMERCE_URL_VAR];
+    const found = await this.adapters.inspectWooCommerceAddress(typed);
+    if (!found) return { notes: [] };
+    if (found.problem === 'dns') {
+      return {
+        error: {
+          error: found.message,
+          hint: 'Ask the user for the address their shop opens at in the browser (e.g. https://myshop.com), then install again.',
+        },
+      };
+    }
+    const notes: string[] = [];
+    if (found.corrected && found.corrected !== typed) {
+      settings[WOOCOMMERCE_URL_VAR] = found.corrected;
+      notes.push(`WooCommerce answers at ${found.corrected}: that address was used instead of ${typed}.`);
+    } else if (found.woocommerce) {
+      notes.push(`WooCommerce found at ${found.home ?? typed}.`);
+    }
+    if (found.problem && found.message) {
+      notes.push(
+        `${found.message} Tell the user this before they create the key${found.fixUrl ? `, with the link ${found.fixUrl}` : ''}.`,
+      );
+    }
+    return { notes };
+  }
+
   // ── Status ────────────────────────────────────────────────────────────
 
   async status(ctx: SetupContext): Promise<SetupCallResult> {
@@ -554,6 +610,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         config: true,
         createdAt: true,
         updatedAt: true,
+        authStatus: true,
+        authStatusMessage: true,
+        authStatusAt: true,
         tools: { where: { isEnabled: true }, select: { endpointMapping: true } },
       },
     });
@@ -566,16 +625,42 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       ctx,
       states.filter(({ state }) => state.status === 'ready').map(({ row }) => row),
     );
+    const now = Date.now();
     const out = [];
+    let unfinished = 0;
+    let refused = 0;
     for (const { row: r, state } of states) {
       const check = checks.get(r.id);
+      // A catalog connector added (mostly from a chat) whose values were never
+      // entered: 28 of the 41 WooCommerce connectors never called in Oct-Nov
+      // 2026 still held {{WOOCOMMERCE_URL}}, their link long expired. After a
+      // day the answer says so, so the assistant offers the new link.
+      const waiting =
+        state.status === 'needs_input' &&
+        isCatalogConnector(r.config) &&
+        r.createdAt instanceof Date &&
+        now - r.createdAt.getTime() >= UNFINISHED_AFTER_MS;
+      if (waiting) unfinished++;
+      // The provider kept refusing the stored credential (connector-auth-status).
+      const credentialRefused = state.status === 'ready' && r.authStatus === 'needs_reauth';
+      if (credentialRefused) refused++;
       out.push({
         name: r.name,
         status: state.status,
         ...(state.status !== 'ready' ? { finishSetupUrl: await this.createLink(ctx, r.id) } : {}),
+        ...(waiting ? { unfinishedSince: r.createdAt.toISOString() } : {}),
+        ...(credentialRefused
+          ? {
+              credential: {
+                ok: false,
+                ...(r.authStatusAt ? { since: r.authStatusAt.toISOString() } : {}),
+                message: String(r.authStatusMessage ?? 'The provider refuses the stored credential.').slice(0, 600),
+              },
+            }
+          : {}),
         ...(check?.lastCall ? { lastCall: check.lastCall } : {}),
         ...(check?.check ? { check: check.check } : {}),
-        ...(check?.check?.ok === false ? { fixUrl: await this.createLink(ctx, r.id) } : {}),
+        ...(check?.check?.ok === false || credentialRefused ? { fixUrl: await this.createLink(ctx, r.id) } : {}),
       });
     }
     const trial = await this.trialAnswer(ctx);
@@ -585,6 +670,19 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         ...(out.length === 0 ? { hint: 'No connectors yet: use setup_find_connectors.' } : {}),
         ...([...checks.values()].some((c) => c.check?.ok === false)
           ? { checkHint: 'check.ok false: the values saved on that connector do not work. Tell the user what check.message says and give them its fixUrl.' }
+          : {}),
+        ...(unfinished
+          ? {
+              unfinishedHint:
+                'unfinishedSince: that connector was added but its setup was never finished, and the link given then has expired. ' +
+                'Offer the user its finishSetupUrl (a new link, valid 30 minutes) as a clickable link, or ask whether to remove it.',
+            }
+          : {}),
+        ...(refused
+          ? {
+              credentialHint:
+                'credential.ok false: the provider has been refusing that connector\'s saved credentials. Tell the user what credential.message says and give them its fixUrl to enter new ones.',
+            }
           : {}),
         ...(trial ? { trial } : {}),
       },
