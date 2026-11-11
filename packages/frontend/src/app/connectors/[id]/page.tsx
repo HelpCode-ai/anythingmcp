@@ -278,7 +278,11 @@ export default function ConnectorDetailPage() {
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
   // The outcome of a Meta sign-in of an Instagram connector (?meta=…), with its next step.
-  const [metaSignIn, setMetaSignIn] = useState<{ status: MetaSignInStatus; message: string | null } | null>(null);
+  const [metaSignIn, setMetaSignIn] = useState<{
+    status: MetaSignInStatus;
+    message: string | null;
+    reason?: string | null;
+  } | null>(null);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
@@ -455,7 +459,7 @@ export default function ConnectorDetailPage() {
     }
     const metaStatus = searchParams.get('meta');
     if (metaStatus === 'connected' || metaStatus === 'choose' || metaStatus === 'no_account' || metaStatus === 'error') {
-      setMetaSignIn({ status: metaStatus, message: searchParams.get('message') });
+      setMetaSignIn({ status: metaStatus, message: searchParams.get('message'), reason: searchParams.get('reason') });
       window.history.replaceState({}, '', `/connectors/${id}`);
     }
 
@@ -1266,6 +1270,7 @@ export default function ConnectorDetailPage() {
             connectorId={id}
             status={metaSignIn.status}
             message={metaSignIn.message}
+            reason={metaSignIn.reason}
             token={token}
             authorizing={authorizing}
             onAuthorize={handleMetaAuthorize}

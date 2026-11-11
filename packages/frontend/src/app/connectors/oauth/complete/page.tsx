@@ -96,7 +96,8 @@ function CompleteContent() {
         .metaComplete(state, code, token)
         .then((out) => {
           const status = out.account ? 'connected' : out.noAccount ? 'no_account' : 'choose';
-          router.replace(`/connectors/${out.connectorId}?meta=${status}`);
+          const reason = out.reason ? `&reason=${out.reason}` : '';
+          router.replace(`/connectors/${out.connectorId}?meta=${status}${reason}`);
         })
         .catch((err: Error) => {
           const id = err instanceof ApiError && typeof err.body?.connectorId === 'string' ? err.body.connectorId : null;

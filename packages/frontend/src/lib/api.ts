@@ -697,6 +697,7 @@ export const connectors = {
       account?: MetaInstagramAccount;
       accounts?: MetaInstagramAccount[];
       noAccount?: boolean;
+      reason?: 'no_assets';
     }>('/api/meta/complete', { method: 'POST', token, body: { state, code } }),
   /** Store the Instagram account a Facebook sign-in should use. */
   /** The Instagram accounts an Instagram connector's Meta sign-in reaches, and the one in use. */

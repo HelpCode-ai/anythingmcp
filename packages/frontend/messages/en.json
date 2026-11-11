@@ -1544,7 +1544,8 @@
       },
       "no_account": {
         "title": "Signed in, but no Instagram account was shared",
-        "body": "The sign-in worked and is kept, but Meta returned no Instagram account for it. Authorize again and, in the Meta dialog, select the business portfolio and tick the Instagram business or creator account. Or enter the account id below if you know it."
+        "body": "The sign-in worked and is kept, but Meta returned no Instagram account for it. Authorize again and, in the Meta dialog, select the business portfolio and tick the Instagram business or creator account. Or enter the account id below if you know it.",
+        "bodyNoAssets": "Meta approved the permissions but shared no Instagram account with the app. This happens when the business portfolio chosen in the dialog does not own the account (it is only shared with it). Authorize again and choose the portfolio that owns the Instagram account, then tick the account."
       },
       "error": {
         "title": "The sign-in did not finish",
@@ -1555,7 +1556,7 @@
       "authorizeAgain": "Authorize again",
       "manualLabel": "Instagram account id",
       "manualSave": "Use this account id",
-      "manualHint": "The id is a number starting with 1784, shown in Meta Business settings → Accounts → Instagram accounts. It is checked with the stored sign-in before it is saved.",
+      "manualHint": "Enter the account id that Meta's API returns for the Instagram professional account (usually a number starting with 1784; the asset id shown in Business settings can differ). It is checked with the stored sign-in before it is saved.",
       "manualInvalid": "Enter the numeric Instagram account id (digits only), not the username."
     },
     "env": {

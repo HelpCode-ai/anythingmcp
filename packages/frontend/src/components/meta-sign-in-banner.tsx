@@ -26,6 +26,7 @@ export function MetaSignInBanner({
   connectorId,
   status,
   message,
+  reason,
   token,
   authorizing,
   onAuthorize,
@@ -36,6 +37,8 @@ export function MetaSignInBanner({
   connectorId: string;
   status: MetaSignInStatus;
   message?: string | null;
+  /** `no_assets`: Meta granted the permissions but no Instagram account. */
+  reason?: string | null;
   token: string | null;
   authorizing: boolean;
   onAuthorize: () => void;
@@ -118,7 +121,13 @@ export function MetaSignInBanner({
 
       {(shown === 'choose' || shown === 'no_account') && (
         <>
-          <p className="mt-1">{accounts && accounts.length > 0 ? t('choose.body') : t('no_account.body')}</p>
+          <p className="mt-1">
+            {accounts && accounts.length > 0
+              ? t('choose.body')
+              : reason === 'no_assets'
+                ? t('no_account.bodyNoAssets')
+                : t('no_account.body')}
+          </p>
           {accounts && accounts.length > 0 && (
             <ul className="mt-3 space-y-2">
               {accounts.map((a) => (

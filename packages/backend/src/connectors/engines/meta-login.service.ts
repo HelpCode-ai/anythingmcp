@@ -36,6 +36,8 @@ export interface MetaLoginResult {
    * the user-token calls.
    */
   systemUser?: boolean;
+  /** Unified Login: the token was granted the permissions but no Instagram account. */
+  noAssets?: boolean;
 }
 
 /**
@@ -156,24 +158,34 @@ export class MetaLoginService {
     }
     // The configuration sets the expiry ("never" for ours): no expires_in
     // then. Such a token is not a user token and is never exchanged.
-    const { accounts } = await this.discoverUnifiedAccounts(token, app);
-    return { token, expiresAt: expiryOf(res.data?.expires_in), accounts, systemUser: true };
+    const { accounts, noAssets } = await this.discoverUnifiedAccounts(token, app);
+    return {
+      token,
+      expiresAt: expiryOf(res.data?.expires_in),
+      accounts,
+      systemUser: true,
+      ...(noAssets ? { noAssets: true } : {}),
+    };
   }
 
   /**
    * The Instagram accounts a Unified Login token can act for. Meta documents
-   * /me/assigned_instagram_accounts; when that comes back empty, the client's
-   * business portfolio (/me?fields=client_business_id) is asked for its
-   * owned and connected Instagram accounts, and the token's granular scopes
-   * (debug_token, with the app token) name the accounts it was granted. Each
-   * step's outcome is logged as counts and error codes, never the token.
+   * /me/assigned_instagram_accounts. When that is empty, the token itself
+   * says why (debug_token, with the app token): the account ids it was
+   * granted are the `target_ids` of its granular scopes, and none at all
+   * means the client approved the permissions without sharing an account,
+   * typically because the chosen business portfolio does not own it. With
+   * `business_management` granted, the client portfolio's own lists are
+   * asked as well. Each step is logged as counts and error codes, never the
+   * token.
    */
   private async discoverUnifiedAccounts(
     token: string,
     app?: MetaLoginApp,
-  ): Promise<{ accounts: MetaInstagramAccount[]; notes: string[] }> {
+  ): Promise<{ accounts: MetaInstagramAccount[]; notes: string[]; noAssets: boolean }> {
     const notes: string[] = [];
     const seen = new Map<string, MetaInstagramAccount>();
+    let noAssets = false;
     const add = (list: MetaInstagramAccount[]) => {
       for (const a of list) if (!seen.has(a.id) || (!seen.get(a.id)!.username && a.username)) seen.set(a.id, a);
     };
@@ -188,33 +200,16 @@ export class MetaLoginService {
     };
     await step('assigned_instagram_accounts', () => this.listAssignedAccounts(token));
     if (seen.size === 0) {
-      let businessId: string | undefined;
-      try {
-        const me = await axios.get(`${FB_GRAPH_UNIFIED}/me`, {
-          params: { fields: 'id,client_business_id' },
-          headers: { Authorization: `Bearer ${token}` },
-          timeout: HTTP_TIMEOUT_MS,
-        });
-        const biz = me.data?.client_business_id;
-        businessId = (typeof biz === 'string' || typeof biz === 'number') && /^\d+$/.test(String(biz)) ? String(biz) : undefined;
-        notes.push(`client_business_id=${businessId ? 'present' : 'missing'}`);
-      } catch (err) {
-        notes.push(`me=error(${describe(err).message.slice(0, 120)})`);
-      }
-      if (businessId) {
-        for (const edge of ['owned_instagram_accounts', 'instagram_accounts']) {
-          await step(edge, () => this.listEdgeAccounts(token, `${FB_GRAPH_UNIFIED}/${businessId}/${edge}`));
-        }
-      }
+      let scopes: string[] = [];
       if (app) {
-        await step('debug_token_targets', async () => {
+        await step('granted_targets', async () => {
           const res = await axios.get(`${FB_GRAPH_UNIFIED}/debug_token`, {
             params: { input_token: token },
             headers: { Authorization: `Bearer ${app.appId}|${app.appSecret}` },
             timeout: HTTP_TIMEOUT_MS,
           });
           const data = res.data?.data ?? {};
-          const scopes: string[] = Array.isArray(data.scopes) ? data.scopes.filter((x: unknown) => typeof x === 'string') : [];
+          scopes = Array.isArray(data.scopes) ? data.scopes.filter((x: unknown) => typeof x === 'string') : [];
           notes.push(`scopes=${scopes.join(',') || 'none'}`);
           const ids = new Set<string>();
           for (const g of Array.isArray(data.granular_scopes) ? data.granular_scopes : []) {
@@ -222,19 +217,43 @@ export class MetaLoginService {
               for (const id of g.target_ids) if (/^\d{5,25}$/.test(String(id))) ids.add(String(id));
             }
           }
+          noAssets = ids.size === 0;
           const found: MetaInstagramAccount[] = [];
-          for (const id of ids) {
-            const account = await this.accountById(token, id);
-            if (account) found.push(account);
-          }
+          for (const id of ids) found.push((await this.accountById(token, id)) ?? { id });
           return found;
         });
       }
+      if (seen.size === 0 && scopes.includes('business_management')) {
+        let businessId: string | undefined;
+        try {
+          const me = await axios.get(`${FB_GRAPH_UNIFIED}/me`, {
+            params: { fields: 'id,client_business_id' },
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: HTTP_TIMEOUT_MS,
+          });
+          const biz = me.data?.client_business_id;
+          businessId =
+            (typeof biz === 'string' || typeof biz === 'number') && /^\d+$/.test(String(biz)) ? String(biz) : undefined;
+          notes.push(`client_business_id=${businessId ? 'present' : 'missing'}`);
+        } catch (err) {
+          notes.push(`me=error(${describe(err).message.slice(0, 120)})`);
+        }
+        if (businessId) {
+          for (const edge of ['owned_instagram_accounts', 'instagram_accounts']) {
+            await step(edge, () => this.listEdgeAccounts(token, `${FB_GRAPH_UNIFIED}/${businessId}/${edge}`));
+          }
+        }
+      }
     }
     const accounts = [...seen.values()];
-    if (accounts.length === 0) this.logger.warn(`Unified Login: no Instagram account found (${notes.join('; ')})`);
-    else this.logger.log(`Unified Login: ${accounts.length} Instagram account(s) (${notes.join('; ')})`);
-    return { accounts, notes };
+    if (accounts.length > 0) noAssets = false;
+    if (accounts.length === 0) {
+      this.logger.warn(
+        `Unified Login: no Instagram account found (${notes.join('; ')})` +
+          (noAssets ? ': the token was granted no Instagram account' : ''),
+      );
+    } else this.logger.log(`Unified Login: ${accounts.length} Instagram account(s) (${notes.join('; ')})`);
+    return { accounts, notes, noAssets };
   }
 
   private async listEdgeAccounts(token: string, url: string): Promise<MetaInstagramAccount[]> {

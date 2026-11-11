@@ -1544,7 +1544,8 @@
       },
       "no_account": {
         "title": "Angemeldet, aber kein Instagram-Konto freigegeben",
-        "body": "Die Anmeldung hat geklappt und bleibt gespeichert, Meta hat dafür aber kein Instagram-Konto zurückgegeben. Autorisieren Sie erneut und wählen Sie im Meta-Dialog das Business-Portfolio und das Instagram-Business- oder Creator-Konto aus. Oder geben Sie unten die Konto-ID ein, wenn Sie sie kennen."
+        "body": "Die Anmeldung hat geklappt und bleibt gespeichert, Meta hat dafür aber kein Instagram-Konto zurückgegeben. Autorisieren Sie erneut und wählen Sie im Meta-Dialog das Business-Portfolio und das Instagram-Business- oder Creator-Konto aus. Oder geben Sie unten die Konto-ID ein, wenn Sie sie kennen.",
+        "bodyNoAssets": "Meta hat die Berechtigungen genehmigt, der App aber kein Instagram-Konto freigegeben. Das passiert, wenn das im Dialog gewählte Business-Portfolio das Konto nicht besitzt (es ist dort nur geteilt). Autorisieren Sie erneut, wählen Sie das Portfolio, dem das Instagram-Konto gehört, und haken Sie das Konto an."
       },
       "error": {
         "title": "Die Anmeldung wurde nicht abgeschlossen",
@@ -1555,7 +1556,7 @@
       "authorizeAgain": "Erneut autorisieren",
       "manualLabel": "Instagram-Konto-ID",
       "manualSave": "Diese Konto-ID nutzen",
-      "manualHint": "Die ID ist eine Zahl, die mit 1784 beginnt; sie steht in den Meta-Business-Einstellungen → Konten → Instagram-Konten. Sie wird vor dem Speichern mit der gespeicherten Anmeldung geprüft.",
+      "manualHint": "Geben Sie die Konto-ID ein, die Metas API für das Instagram-Professional-Konto liefert (meist eine Zahl, die mit 1784 beginnt; die Asset-ID in den Business-Einstellungen kann davon abweichen). Sie wird vor dem Speichern mit der gespeicherten Anmeldung geprüft.",
       "manualInvalid": "Geben Sie die numerische Instagram-Konto-ID ein (nur Ziffern), nicht den Benutzernamen."
     },
     "env": {

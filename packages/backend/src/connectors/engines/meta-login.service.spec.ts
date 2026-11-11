@@ -72,15 +72,12 @@ describe('MetaLoginService', () => {
       expect(await service.unifiedAccounts('BISU')).toEqual([{ id: '17841400000000009', username: 'x' }]);
     });
 
-    it('falls back to the business portfolio and the granted scopes when nothing is assigned', async () => {
+    it('finds the account in the granted scopes when nothing is assigned', async () => {
       const seen: string[] = [];
       mockedAxios.get.mockImplementation(async (url: string, opts?: any) => {
         seen.push(url.replace('https://graph.facebook.com', ''));
         if (url.endsWith('/oauth/access_token')) return { data: { access_token: 'BISU' } };
         if (url.endsWith('/me/assigned_instagram_accounts')) return { data: { data: [] } };
-        if (url.endsWith('/me')) return { data: { id: 'su1', client_business_id: '555' } };
-        if (url.endsWith('/555/owned_instagram_accounts')) return { data: { data: [] } };
-        if (url.endsWith('/555/instagram_accounts')) throw Object.assign(new Error('x'), { response: { status: 400, data: { error: { code: 100, message: 'Unsupported get request' } } } });
         if (url.endsWith('/debug_token')) {
           expect(opts.headers.Authorization).toBe(`Bearer ${APP.appId}|${APP.appSecret}`);
           expect(opts.params).toEqual({ input_token: 'BISU' });
@@ -91,12 +88,42 @@ describe('MetaLoginService', () => {
       });
       const out = await service.exchangeCode({ flavour: 'facebook', app: UNIFIED, code: 'C', redirectUri: REDIRECT });
       expect(out.accounts).toEqual([{ id: '17841400000000005', username: 'found' }]);
-      expect(seen).toEqual(expect.arrayContaining(['/v27.0/me', '/v27.0/555/owned_instagram_accounts', '/v27.0/555/instagram_accounts', '/v27.0/debug_token']));
+      expect(out.noAssets).toBeUndefined();
+      // Without business_management the portfolio lists are not asked: they could only refuse.
+      expect(seen.some((u) => u.includes('owned_instagram_accounts'))).toBe(false);
       const log = logged.join('\n');
-      expect(log).toContain('instagram_accounts=error(HTTP 400 (code 100): Unsupported get request)');
       expect(log).toContain('scopes=instagram_basic');
       expect(log).not.toContain('BISU');
       expect(log).not.toContain(APP.appSecret);
+    });
+
+    it('says when the token was granted no Instagram account at all', async () => {
+      mockedAxios.get.mockImplementation(async (url: string) => {
+        if (url.endsWith('/oauth/access_token')) return { data: { access_token: 'BISU' } };
+        if (url.endsWith('/me/assigned_instagram_accounts')) return { data: { data: [] } };
+        if (url.endsWith('/debug_token')) {
+          return { data: { data: { scopes: ['instagram_basic', 'instagram_manage_comments'], granular_scopes: [{ scope: 'instagram_basic' }] } } };
+        }
+        throw new Error(`unexpected ${url}`);
+      });
+      const out = await service.exchangeCode({ flavour: 'facebook', app: UNIFIED, code: 'C', redirectUri: REDIRECT });
+      expect(out).toMatchObject({ accounts: [], noAssets: true, systemUser: true });
+      expect(logged.join('\n')).toContain('the token was granted no Instagram account');
+    });
+
+    it("asks the client portfolio's lists when business_management was granted", async () => {
+      mockedAxios.get.mockImplementation(async (url: string) => {
+        if (url.endsWith('/oauth/access_token')) return { data: { access_token: 'BISU' } };
+        if (url.endsWith('/me/assigned_instagram_accounts')) return { data: { data: [] } };
+        if (url.endsWith('/debug_token')) return { data: { data: { scopes: ['instagram_basic', 'business_management'], granular_scopes: [] } } };
+        if (url.endsWith('/me')) return { data: { id: 'su1', client_business_id: '555' } };
+        if (url.endsWith('/555/owned_instagram_accounts')) return { data: { data: [{ id: '17841400000000006', username: 'owned' }] } };
+        if (url.endsWith('/555/instagram_accounts')) return { data: { data: [] } };
+        throw new Error(`unexpected ${url}`);
+      });
+      const out = await service.exchangeCode({ flavour: 'facebook', app: UNIFIED, code: 'C', redirectUri: REDIRECT });
+      expect(out.accounts).toEqual([{ id: '17841400000000006', username: 'owned' }]);
+      expect(out.noAssets).toBeUndefined();
     });
 
     it('fails clearly when Meta answers without a token', async () => {

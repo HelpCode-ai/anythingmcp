@@ -1544,7 +1544,8 @@
       },
       "no_account": {
         "title": "Accesso eseguito, ma nessun account Instagram condiviso",
-        "body": "L'accesso è riuscito e resta salvato, ma Meta non ha restituito alcun account Instagram. Autorizza di nuovo e, nella finestra di Meta, seleziona il portfolio business e spunta l'account Instagram business o creator. Oppure inserisci qui sotto l'ID dell'account, se lo conosci."
+        "body": "L'accesso è riuscito e resta salvato, ma Meta non ha restituito alcun account Instagram. Autorizza di nuovo e, nella finestra di Meta, seleziona il portfolio business e spunta l'account Instagram business o creator. Oppure inserisci qui sotto l'ID dell'account, se lo conosci.",
+        "bodyNoAssets": "Meta ha approvato i permessi ma non ha condiviso alcun account Instagram con l'app. Succede quando il portfolio business scelto nella finestra non possiede l'account (gli è solo condiviso). Autorizza di nuovo, scegli il portfolio a cui appartiene l'account Instagram e spunta l'account."
       },
       "error": {
         "title": "L'accesso non è stato completato",
@@ -1555,7 +1556,7 @@
       "authorizeAgain": "Autorizza di nuovo",
       "manualLabel": "ID dell'account Instagram",
       "manualSave": "Usa questo ID",
-      "manualHint": "L'ID è un numero che inizia con 1784, visibile in Impostazioni di Meta Business → Account → Account Instagram. Viene verificato con l'accesso salvato prima di essere salvato.",
+      "manualHint": "Inserisci l'ID che l'API di Meta restituisce per l'account Instagram professionale (di solito un numero che inizia con 1784; l'ID dell'asset nelle impostazioni Business può essere diverso). Viene verificato con l'accesso salvato prima di essere salvato.",
       "manualInvalid": "Inserisci l'ID numerico dell'account Instagram (solo cifre), non il nome utente."
     },
     "env": {

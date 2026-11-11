@@ -285,6 +285,8 @@ export class MetaAuthController {
     accounts?: MetaInstagramAccount[];
     /** Signed in, token kept, but no Instagram account could be read with it yet. */
     noAccount?: boolean;
+    /** Why: `no_assets` when Meta granted the permissions but no Instagram account. */
+    reason?: 'no_assets';
   }> {
     const state = String(body?.state || '');
     // Check who started the flow before consuming it: another signed-in user
@@ -336,7 +338,14 @@ export class MetaAuthController {
       await this.bearerTokens.seed(flow.connectorId, result.token, { expiresAt: result.expiresAt, systemUser: true });
       await this.reload(flow.connectorId);
       this.logger.warn(`Connector ${flow.connectorId}: Unified Login stored, but no Instagram account was found`);
-      return { connectorId: flow.connectorId, toolsImported: 0, ...(returnTo ? { returnTo } : {}), accounts: [], noAccount: true };
+      return {
+        connectorId: flow.connectorId,
+        toolsImported: 0,
+        ...(returnTo ? { returnTo } : {}),
+        accounts: [],
+        noAccount: true,
+        ...(result.noAssets ? { reason: 'no_assets' as const } : {}),
+      };
     }
     if (result.accounts.length === 0) {
       throw new BadRequestException({
