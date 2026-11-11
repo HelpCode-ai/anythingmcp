@@ -20,6 +20,7 @@ import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
 import { AuthStatusBanner, AuthStatusPill } from '@/components/auth-status';
+import { MetaSignInBanner, type MetaSignInStatus } from '@/components/meta-sign-in-banner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useLocale, useTranslations } from 'next-intl';
@@ -276,6 +277,12 @@ export default function ConnectorDetailPage() {
   const [importEntitySets, setImportEntitySets] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
+  // The outcome of a Meta sign-in of an Instagram connector (?meta=…), with its next step.
+  const [metaSignIn, setMetaSignIn] = useState<{
+    status: MetaSignInStatus;
+    message: string | null;
+    reason?: string | null;
+  } | null>(null);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
@@ -448,6 +455,11 @@ export default function ConnectorDetailPage() {
     } else if (oauthStatus === 'error') {
       const message = searchParams.get('message') || t('msg.authFailedDefault');
       setMsg(t('msg.oauthError', { message }));
+      window.history.replaceState({}, '', `/connectors/${id}`);
+    }
+    const metaStatus = searchParams.get('meta');
+    if (metaStatus === 'connected' || metaStatus === 'choose' || metaStatus === 'no_account' || metaStatus === 'error') {
+      setMetaSignIn({ status: metaStatus, message: searchParams.get('message'), reason: searchParams.get('reason') });
       window.history.replaceState({}, '', `/connectors/${id}`);
     }
 
@@ -1045,6 +1057,24 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  // Instagram connectors sign in with Facebook or Instagram through Meta's own flow.
+  const handleMetaAuthorize = async () => {
+    if (!token) return;
+    setAuthorizing(true);
+    try {
+      const result = await connectors.metaAuthorize(id, token);
+      if (result.authorizationUrl) {
+        window.location.href = result.authorizationUrl;
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch (err: any) {
+      setMsg(t('msg.authorizationFailed', { message: err.message }));
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   const handleDiscoverTools = async () => {
     if (!token) return;
     setDiscovering(true);
@@ -1234,6 +1264,24 @@ export default function ConnectorDetailPage() {
 
         <SetupStatusBanner connector={connector} />
         <AuthStatusBanner connector={connector} />
+
+        {metaSignIn && (
+          <MetaSignInBanner
+            connectorId={id}
+            status={metaSignIn.status}
+            message={metaSignIn.message}
+            reason={metaSignIn.reason}
+            token={token}
+            authorizing={authorizing}
+            onAuthorize={handleMetaAuthorize}
+            onTest={handleTest}
+            onSaved={() => {
+              setMetaSignIn({ status: 'connected', message: null });
+              fetchConnector();
+            }}
+            onDismiss={() => setMetaSignIn(null)}
+          />
+        )}
 
         {msg && (
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
@@ -1993,6 +2041,26 @@ export default function ConnectorDetailPage() {
             </Button>
           </Card>
         )}
+
+        {/* Instagram sign-in (Meta's Facebook Login or Instagram Login) */}
+        {connector.authType === 'BEARER_TOKEN' &&
+          ['instagram', 'instagram-login'].includes((connector.config as any)?.adapterSlug) && (
+            <Card className="p-[22px]">
+              <h3 className="text-sm font-semibold mb-2">
+                {(connector.config as any)?.adapterSlug === 'instagram' ? t('meta.titleFacebook') : t('meta.titleInstagram')}
+              </h3>
+              <p className="text-sm text-[var(--text-3)] mb-4">
+                {(connector.config as any)?.adapterSlug === 'instagram' ? t('meta.bodyFacebook') : t('meta.bodyInstagram')}
+              </p>
+              <Button variant="primary" size="lg" onClick={handleMetaAuthorize} disabled={authorizing}>
+                {authorizing
+                  ? t('oauthCard.redirecting')
+                  : (connector.config as any)?.adapterSlug === 'instagram'
+                    ? t('meta.authorizeFacebook')
+                    : t('meta.authorizeInstagram')}
+              </Button>
+            </Card>
+          )}
 
         {/* Inbound webhook ingestion (#1393): only where it applies — a Stripe
             connector, or any connector someone already turned it on for via the API. */}

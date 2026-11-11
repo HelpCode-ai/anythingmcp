@@ -25,6 +25,8 @@ import {
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
 import { McpPrincipalRateLimitGuard } from '../auth/mcp-principal-rate-limit.guard';
 import { mcpWwwAuthenticate } from '../auth/mcp-www-authenticate.util';
+import { CrossWorkspaceRefusalStore } from '../auth/cross-workspace-refusal.store';
+import { userReachesOrganization } from '../auth/server-reachability.util';
 import { mcpHttpTransport } from './mcp-strategy';
 import { createQuietMcpHandler } from './mcp-handler.util';
 import { toolVisibilityRole } from './mcp-server.service';
@@ -334,6 +336,7 @@ export class McpEndpointController {
     @Optional() private readonly folders?: KnowledgeFoldersService,
     @Optional() productEvents?: ProductEventService,
     @Optional() prisma?: PrismaService,
+    @Optional() private readonly refusals?: CrossWorkspaceRefusalStore,
   ) {
     this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
   }
@@ -1307,17 +1310,14 @@ export class McpEndpointController {
       user?.authMethod === 'none';
     if (!isInstanceLevel) {
       const serverOrg = mcpServerConfig.organizationId;
-      const primaryOrgMatches =
-        !!user?.organizationId && user.organizationId === serverOrg;
+      // Same rule as the consent page and the refresh grant
+      // (server-reachability.util). An API key only matches its own workspace.
       const isMember =
-        primaryOrgMatches ||
-        (user?.authMethod !== 'mcp_api_key' &&
-          !!user?.sub &&
-          !!serverOrg &&
-          (await this.mcpServersService.isUserInOrganization(
-            user.sub,
-            serverOrg,
-          )));
+        user?.authMethod === 'mcp_api_key'
+          ? !!user?.organizationId && user.organizationId === serverOrg
+          : await userReachesOrganization(user?.sub, serverOrg, user?.organizationId, (u, o) =>
+              this.mcpServersService.isUserInOrganization(u, o),
+            );
       if (!isMember) {
         // The auth headers are redacted from the request log, so without this
         // line a refused client can't be told apart from a working one: a paying
@@ -1334,9 +1334,22 @@ export class McpEndpointController {
         // was refused 510 times in 13 hours (#1609). An API key keeps the
         // 403 below, since signing in again would not change the key.
         if (user?.authMethod === 'jwt') {
+          // Clients answer this 401 with a refresh grant, and the token names
+          // no server, so leave a marker for the refresh middleware to refuse
+          // it with invalid_grant. Awaited: the refresh comes within a second.
+          // OAuth tokens only (an app JWT has no client and never refreshes).
+          const clientId = oauthClientId(user);
+          if (clientId && user?.sub) {
+            await this.refusals?.mark(user.sub, clientId, serverId).catch(() => undefined);
+          }
           res.setHeader(
             'WWW-Authenticate',
-            mcpWwwAuthenticate(req, `/mcp/${serverId}`, process.env.SERVER_URL || 'http://localhost:4000'),
+            mcpWwwAuthenticate(
+              req,
+              `/mcp/${serverId}`,
+              process.env.SERVER_URL || 'http://localhost:4000',
+              'This sign-in is not a member of the workspace that owns this MCP server',
+            ),
           );
           return res.status(401).json({
             jsonrpc: '2.0',

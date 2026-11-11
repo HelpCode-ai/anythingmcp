@@ -20,7 +20,17 @@ import { pickProbe, probeResultFailure } from './probe.util';
 import { resolveDerivedEnvVars, withDerivedValues } from './derived-settings';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { tiktokShopNeedsAuthorization } from '../connectors/engines/tiktok-shop-token.service';
+import { metaLoginNeedsAuthorization } from '../connectors/engines/meta-login.util';
 import { odooCheckAdvice } from './odoo-database-hint';
+import {
+  discoverWooCommerce,
+  EgressContext,
+  WOOCOMMERCE_SLUG,
+  WOOCOMMERCE_URL_VAR,
+  wooCommerceCheckAdvice,
+  WooCommerceDiscovery,
+  wooCommerceSiteOf,
+} from './woocommerce-setup';
 import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from './env-var-checks';
 import { outboundRequest } from '../common/outbound-http';
 import { interpolateString } from '../common/env-interpolation.util';
@@ -148,6 +158,23 @@ export class AdaptersService {
       // Shown on the setup page, for servers that only accept approved addresses.
       egressIps: egressIps(),
     };
+  }
+
+  /** Cloud or self-hosted, and the addresses calls leave from: how a firewall hint names them. */
+  private egressContext(): EgressContext {
+    return {
+      cloud: this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud',
+      egressIps: egressIps(),
+    };
+  }
+
+  /**
+   * What a WooCommerce address says about itself, without a key (see
+   * woocommerce-setup.ts), for a chat install, where only the address is
+   * known. Undefined when it says nothing.
+   */
+  inspectWooCommerceAddress(url: string): Promise<WooCommerceDiscovery | undefined> {
+    return discoverWooCommerce(url, this.egressContext()).catch(() => undefined);
   }
 
   getBySlug(slug: string): AdapterDefinition {
@@ -548,6 +575,39 @@ export class AdaptersService {
         message: describeFieldProblems(derived.fields),
       };
     }
+    // WooCommerce: the site is asked, without the key, what it is (its own
+    // address, WooCommerce present, Plain permalinks, a firewall). Its own
+    // address replaces the one typed; a site the key cannot reach either
+    // (no such host, no valid https, Plain permalinks) is told without
+    // sending the key.
+    let woo: WooCommerceDiscovery | undefined;
+    let wooCorrected: Record<string, string> | undefined;
+    const typedSite = prepared.credentials?.[WOOCOMMERCE_URL_VAR];
+    if (slug === WOOCOMMERCE_SLUG && typedSite) {
+      woo = await discoverWooCommerce(typedSite, this.egressContext()).catch(() => undefined);
+      if (woo?.corrected && woo.corrected !== typedSite) {
+        try {
+          const next = this.prepareConnector(adapter, { ...(credentials ?? {}), [WOOCOMMERCE_URL_VAR]: woo.corrected });
+          if (Object.keys(checkAdapterEnvValues(adapter, next.credentials ?? {}, [WOOCOMMERCE_URL_VAR])).length === 0) {
+            prepared = next;
+            credentials = { ...(credentials ?? {}), [WOOCOMMERCE_URL_VAR]: woo.corrected };
+            wooCorrected = { [WOOCOMMERCE_URL_VAR]: woo.corrected };
+          }
+        } catch {
+          // The site's own address does not fit the adapter: keep the one typed.
+        }
+      }
+      if (woo?.final && woo.message) {
+        return {
+          ok: false,
+          kind: woo.problem === 'plain_permalinks' ? 'not_found' : 'unreachable',
+          status: null,
+          message: woo.message,
+          fields: { [WOOCOMMERCE_URL_VAR]: woo.message },
+          ...(wooCorrected ? { corrected: wooCorrected } : {}),
+        };
+      }
+    }
     const state = computeSetupState({
       authType: adapter.connector.authType,
       authConfig: prepared.resolvedAuthConfig,
@@ -623,6 +683,7 @@ export class AdaptersService {
         toolName,
         durationMs: Date.now() - started,
         sample: truncateSample(shaped),
+        ...(wooCorrected ? { corrected: wooCorrected, ...(woo?.message ? { note: woo.message } : {}) } : {}),
       };
     } catch (err: any) {
       const status = errorStatus(err);
@@ -661,6 +722,19 @@ export class AdaptersService {
         baseUrl: prepared.resolvedBaseUrl,
         enteredDatabase: credentials?.ODOO_DB,
       });
+      // WooCommerce: a refused key told apart by its code, or what the site
+      // said about itself before the key was tried.
+      const wooAdvice = await wooCommerceCheckAdvice({
+        adapterSlug: adapter.slug,
+        status,
+        text: `${upstream}\n${rawResponseText(err)}`,
+        siteUrl: prepared.credentials?.[WOOCOMMERCE_URL_VAR],
+        ctx: this.egressContext(),
+        // Asked once already, before the key was sent.
+        discovery: woo ?? { url: '' },
+      });
+      const wooMessage = wooAdvice ? `${wooAdvice} (${upstream.replace(/[.\s]+$/, '')})` : undefined;
+      const correctedNote = wooCorrected && woo?.message ? `${woo.message} ` : '';
       const suggest = odoo
         ? odoo.suggest
         : typeof own === 'object' && own?.suggest
@@ -678,8 +752,9 @@ export class AdaptersService {
         toolName,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: odoo ? odoo.message : message,
+        message: correctedNote + (odoo ? odoo.message : (wooMessage ?? message)),
         ...(odoo?.database ? { odooDatabase: odoo.database } : {}),
+        ...(wooCorrected ? { corrected: wooCorrected } : {}),
         ...(field ? { fields: { [field]: message } } : {}),
         ...(suggest ? { suggest, suggestName: target?.name ?? suggest } : {}),
         ...(target
@@ -1131,6 +1206,9 @@ export class AdaptersService {
         include: { tools: { where: { name: call.toolName } } },
       });
       envVars = (connector?.envVars as Record<string, string> | null) ?? {};
+      // An Instagram connector installed to sign in with Facebook or
+      // Instagram right after: no token yet, nothing to probe.
+      if (metaLoginNeedsAuthorization(adapter.slug, envVars)) return null;
       baseUrl = connector ? interpolateString(connector.baseUrl, envVars) : undefined;
       const tool = connector?.tools[0];
       if (!connector || !tool) return null;
@@ -1171,13 +1249,22 @@ export class AdaptersService {
         baseUrl,
         enteredDatabase: envVars.ODOO_DB,
       });
+      // WooCommerce: the refused key told apart, or what the site says about
+      // itself (no WooCommerce, Plain permalinks, a firewall), asked now.
+      const woo = await wooCommerceCheckAdvice({
+        adapterSlug: adapter.slug,
+        status,
+        text: `${upstream}\n${rawResponseText(err)}`,
+        siteUrl: wooCommerceSiteOf(envVars, baseUrl),
+        ctx: this.egressContext(),
+      }).catch(() => undefined);
       return {
         ok: false,
         toolName: call.toolName,
         durationMs: Date.now() - started,
         status: status ?? null,
         // The hint is what the user acts on; the provider's own words follow.
-        message: odoo ? odoo.message : message,
+        message: odoo ? odoo.message : woo ? `${woo} (${upstream.replace(/[.\s]+$/, '')})` : message,
       };
     }
   }

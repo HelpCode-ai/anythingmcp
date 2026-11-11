@@ -349,6 +349,14 @@ export const mcpConnections = {
  * the token expires.
  */
 /** Whose credential a connector's calls carry: the connector's own, or each user's. */
+/** An Instagram professional account a Meta sign-in reaches (meta-auth.controller.ts). */
+export interface MetaInstagramAccount {
+  id: string;
+  username?: string;
+  /** The Facebook Page it is linked to (Facebook Login only). */
+  pageName?: string;
+}
+
 export type CredentialScope = 'SHARED' | 'USER';
 
 export interface MyConnectorCredential {
@@ -690,6 +698,41 @@ export const connectors = {
       `/api/woocommerce/connectors/${id}/one-click-status?state=${encodeURIComponent(state)}`,
       { token },
     ),
+  /** "Authorize with Facebook / Instagram" for an Instagram connector: the Meta login dialog. */
+  metaAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
+      `/api/meta/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a Meta sign-in; `accounts` when the user has to pick an Instagram account. */
+  metaComplete: (state: string, code: string, token: string) =>
+    request<{
+      connectorId: string;
+      toolsImported: number;
+      returnTo?: string;
+      account?: MetaInstagramAccount;
+      accounts?: MetaInstagramAccount[];
+      noAccount?: boolean;
+      reason?: 'no_assets';
+    }>('/api/meta/complete', { method: 'POST', token, body: { state, code } }),
+  /** Store the Instagram account a Facebook sign-in should use. */
+  /** The Instagram accounts an Instagram connector's Meta sign-in reaches, and the one in use. */
+  metaAccounts: (id: string, token: string) =>
+    request<{ connectorId: string; current?: string; accounts: MetaInstagramAccount[] }>(
+      `/api/meta/connectors/${id}/accounts`,
+      { token },
+    ),
+  metaChooseAccount: (id: string, accountId: string, token: string) =>
+    request<{ connectorId: string; account: MetaInstagramAccount }>(`/api/meta/connectors/${id}/account`, {
+      method: 'POST',
+      token,
+      body: { accountId },
+    }),
+  /** Whether this server has its own Meta apps, and the redirect URI for an app of your own. */
+  metaPlatform: (token: string) =>
+    request<{ facebook: boolean; unified?: boolean; instagram: boolean; redirectUrl: string }>('/api/meta/platform', {
+      token,
+    }),
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>

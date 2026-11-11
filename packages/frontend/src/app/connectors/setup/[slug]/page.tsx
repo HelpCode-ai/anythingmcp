@@ -155,6 +155,26 @@ function SetupContent() {
   const [wooOneClick, setWooOneClick] = useState(false);
   const [wooScope, setWooScope] = useState<WooCommerceScope>('read');
   const [wooChecking, setWooChecking] = useState(wooReturn);
+  // Instagram: sign in with Facebook (adapter `instagram`) or Instagram
+  // (`instagram-login`), which fills in the token and account id, or paste a
+  // token. Signing in needs a Meta app: the server's when it has one,
+  // otherwise the user's own (its id and secret are then required).
+  const metaFlavour: 'facebook' | 'instagram' | null =
+    slug === 'instagram' ? 'facebook' : slug === 'instagram-login' ? 'instagram' : null;
+  const [metaPlatform, setMetaPlatform] = useState<{
+    facebook: boolean;
+    unified?: boolean;
+    instagram: boolean;
+    redirectUrl: string;
+  } | null>(null);
+  const [metaMode, setMetaMode] = useState<'signin' | 'paste'>('signin');
+  const [ownMetaApp, setOwnMetaApp] = useState(false);
+  const metaSignIn = metaFlavour !== null && metaMode === 'signin';
+  const serverMetaApp = metaSignIn && metaPlatform?.[metaFlavour!] === true && !ownMetaApp;
+  const metaAppVars = metaFlavour === 'facebook' ? META_FACEBOOK_APP_VARS : META_INSTAGRAM_APP_VARS;
+  // The `instagram` connector signs in with Instagram or Facebook (Unified
+  // Login) or, with an older app, Facebook only; `instagram-login` with Instagram.
+  const metaProvider = metaFlavour === 'instagram' ? 'Instagram' : 'Instagram / Facebook';
 
   /** This setup's address for a saved connector, keeping the other parameters (from=…). */
   const withConnector = useCallback(
@@ -236,6 +256,8 @@ function SetupContent() {
           setValues((v) => ({ ...Object.fromEntries(Object.entries(env).filter(([, x]) => x)), ...v }));
           // A TikTok Shop connector that has an App key of its own keeps its app.
           if (env.TIKTOK_SHOP_APP_KEY) setOwnTikTokApp(true);
+          // An Instagram connector with an app of its own keeps its app.
+          if (env.META_APP_ID || env.INSTAGRAM_APP_ID) setOwnMetaApp(true);
           setStoredSecrets(Array.isArray(c?.maskedEnvVars) ? c.maskedEnvVars : []);
         })
         .catch(() => {});
@@ -321,6 +343,14 @@ function SetupContent() {
   }, [wooReturn, existingId, token, params, slug, t, fromSource]);
 
   useEffect(() => {
+    if (!token || !metaFlavour) return;
+    connectors
+      .metaPlatform(token)
+      .then(setMetaPlatform)
+      .catch(() => setMetaPlatform({ facebook: false, instagram: false, redirectUrl: '' }));
+  }, [token, metaFlavour]);
+
+  useEffect(() => {
     if (!token || info?.setupKind !== 'oauth_browser') return;
     connectors.oauthRedirectUri(token).then((r) => setRedirectUri(r.redirectUri)).catch(() => {});
   }, [token, info?.setupKind]);
@@ -361,14 +391,23 @@ function SetupContent() {
   // server's app). Without a server app, or with the user's own app chosen,
   // they are required here; with the server's app they are hidden and sent
   // empty.
+  // Signing in to Instagram fills in the token and account id, so those are
+  // hidden then, and the app id and secret are required unless the server
+  // has its own app (then they are hidden too).
   const fields = useMemo(
     () =>
       (info?.envVars ?? []).map((f) =>
-        isTikTokShop && TIKTOK_SHOP_APP_VARS.includes(f.name) && !serverTikTokApp ? { ...f, required: true } : f,
+        (isTikTokShop && TIKTOK_SHOP_APP_VARS.includes(f.name) && !serverTikTokApp) ||
+        (metaSignIn && !serverMetaApp && metaAppVars.includes(f.name) && f.name !== 'META_CONFIG_ID')
+          ? { ...f, required: true }
+          : f,
       ),
-    [info, isTikTokShop, serverTikTokApp],
+    [info, isTikTokShop, serverTikTokApp, metaSignIn, serverMetaApp, metaAppVars],
   );
-  const hiddenField = (name: string) => serverTikTokApp && TIKTOK_SHOP_APP_VARS.includes(name);
+  const hiddenField = (name: string) =>
+    (serverTikTokApp && TIKTOK_SHOP_APP_VARS.includes(name)) ||
+    (metaSignIn && META_SIGN_IN_VARS.includes(name)) ||
+    (serverMetaApp && metaAppVars.includes(name));
   const visibleFields = fields.filter((f) => !f.advanced && !hiddenField(f.name));
   const advancedFields = fields.filter((f) => f.advanced && !hiddenField(f.name));
 
@@ -419,6 +458,9 @@ function SetupContent() {
       fields
         // An address typed without https:// gets it when the pattern wants it.
         // A hidden TikTok Shop app field goes empty: the server's app is used.
+        // The token and account id a sign-in fills in are not sent at all: an
+        // empty value must not touch what a sign-in stored.
+        .filter((f) => !(metaSignIn && META_SIGN_IN_VARS.includes(f.name)))
         .map((f) => [f.name, hiddenField(f.name) ? '' : withMissingScheme(f, (values[f.name] ?? '').trim())] as const)
         .filter(([name, v]) => connectorId || v !== '' || !fields.find((f) => f.name === name)?.required),
     ) as Record<string, string>;
@@ -601,6 +643,17 @@ function SetupContent() {
     setVerifyFailed(null);
     setPhase('working');
     try {
+      // Instagram: save, then sign in with Facebook or Instagram; the sign-in
+      // stores the token and the account id, and Meta checks the app.
+      if (metaSignIn) {
+        const id = await save();
+        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
+        const auth = await connectors.metaAuthorize(id, token, returnTo);
+        if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
+        productEvents.track('oauth_started', token, { adapterSlug: slug });
+        window.location.href = auth.authorizationUrl;
+        return;
+      }
       // Checked before anything else, the browser sign-in included: an app
       // the provider does not accept yet (Etsy: still Pending, or the wrong
       // shared secret) used to send the user to an error page at the
@@ -792,8 +845,9 @@ function SetupContent() {
   // sign-in is all there is (Notion, Helium 10). One that needs an app of
   // the user's asks for its client ID like any other OAuth connector.
   const selfRegisteringBridge = info.connector.type === 'MCP' && info.envVars.every((v) => !v.required);
-  const primaryLabel =
-    info.setupKind === 'none'
+  const primaryLabel = metaSignIn
+    ? t('metaLogin.signIn', { provider: metaProvider })
+    : info.setupKind === 'none'
       ? t('actions.install', { name: info.name })
       : isOAuth
         ? t('actions.saveAndSignIn', { name: info.name.split(' ')[0] })
@@ -1125,6 +1179,58 @@ function SetupContent() {
           <p className="text-sm text-[var(--text-2)]">{t('noInput')}</p>
         )}
 
+        {metaFlavour && (
+          <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
+            <div className="flex flex-col gap-1">
+              {(['signin', 'paste'] as const).map((mode) => (
+                <label key={mode} className="flex items-center gap-2 text-[var(--text)]">
+                  <input
+                    type="radio"
+                    name="meta-mode"
+                    checked={metaMode === mode}
+                    onChange={() => {
+                      setMetaMode(mode);
+                      setFieldErrors({});
+                    }}
+                  />
+                  {mode === 'signin'
+                    ? t('metaLogin.modeSignIn', { provider: metaProvider })
+                    : t('metaLogin.modePaste')}
+                </label>
+              ))}
+            </div>
+            {metaSignIn && metaPlatform?.[metaFlavour] && (
+              <>
+                <p className="mt-2">{t('metaLogin.serverApp')}</p>
+                <label className="mt-2 flex items-center gap-2 text-[var(--text)]">
+                  <input
+                    type="checkbox"
+                    checked={ownMetaApp}
+                    onChange={(e) => {
+                      setOwnMetaApp(e.target.checked);
+                      setFieldErrors({});
+                    }}
+                  />
+                  {t('metaLogin.useOwn')}
+                </label>
+              </>
+            )}
+            {metaSignIn && !serverMetaApp && metaPlatform?.redirectUrl && (
+              <>
+                <p className="mt-2 text-xs">{t('metaLogin.ownHint')}</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="flex-1 overflow-x-auto rounded bg-[var(--surface)] px-2 py-1 font-mono text-xs text-[var(--text)]">
+                    {metaPlatform.redirectUrl}
+                  </code>
+                  <Button size="sm" variant="secondary" onClick={() => void copyText(metaPlatform.redirectUrl)}>
+                    {t('copy')}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {isTikTokShop && tiktokPlatform?.available && (
           <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             <p>{t('tiktokShopApp.serverApp')}</p>
@@ -1218,6 +1324,11 @@ const TIKTOK_SHOP_APP_VARS: readonly string[] = ['TIKTOK_SHOP_APP_KEY', 'TIKTOK_
 /** The WooCommerce adapter's shop address and consumer key variables (one-click key). */
 const WOOCOMMERCE_URL_VAR = 'WOOCOMMERCE_URL';
 const WOOCOMMERCE_KEY_VAR = 'WOOCOMMERCE_CONSUMER_KEY';
+/** What an Instagram sign-in fills in; hidden on the form while signing in. */
+const META_SIGN_IN_VARS: readonly string[] = ['INSTAGRAM_ACCESS_TOKEN', 'INSTAGRAM_ACCOUNT_ID'];
+/** The app of your own for each Instagram sign-in, as the catalog adapters name it. */
+const META_FACEBOOK_APP_VARS: readonly string[] = ['META_APP_ID', 'META_APP_SECRET', 'META_CONFIG_ID'];
+const META_INSTAGRAM_APP_VARS: readonly string[] = ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'];
 
 /** A setup page's draft that the "Switch to …" button may replace: old adapter → new adapter. */
 const REPLACEABLE_DRAFTS: Readonly<Record<string, string>> = { odoo: 'odoo-jsonrpc' };

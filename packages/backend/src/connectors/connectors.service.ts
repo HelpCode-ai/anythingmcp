@@ -48,6 +48,7 @@ import { ConnectorAuthStatusService, authCredentialRef } from './engines/connect
 import { BearerTokenRenewalService, withTokenRenewal } from './engines/bearer-token-renewal.service';
 import { connectorErrorWhen } from './error-when.util';
 import { ResponseBodyError } from './engines/response-error.util';
+import { metaLoginFlavourOfSlug } from './engines/meta-login.util';
 
 /** Whether a URL has a query string (`?singleWsdl`), so `?wsdl` cannot simply be added. */
 function hasQueryString(url: string): boolean {
@@ -378,7 +379,21 @@ export class ConnectorsService {
   }
 
   async remove(id: string): Promise<void> {
-    await this.findById(id);
+    const connector = await this.findById(id);
+    const slug = (connector.config as { adapterSlug?: unknown } | null)?.adapterSlug;
+    if (metaLoginFlavourOfSlug(slug)) {
+      // Meta Platform Terms: Instagram data goes when the user deletes the
+      // connector. Its tool-call log rows (with tool outputs) would cascade
+      // with its tools anyway; delete them explicitly, in the same
+      // transaction, so that keeps holding if the relation ever changes.
+      await this.prisma.$transaction([
+        this.prisma.toolInvocation.deleteMany({
+          where: { connectorId: id, organizationId: connector.organizationId },
+        }),
+        this.prisma.connector.delete({ where: { id } }),
+      ]);
+      return;
+    }
     await this.prisma.connector.delete({ where: { id } });
   }
 

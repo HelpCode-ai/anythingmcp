@@ -1063,6 +1063,14 @@
       "timeout": "Il tuo negozio non ha inviato la chiave ad AnythingMCP. Un plugin di sicurezza o un firewall potrebbe bloccare /wc-auth/ o la chiamata ad AnythingMCP. Riprova, oppure crea tu una chiave e incollala.",
       "failed": "Non è stato possibile collegare la chiave: {message}"
     },
+    "metaLogin": {
+      "signIn": "Salva e accedi con {provider}",
+      "modeSignIn": "Accedi con {provider} (consigliato)",
+      "modePaste": "Incolla un token di accesso",
+      "serverApp": "Questo server ha la sua app Meta: devi solo accedere e approvarla. Non c'è nessun ID o secret dell'app da inserire.",
+      "useOwn": "Usa una tua app Meta",
+      "ownHint": "Inserisci qui sotto ID e secret della tua app Meta (e META_CONFIG_ID per Unified Login) e registra questo indirizzo come URL di reindirizzamento:"
+    },
     "copy": "Copia",
     "noInput": "Niente da inserire: funziona senza account.",
     "working": "In corso…",
@@ -1529,6 +1537,43 @@
     "tiktokShop": {
       "title": "Autorizzazione del negozio TikTok Shop",
       "body": "Accedi a TikTok Shop Seller Center con l'account titolare del negozio e approva l'app. Con un'app tua, la sua Redirect URL nel Partner Center deve essere il tuo indirizzo AnythingMCP seguito da /api/tiktok-shop/callback; senza, il connettore usa l'app TikTok Shop di questo server. I token vengono salvati cifrati e rinnovati automaticamente; autorizza di nuovo quando l'autorizzazione scade o il connettore lo chiede."
+    },
+    "meta": {
+      "titleFacebook": "Accedi con Instagram o Facebook",
+      "titleInstagram": "Accedi con Instagram",
+      "bodyFacebook": "Accedi con l'account Instagram o con Facebook e approva l'app. Con Unified Login (AnythingMCP Cloud e ogni app Meta creata dall'autunno 2026) scegli il portfolio business e l'account Instagram da condividere, senza bisogno di una Pagina Facebook, e il token non scade. Con un'app più vecchia accedi con un utente Facebook che gestisce la Pagina collegata all'account Instagram, e il token viene rinnovato prima che scada. Il token e l'ID dell'account vengono salvati cifrati su questo connettore. Con un'app tua, imposta META_APP_ID, META_APP_SECRET e, per Unified Login, META_CONFIG_ID, e registra il tuo indirizzo AnythingMCP seguito da /api/meta/callback come URL di reindirizzamento.",
+      "bodyInstagram": "Accedi con l'account Instagram business o creator e approva l'app; non serve una Pagina Facebook. Il token e l'ID dell'account vengono salvati cifrati su questo connettore e il token viene rinnovato prima che scada. Con un'app tua, imposta INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET e aggiungi il tuo indirizzo AnythingMCP seguito da /api/meta/callback tra i suoi URI di reindirizzamento OAuth.",
+      "authorizeFacebook": "Autorizza con Instagram o Facebook",
+      "authorizeInstagram": "Autorizza con Instagram"
+    },
+    "metaBanner": {
+      "dismiss": "Chiudi",
+      "connected": {
+        "title": "Instagram è collegato",
+        "titleAs": "Instagram è collegato come {account}",
+        "body": "L'accesso è riuscito e il token è salvato su questo connettore. Prova la connessione, poi usa i tool dal tuo assistente AI.",
+        "bodyAs": "Accesso eseguito, il connettore usa {account}. Prova la connessione, poi usa i tool dal tuo assistente AI."
+      },
+      "choose": {
+        "title": "Scegli l'account Instagram",
+        "body": "L'accesso raggiunge più account Instagram. Scegli quello che deve usare questo connettore; potrai cambiarlo in seguito."
+      },
+      "no_account": {
+        "title": "Accesso eseguito, ma nessun account Instagram condiviso",
+        "body": "L'accesso è riuscito e resta salvato, ma Meta non ha restituito alcun account Instagram. Autorizza di nuovo e, nella finestra di Meta, seleziona il portfolio business e spunta l'account Instagram business o creator. Oppure inserisci qui sotto l'ID dell'account, se lo conosci.",
+        "bodyNoAssets": "Meta ha approvato i permessi ma non ha condiviso alcun account Instagram con l'app. Succede quando il portfolio business scelto nella finestra non possiede l'account (gli è solo condiviso). Autorizza di nuovo, scegli il portfolio a cui appartiene l'account Instagram e spunta l'account."
+      },
+      "error": {
+        "title": "L'accesso non è stato completato",
+        "body": "Meta non ha completato l'accesso. Autorizza di nuovo."
+      },
+      "testNow": "Prova la connessione",
+      "switchAccount": "Usa un altro account",
+      "authorizeAgain": "Autorizza di nuovo",
+      "manualLabel": "ID dell'account Instagram",
+      "manualSave": "Usa questo ID",
+      "manualHint": "Inserisci l'ID che l'API di Meta restituisce per l'account Instagram professionale (di solito un numero che inizia con 1784; l'ID dell'asset nelle impostazioni Business può essere diverso). Viene verificato con l'accesso salvato prima di essere salvato.",
+      "manualInvalid": "Inserisci l'ID numerico dell'account Instagram (solo cifre), non il nome utente."
     },
     "env": {
       "title": "Variabili d'ambiente",

@@ -7,6 +7,7 @@ import { getRequiredSecret } from '../../common/secrets.util';
 import { connectorPageUrl } from '../../common/url.util';
 import { getAdapter } from '../../adapters/catalog';
 import { ConnectorAuthStatusService, credentialRef, expiredTokenHint } from './connector-auth-status.service';
+import { metaLoginPlatformApp } from './meta-login.util';
 
 /**
  * Renewal of pasted bearer tokens that expire, for providers that let a
@@ -55,6 +56,12 @@ export interface TokenRenewalSpec {
   appIdVar?: string;
   appSecretVar?: string;
   pageIdVar?: string;
+  /**
+   * The variable with the Meta Unified Login configuration id. Not used for
+   * renewal (a Unified Login token is never renewed): the "Authorize with
+   * Provider" sign-in reads it (meta-login.util.ts).
+   */
+  configIdVar?: string;
   /** Graph API version for the exchange; defaults to the base URL's, else v25.0. */
   graphVersion?: string;
   /** Renew when fewer days than this remain. Default 10. */
@@ -95,6 +102,17 @@ interface TokenState {
   obtainedAt?: number;
   /** Don't try to renew before this (after a failed attempt). */
   retryAfter?: number;
+  /**
+   * Issued through "Authorize with Provider" with the server's own Meta app
+   * (META_PLATFORM_APP_ID / _SECRET): renewed with that app, since the
+   * connector has no app id and secret of its own.
+   */
+  viaPlatformApp?: boolean;
+  /**
+   * A Business Integration System User token (Meta Unified Login): not a
+   * user token, so never exchanged or refreshed with the user-token calls.
+   */
+  systemUser?: boolean;
 }
 
 type Db = Pick<PrismaService, 'connectorAuthCache'>;
@@ -252,6 +270,37 @@ export class BearerTokenRenewalService {
     return message;
   }
 
+  /**
+   * A token that "Authorize with Provider" just obtained and wrote into the
+   * connector's token variable (meta-auth.controller.ts): record it as the
+   * current, already exchanged token, with its expiry, so it is renewed in
+   * time instead of being exchanged again on the first call. Call it after
+   * the variables are saved (saving them forgets the previous state).
+   */
+  async seed(
+    connectorId: string,
+    token: string,
+    opts: { expiresAt: number | null; viaPlatformApp?: boolean; systemUser?: boolean },
+  ): Promise<void> {
+    const ref = credentialRef(token);
+    if (!ref) return;
+    const st: TokenState = {
+      sourceRef: ref,
+      token,
+      expiresAt: opts.expiresAt,
+      obtainedAt: Date.now(),
+      ...(opts.viaPlatformApp ? { viaPlatformApp: true } : {}),
+      ...(opts.systemUser ? { systemUser: true } : {}),
+    };
+    await this.writeStored(connectorId, st, this.prisma);
+    this.blocked.delete(connectorId);
+    this.warned.delete(connectorId);
+    this.state.set(connectorId, st);
+    this.loaded.add(connectorId);
+    await this.afterNewToken(connectorId, st);
+    await this.authStatus?.clear(connectorId, { exceptRef: ref });
+  }
+
   /** The credentials changed (new token, new app id/secret): start over. */
   forget(connectorId: string): void {
     this.state.delete(connectorId);
@@ -266,13 +315,31 @@ export class BearerTokenRenewalService {
     return spec.provider === 'meta' && !!spec.appId && !!spec.appSecret;
   }
 
+  /**
+   * The spec to renew `st` with: a token the server's app issued is renewed
+   * with that app (the connector has no app of its own); any other token
+   * with the connector's app, as before.
+   */
+  private renewalSpec(st: TokenState, spec: ResolvedTokenRenewal): ResolvedTokenRenewal {
+    if (spec.provider !== 'meta' || !st.viaPlatformApp) return spec;
+    const platform = metaLoginPlatformApp('facebook');
+    return platform ? { ...spec, appId: platform.appId, appSecret: platform.appSecret } : spec;
+  }
+
   private shouldRenew(st: TokenState, spec: ResolvedTokenRenewal): boolean {
+    if (st.systemUser) return false;
+    // A pasted Instagram Login token whose first refresh was refused (younger
+    // than a day): its expiry is unknown, so try again once the wait is over;
+    // a successful refresh tells the expiry. Without this it was never renewed.
+    if (st.expiresAt === undefined && spec.provider === 'instagram_login') {
+      return !!st.retryAfter && Date.now() >= st.retryAfter;
+    }
     if (st.expiresAt === null || st.expiresAt === undefined) return false;
     if (st.retryAfter && Date.now() < st.retryAfter) return false;
     if (st.expiresAt <= Date.now()) return false; // an expired token cannot be exchanged
     const within = (spec.renewWithinDays ?? DEFAULT_RENEW_WITHIN_DAYS) * DAY_MS;
     if (st.expiresAt - Date.now() > within) return false;
-    if (spec.provider === 'meta') return this.canExchange(spec);
+    if (spec.provider === 'meta') return this.canExchange(this.renewalSpec(st, spec));
     // instagram_login: needs no secret, but a token at least a day old.
     return !st.obtainedAt || Date.now() - st.obtainedAt >= IG_MIN_AGE_MS;
   }
@@ -369,13 +436,14 @@ export class BearerTokenRenewalService {
       if (stored && stored.sourceRef === current.sourceRef && stored.token !== current.token) return stored;
       const out =
         spec.provider === 'meta'
-          ? await this.metaExchange(current.token, spec)
+          ? await this.metaExchange(current.token, this.renewalSpec(current, spec))
           : await this.instagramRefresh(current.token);
       const st: TokenState = {
         sourceRef: current.sourceRef,
         token: out.token,
         expiresAt: out.expiresAt,
         obtainedAt: Date.now(),
+        ...(current.viaPlatformApp ? { viaPlatformApp: true } : {}),
       };
       await this.writeStored(connectorId, st, db);
       return st;
@@ -390,8 +458,9 @@ export class BearerTokenRenewalService {
     const extended =
       result.expiresAt === null ||
       (typeof result.expiresAt === 'number' &&
-        typeof current.expiresAt === 'number' &&
-        result.expiresAt > current.expiresAt + DAY_MS);
+        // An expiry not known before (a pasted Instagram token) is news, not a shortfall.
+        (current.expiresAt === undefined ||
+          (typeof current.expiresAt === 'number' && result.expiresAt > current.expiresAt + DAY_MS)));
     if (!extended) result.retryAfter = Date.now() + RENEW_RETRY_MS;
     this.state.set(connectorId, result);
     if (extended) {
@@ -461,7 +530,14 @@ export class BearerTokenRenewalService {
 
   private async readStored(connectorId: string, db: Db): Promise<TokenState | undefined> {
     const row = await db.connectorAuthCache.findUnique({ where: { connectorId } });
-    const meta = (row?.metadata ?? null) as { kind?: unknown; sourceRef?: unknown; obtainedAt?: unknown; neverExpires?: unknown } | null;
+    const meta = (row?.metadata ?? null) as {
+      kind?: unknown;
+      sourceRef?: unknown;
+      obtainedAt?: unknown;
+      neverExpires?: unknown;
+      viaPlatformApp?: unknown;
+      systemUser?: unknown;
+    } | null;
     if (!row || !meta || meta.kind !== CACHE_KIND || typeof meta.sourceRef !== 'string') return undefined;
     let token: string;
     try {
@@ -474,6 +550,8 @@ export class BearerTokenRenewalService {
       token,
       expiresAt: meta.neverExpires === true ? null : row.expiresAt.getTime(),
       obtainedAt: typeof meta.obtainedAt === 'number' ? meta.obtainedAt : undefined,
+      ...(meta.viaPlatformApp === true ? { viaPlatformApp: true } : {}),
+      ...(meta.systemUser === true ? { systemUser: true } : {}),
     };
   }
 
@@ -488,6 +566,8 @@ export class BearerTokenRenewalService {
         sourceRef: st.sourceRef,
         obtainedAt: st.obtainedAt ?? Date.now(),
         neverExpires: st.expiresAt === null,
+        ...(st.viaPlatformApp ? { viaPlatformApp: true } : {}),
+        ...(st.systemUser ? { systemUser: true } : {}),
       },
     };
     await db.connectorAuthCache.upsert({
@@ -630,7 +710,9 @@ function deadTokenHint(what: string, spec: TokenRenewalSpec, connectorId: string
   const page = connectorPageUrl(connectorId);
   const where = `the connector's variables in AnythingMCP${page ? ` (${page})` : ''}`;
   return (
-    `Meta ended this token's session (${what}); retrying will not help. Paste a new token into ${where}. ` +
+    `Meta ended this token's session (${what}); retrying will not help. Paste a new token into ${where}, ` +
+    `or sign in again with "Authorize with ${spec.provider === 'meta' ? 'Facebook' : 'Instagram'}" on the ` +
+    'connector page. ' +
     (spec.provider === 'meta'
       ? 'A System User token with expiry Never does not expire; a user token is exchanged for a ' +
         `long-lived one and renewed automatically when ${varNames(spec)} are set.`

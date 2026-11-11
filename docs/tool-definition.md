@@ -401,6 +401,43 @@ dashboard completes it with `POST /api/tiktok-shop/install` once the seller is
 signed in, reusing the workspace's newest TikTok Shop connector that uses the
 server's app and has no shop authorized yet, or installing a new one.
 
+#### Meta sign-in (Instagram connectors)
+
+Meta's logins issue no refresh token, so the two Instagram adapters stay
+`BEARER_TOKEN` connectors with `authConfig.tokenRenewal` and get their token
+from a sign-in instead of a paste. The connector page and the setup page show
+**Authorize with Provider**. The callback is `<SERVER_URL>/api/meta/callback`
+for every flavour (`meta-auth.controller.ts`, `meta-login.util.ts`):
+
+- `instagram` with an app that has a Unified Login configuration id
+  (`META_CONFIG_ID`, or the server's `META_PLATFORM_CONFIG_ID`): the dialog
+  takes `config_id` instead of `scope`, the user signs in with Instagram or
+  Facebook and shares a business portfolio's Instagram accounts. The code
+  gives a Business Integration System User token that does not expire; it is
+  stored as is and never renewed. `/me/assigned_instagram_accounts` lists the
+  accounts. Meta apps created since autumn 2026 only offer this login.
+- `instagram` with an older app (no configuration id): classic Facebook Login
+  with a `scope` list; the code is exchanged for a long-lived user token
+  (`fb_exchange_token`) and the account comes from the user's Pages.
+- `instagram-login`: Instagram Login (`ig_exchange_token`), for apps that
+  still have it; always the connector's own app.
+
+The completion writes the token to `INSTAGRAM_ACCESS_TOKEN` and the account
+id to `INSTAGRAM_ACCOUNT_ID` (several accounts: the user picks one), rebuilds
+the stored bearer token as the variable editor does and hands the expiry to
+the bearer token renewal. Pasting a token keeps working.
+
+The app comes from the connector (`META_APP_ID` / `META_APP_SECRET` /
+`META_CONFIG_ID`, or `INSTAGRAM_APP_ID` / `INSTAGRAM_APP_SECRET`), else, for
+`instagram` only, from the server (`META_PLATFORM_APP_ID` / `_SECRET` /
+`META_PLATFORM_CONFIG_ID`), the same on Cloud and self-hosted. A user token
+issued through the server's classic Facebook Login app is renewed with that
+app; a pasted token never is. Deleting a connector deletes its tool-call log
+rows with it (they cascade with its tools), so no Instagram data outlives the
+connector. The flavour is chosen by the connector's catalog adapter
+(`meta-login.util.ts`), so a new Meta adapter that should sign in this way is
+added there.
+
 ### MCP adapters (a vendor's own MCP server)
 
 When a vendor already runs an official MCP server, the adapter bridges it

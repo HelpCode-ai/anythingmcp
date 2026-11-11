@@ -100,6 +100,9 @@ services:
       - TIKTOK_SHOP_PLATFORM_SERVICE_ID=${TIKTOK_SHOP_PLATFORM_SERVICE_ID:-}
       # WooCommerce one-click key: off unless set to true (see .env.example).
       - WOOCOMMERCE_ONE_CLICK=${WOOCOMMERCE_ONE_CLICK:-}
+      - META_PLATFORM_APP_ID=${META_PLATFORM_APP_ID:-}
+      - META_PLATFORM_APP_SECRET=${META_PLATFORM_APP_SECRET:-}
+      - META_PLATFORM_CONFIG_ID=${META_PLATFORM_CONFIG_ID:-}
       # Code mode: WebSocket URL of the code-runner service that executes code
       # runs in isolation (see deploy/code-runner/README.md). Empty = code mode
       # off, the default. Set together with COMPOSE_PROFILES=code-runner to run
