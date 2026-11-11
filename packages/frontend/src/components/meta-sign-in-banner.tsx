@@ -86,7 +86,9 @@ export function MetaSignInBanner({
   return (
     <div role="status" className={`rounded-[10px] border border-[var(--border)] p-4 text-sm ${TONE[shown]}`}>
       <div className="flex items-start justify-between gap-3">
-        <p className="font-semibold">{t(`${shown}.title`)}</p>
+        <p className="font-semibold">
+          {shown === 'connected' && current ? t('connected.titleAs', { account: label(current) }) : t(`${shown}.title`)}
+        </p>
         <button onClick={onDismiss} className="text-xs underline">
           {t('dismiss')}
         </button>

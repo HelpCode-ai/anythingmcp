@@ -1535,6 +1535,7 @@
       "dismiss": "Dismiss",
       "connected": {
         "title": "Instagram is connected",
+        "titleAs": "Instagram is connected as {account}",
         "body": "The sign-in worked and the token is stored on this connector. Test the connection, then use the tools from your AI assistant.",
         "bodyAs": "Signed in, and the connector uses {account}. Test the connection, then use the tools from your AI assistant."
       },

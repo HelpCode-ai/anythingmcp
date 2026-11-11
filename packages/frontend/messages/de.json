@@ -1535,6 +1535,7 @@
       "dismiss": "Schließen",
       "connected": {
         "title": "Instagram ist verbunden",
+        "titleAs": "Instagram ist verbunden als {account}",
         "body": "Die Anmeldung hat geklappt, das Token ist an diesem Connector gespeichert. Testen Sie die Verbindung und nutzen Sie die Tools dann in Ihrem KI-Assistenten.",
         "bodyAs": "Angemeldet, der Connector nutzt {account}. Testen Sie die Verbindung und nutzen Sie die Tools dann in Ihrem KI-Assistenten."
       },

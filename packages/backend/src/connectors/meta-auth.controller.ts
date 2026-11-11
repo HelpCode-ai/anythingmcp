@@ -380,7 +380,7 @@ export class MetaAuthController {
     });
     await this.reload(flow.connectorId);
     this.logger.log(
-      `Connector ${flow.connectorId}: ${metaLoginProviderName(flavour)} sign-in stored` +
+      `Connector ${flow.connectorId}: ${result.systemUser ? 'Unified Login' : metaLoginProviderName(flavour)} sign-in stored` +
         (account ? '' : `, ${result.accounts.length} accounts to choose from`),
     );
     return {
