@@ -97,6 +97,7 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(res.setHeader).toHaveBeenCalledWith(
       'WWW-Authenticate',
       'Bearer realm="AnythingMCP MCP Server", error="invalid_token", ' +
+        'error_description="This sign-in is not a member of the workspace that owns this MCP server", ' +
         'resource_metadata="https://cloud.anythingmcp.com/.well-known/oauth-protected-resource/mcp/srv-A"',
     );
     expect(res.json.mock.calls[0][0].error.message).toMatch(/different workspace/);
@@ -117,6 +118,103 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.setHeader).not.toHaveBeenCalledWith('WWW-Authenticate', expect.anything());
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+  });
+
+  describe('refusal marker for the refresh grant', () => {
+    let refusals: { mark: jest.Mock };
+    let marked: McpEndpointController;
+
+    beforeEach(() => {
+      refusals = { mark: jest.fn().mockResolvedValue(undefined) };
+      marked = new McpEndpointController(
+        mcpServersService,
+        toolRegistry,
+        toolExecutor,
+        rolesService,
+        (controller as any).kgService,
+        (controller as any).sessionManager,
+        grants as any,
+        { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        refusals as any,
+      );
+      jest.spyOn((marked as any).logger, 'warn').mockImplementation(() => undefined);
+    });
+
+    it('marks the refusal for the client of a JWT non-member before answering 401', async () => {
+      const order: string[] = [];
+      refusals.mark.mockImplementation(async () => {
+        order.push('mark');
+      });
+      const res = makeRes();
+      res.status = jest.fn((code: number) => {
+        order.push(`status ${code}`);
+        return res;
+      });
+      const req: any = {
+        user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt', azp: 'client-1' },
+        headers: { authorization: 'Bearer tok' },
+      };
+
+      await marked.handlePost('srv-A', req, res, {});
+
+      expect(refusals.mark).toHaveBeenCalledWith('u-b', 'client-1', 'srv-A');
+      expect(order).toEqual(['mark', 'status 401']);
+    });
+
+    it('still answers 401 when the marker cannot be written', async () => {
+      refusals.mark.mockRejectedValue(new Error('redis down'));
+      const res = makeRes();
+      await marked.handlePost(
+        'srv-A',
+        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt', azp: 'client-1' }, headers: {} } as any,
+        res,
+        {},
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('does not mark an app JWT without an OAuth client', async () => {
+      const res = makeRes();
+      await marked.handlePost(
+        'srv-A',
+        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' }, headers: {} } as any,
+        res,
+        {},
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(refusals.mark).not.toHaveBeenCalled();
+    });
+
+    it('does not mark for an API key of another workspace', async () => {
+      const res = makeRes();
+      await marked.handlePost(
+        'srv-A',
+        {
+          user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'mcp_api_key', azp: 'client-1' },
+          headers: {},
+        } as any,
+        res,
+        {},
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(refusals.mark).not.toHaveBeenCalled();
+    });
+
+    it('does not mark a member', async () => {
+      mcpServersService.isUserInOrganization.mockResolvedValue(true);
+      await marked.handlePost(
+        'srv-A',
+        { user: { sub: 'u-multi', organizationId: 'org-B', authMethod: 'jwt', azp: 'client-1' }, headers: {} } as any,
+        makeRes(),
+        {},
+      );
+      expect(refusals.mark).not.toHaveBeenCalled();
+    });
   });
 
   describe('subscriptions/listen', () => {

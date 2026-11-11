@@ -16,6 +16,7 @@ import { RolesGuard } from './roles.guard';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { ClientCredentialsMiddleware } from './client-credentials.middleware';
 import { RefreshTokenRevocationMiddleware } from './refresh-token-revocation.middleware';
+import { CrossWorkspaceRefusalStore } from './cross-workspace-refusal.store';
 import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
@@ -78,6 +79,8 @@ import { RecentSignInController } from './recent-sign-in.controller';
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
     RefreshTokenRevocationMiddleware,
+    // Shared by the MCP endpoint (writes) and the refresh middleware (reads).
+    CrossWorkspaceRefusalStore,
   ],
   exports: [
     AuthService,
@@ -92,6 +95,7 @@ import { RecentSignInController } from './recent-sign-in.controller';
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
     RefreshTokenRevocationMiddleware,
+    CrossWorkspaceRefusalStore,
     SocialProviderRegistry,
     JwtModule,
   ],
