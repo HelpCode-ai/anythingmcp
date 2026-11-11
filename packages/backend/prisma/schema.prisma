@@ -1614,6 +1614,11 @@ model KgEdge {
 
   @@unique([organizationId, sourceNodeId, targetNodeId, kind])
   @@index([organizationId])
+  // Deleting a node (a connector's nodes go when the connector is deleted)
+  // looks up its edges by each end; without these, every node meant two
+  // full scans of kg_edges.
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
   @@map("kg_edges")
 }
 
