@@ -392,7 +392,14 @@ export class WooCommerceAuthController implements OnApplicationShutdown {
     const envVars = (connector.envVars as Record<string, string> | null) ?? {};
     const shopUrl = wooCommerceShopUrl(envVars[URL_VAR]);
     if (!shopUrl) {
-      throw new BadRequestException("Save the shop's https:// address first, then connect.");
+      // A saved address that is not public (localhost, a private network, a
+      // .local name) gets its own message: "save it first" would read as a bug.
+      const saved = typeof envVars[URL_VAR] === 'string' && envVars[URL_VAR].trim() !== '';
+      throw new BadRequestException(
+        saved
+          ? 'One-click needs the shop on a public https:// address: the shop sends the key to AnythingMCP over the internet. Create a key in WooCommerce and paste it below instead.'
+          : "Save the shop's https:// address first, then connect.",
+      );
     }
     const scope: WooCommerceScope = body?.scope === 'read_write' ? 'read_write' : 'read';
     const state = this.oauthFlows.generateState();

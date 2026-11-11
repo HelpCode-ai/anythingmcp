@@ -192,6 +192,15 @@ describe('WooCommerceAuthController', () => {
         await expect(controller.authorize(owner, 'conn-1', {})).rejects.toBeInstanceOf(BadRequestException);
       }
     });
+
+    it('tells a missing shop address apart from one that is not public', async () => {
+      connector.envVars = {};
+      await expect(controller.authorize(owner, 'conn-1', {})).rejects.toThrow(/Save the shop's https:\/\/ address first/);
+      for (const local of ['https://localhost:8443', 'https://192.168.1.20', 'https://shop.local']) {
+        connector.envVars = { WOOCOMMERCE_URL: local };
+        await expect(controller.authorize(owner, 'conn-1', {})).rejects.toThrow(/public https:\/\/ address/);
+      }
+    });
   });
 
   describe('callback', () => {

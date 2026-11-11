@@ -155,6 +155,10 @@ function SetupContent() {
   const [wooOneClick, setWooOneClick] = useState(false);
   const [wooScope, setWooScope] = useState<WooCommerceScope>('read');
   const [wooChecking, setWooChecking] = useState(wooReturn);
+  // A one-click error is shown with the other setup errors, below the key
+  // fields: bump this to scroll it into view, so the click does not look ignored.
+  const [revealErrorTick, setRevealErrorTick] = useState(0);
+  const errorRef = useRef<HTMLParagraphElement | null>(null);
   // Instagram: sign in with Facebook (adapter `instagram`) or Instagram
   // (`instagram-login`), which fills in the token and account id, or paste a
   // token. Signing in needs a Meta app: the server's when it has one,
@@ -290,6 +294,7 @@ function SetupContent() {
       setWooChecking(false);
       setError(message);
       setPhase('form');
+      setRevealErrorTick((n) => n + 1);
     };
     if (params.get('success') === '0') {
       stop(t('wooOneClick.denied'));
@@ -772,8 +777,23 @@ function SetupContent() {
       window.location.href = auth.authorizationUrl;
     } catch (e) {
       fail(e);
+      setRevealErrorTick((n) => n + 1);
     }
   };
+
+  // The error box may mount a few renders later (the page is still loading the
+  // connector when the return from the shop is handled), so keep the request
+  // until the box exists, and scroll after the layout has settled. No cleanup:
+  // this effect runs on every render, and a cleanup would cancel the scroll.
+  const revealedTick = useRef(0);
+  useEffect(() => {
+    if (revealErrorTick === revealedTick.current || !errorRef.current) return;
+    revealedTick.current = revealErrorTick;
+    const el = errorRef.current;
+    setTimeout(() => {
+      if (el.isConnected) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+  });
 
   /** The one-click panel, where the WooCommerce key fields are asked for. */
   const oneClickPanel = (show: boolean) =>
@@ -917,7 +937,13 @@ function SetupContent() {
         ) : isTrialLimitMessage(error) ? (
           <TrialLimitNotice message={error} />
         ) : (
-          <p role="alert" className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]">{error}</p>
+          <p
+            ref={errorRef}
+            role="alert"
+            className="rounded-[9px] bg-[var(--t-danger-bg)] px-3 py-2 text-sm text-[var(--t-danger-fg)]"
+          >
+            {error}
+          </p>
         )
       )}
     </>
