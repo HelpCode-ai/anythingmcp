@@ -245,9 +245,14 @@ export class MetaAuthController {
     const code = typeof rawCode === 'string' && rawCode.trim() ? rawCode.trim() : undefined;
     const record = state ? await this.oauthFlows.getPendingFlow(state) : undefined;
     if (!record || record.flow.provider !== 'meta') {
+      this.logger.warn(`Meta callback with an unknown or expired state (code ${code ? 'present' : 'absent'})`);
       return res.redirect(this.completePage({ error: EXPIRED }));
     }
     const connectorId = record.flow.connectorId;
+    this.logger.log(
+      `Meta callback for connector ${connectorId}: code ${code ? 'present' : 'absent'}` +
+        (typeof rawError === 'string' ? `, error ${rawError.slice(0, 40)}` : ''),
+    );
     if (!code) {
       await this.oauthFlows.deletePendingFlow(state);
       const denied = rawError === 'access_denied' || rawReason === 'user_denied';
@@ -285,7 +290,10 @@ export class MetaAuthController {
     // Check who started the flow before consuming it: another signed-in user
     // holding the state must not be able to burn the owner's authorization.
     const pending = await this.oauthFlows.getPendingFlow(state);
-    if (!pending || pending.flow.provider !== 'meta') throw new GoneException(EXPIRED);
+    if (!pending || pending.flow.provider !== 'meta') {
+      this.logger.warn('Refused Meta completion: unknown, expired or already used state');
+      throw new GoneException(EXPIRED);
+    }
     if (pending.flow.userId !== req.user?.sub) {
       this.logger.warn(`Refused Meta completion: connector ${pending.flow.connectorId} was authorized by another user`);
       throw new ForbiddenException(
