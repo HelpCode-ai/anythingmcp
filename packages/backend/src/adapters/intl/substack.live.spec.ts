@@ -4,7 +4,7 @@ import { pickProbe } from '../probe.util';
 
 type Tool = {
   name: string;
-  parameters: { properties?: Record<string, { enum?: string[] }>; required?: string[] };
+  parameters: { properties?: Record<string, { enum?: string[]; maximum?: number; type?: string }>; required?: string[] };
   endpointMapping: { method: string; path: string; queryParams?: Record<string, string>; encodePathParams?: boolean };
   responseMapping?: Record<string, unknown>;
 };
@@ -82,10 +82,27 @@ describe('substack adapter — static spec conformance', () => {
   });
 
   it('drops the heavy fields from list results and keeps the rest', () => {
-    const sample = [{ id: 1, title: 'T', body_html: '<p>x</p>', publishedBylines: [{ name: 'N', publicationUsers: [{}] }] }];
-    const out = applyResponseTransform(sample, byName.substack_list_posts.responseMapping as never);
-    expect(out.applied).toBe(true);
-    expect(out.value).toEqual([{ id: 1, title: 'T', publishedBylines: [{ name: 'N' }] }]);
+    // The archive answers { posts, nextCursor } since November 2026.
+    const sample = {
+      posts: [{ id: 1, title: 'T', body_html: '<p>x</p>', publishedBylines: [{ name: 'N', publicationUsers: [{}] }] }],
+      nextCursor: 'abc',
+    };
+    for (const tool of ['substack_list_posts', 'substack_search_posts']) {
+      const out = applyResponseTransform(sample, byName[tool].responseMapping as never);
+      expect(out.applied).toBe(true);
+      expect(out.value).toEqual({ posts: [{ id: 1, title: 'T', publishedBylines: [{ name: 'N' }] }], nextCursor: 'abc' });
+    }
+  });
+
+  it('pages with the cursor and at most 25 posts, since Substack refuses offset and larger pages', () => {
+    for (const tool of ['substack_list_posts', 'substack_search_posts']) {
+      const t = byName[tool];
+      expect(t.parameters.properties?.limit?.maximum).toBe(25);
+      expect(t.parameters.properties?.offset).toBeUndefined();
+      expect(t.parameters.properties?.cursor?.type).toBe('string');
+      expect(t.endpointMapping.queryParams).toMatchObject({ cursor: '$cursor' });
+      expect(t.endpointMapping.queryParams).not.toHaveProperty('offset');
+    }
   });
 
   it('reduces a public profile to the publications a writer has', () => {
@@ -119,16 +136,20 @@ const live = process.env.RUN_SUBSTACK_LIVE === '1';
   };
 
   it('lists, sorts, searches and opens posts', async () => {
-    const newest = await (await get(`${base}/api/v1/archive?sort=new&limit=2`)).json();
+    const page = await (await get(`${base}/api/v1/archive?sort=new&limit=2`)).json();
+    const newest = page.posts;
     expect(Array.isArray(newest) && newest.length).toBe(2);
+    expect(typeof page.nextCursor).toBe('string');
+    const next = await (await get(`${base}/api/v1/archive?sort=new&limit=2&cursor=${encodeURIComponent(page.nextCursor)}`)).json();
+    expect(next.posts[0].id).not.toBe(newest[0].id);
     const top = await (await get(`${base}/api/v1/archive?sort=top&limit=2`)).json();
-    expect(Array.isArray(top)).toBe(true);
-    const shaped = applyResponseTransform(newest, byName.substack_list_posts.responseMapping as never).value as Array<Record<string, unknown>>;
+    expect(Array.isArray(top.posts)).toBe(true);
+    const shaped = (applyResponseTransform(page, byName.substack_list_posts.responseMapping as never).value as { posts: Array<Record<string, unknown>> }).posts;
     expect(shaped[0].body_html).toBeUndefined();
     expect(typeof shaped[0].title).toBe('string');
 
     const found = await (await get(`${base}/api/v1/archive?sort=new&search=the&limit=1`)).json();
-    expect(Array.isArray(found)).toBe(true);
+    expect(Array.isArray(found.posts)).toBe(true);
 
     const byId = await (await get(`${base}/api/v1/posts/by-id/${newest[0].id}`)).json();
     expect(byId.post.id).toBe(newest[0].id);
@@ -138,9 +159,9 @@ const live = process.env.RUN_SUBSTACK_LIVE === '1';
     expect(Array.isArray(comments.comments)).toBe(true);
   });
 
-  it('rejects a page larger than 50', async () => {
-    const res = await fetch(`${base}/api/v1/archive?limit=51`);
-    expect(res.status).toBe(400);
+  it('rejects a page larger than 25 and any offset', async () => {
+    expect((await fetch(`${base}/api/v1/archive?limit=26`)).status).toBe(400);
+    expect((await fetch(`${base}/api/v1/archive?limit=2&offset=2`)).status).toBe(400);
   });
 
   it('serves the RSS feed', async () => {
