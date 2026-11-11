@@ -338,6 +338,17 @@ describe('falabella-seller-center adapter: static spec conformance', () => {
     }
     expect(JSON.stringify(a)).not.toMatch(/—/);
   });
+
+  it('offers only the GetOrders sort columns and statuses Falabella accepts', () => {
+    // developers.falabella.com GetOrders: SortBy created_at | updated_at; Status
+    // pending, canceled, ready_to_ship, delivered, returned, shipped, failed.
+    // `createdat` and `readytoship` were refused with E075 / E036.
+    const props = tool(`${P}get_orders`).parameters.properties as Record<string, { enum?: string[] }>;
+    expect(props.sort_by.enum).toEqual(['created_at', 'updated_at']);
+    expect(props.status.enum!.slice().sort()).toEqual(
+      ['canceled', 'delivered', 'failed', 'pending', 'ready_to_ship', 'returned', 'shipped'],
+    );
+  });
 });
 
 const live =
