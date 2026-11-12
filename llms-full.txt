@@ -4339,6 +4339,51 @@ out of the result. A tool can set its own values on the endpoint mapping:
 - REST connectors only. Tools without these keys behave exactly as before, on
   Cloud and self-hosted alike.
 
+### Download links in the response (`download`)
+
+Some APIs answer with a short-lived link to the data instead of the data
+(Amazon SP-API report documents: `{ "url": "https://…amazonaws.com/…",
+"compressionAlgorithm": "GZIP" }`). An AI client cannot open that link. With a
+`download` block the tool makes its API call as usual, then fetches the link on
+the server and returns the parsed content:
+
+```json
+"endpointMapping": {
+  "method": "GET",
+  "path": "/reports/2021-06-30/documents/{reportDocumentId}",
+  "download": {
+    "urlField": "url",
+    "compressionField": "compressionAlgorithm",
+    "format": "auto",
+    "allowedHosts": ["amazonaws.com"],
+    "offset": "$offset",
+    "limit": "$limit",
+    "columns": "$columns",
+    "filterColumn": "$filterColumn",
+    "filterValue": "$filterValue"
+  }
+}
+```
+
+- `urlField` (required): dot path of the link in the API response.
+- `allowedHosts` (required): hosts the link may point to; a domain also matches
+  its subdomains. Only `https` links are fetched.
+- `compressionField`: dot path of a marker whose value `GZIP` means gunzip. Gzip
+  is also recognised by its first bytes.
+- `format`: `auto` (default) picks JSON, tab- or comma-separated text from the
+  content; or `tsv`, `csv`, `json`, `text`.
+- `offset`, `limit`, `columns`, `filterColumn`, `filterValue`: references to tool
+  parameters. Delimited files come back as one page of rows keyed by the header
+  (`limit` default 50, at most 500), filtered by one column (several values
+  comma-separated, case-insensitive) and cut to the listed columns, with
+  `columns`, `totalRows`, `matchedRows` and `nextOffset`. JSON comes back whole
+  under `data`; other text as the first 20 000 characters.
+- The link is fetched without the connector's credentials, with the same SSRF
+  checks as every outbound call (each redirect included), at most 25 MB
+  compressed and 64 MB decompressed.
+- REST connectors only, on Cloud and self-hosted alike. Tools without the block
+  behave exactly as before.
+
 ### By Connector Type
 
 | Connector | method | path | queryParams | bodyMapping | headers |
