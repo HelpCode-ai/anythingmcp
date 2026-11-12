@@ -643,8 +643,8 @@ export class EmailService {
    * winds down. Unlike the activation drip, these connect what the user has
    * BUILT to the upgrade. Stages: warn3 (~3 days left), warn1 (last day),
    * expired (trial over, data preserved). Returns false if no SMTP (skipped).
-   * Lifecycle, not marketing: the cron sends them regardless of the marketing
-   * opt-out, so they carry no unsubscribe line.
+   * Marketing: the cron sends them only to admins who did not opt out, and
+   * they carry the unsubscribe line.
    */
   async sendTrialLifecycleEmail(
     to: string,
@@ -658,6 +658,7 @@ export class EmailService {
       return false;
     }
 
+    const { ctx, headers } = await this.marketing(to);
     const email = trialLifecycleEmail(
       {
         name,
@@ -667,7 +668,7 @@ export class EmailService {
         marketingUrl: this.marketingUrl(),
         emailToken: createEmailLinkToken(to),
       },
-      await this.brand(),
+      ctx,
     );
 
     try {
@@ -675,7 +676,7 @@ export class EmailService {
         from: transport.from,
         to,
         ...(transport.replyTo ? { replyTo: transport.replyTo } : {}),
-        ...this.mail(email),
+        ...this.mail(email, headers),
       });
       this.logger.log(`Trial-${stage} email sent to ${maskEmail(to)}`);
       return true;

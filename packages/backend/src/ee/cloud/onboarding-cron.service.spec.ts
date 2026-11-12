@@ -257,7 +257,15 @@ describe('OnboardingCronService — trial status transition', () => {
 describe('OnboardingCronService — trial lifecycle emails', () => {
   const HOUR = 60 * 60 * 1000;
   const NOW = new Date('2026-10-14T09:17:00Z').getTime();
-  const out = () => ({ examined: 0, trialWarn3: 0, trialWarn1: 0, trialExpired: 0, trialEmailsWithheld: 0, skipped: 0 });
+  const out = () => ({
+    examined: 0,
+    trialWarn3: 0,
+    trialWarn1: 0,
+    trialExpired: 0,
+    trialEmailsWithheld: 0,
+    trialEmailsOptedOut: 0,
+    skipped: 0,
+  });
 
   /** Free trials ending `endsInHours` from NOW, one per workspace. */
   function makeService(opts: {
@@ -444,14 +452,14 @@ describe('OnboardingCronService — trial lifecycle emails', () => {
       expect(o.trialExpired).toBe(1);
     });
 
-    it('sends today\'s notice to an admin who opted out of marketing, the personal one to the others', async () => {
+    it('sends the personal email to the admins who did not opt out, and nothing to those who did', async () => {
       const { run, email } = makeService({
         trials: [ended('org-1', { admins: ['boss@acme.io', 'it@acme.io'] })],
         optedOut: ['it@acme.io'],
       });
       await run();
       expect(email.sendTrialEndedBusinessEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['boss@acme.io']);
-      expect(email.sendTrialLifecycleEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['it@acme.io']);
+      expect(email.sendTrialLifecycleEmail).not.toHaveBeenCalled();
     });
 
     it('leaves consumer workspaces and the earlier stages unchanged', async () => {
@@ -464,6 +472,38 @@ describe('OnboardingCronService — trial lifecycle emails', () => {
       expect(email.sendTrialEndedBusinessEmail).not.toHaveBeenCalled();
       expect(codes.winbackCode).not.toHaveBeenCalled();
     });
+  });
+
+  // 11 Nov 2026: an admin who had unsubscribed (and been told so) still got
+  // "Last day of your trial", and would have got "has ended" the next day.
+  it('mails only the admins who did not opt out of marketing', async () => {
+    const { run, email, flagged } = makeService({
+      trials: [{ organizationId: 'org-1', endsInHours: 20, admins: ['in@acme.io', 'out@acme.io'] }],
+      optedOut: ['out@acme.io'],
+    });
+    const o = await run();
+    expect(email.sendTrialLifecycleEmail.mock.calls.map((c: any[]) => c[0])).toEqual(['in@acme.io']);
+    expect(flagged()).toEqual([['org-1', 'trial_email_warn1']]);
+    expect(o).toMatchObject({ trialWarn1: 1, trialEmailsOptedOut: 0 });
+  });
+
+  it('sends nothing when every admin opted out, and closes the stage so it is not decided again', async () => {
+    const { run, email, flagged, stored } = makeService({
+      trials: [
+        { organizationId: 'org-warn', endsInHours: 20, admins: ['out@acme.io'] },
+        { organizationId: 'org-ended', endsInHours: -1, admins: ['out@acme.io'] },
+      ],
+      optedOut: ['out@acme.io'],
+    });
+    const o = await run();
+    expect(email.sendTrialLifecycleEmail).not.toHaveBeenCalled();
+    expect(email.sendTrialEndedBusinessEmail).not.toHaveBeenCalled();
+    expect(flagged()).toEqual([
+      ['org-warn', 'trial_email_warn1'],
+      ['org-ended', 'trial_email_expired'],
+    ]);
+    expect(stored().trial_email_warn1).toMatch(/^opted_out /);
+    expect(o).toMatchObject({ trialWarn1: 0, trialExpired: 0, trialEmailsOptedOut: 2, trialExpiredBusiness: 0 });
   });
 
   it('postpones a workspace the licence site could not answer for: no email, no flag', async () => {

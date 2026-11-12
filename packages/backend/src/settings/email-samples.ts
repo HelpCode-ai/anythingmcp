@@ -173,7 +173,7 @@ export const EMAIL_SAMPLES: EmailSample[] = [
           cloudUrl: SAMPLE_CLOUD_URL,
           marketingUrl: SAMPLE_MARKETING_URL,
         },
-        ctx,
+        unsub(ctx),
       ),
   })),
   {
@@ -187,7 +187,7 @@ export const EMAIL_SAMPLES: EmailSample[] = [
           cloudUrl: SAMPLE_CLOUD_URL,
           marketingUrl: SAMPLE_MARKETING_URL,
         },
-        ctx,
+        unsub(ctx),
       ),
   },
   {
@@ -371,6 +371,10 @@ export const MARKETING_SAMPLE_IDS = new Set([
   'onboarding-client-connected',
   'activation-connect-client',
   'activation-test-connector',
+  'trial-warn3',
+  'trial-warn1',
+  'trial-expired',
+  'trial-warn3-no-usage',
   'winback-locked-first',
   'winback-locked-final',
   'winback-personal-first',
