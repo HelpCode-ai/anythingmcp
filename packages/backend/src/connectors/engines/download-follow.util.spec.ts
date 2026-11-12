@@ -106,7 +106,7 @@ describe('followDownload', () => {
 
   it('stops a gzip bomb at the decompressed cap', async () => {
     const bomb = gzipSync(Buffer.alloc(70 * 1024 * 1024, 0x41));
-    await expect(followDownload({ url: LINK }, config, {}, fakeFetch(bomb) as any)).rejects.toThrow(/larger than 64 MB/);
+    await expect(followDownload({ url: LINK }, config, {}, fakeFetch(bomb) as any)).rejects.toThrow(/larger than 32 MB/);
   });
 });
 

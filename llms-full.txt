@@ -4380,7 +4380,7 @@ the server and returns the parsed content:
   under `data`; other text as the first 20 000 characters.
 - The link is fetched without the connector's credentials, with the same SSRF
   checks as every outbound call (each redirect included), at most 25 MB
-  compressed and 64 MB decompressed.
+  compressed and 32 MB decompressed.
 - REST connectors only, on Cloud and self-hosted alike. Tools without the block
   behave exactly as before.
 

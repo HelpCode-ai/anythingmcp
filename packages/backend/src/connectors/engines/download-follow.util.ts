@@ -44,7 +44,8 @@ export const DOWNLOAD_MAX_LIMIT = 500;
 /** Compressed bytes fetched. */
 export const DOWNLOAD_MAX_BYTES = 25 * 1024 * 1024;
 /** Bytes after decompression. */
-export const DOWNLOAD_MAX_DECOMPRESSED_BYTES = 64 * 1024 * 1024;
+// Parsed rows take several times the text size in memory, so stay well below the heap headroom.
+export const DOWNLOAD_MAX_DECOMPRESSED_BYTES = 32 * 1024 * 1024;
 const TEXT_PREVIEW_CHARS = 20_000;
 
 /** Validate the stored block. Returns an error message, or null when usable. */
