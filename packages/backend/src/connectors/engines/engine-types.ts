@@ -37,6 +37,13 @@ export interface RestEndpointMapping {
    * takes out (base64 images). At most 50 MB; absent: TOOL_MAX_RESPONSE_BYTES.
    */
   maxResponseBytes?: number;
+  /**
+   * The response carries a link to the data instead of the data: fetch it on
+   * the server (https, `allowedHosts` only, SSRF-guarded, no credentials),
+   * gunzip, parse TSV/CSV/JSON and return one page of rows. See
+   * download-follow.util.ts.
+   */
+  download?: import('./download-follow.util').DownloadFollowConfig;
 }
 
 export interface GraphqlEndpointMapping {

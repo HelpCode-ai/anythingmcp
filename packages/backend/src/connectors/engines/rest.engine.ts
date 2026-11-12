@@ -27,6 +27,7 @@ import {
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { followDownload, type DownloadFollowConfig } from './download-follow.util';
 import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http-header-name.util';
@@ -218,9 +219,21 @@ export class RestEngine {
       // Clamped, never off; see request-limits.util.ts.
       timeoutMs?: unknown;
       maxResponseBytes?: unknown;
+      // The API answers with a link to the data (Amazon report documents):
+      // fetch it on the server, decompress and page it. See
+      // download-follow.util.ts.
+      download?: unknown;
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
+    if (endpointMapping.download) {
+      const { download, ...apiCall } = endpointMapping;
+      const res = await this.executeWithMeta(config, apiCall, params);
+      return {
+        body: await followDownload(res.body, download as DownloadFollowConfig, params),
+        headers: res.headers,
+      };
+    }
     const withMeta = (response: AxiosResponse) => {
       const body = endpointMapping.rawBody ? response.data : parseXmlBody(response);
       assertNotJsonRpcError(body);

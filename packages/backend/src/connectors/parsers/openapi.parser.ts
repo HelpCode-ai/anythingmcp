@@ -30,6 +30,7 @@ export interface ParsedTool {
     path: string;
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
+    bodyTemplate?: string;
     bodyEncoding?: string;
     headers?: Record<string, string>;
   };
@@ -405,13 +406,20 @@ export class OpenApiParser {
       headerMapping[param.name] = `$${param.name}`;
     }
 
-    // Request body
+    // Request body. OpenAPI 3 declares it as `requestBody`; Swagger 2.0 as a
+    // parameter `in: body` (Amazon SP-API models, many older APIs), which was
+    // dropped before, so those tools sent no body and no Content-Type.
     const requestBody = operation.requestBody;
-    if (requestBody) {
-      const content = requestBody.content;
-      const jsonContent =
-        content?.['application/json'] ||
-        content?.['application/x-www-form-urlencoded'];
+    const swaggerBody = allParams.find((p: any) => p.in === 'body' && p.schema);
+    let declaresJsonBody = false;
+    let bodyIsRequired = false;
+    if (requestBody || swaggerBody) {
+      const content = requestBody?.content;
+      const jsonContent = requestBody
+        ? content?.['application/json'] || content?.['application/x-www-form-urlencoded']
+        : { schema: swaggerBody.schema };
+      declaresJsonBody = !!jsonContent?.schema;
+      bodyIsRequired = !!(requestBody?.required || swaggerBody?.required);
       if (jsonContent?.schema) {
         const bodyProps = this.flattenSchema(jsonContent.schema, api);
         for (const [propName, propSchema] of Object.entries(bodyProps)) {
@@ -442,6 +450,10 @@ export class OpenApiParser {
     }
     if (Object.keys(bodyMapping).length > 0) {
       endpointMapping.bodyMapping = bodyMapping;
+    } else if (declaresJsonBody && bodyIsRequired) {
+      // A required body whose schema has no fields of its own: send `{}`, so
+      // the request still carries a JSON body and its Content-Type.
+      endpointMapping.bodyTemplate = '{}';
     }
     if (Object.keys(headerMapping).length > 0) {
       endpointMapping.headers = headerMapping;

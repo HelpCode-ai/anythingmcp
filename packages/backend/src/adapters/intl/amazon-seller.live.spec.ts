@@ -2,6 +2,7 @@ import * as adapter from './amazon-seller.json';
 import { RestEngine } from '../../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { validateDownloadConfig } from '../../connectors/engines/download-follow.util';
 
 /**
  * Two layers of verification for the amazon-seller (SP-API) adapter:
@@ -85,7 +86,7 @@ describe('amazon-seller adapter — static spec conformance', () => {
 
   it('every HTTP tool targets a current SP-API versioned path', () => {
     const versioned =
-      /^\/(sellers\/v1|orders\/v0|catalog\/2022-04-01|fba\/inventory\/v1|products\/(pricing|fees)\/v0|finances\/v0|listings\/2021-08-01|reports\/2021-06-30|solicitations\/v1|definitions\/2020-09-01)\//;
+      /^\/(sellers\/v1|orders\/v0|catalog\/2022-04-01|fba\/inventory\/v1|products\/(pricing|fees)\/v0|finances\/(v0|2024-06-19)|listings\/2021-08-01|reports\/2021-06-30|solicitations\/v1|definitions\/2020-09-01)\//;
     for (const t of httpTools()) {
       if (!versioned.test(t.endpointMapping.path)) {
         throw new Error(
@@ -197,6 +198,21 @@ describe('amazon-seller adapter — static spec conformance', () => {
     expect(JSON.stringify(create.endpointMapping.bodyMapping)).toContain(
       '{{SPAPI_MARKETPLACE_ID}}',
     );
+  });
+
+  it('downloads report documents on the server, only from Amazon hosts', () => {
+    const t = a.tools.find((x) => x.name === 'amazon_seller_download_report_document')!;
+    const em = t.endpointMapping as Tool['endpointMapping'] & {
+      download?: { urlField: string; compressionField?: string; allowedHosts: string[] };
+    };
+    expect(em.path).toBe('/reports/2021-06-30/documents/{reportDocumentId}');
+    expect(validateDownloadConfig(em.download)).toBeNull();
+    expect(em.download?.urlField).toBe('url');
+    expect(em.download?.compressionField).toBe('compressionAlgorithm');
+    expect(em.download?.allowedHosts).toEqual(['amazonaws.com']);
+    for (const ref of ['offset', 'limit', 'columns', 'filterColumn', 'filterValue']) {
+      expect(Object.keys(t.parameters.properties ?? {})).toContain(ref);
+    }
   });
 
   it('ships a no-parameter smoke-test tool (marketplaceParticipations)', () => {
