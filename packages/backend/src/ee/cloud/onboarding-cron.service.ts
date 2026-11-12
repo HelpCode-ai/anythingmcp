@@ -253,6 +253,7 @@ export class OnboardingCronService {
     trialWarn1: number;
     trialExpired: number;
     trialEmailsWithheld: number;
+    trialEmailsOptedOut: number;
     trialsMarkedExpired: number;
     trialsRepaired: number;
     licensesReverified: number;
@@ -280,6 +281,7 @@ export class OnboardingCronService {
       trialWarn1: 0,
       trialExpired: 0,
       trialEmailsWithheld: 0,
+      trialEmailsOptedOut: 0,
       trialsMarkedExpired: 0,
       trialsRepaired: 0,
       licensesReverified: 0,
@@ -491,7 +493,7 @@ export class OnboardingCronService {
         `firstHoldout=${out.firstReminderHoldout} second=${out.secondReminders} ` +
         `secondWithheld=${out.secondRemindersWithheld} activation=${out.activationReminders} ` +
         `trialWarn3=${out.trialWarn3} trialWarn1=${out.trialWarn1} trialExpired=${out.trialExpired} ` +
-        `trialEmailsWithheld=${out.trialEmailsWithheld} ` +
+        `trialEmailsWithheld=${out.trialEmailsWithheld} trialEmailsOptedOut=${out.trialEmailsOptedOut} ` +
         `trialsMarkedExpired=${out.trialsMarkedExpired} trialsRepaired=${out.trialsRepaired} ` +
         `licensesReverified=${out.licensesReverified} licensesDeactivated=${out.licensesDeactivated} ` +
         `licensesReleased=${out.licensesReleased} licensesBound=${out.licensesBound} winbackOffers=${out.winbackOffers} ` +
@@ -576,9 +578,11 @@ export class OnboardingCronService {
    * Trial lifecycle pass — value-oriented conversion nudges as a trial winds
    * down. For each cloud trial whose `expiresAt` is within 3 days or already
    * past, send the most-urgent unsent stage (expired → warn1 → warn3) to the
-   * org's admins, with a recap of what they've built. These are account-
-   * lifecycle (paid access ending), not marketing, so they ignore the
-   * marketing opt-out. Idempotent via per-org OrgSettings flags
+   * org's admins, with a recap of what they've built. Admins who opted out
+   * of marketing email get none of them: the emails sell a plan, and people
+   * who unsubscribed kept receiving them. When every admin opted out, the
+   * stage is flagged without a send, so it is not decided again every run;
+   * access ending is still shown in the dashboard. Idempotent via per-org OrgSettings flags
    * (`trial_email_{stage}`). Sends at most one stage per org per run.
    *
    * Never to a workspace that already pays or is about to: a paid licence, a
@@ -592,9 +596,9 @@ export class OnboardingCronService {
    * The expired stage of a business workspace (winback-segment.ts) outside
    * the control group is the plain email from Matteo instead: what they
    * built, the one-click 7-day extension and the locked price, with codes
-   * minted for the workspace. Admins who opted out of marketing, and every
-   * admin when the codes cannot be minted (this stage gets one run), get the
-   * standard notice. The control group gets the standard notice too.
+   * minted for the workspace. Every admin gets the standard notice when the
+   * codes cannot be minted (this stage gets one run), and so does the control
+   * group. Admins who opted out of marketing get neither.
    */
   private async runTrialLifecyclePass(
     now: number,
@@ -605,6 +609,7 @@ export class OnboardingCronService {
       trialExpired: number;
       trialExpiredBusiness?: number;
       trialEmailsWithheld: number;
+      trialEmailsOptedOut?: number;
       skipped: number;
     },
   ): Promise<void> {
@@ -677,6 +682,17 @@ export class OnboardingCronService {
         continue;
       }
 
+      const recipients = admins.filter((a) => !a.user.emailMarketingOptOut);
+      if (recipients.length === 0) {
+        await this.prisma.orgSettings.upsert({
+          where: { organizationId_key: { organizationId, key: flagKey } },
+          create: { organizationId, key: flagKey, value: `opted_out ${new Date().toISOString()}` },
+          update: { value: `opted_out ${new Date().toISOString()}` },
+        });
+        if (out.trialEmailsOptedOut !== undefined) out.trialEmailsOptedOut++;
+        continue;
+      }
+
       // Value recap (cheap counts; trial window is 7d so audit isn't pruned).
       const [connectors, successfulCalls] = await Promise.all([
         this.prisma.connector.count({ where: { organizationId } }),
@@ -690,10 +706,9 @@ export class OnboardingCronService {
           : null;
 
       let sentAny = false;
-      for (const a of admins) {
-        const ok =
-          business && !a.user.emailMarketingOptOut
-            ? await this.email.sendTrialEndedBusinessEmail(a.user.email, a.user.name || 'there', business)
+      for (const a of recipients) {
+        const ok = business
+          ? await this.email.sendTrialEndedBusinessEmail(a.user.email, a.user.name || 'there', business)
             : await this.email.sendTrialLifecycleEmail(a.user.email, a.user.name || 'there', stage, {
                 connectors,
                 successfulCalls,
@@ -701,7 +716,7 @@ export class OnboardingCronService {
               });
         if (ok) sentAny = true;
       }
-      if (sentAny && business && admins.some((a) => !a.user.emailMarketingOptOut)) {
+      if (sentAny && business) {
         await this.flag(organizationId, WINBACK_OFFER_KEY, offerValue('business', 'locked', 'expired'));
         if (out.trialExpiredBusiness !== undefined) out.trialExpiredBusiness++;
       }
