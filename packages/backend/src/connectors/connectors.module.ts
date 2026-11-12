@@ -20,6 +20,7 @@ import { HarParser } from './parsers/har.parser';
 import { McpOAuthService } from './mcp-oauth.service';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 import { ShopeeAuthController } from './shopee-auth.controller';
+import { WooCommerceAuthController } from './woocommerce-auth.controller';
 import { TikTokShopAuthController } from './tiktok-shop-auth.controller';
 import { MetaAuthController } from './meta-auth.controller';
 import { MetaLoginService } from './engines/meta-login.service';
@@ -53,7 +54,7 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 @Module({
   // IdentityProvidersModule: SsoService, for signing in on the connect page.
   imports: [McpServerModule, McpServersModule, LicenseModule, IdentityProvidersModule, FileSearchCoreModule],
-  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, TikTokShopAuthController, MetaAuthController, ToolsController, WebhookIngestController],
+  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, TikTokShopAuthController, MetaAuthController, WooCommerceAuthController, ToolsController, WebhookIngestController],
   providers: [
     ConnectorsService,
     McpOAuthService,

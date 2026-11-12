@@ -682,6 +682,22 @@ export const connectors = {
       '/api/tiktok-shop/install',
       { method: 'POST', token, body: { state } },
     ),
+  /** Whether this server offers the WooCommerce one-click key (WOOCOMMERCE_ONE_CLICK and a public https server). */
+  woocommerceOneClick: (token: string) =>
+    request<{ available: boolean }>('/api/woocommerce/one-click', { token }),
+  /** The shop's authorize link for a WooCommerce one-click key on a connector whose shop address is saved. */
+  woocommerceAuthorize: (id: string, scope: 'read' | 'read_write', token: string, from?: string) =>
+    request<{ authorizationUrl: string }>(`/api/woocommerce/connectors/${id}/authorize`, {
+      method: 'POST',
+      token,
+      body: { scope, ...(from ? { from } : {}) },
+    }),
+  /** How a WooCommerce one-click key ended; `state` is the `user_id` WooCommerce adds to the return address. */
+  woocommerceOneClickStatus: (id: string, state: string, token: string) =>
+    request<{ status: 'pending' | 'working' | 'ready' | 'failed' | 'unknown'; message?: string }>(
+      `/api/woocommerce/connectors/${id}/one-click-status?state=${encodeURIComponent(state)}`,
+      { token },
+    ),
   /** "Authorize with Facebook / Instagram" for an Instagram connector: the Meta login dialog. */
   metaAuthorize: (id: string, token: string, returnTo?: string) =>
     request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
