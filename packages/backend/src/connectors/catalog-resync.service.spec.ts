@@ -1,4 +1,4 @@
-import { CatalogResyncService, diffBaseUrl } from './catalog-resync.service';
+import { CatalogResyncService, diffBaseUrl, RESYNC_TRANSACTION } from './catalog-resync.service';
 import { getAdapter } from '../adapters/catalog';
 import {
   computeAdapterVersion,
@@ -324,6 +324,8 @@ describe('CatalogResyncService.resync — baseUrl is never applied unasked', () 
     const { service, connectorUpdate } = setup();
     const { applied } = await service.resync('c-nina', 'full');
     expect(applied).toBe(true);
+    expect((service as any).prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), RESYNC_TRANSACTION);
+    expect(RESYNC_TRANSACTION.timeout).toBeGreaterThan(5_000);
     expect(connectorUpdate).toHaveBeenCalledTimes(1);
     expect(connectorUpdate.mock.calls[0][0].data.baseUrl).toBeUndefined();
   });

@@ -152,6 +152,14 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/**
+ * A connector with many tools (WooCommerce, Etsy) updates every tool row in
+ * one interactive transaction. At boot, while the reconciler syncs thousands
+ * of connectors, that can pass Prisma's default 5 s and the connector is
+ * skipped until the next boot ("expired transaction").
+ */
+export const RESYNC_TRANSACTION = { maxWait: 10_000, timeout: 30_000 } as const;
+
 @Injectable()
 export class CatalogResyncService {
   private readonly logger = new Logger(CatalogResyncService.name);
@@ -523,7 +531,7 @@ export class CatalogResyncService {
         deprecatedCount,
         baseUrlApplied: applyBaseUrl,
       };
-    });
+    }, RESYNC_TRANSACTION);
 
     this.logger.log(
       `Re-synced connector ${connectorId} (${diff.slug}, mode=${mode}): ` +
