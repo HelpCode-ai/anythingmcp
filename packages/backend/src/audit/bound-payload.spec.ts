@@ -9,6 +9,18 @@ describe('boundPayload', () => {
     expect(boundPayload(undefined, { maxBytes: 10 })).toBeUndefined();
   });
 
+  it('stores a plain JSON copy of a value that carries functions', () => {
+    const hasFn = (v: unknown): boolean =>
+      typeof v === 'function' || (!!v && typeof v === 'object' && Object.values(v).some(hasFn));
+    const row = { id: 7, amount: { value: '12.50', toPostgres: () => '12.50' } };
+    const small = boundPayload({ rows: [row] }, { maxBytes: 1024 }) as any;
+    expect(hasFn(small)).toBe(false);
+    expect(small).toEqual({ rows: [{ id: 7, amount: { value: '12.50' } }] });
+    const big = boundPayload({ rows: Array.from({ length: 500 }, () => row) }, { maxBytes: 1024 }) as any;
+    expect(hasFn(big)).toBe(false);
+    expect(big[TRUNCATION_MARKER]).toBeDefined();
+  });
+
   it('keeps the structure, field names and first values of a large response', () => {
     const rows = Array.from({ length: 5000 }, (_, i) => ({ customer_id: `C${i}`, name: `Customer ${i}`, notes: 'x'.repeat(300) }));
     const big = { total: 5000, items: rows };

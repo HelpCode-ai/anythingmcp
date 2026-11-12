@@ -10,7 +10,8 @@
  * items, long strings are shortened, deep nesting is collapsed. A marker on
  * the top level says it was cut and how big the original was.
  *
- * Values already under the limit are returned untouched (same reference).
+ * Values already under the limit are returned untouched (same reference),
+ * unless they hold functions: those come back as their plain JSON copy.
  */
 
 export const TRUNCATION_MARKER = '_amcp_truncated';
@@ -86,12 +87,20 @@ function storable<T>(value: T, json: string): T {
 export function boundPayload<T>(value: T, opts: BoundOptions): T | Record<string, unknown> {
   if (value === undefined || value === null) return value;
   let json: string;
+  // A function inside the value (a database driver's row object can carry a
+  // `toPostgres` method) is dropped by JSON.stringify but makes Prisma refuse
+  // the whole invocation row ("could not serialize [object Function]").
+  let hasFunction = false;
   try {
-    json = JSON.stringify(value);
+    json = JSON.stringify(value, (_k, v) => {
+      if (typeof v === 'function' || typeof v === 'symbol') hasFunction = true;
+      return v;
+    });
   } catch {
     return { [TRUNCATION_MARKER]: { reason: 'not serializable' } };
   }
   if (json === undefined) return value;
+  if (hasFunction) value = JSON.parse(json) as T;
   const originalBytes = byteLength(json);
   if (originalBytes <= opts.maxBytes) return storable(value, json);
 

@@ -26,6 +26,7 @@ import { FilesWorkerClient } from '../file-search/files-worker.client';
 import { localRootsFromEnv, parseFileSearchConfig, pickSecrets } from '../file-search/file-search-config';
 import { openEnvVarsStrict, sealEnvVars } from '../common/crypto/env-vars-at-rest';
 import { getRequiredSecret } from '../common/secrets.util';
+import { CASCADE_DELETE_TRANSACTION } from '../common/cascade-delete-transaction';
 import { describeInvalidHeaderNames, invalidConnectorHeaderNames } from '../common/http-header-name.util';
 import {
   interpolateConnectorConfig,
@@ -386,12 +387,14 @@ export class ConnectorsService {
       // connector. Its tool-call log rows (with tool outputs) would cascade
       // with its tools anyway; delete them explicitly, in the same
       // transaction, so that keeps holding if the relation ever changes.
+      // A busy connector has many log rows and its delete cascades further,
+      // which can take longer than Prisma's default 5 s transaction timeout.
       await this.prisma.$transaction([
         this.prisma.toolInvocation.deleteMany({
           where: { connectorId: id, organizationId: connector.organizationId },
         }),
         this.prisma.connector.delete({ where: { id } }),
-      ]);
+      ], CASCADE_DELETE_TRANSACTION);
       return;
     }
     await this.prisma.connector.delete({ where: { id } });
