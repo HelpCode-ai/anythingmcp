@@ -533,7 +533,12 @@ export class McpOAuthService {
     } else if (useBasic && params.clientSecret) {
       // client_secret_basic (RFC 6749 §2.3.1): credentials go in the
       // Authorization header, NOT the body. Providers like DATEV reject a
-      // body-supplied client_secret for confidential clients with 401.
+      // body-supplied client_secret for confidential clients with 401, and
+      // Okta servers (Constant Contact) refuse a body client_id next to the
+      // header as "multiple client credentials". The client authenticates,
+      // so client_id is not needed in the body (RFC 6749 §4.1.3), and the
+      // MCP SDK leaves it out the same way.
+      delete body.client_id;
       const basic = Buffer.from(
         `${params.clientId}:${params.clientSecret}`,
       ).toString('base64');
