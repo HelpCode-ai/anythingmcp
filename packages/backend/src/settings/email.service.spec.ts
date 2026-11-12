@@ -266,14 +266,17 @@ describe('EmailService', () => {
     expect(mail.headers['List-Unsubscribe-Post']).toBeUndefined();
   });
 
-  it('sends trial lifecycle notices with the user’s usage and no unsubscribe', async () => {
+  it('sends trial lifecycle notices with the user’s usage and a one-click unsubscribe', async () => {
     const { service } = make();
     await service.sendTrialLifecycleEmail('a@b.com', 'Ada', 'warn3', { connectors: 2, successfulCalls: 41, daysLeft: 3 });
     const mail = sent();
     expect(mail.subject).toBe('Your AnythingMCP trial ends in 3 days');
     expect(mail.html).toContain('41');
     expect(mail.text).toContain('2 connectors set up, 41 successful tool calls');
-    expect(mail.headers).toBeUndefined();
+    expect(mail.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+    const url = new URL(mail.headers['List-Unsubscribe'].slice(1, -1));
+    expect(url.pathname).toBe('/api/public/unsubscribe');
+    expect(mail.text).toContain(url.toString());
   });
 
   it('logs the recipient masked, never the full address', async () => {

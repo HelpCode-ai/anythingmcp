@@ -518,8 +518,8 @@ export function onboardingReminderEmail(
 }
 
 /**
- * Trial lifecycle. Sent whatever the marketing opt-out says (it is about the
- * workspace's access ending), so it has no unsubscribe line.
+ * Trial lifecycle. It sells a plan, so it is marketing: the cron sends it only
+ * to admins who did not opt out, and it carries the unsubscribe line.
  */
 export function trialLifecycleEmail(
   input: {
@@ -534,7 +534,7 @@ export function trialLifecycleEmail(
      */
     emailToken?: string | null;
   },
-  ctx: EmailBrandContext,
+  ctx: MarketingContext,
 ): RenderedEmail {
   const { stage, recap, cloudUrl } = input;
   // `source` reaches the checkout's Stripe metadata (checkout_source), so a
@@ -608,6 +608,7 @@ export function trialLifecycleEmail(
       `Choose a plan: ${pricingUrl}\nAlready have a key? ${licenseUrl}\n\n` +
       `Questions before you decide? Just reply: a person reads every email.`,
     ctx,
+    unsubscribeUrl: ctx.unsubscribeUrl,
   });
 }
 
