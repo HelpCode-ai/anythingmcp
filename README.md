@@ -129,7 +129,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-732 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages. The [full catalog by category](docs/catalog/README.md) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini.
+732 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages. The [full catalog by category](docs/catalog/README.md) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](https://anythingmcp.com/marketplace) has a page for each one.
 
 | Category | Examples |
 |---|---|
@@ -237,10 +237,10 @@ Everything runs on your infrastructure, so you decide what leaves it. OAuth2, ro
 
 The same MCP server works in every client that speaks MCP, so you build a connector once:
 
-- **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](https://claude.ai/directory/anythingmcp). [Claude setup](docs/integrations/claude.md)
-- **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT Plugin Directory](https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*Add → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](docs/integrations/chatgpt.md)
-- **Meta Muse.** In Muse, open *Settings → Connectors → Add custom connector*, paste the server URL and sign in to AnythingMCP. [Muse setup](docs/integrations/muse.md)
-- **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](docs/guides.md).
+- **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](https://claude.ai/directory/anythingmcp). [Claude setup](docs/integrations/claude.md) · [custom connectors for Claude](https://anythingmcp.com/claude-connectors) · [every connector's Claude guide](https://anythingmcp.com/guides/clients/claude)
+- **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT Plugin Directory](https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*Add → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](docs/integrations/chatgpt.md) · [ChatGPT apps and connectors](https://anythingmcp.com/chatgpt-apps) · [every connector's ChatGPT guide](https://anythingmcp.com/guides/clients/chatgpt)
+- **Meta Muse.** In Muse, open *Settings → Connectors → Add custom connector*, paste the server URL and sign in to AnythingMCP. [Muse setup](docs/integrations/muse.md) · [every connector's Muse guide](https://anythingmcp.com/guides/clients/muse)
+- **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](docs/guides.md), and a guide for every connector in [Copilot](https://anythingmcp.com/guides/clients/copilot), [Gemini](https://anythingmcp.com/guides/clients/gemini) and [Cursor](https://anythingmcp.com/guides/clients/cursor).
 
 ---
 
