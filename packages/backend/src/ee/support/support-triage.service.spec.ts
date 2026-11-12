@@ -67,10 +67,10 @@ describe('support triage helpers', () => {
 
   it('reads only the known contact attributes', () => {
     const raw = JSON.parse(
-      '{"plan":"trial","__proto__":{"x":1},"constructor":"y","other":"z","connectors":3,"connector_links":"Etsy: u"}',
+      '{"plan":"trial","__proto__":{"x":1},"constructor":"y","other":"z","connectors":3,"connector_links":"Etsy: u","mcp_server_urls":"Default: m"}',
     );
     const out = normaliseAttrs(raw);
-    expect(out).toEqual({ plan: 'trial', connectors: '3', connector_links: 'Etsy: u' });
+    expect(out).toEqual({ plan: 'trial', connectors: '3', connector_links: 'Etsy: u', mcp_server_urls: 'Default: m' });
     expect(({} as any).x).toBeUndefined();
   });
 
@@ -86,6 +86,7 @@ describe('support triage helpers', () => {
         plan: 'trial',
         connector_issues: 'Etsy: auth needs_reauth',
         connector_links: 'Etsy: https://cloud.test/connectors/setup/etsy?connector=c1',
+        mcp_server_urls: 'Default: https://cloud.test/mcp/s1',
       },
     );
     expect(html).not.toContain('<script>');
@@ -93,6 +94,7 @@ describe('support triage helpers', () => {
     expect(html).toContain('a<br>b');
     expect(html).toContain('Etsy: auth needs_reauth');
     expect(html).toContain('Connector links');
+    expect(html).toContain('MCP server URL');
   });
 
   it('redacts credentials from error text', () => {

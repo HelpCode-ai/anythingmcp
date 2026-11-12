@@ -23,6 +23,7 @@ const MAX_ISSUES = 5;
 const MAX_NAMES = 15;
 const ISSUES_MAX_CHARS = 900;
 const LINKS_MAX_CHARS = 1500;
+const MAX_SERVERS = 5;
 
 /**
  * Builds the signed identity the Libredesk widget exchanges for a verified
@@ -98,13 +99,19 @@ export class SupportIdentityService {
     if (user && !user.emailVerified) attrs.email_verified = 'no';
     if (!organizationId) return attrs;
 
-    const [org, license, connectors] = await Promise.all([
+    const [org, license, connectors, servers] = await Promise.all([
       this.prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
       this.license.getCurrentLicense(organizationId).catch(() => null),
       this.prisma.connector.findMany({
         where: { organizationId },
         select: { id: true, name: true, isActive: true, authStatus: true, authStatusMessage: true, config: true },
         orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.mcpServerConfig.findMany({
+        where: { organizationId, isActive: true },
+        select: { id: true, name: true },
+        orderBy: { createdAt: 'asc' },
+        take: MAX_SERVERS + 1,
       }),
     ]);
 
@@ -124,6 +131,10 @@ export class SupportIdentityService {
     // generic setup page, which would add a second one.
     const links = connectorLinks(connectors, process.env.FRONTEND_URL);
     if (links) attrs.connector_links = links;
+    // The URL an AI client (Claude, ChatGPT, Cursor) is pointed at. Without
+    // it the assistant offered a connector setup page as the server URL.
+    const serverUrls = mcpServerUrls(servers, process.env.SERVER_URL);
+    if (serverUrls) attrs.mcp_server_urls = serverUrls;
     attrs.connector_issues = await this.connectorIssues(organizationId, connectors);
     // "never" with connectors installed is the most common blocker: no AI
     // client is connected to the workspace's MCP server yet.
@@ -225,4 +236,19 @@ export function splitName(name: string | null | undefined, email: string): { fir
     return { first: first.slice(0, 128), last: rest.join(' ').slice(0, 128) };
   }
   return { first: (email.split('@')[0] || 'User').slice(0, 128), last: '' };
+}
+
+/**
+ * "Name: URL" per active MCP server of the workspace, bounded: the address
+ * an AI client connects to (<SERVER_URL>/mcp/<id>). Empty without a public
+ * server URL.
+ */
+export function mcpServerUrls(servers: Array<{ id: string; name: string }>, serverUrl: string | undefined): string {
+  const base = (serverUrl || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(base)) return '';
+  const lines = servers
+    .slice(0, MAX_SERVERS)
+    .map((s) => `${s.name.slice(0, 60)}: ${base}/mcp/${encodeURIComponent(s.id)}`);
+  const more = servers.length - lines.length;
+  return lines.join(' | ') + (more > 0 ? ' and more on the MCP Servers page' : '');
 }
