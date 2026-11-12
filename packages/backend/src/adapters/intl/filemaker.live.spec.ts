@@ -421,7 +421,7 @@ describe('filemaker adapter: static spec conformance', () => {
       path: '/layouts/People/_find',
       body: { query: [{ Name: '=Ada' }], limit: '50' },
     },
-    { name: 'filemaker_get_record', params: { layout: 'People', record_id: '12' }, method: 'GET', path: '/layouts/People/records/12' },
+    { name: 'filemaker_get_record', params: { layout: 'People', recordId: '12' }, method: 'GET', path: '/layouts/People/records/12' },
   ];
   it('lists every tool in the URL table', () =>
     expect(table.map((r) => r.name).sort()).toEqual(a.tools.map((t) => t.name).sort()));
@@ -546,7 +546,7 @@ live('filemaker adapter: live (read-only)', () => {
         if (recordId) {
           const one = mapped(
             'filemaker_get_record',
-            body(await call('filemaker_get_record', { layout, record_id: String(recordId) }, env, login)),
+            body(await call('filemaker_get_record', { layout, recordId: String(recordId) }, env, login)),
           );
           expect(one.record).toMatchObject({ recordId: String(recordId) });
         }
