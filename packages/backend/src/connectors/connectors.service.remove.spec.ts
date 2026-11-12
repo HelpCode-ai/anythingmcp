@@ -1,10 +1,11 @@
 import { ConnectorsService } from './connectors.service';
+import { CASCADE_DELETE_TRANSACTION } from '../common/cascade-delete-transaction';
 
 /**
  * Deleting an Instagram connector deletes its tool-call log rows in the same
  * transaction (Meta Platform Terms: Instagram data goes with the connector),
  * scoped to the connector and its workspace. Other connectors are deleted
- * as before.
+ * as before. The transaction gets the long cascade-delete timeout.
  */
 describe('ConnectorsService.remove', () => {
   const KEY = 'k'.repeat(24) + 'Zq7!pL2@vN9#xR4$';
@@ -24,7 +25,8 @@ describe('ConnectorsService.remove', () => {
     expect(prisma.$transaction).toHaveBeenCalledWith([
       { op: 'toolInvocation.deleteMany', args: { where: { connectorId: 'c1', organizationId: 'org1' } } },
       { op: 'connector.delete', args: { where: { id: 'c1' } } },
-    ]);
+    ], CASCADE_DELETE_TRANSACTION);
+    expect(CASCADE_DELETE_TRANSACTION.timeout).toBeGreaterThan(5_000);
   });
 
   it('leaves the logs of any other connector to the existing relations', async () => {
