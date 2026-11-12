@@ -2,7 +2,7 @@
   "slug": "amazon-seller",
   "name": "Amazon Seller Central (SP-API)",
   "description": "Query your Amazon Seller Central account through the official Selling Partner API: orders, order items, product catalog, FBA inventory, buy-box offers, fee estimates, financial events and reports, plus your own listings (search, create, patch, delete), listing restrictions, product type definitions and review requests. Works across all Amazon marketplaces (US, EU, FE).",
-  "instructions": "This connector wraps Amazon's **Selling Partner API (SP-API)** — the official successor of MWS — using Login-with-Amazon (LWA) OAuth2. No AWS keys or SigV4 signing are needed (Amazon removed that requirement).\n\n## Setup (one-time, ~15 min + Amazon approval)\n\n1. **Register as a developer**: Seller Central → Apps & Services → *Develop Apps* (you may first need to complete the developer profile in the Solution Provider Portal; Amazon reviews it manually, allow a few days).\n2. **Create a private app**: *Develop Apps* → **Add new app client** → type *Sellers* → select the roles you need (e.g. \"Inventory and Order Tracking\", \"Pricing\", \"Amazon Fulfillment\", \"Finance and Accounting\", \"Selling Partner Insights\"; \"Product Listing\" for the listings, restrictions and product type tools; \"Buyer Solicitation\" for review requests). PII roles (buyer names/addresses) are restricted and NOT required for this connector.\n3. **Get LWA credentials**: on the app row choose *View* → copy **Client ID** (`amzn1.application-oa2-client.…`) and **Client Secret** (`amzn1.oa2-cs.v1.…`).\n4. **Self-authorize**: on the app row choose **Authorize** → Amazon shows the **Refresh Token** (`Atzr|…`). This token is long-lived; the connector exchanges it automatically for 1-hour access tokens (sent in the `x-amz-access-token` header — handled for you).\n5. Fill the env vars:\n   - `SPAPI_CLIENT_ID`, `SPAPI_CLIENT_SECRET`, `SPAPI_REFRESH_TOKEN` — from steps 3-4.\n   - `SPAPI_ENDPOINT` — your region's API host:\n     - Europe (DE/UK/IT/FR/ES/NL/SE/PL/TR/AE/IN/…): `https://sellingpartnerapi-eu.amazon.com`\n     - North America (US/CA/MX/BR): `https://sellingpartnerapi-na.amazon.com`\n     - Far East (JP/AU/SG): `https://sellingpartnerapi-fe.amazon.com`\n   - `SPAPI_MARKETPLACE_ID` — the marketplace you sell in (call `amazon_marketplace_ids` for the full table; e.g. DE `A1PA6795UKMFR9`, US `ATVPDKIKX0DER`, IT `APJ6JRA9NG5V4`).\n   - `SPAPI_SELLER_ID` — your merchant token (Seller Central → Account Info → *Merchant Token*). Needed by the listings tools (`amazon_get_listings_item`, `amazon_seller_*_listings_item*`), `amazon_seller_get_listing_restrictions` and `amazon_seller_get_product_type_definition`; set any placeholder if you use none of them.\n\n**First call**: run `amazon_marketplace_participations` — it needs no parameters and confirms auth + region are correct.\n\n## Sandbox\n\nSet `SPAPI_ENDPOINT` to `https://sandbox.sellingpartnerapi-eu.amazon.com` (or `-na`/`-fe`) to hit the **static sandbox**: it returns canned responses when requests match predefined parameter patterns (e.g. Orders requires `CreatedAfter=TEST_CASE_200`). Same LWA credentials work; a draft app's refresh token may be sandbox-only (production returns 403 until the authorization is production-grade).\n\n## Marketplace scoping\n\nAll tools are pinned to `SPAPI_MARKETPLACE_ID`. To work across multiple marketplaces of the same region, create one connector per marketplace (cheap) — the underlying seller account and credentials can be identical.\n\n## Listings (Listings Items API 2021-08-01)\n\n- `amazon_seller_search_listings_items` pages through your listings or finds them by ASIN/EAN/SKU, status or issue severity; `amazon_get_listings_item` reads one SKU.\n- `amazon_seller_patch_listings_item` changes single attributes: price (`purchasable_offer`), merchant-fulfilled quantity (`fulfillment_availability`), title, bullet points. `amazon_seller_put_listings_item` creates a listing or **replaces** it completely; attributes you leave out are removed. Both need the listing's `productType` and accept `mode: VALIDATION_PREVIEW` to see the issues a change would cause without applying it.\n- Attribute names and value shapes depend on the product type: find it with `amazon_seller_search_product_types`, read its rules with `amazon_seller_get_product_type_definition` (its `schema.link.resource` is a short-lived URL to the full JSON Schema).\n- Writes answer `ACCEPTED` or `INVALID` with `issues`. ACCEPTED means queued: Amazon applies the change asynchronously, usually within minutes, and new issues show up later on `amazon_get_listings_item` with `includedData=issues`.\n- `amazon_seller_get_listing_restrictions` tells whether you may list an ASIN (and in which condition) before you try.\n- `amazon_seller_delete_listings_item` is installed switched off.\n\n## Review requests (Solicitations API)\n\n`amazon_seller_get_solicitation_actions` shows whether an order can get a review request now; `amazon_seller_request_product_review` sends Amazon's templated review and feedback email, once per order, 5-30 days after delivery. It is installed switched off because the email cannot be recalled: turn it on under the connector's tools.\n\n## What this connector does NOT do\n\n- **Buyer PII** (names, shipping addresses, phone numbers): requires a Restricted Data Token and an Amazon-approved restricted role. Order data returned here is the non-PII view (IDs, status, totals, SKUs, quantities).\n- **Feeds** (bulk uploads) and free-text buyer messages.\n\n## Pagination & rate limits\n\nList endpoints return a `NextToken`/`pageToken` — pass it back to fetch the next page. SP-API rate limits are per-endpoint (typically 0.0055–2 req/s with small bursts); on `429` the connector retries automatically with backoff, but space out heavy report loops.\n\n## Reports flow (3 steps)\n\n1. `amazon_create_report` (e.g. `reportType: \"GET_FLAT_FILE_OPEN_LISTINGS_DATA\"`) → returns `reportId`.\n2. Poll `amazon_get_report` until `processingStatus` = `DONE` → gives `reportDocumentId`.\n3. `amazon_get_report_document` → returns a **pre-signed download `url`** (valid ~5 min; document may be gzip). Fetch that URL yourself to read the content.",
+  "instructions": "This connector wraps Amazon's **Selling Partner API (SP-API)** — the official successor of MWS — using Login-with-Amazon (LWA) OAuth2. No AWS keys or SigV4 signing are needed (Amazon removed that requirement).\n\n## Setup (one-time, ~15 min + Amazon approval)\n\n1. **Register as a developer**: Seller Central → Apps & Services → *Develop Apps* (you may first need to complete the developer profile in the Solution Provider Portal; Amazon reviews it manually, allow a few days).\n2. **Create a private app**: *Develop Apps* → **Add new app client** → type *Sellers* → select the roles you need (e.g. \"Inventory and Order Tracking\", \"Pricing\", \"Amazon Fulfillment\", \"Finance and Accounting\", \"Selling Partner Insights\"; \"Product Listing\" for the listings, restrictions and product type tools; \"Buyer Solicitation\" for review requests). PII roles (buyer names/addresses) are restricted and NOT required for this connector.\n3. **Get LWA credentials**: on the app row choose *View* → copy **Client ID** (`amzn1.application-oa2-client.…`) and **Client Secret** (`amzn1.oa2-cs.v1.…`).\n4. **Self-authorize**: on the app row choose **Authorize** → Amazon shows the **Refresh Token** (`Atzr|…`). This token is long-lived; the connector exchanges it automatically for 1-hour access tokens (sent in the `x-amz-access-token` header — handled for you).\n5. Fill the env vars:\n   - `SPAPI_CLIENT_ID`, `SPAPI_CLIENT_SECRET`, `SPAPI_REFRESH_TOKEN` — from steps 3-4.\n   - `SPAPI_ENDPOINT` — your region's API host:\n     - Europe (DE/UK/IT/FR/ES/NL/SE/PL/TR/AE/IN/…): `https://sellingpartnerapi-eu.amazon.com`\n     - North America (US/CA/MX/BR): `https://sellingpartnerapi-na.amazon.com`\n     - Far East (JP/AU/SG): `https://sellingpartnerapi-fe.amazon.com`\n   - `SPAPI_MARKETPLACE_ID` — the marketplace you sell in (call `amazon_marketplace_ids` for the full table; e.g. DE `A1PA6795UKMFR9`, US `ATVPDKIKX0DER`, IT `APJ6JRA9NG5V4`).\n   - `SPAPI_SELLER_ID` — your merchant token (Seller Central → Account Info → *Merchant Token*). Needed by the listings tools (`amazon_get_listings_item`, `amazon_seller_*_listings_item*`), `amazon_seller_get_listing_restrictions` and `amazon_seller_get_product_type_definition`; set any placeholder if you use none of them.\n\n**First call**: run `amazon_marketplace_participations` — it needs no parameters and confirms auth + region are correct.\n\n## Sandbox\n\nSet `SPAPI_ENDPOINT` to `https://sandbox.sellingpartnerapi-eu.amazon.com` (or `-na`/`-fe`) to hit the **static sandbox**: it returns canned responses when requests match predefined parameter patterns (e.g. Orders requires `CreatedAfter=TEST_CASE_200`). Same LWA credentials work; a draft app's refresh token may be sandbox-only (production returns 403 until the authorization is production-grade).\n\n## Marketplace scoping\n\nAll tools are pinned to `SPAPI_MARKETPLACE_ID`. To work across multiple marketplaces of the same region, create one connector per marketplace (cheap) — the underlying seller account and credentials can be identical.\n\n## Listings (Listings Items API 2021-08-01)\n\n- `amazon_seller_search_listings_items` pages through your listings or finds them by ASIN/EAN/SKU, status or issue severity; `amazon_get_listings_item` reads one SKU.\n- `amazon_seller_patch_listings_item` changes single attributes: price (`purchasable_offer`), merchant-fulfilled quantity (`fulfillment_availability`), title, bullet points. `amazon_seller_put_listings_item` creates a listing or **replaces** it completely; attributes you leave out are removed. Both need the listing's `productType` and accept `mode: VALIDATION_PREVIEW` to see the issues a change would cause without applying it.\n- Attribute names and value shapes depend on the product type: find it with `amazon_seller_search_product_types`, read its rules with `amazon_seller_get_product_type_definition` (its `schema.link.resource` is a short-lived URL to the full JSON Schema).\n- Writes answer `ACCEPTED` or `INVALID` with `issues`. ACCEPTED means queued: Amazon applies the change asynchronously, usually within minutes, and new issues show up later on `amazon_get_listings_item` with `includedData=issues`.\n- `amazon_seller_get_listing_restrictions` tells whether you may list an ASIN (and in which condition) before you try.\n- `amazon_seller_delete_listings_item` is installed switched off.\n\n## Review requests (Solicitations API)\n\n`amazon_seller_get_solicitation_actions` shows whether an order can get a review request now; `amazon_seller_request_product_review` sends Amazon's templated review and feedback email, once per order, 5-30 days after delivery. It is installed switched off because the email cannot be recalled: turn it on under the connector's tools.\n\n## What this connector does NOT do\n\n- **Buyer PII** (names, shipping addresses, phone numbers): requires a Restricted Data Token and an Amazon-approved restricted role. Order data returned here is the non-PII view (IDs, status, totals, SKUs, quantities).\n- **Feeds** (bulk uploads) and free-text buyer messages.\n\n## Pagination & rate limits\n\nList endpoints return a `NextToken`/`pageToken` — pass it back to fetch the next page. SP-API rate limits are per-endpoint (typically 0.0055–2 req/s with small bursts); on `429` the connector retries automatically with backoff, but space out heavy report loops.\n\n## Reports flow (3 steps)\n\n1. `amazon_create_report` (e.g. `reportType: \"GET_FLAT_FILE_OPEN_LISTINGS_DATA\"`) → returns `reportId`.\n2. Poll `amazon_get_report` until `processingStatus` = `DONE` → gives `reportDocumentId`.\n3. `amazon_seller_download_report_document` → reads the file on the server (gunzip included) and returns its rows, 50 per page by default, with optional column selection and a filter such as `filterColumn: \"sku\"`. `amazon_get_report_document` still returns the raw pre-signed `url` (valid ~5 min) if you need the file itself.\n\n## Finances\n\n- `amazon_list_financial_events`: all events in a date window, grouped by type. `amazon_seller_list_service_fee_events`: only the service fee events.\n- `amazon_seller_list_transactions`: single transactions with status and fee breakdowns, filtered by date, status, order or settlement.\n- `amazon_seller_get_finance_summary`: net proceeds and totals per charge type for a period or settlement.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "amazon-seller",
@@ -321,7 +321,7 @@
     },
     {
       "name": "amazon_list_financial_events",
-      "description": "Financial events (shipments settlements, refunds, fees, service charges, adjustments) posted in a date window. The money-side view of your account — use it for revenue/fee reconciliation. Paginate with nextToken.",
+      "description": "Financial events (shipment settlements, refunds, fees, service charges, adjustments) posted in a date window, grouped by event type (ShipmentEventList, RefundEventList, ServiceFeeEventList, AdjustmentEventList, ...). Amazon has no event-type filter on this call: for service fees only use amazon_seller_list_service_fee_events, for totals per charge type use amazon_seller_get_finance_summary, and for single transactions filtered by order or settlement use amazon_seller_list_transactions. Paginate with nextToken.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -433,7 +433,7 @@
     },
     {
       "name": "amazon_get_report_document",
-      "description": "Get the download descriptor of a finished report (step 3 of 3). Returns a pre-signed `url` (valid ~5 minutes; the file may be gzip-compressed — see compressionAlgorithm). Download that URL to read the report content.",
+      "description": "Get the download descriptor of a finished report (step 3 of 3). Returns a pre-signed `url` (valid ~5 minutes; the file may be gzip-compressed, see compressionAlgorithm). An AI client usually cannot open that URL: to read the rows, call amazon_seller_download_report_document with the same reportDocumentId instead.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -915,6 +915,197 @@
           "requirementsEnforced": "$requirementsEnforced",
           "locale": "$locale",
           "productTypeVersion": "$productTypeVersion"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_download_report_document",
+      "description": "Read the content of a finished report (use it instead of step 3 of the reports flow). Fetches the report file on the server, decompresses it and returns its rows as objects keyed by the column header, one page at a time (default 50, max 500 rows). Filter rows by a column (e.g. filterColumn \"sku\", filterValue \"ABC-1,ABC-2\") and pick columns to keep the answer small. The answer lists all `columns`, `totalRows`, `matchedRows` and `nextOffset` (pass it as offset for the next page; null at the end). JSON reports (e.g. GET_SALES_AND_TRAFFIC_REPORT) come back whole under `data`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reportDocumentId": {
+            "type": "string",
+            "description": "The reportDocumentId from a DONE report (amazon_get_report)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, after filtering. Default 0."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, 1-500. Default 50."
+          },
+          "columns": {
+            "type": "string",
+            "description": "Optional comma-separated column names to return (case-insensitive), e.g. \"sku,asin,price,quantity\". Default: all columns."
+          },
+          "filterColumn": {
+            "type": "string",
+            "description": "Optional column to filter on, e.g. \"sku\" or \"seller-sku\". Names differ per report type: check `columns` in a first unfiltered call."
+          },
+          "filterValue": {
+            "type": "string",
+            "description": "Value(s) the filter column must equal, case-insensitive; comma-separated for several, e.g. \"ABC-1,ABC-2\"."
+          }
+        },
+        "required": [
+          "reportDocumentId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/2021-06-30/documents/{reportDocumentId}",
+        "download": {
+          "urlField": "url",
+          "compressionField": "compressionAlgorithm",
+          "format": "auto",
+          "allowedHosts": [
+            "amazonaws.com"
+          ],
+          "offset": "$offset",
+          "limit": "$limit",
+          "columns": "$columns",
+          "filterColumn": "$filterColumn",
+          "filterValue": "$filterValue"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_list_transactions",
+      "description": "List financial transactions (Finances API 2024-06-19): one entry per transaction with its type, status (DEFERRED, RELEASED, DEFERRED_RELEASED), description (e.g. Order Payment, Refund Order), total and a `breakdowns` tree of charges and fees. Filter by a date window, by status, or by one order or financial event group (relatedIdentifierName + relatedIdentifierValue). Covers every marketplace of the account in this region (Amazon returns US merchant-fulfilled orders only without a marketplace filter). Orders from the last 48 hours may be missing. Paginate with nextToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postedAfter": {
+            "type": "string",
+            "description": "ISO 8601 date-time; transactions posted on or after it, at least 2 minutes in the past. Required unless relatedIdentifierName is set."
+          },
+          "postedBefore": {
+            "type": "string",
+            "description": "Optional ISO 8601 upper bound (exclusive), later than postedAfter."
+          },
+          "transactionStatus": {
+            "type": "string",
+            "enum": [
+              "DEFERRED",
+              "RELEASED",
+              "DEFERRED_RELEASED"
+            ],
+            "description": "Optional status filter."
+          },
+          "relatedIdentifierName": {
+            "type": "string",
+            "enum": [
+              "ORDER_ID",
+              "FINANCIAL_EVENT_GROUP_ID"
+            ],
+            "description": "Optional: filter by one order or one financial event group."
+          },
+          "relatedIdentifierValue": {
+            "type": "string",
+            "description": "The order id or financial event group id for relatedIdentifierName."
+          },
+          "nextToken": {
+            "type": "string",
+            "description": "Pagination token from the previous response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finances/2024-06-19/transactions",
+        "queryParams": {
+          "postedAfter": "$postedAfter",
+          "postedBefore": "$postedBefore",
+          "transactionStatus": "$transactionStatus",
+          "relatedIdentifierName": "$relatedIdentifierName",
+          "relatedIdentifierValue": "$relatedIdentifierValue",
+          "nextToken": "$nextToken"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_get_finance_summary",
+      "description": "Financial summary for a period or one settlement (Finances API 2024-06-19): net proceeds plus `breakdowns` by charge type (sales, fees, refunds, ...), with nested breakdowns per fee. Use it for totals per fee type instead of adding up financial events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "periodStart": {
+            "type": "string",
+            "description": "ISO 8601 start of the period (summaries with transactions on or after it)."
+          },
+          "periodEnd": {
+            "type": "string",
+            "description": "ISO 8601 end of the period."
+          },
+          "relatedIdentifierName": {
+            "type": "string",
+            "enum": [
+              "SETTLEMENT_ID"
+            ],
+            "description": "Set to SETTLEMENT_ID to get the summary of one settlement instead of a period."
+          },
+          "relatedIdentifierValue": {
+            "type": "string",
+            "description": "The settlement id, with relatedIdentifierName SETTLEMENT_ID."
+          },
+          "nextToken": {
+            "type": "string",
+            "description": "Pagination token from the previous response."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finances/2024-06-19/summary",
+        "queryParams": {
+          "marketplaceIds": "{{SPAPI_MARKETPLACE_ID}}",
+          "periodStart": "$periodStart",
+          "periodEnd": "$periodEnd",
+          "relatedIdentifierName": "$relatedIdentifierName",
+          "relatedIdentifierValue": "$relatedIdentifierValue",
+          "nextToken": "$nextToken"
+        }
+      }
+    },
+    {
+      "name": "amazon_seller_list_service_fee_events",
+      "description": "Only the service fee events (subscription fees, FBA storage and other account-level charges) posted in a date window: the ServiceFeeEventList of the financial events, each with its fee list (FeeType, FeeAmount). Paginate with nextToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postedAfter": {
+            "type": "string",
+            "description": "ISO 8601 date-time; events posted at or after this time."
+          },
+          "postedBefore": {
+            "type": "string",
+            "description": "Optional ISO 8601 upper bound."
+          },
+          "nextToken": {
+            "type": "string",
+            "description": "Pagination token from the previous response."
+          }
+        },
+        "required": [
+          "postedAfter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finances/v0/financialEvents",
+        "queryParams": {
+          "PostedAfter": "$postedAfter",
+          "PostedBefore": "$postedBefore",
+          "MaxResultsPerPage": 100,
+          "NextToken": "$nextToken"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "jmespath",
+          "expression": "{serviceFeeEvents: payload.FinancialEvents.ServiceFeeEventList, nextToken: payload.NextToken}"
         }
       }
     }

@@ -897,4 +897,75 @@ describe('OpenApiParser', () => {
     expect(Object.keys((t.outputSchema as any).properties)).toContain('order_id');
   });
 
+  // Swagger 2.0 declares the request body as a parameter `in: body`. It used
+  // to be dropped, so the tool sent no body and no Content-Type (Amazon
+  // SP-API answered 400 "Content type must be set to application/json").
+  describe('Swagger 2.0 body parameters', () => {
+    const swagger = {
+      swagger: '2.0',
+      info: { title: 'Inbound', version: '2024-03-20' },
+      host: 'sellingpartnerapi-na.amazon.com',
+      consumes: ['application/json'],
+      paths: {
+        '/plans/{planId}/placementOptions': {
+          post: {
+            operationId: 'generatePlacementOptions',
+            parameters: [
+              { in: 'path', name: 'planId', required: true, type: 'string' },
+              { in: 'body', name: 'body', required: true, schema: { $ref: '#/definitions/GenerateRequest' } },
+            ],
+            responses: { '202': { description: 'ok' } },
+          },
+        },
+        '/plans/{planId}/confirm': {
+          post: {
+            operationId: 'confirmPlan',
+            parameters: [
+              { in: 'path', name: 'planId', required: true, type: 'string' },
+              { in: 'body', name: 'body', required: true, schema: { type: 'object' } },
+            ],
+            responses: { '202': { description: 'ok' } },
+          },
+        },
+        '/plans': {
+          post: {
+            operationId: 'createPlan',
+            parameters: [
+              {
+                in: 'body',
+                name: 'body',
+                required: true,
+                schema: {
+                  type: 'object',
+                  required: ['name'],
+                  properties: { name: { type: 'string' }, items: { type: 'array', items: { type: 'string' } } },
+                },
+              },
+            ],
+            responses: { '202': { description: 'ok' } },
+          },
+        },
+      },
+      definitions: {
+        GenerateRequest: { type: 'object', properties: { customPlacement: { type: 'array', items: { type: 'string' } } } },
+      },
+    };
+
+    it('maps the body schema to bodyMapping and its required fields', async () => {
+      const tools = await parser.parse(swagger as any);
+      const create = tools.find((t) => t.operationId === 'createPlan')!;
+      expect(create.endpointMapping.bodyMapping).toEqual({ name: '$name', items: '$items' });
+      expect((create.parameters as any).required).toEqual(['name']);
+      const gen = tools.find((t) => t.operationId === 'generatePlacementOptions')!;
+      expect(gen.endpointMapping.bodyMapping).toEqual({ customPlacement: '$customPlacement' });
+    });
+
+    it('sends {} for a required body without fields of its own', async () => {
+      const tools = await parser.parse(swagger as any);
+      const confirm = tools.find((t) => t.operationId === 'confirmPlan')!;
+      expect(confirm.endpointMapping.bodyMapping).toBeUndefined();
+      expect(confirm.endpointMapping.bodyTemplate).toBe('{}');
+    });
+  });
+
 });

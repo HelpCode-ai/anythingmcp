@@ -79,7 +79,9 @@ const REST_HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 function argumentsSent(em: Record<string, unknown>): Set<string> {
   const sent = new Set<string>();
   for (const m of String(em.path ?? '').matchAll(/\{([^{}]+)\}/g)) sent.add(m[1]);
-  const fields: unknown[] = [em.queryParams, em.headers];
+  // `download` reads its paging and filter arguments on the server, after the
+  // call: they are used, just not sent upstream (download-follow.util.ts).
+  const fields: unknown[] = [em.queryParams, em.headers, em.download];
   const sendsBody = REQUEST_BODY_METHODS.has(String(em.method).toUpperCase());
   if (sendsBody) fields.push(em.bodyMapping);
   for (const field of fields) {
