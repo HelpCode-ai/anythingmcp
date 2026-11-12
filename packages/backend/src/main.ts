@@ -28,6 +28,7 @@ import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { WOOCOMMERCE_CALLBACK_PATH, wooCommerceCallbackBodyParser } from './connectors/woocommerce-auth.controller';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
 import { McpEmailVerificationFilter } from './auth/mcp-email-verification';
@@ -48,6 +49,11 @@ async function bootstrap() {
   // Trust proxy headers (ngrok, reverse proxies) for correct protocol/host detection
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', true);
+
+  // The WooCommerce key callback is unauthenticated and receives five short
+  // fields: its own parser caps the body at 4 KB before the global one runs
+  // (woocommerce-auth.controller.ts).
+  app.use(WOOCOMMERCE_CALLBACK_PATH, wooCommerceCallbackBodyParser());
 
   // Increase body size limit for large API spec imports (Postman, OpenAPI, etc.)
   // `application/scim+json` is what Entra ID sends to the SCIM endpoint.

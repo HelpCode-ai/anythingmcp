@@ -53,15 +53,12 @@ import { CatalogResyncService } from './catalog-resync.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { DeploymentService } from '../common/deployment.service';
 import { validateBaseUrl } from './base-url.util';
-import { normalizeAddressVariables } from '../common/base-url-variable.util';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
 import { decrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
-import { checkAdapterEnvValues, describeFieldProblems, normalizeAdapterEnvValues } from '../adapters/env-var-checks';
-import { resolveDerivedEnvVars, withDerivedValues } from '../adapters/derived-settings';
 import { resolvePkce } from './oauth-authorize-settings';
 import { isMachineGrant } from './oauth-grant.util';
 import { mcpPathOf } from './mcp-connector-config.util';
@@ -83,11 +80,7 @@ import {
   secretContext,
   toPublicConnector,
 } from './connector-secrets.util';
-import {
-  describeMissing,
-  rebuildCatalogCredentials,
-  variablesForAuthFields,
-} from './catalog-env-rebuild.util';
+import { rebuildCatalogCredentials, variablesForAuthFields } from './catalog-env-rebuild.util';
 import {
   buildODataBuiltinTools,
   odataToolPrefix,
@@ -100,6 +93,14 @@ import { buildWebhookBuiltinTools, wantsWebhookBuiltins, webhookToolPrefix } fro
 import { WebhookEventsService } from './webhook-events.service';
 import { EmailConnectorError, emailToolPrefix, resolveEmailSettings } from './email/email-settings';
 import { computeSetupState } from './connector-setup-status.util';
+import { assertConsumerKeyIsNotEmail, looksLikeEmail } from './oauth1-consumer-key.util';
+import {
+  assertCatalogValues,
+  normalizeConnectorVariables,
+  readStoredAuthConfig,
+  withDerivedSettings,
+  writeConnectorEnvVars,
+} from './connector-env-write.util';
 import { EditionService } from '../ee/licensing/edition.service';
 import {
   USER_CREDENTIALS_FEATURE,
@@ -1094,21 +1095,7 @@ export class ConnectorsController {
     connector: { envVars?: unknown; config?: unknown },
     next: Record<string, string>,
   ): void {
-    const slug = (connector.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
-    const adapter = typeof slug === 'string' ? getAdapter(slug) : undefined;
-    if (!adapter) return;
-    const stored = (connector.envVars as Record<string, unknown> | null) ?? {};
-    const changed = Object.keys(next).filter((name) => next[name] !== stored[name]);
-    if (changed.length === 0) return;
-    const fields = checkAdapterEnvValues(adapter, next, changed);
-    if (Object.keys(fields).length > 0) {
-      throw new BadRequestException({
-        statusCode: 400,
-        code: 'invalid_values',
-        fields,
-        message: describeFieldProblems(fields),
-      });
-    }
+    assertCatalogValues(connector, next);
   }
 
   /**
@@ -1121,37 +1108,14 @@ export class ConnectorsController {
     connector: { envVars?: unknown; config?: unknown },
     next: Record<string, string>,
   ): Promise<Record<string, string>> {
-    const slug = (connector.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
-    const adapter = typeof slug === 'string' ? getAdapter(slug) : undefined;
-    if (!adapter?.derivedEnvVars) return next;
-    const stored = (connector.envVars as Record<string, unknown> | null) ?? {};
-    const changed = Object.keys({ ...stored, ...next }).filter((name) => next[name] !== stored[name]);
-    if (changed.length === 0) return next;
-    const derived = await resolveDerivedEnvVars(adapter, next, { only: changed });
-    if (Object.keys(derived.fields).length > 0) {
-      throw new BadRequestException({
-        statusCode: 400,
-        code: 'invalid_values',
-        fields: derived.fields,
-        message: describeFieldProblems(derived.fields),
-      });
-    }
-    return (withDerivedValues(next, derived) ?? {}) as Record<string, string>;
+    return withDerivedSettings(connector, next);
   }
 
   private normalizeVariables(
     connector: { baseUrl: string | null; type: string; config?: unknown },
     values: Record<string, string>,
   ): Record<string, string> {
-    const cfg = connector.config as { adapterSlug?: string } | null | undefined;
-    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
-    return normalizeAddressVariables(
-      adapter ? adapter.connector.baseUrl : connector.baseUrl,
-      // The adapter's own clean-ups, as at install (env-var-checks.ts).
-      adapter ? normalizeAdapterEnvValues(adapter, values) : values,
-      connector.type,
-      { singleLabel: !!adapter },
-    );
+    return normalizeConnectorVariables(connector, values);
   }
 
   /**
@@ -2604,92 +2568,14 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
-
-    // Trim pasted values — a stray leading/trailing space would be stored
-    // (and encrypted into authConfig below) verbatim and break auth with an
-    // error the UI can't explain, since the displayed value looks correct.
-    // Rebuild via Object.fromEntries (no dynamic user-keyed property write) so
-    // a stray leading/trailing space in a pasted value can't survive into the
-    // encrypted authConfig and produce a 401 the UI can't explain.
-    const trimmed: Record<string, string> = Object.fromEntries(
-      Object.entries(body.envVars || {}).map(([k, v]) => [
-        k.trim(),
-        typeof v === 'string' ? v.trim() : v,
-      ]),
+    // Clean-ups, field checks, derived settings, catalog credentials rebuilt
+    // and tools reloaded: connector-env-write.util.ts, shared with the
+    // WooCommerce one-click key callback.
+    const { updated, warnings } = await writeConnectorEnvVars(
+      { connectorsService: this.connectorsService, mcpServer: this.mcpServer, encryptionKey: this.encryptionKey },
+      connector,
+      body.envVars || {},
     );
-
-    const cfg = connector.config as { adapterSlug?: string } | null;
-    const adapter = cfg?.adapterSlug ? getAdapter(cfg.adapterSlug) : null;
-    const stored = (connector.envVars as Record<string, string> | null) || {};
-
-    // The editor never receives stored secrets, so it sends them back empty
-    // when they were not retyped: keep the stored value for those.
-    const kept = mergeMaskedEnvVars(trimmed, stored, secretContext(connector));
-
-    // The variable a base URL starts with (`{{SUBSTACK_PUBLICATION_URL}}`)
-    // must hold a whole URL: add the missing https:// to a bare host, refuse
-    // anything else with the variable's name. Catalog connectors store the
-    // resolved URL, so the template comes from the catalog; a hand-built
-    // connector keeps its template as the base URL itself.
-    // A tenant field (`{{FRESHDESK_DOMAIN}}.freshdesk.com`) pasted as the
-    // whole address keeps only the label it stands for, as at install;
-    // without it the edit stored `acme.freshdesk.com/api/v2.freshdesk.com/…`.
-    const normalized = this.normalizeVariables(connector, kept);
-    // The same field checks as the install form: this editor used to store
-    // what the form would have refused (an Odoo address with /web after the
-    // host, a CRM page where the Bitrix24 webhook URL goes).
-    this.assertCatalogValues(connector, normalized);
-    // Settings looked up from a changed value (Atlassian's cloudId when the
-    // site changes) are stored, or dropped, with it.
-    const envVars = (await this.withDerivedSettings(connector, normalized)) as Record<string, string>;
-
-    const updateData: {
-      envVars: Record<string, string>;
-      authConfig?: Record<string, unknown>;
-      baseUrl?: string;
-      headers?: Record<string, string>;
-    } = { envVars };
-    const warnings: string[] = [];
-
-    // For catalog-installed connectors, authConfig/baseUrl/headers were
-    // resolved from the adapter template at import time and frozen (auth
-    // encrypted). Re-resolve the fields that use a changed variable, so
-    // editing a variable changes the credentials used for requests, and leave
-    // the rest — a key corrected in the auth editor, issued OAuth tokens, a
-    // custom header — as stored. See catalog-env-rebuild.util.ts.
-    if (adapter) {
-      const rebuilt = rebuildCatalogCredentials({
-        adapter,
-        connectorAuthType: connector.authType,
-        storedAuthConfig: this.readAuthConfig(connector.authConfig),
-        storedBaseUrl: connector.baseUrl,
-        storedHeaders: (connector.headers as Record<string, string> | null) ?? null,
-        previousEnvVars: stored,
-        nextEnvVars: envVars,
-      });
-      if (rebuilt.authConfig) {
-        const consumerKey = rebuilt.authConfig.consumerKey;
-        if (connector.authType === 'OAUTH1' && typeof consumerKey === 'string') {
-          assertConsumerKeyIsNotEmail(
-            consumerKey,
-            rebuilt.authFieldVariables.consumerKey?.join(', '),
-          );
-        }
-        updateData.authConfig = rebuilt.authConfig;
-      }
-      if (rebuilt.baseUrl !== undefined) updateData.baseUrl = rebuilt.baseUrl;
-      if (rebuilt.headers) updateData.headers = rebuilt.headers;
-      for (const { variable, from } of rebuilt.aliasesUsed) {
-        warnings.push(
-          `${variable} is not set; used ${from}, its name in earlier versions ` +
-            `of this connector. Rename ${from} to ${variable} to silence this.`,
-        );
-      }
-      warnings.push(...describeMissing(rebuilt.missing));
-    }
-
-    const updated = await this.connectorsService.update(id, updateData);
-    await this.mcpServer.reloadConnectorTools(id);
     return { ...toPublicConnector(updated), warnings };
   }
 
@@ -2774,13 +2660,7 @@ export class ConnectorsController {
 
   /** The stored authConfig, or null when there is none or it cannot be read. */
   private readAuthConfig(authConfig: string | null): Record<string, unknown> | null {
-    if (!authConfig) return null;
-    try {
-      const cfg = JSON.parse(decrypt(authConfig, this.encryptionKey));
-      return cfg && typeof cfg === 'object' ? cfg : null;
-    } catch {
-      return null;
-    }
+    return readStoredAuthConfig(authConfig, this.encryptionKey);
   }
 
   @Get(':id/catalog-diff')
@@ -3069,34 +2949,5 @@ export class ConnectorsController {
   }
 }
 
-/**
- * Whether a credential field holds an e-mail address rather than a key.
- * Written without a backtracking regex: the value is user input, and the
- * equivalent `^[^\s@/]+@[^\s@/]+\.[^\s@/]+$` is polynomial on crafted
- * strings (CodeQL js/polynomial-redos).
- */
-export function looksLikeEmail(value: string): boolean {
-  if (value.length > 320 || /[\s/]/.test(value)) return false;
-  const at = value.indexOf('@');
-  if (at <= 0 || at !== value.lastIndexOf('@')) return false;
-  const domain = value.slice(at + 1);
-  const dot = domain.lastIndexOf('.');
-  return dot > 0 && dot < domain.length - 1;
-}
-
-/**
- * Refuse an e-mail address as an OAuth 1.0a consumer key. Two
- * ImmobilienScout24 installs had the account's login there, and IS24 answered
- * "Consumer not found" to every call; no provider issues keys of that shape.
- * `source` names where the value came from (an environment variable) when it
- * was not typed into the consumer key field itself.
- */
-export function assertConsumerKeyIsNotEmail(value: string, source?: string): void {
-  if (!looksLikeEmail(value)) return;
-  throw new BadRequestException(
-    `The consumer key${source ? ` (${source})` : ''} looks like an e-mail ` +
-      'address. It is the key of the application registered with the ' +
-      'provider, not your login — copy it from the provider\'s developer or ' +
-      'API-key page.',
-  );
-}
+// Kept importable from here, where they used to live.
+export { assertConsumerKeyIsNotEmail, looksLikeEmail };
