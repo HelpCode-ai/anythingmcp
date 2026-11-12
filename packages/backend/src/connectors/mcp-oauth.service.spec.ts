@@ -52,8 +52,10 @@ describe('McpOAuthService.exchangeCodeForTokens client authentication', () => {
     const expected =
       'Basic ' + Buffer.from('cid:secret').toString('base64');
     expect((config as any).headers.Authorization).toBe(expected);
-    // client_id still present in the body per RFC 6749.
-    expect(String(body)).toContain('client_id=cid');
+    // No client_id in the body either: Okta (Constant Contact) refuses a
+    // body client_id next to the header as "multiple client credentials".
+    expect(String(body)).not.toContain('client_id=');
+    expect(String(body)).toContain('grant_type=authorization_code');
   });
 
   it("sends the connector's User-Agent to the token endpoint (Reddit throttles generic agents)", async () => {

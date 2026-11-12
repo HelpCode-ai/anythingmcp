@@ -555,9 +555,10 @@ export class OAuth2TokenService {
             clientAssertionParams(clientAssertionSettingsFrom(authConfig, tokenUrl)),
           );
         } else if (useBasic && clientId && clientSecret) {
-          // client_secret_basic — credentials in the Authorization header.
-          // DATEV and other confidential-client providers reject body creds.
-          if (clientId) body.client_id = clientId;
+          // client_secret_basic — credentials in the Authorization header
+          // only. DATEV and other confidential-client providers reject body
+          // creds; Okta (Constant Contact) also refuses a body client_id next
+          // to the header ("Cannot supply multiple client credentials").
           const basic = Buffer.from(`${clientId}:${clientSecret}`).toString(
             'base64',
           );
