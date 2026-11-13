@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards 
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { FileSearchService } from './file-search.service';
+import { MemberVisibilityService } from '../settings/member-visibility.service';
 import {
   FileAccessRulesDto,
   FileSearchActivateDto,
@@ -19,6 +20,12 @@ import {
 /**
  * File Search API (#1385): the setup wizard and the connector's Files tab.
  * Every route is scoped to the caller's workspace; setup routes need ADMIN.
+ *
+ * Member visibility (settings/member-visibility.service.ts): in a workspace
+ * set to `restricted`, a member who is not an admin gets 404 (the body an
+ * unknown id gets) on every route with a connector id they cannot see, before
+ * the route's own checks. Admins and open workspaces: today's path. The
+ * route-by-route rules are listed in connectors.member-visibility.spec.ts.
  */
 @ApiTags('File Search')
 @ApiBearerAuth()
@@ -26,7 +33,17 @@ import {
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/file-search')
 export class FileSearchController {
-  constructor(private readonly svc: FileSearchService) {}
+  constructor(
+    private readonly svc: FileSearchService,
+    private readonly visibility: MemberVisibilityService,
+  ) {}
+
+  /** 404 for a connector a restricted member cannot see; nothing for admins and open workspaces. */
+  private async hideUnlessVisible(req: any, id: string): Promise<void> {
+    const scope = await this.visibility.scopeFor(req.user);
+    if (!scope.restricted) return;
+    await this.svc.assertVisible(req.user, id, scope);
+  }
 
   @Get('capabilities')
   @ApiOperation({ summary: 'Plan, limits, worker health, protocols and AI availability for the wizard' })
@@ -59,8 +76,12 @@ export class FileSearchController {
   }
 
   @Get('connectors/:id')
-  @ApiOperation({ summary: 'Get a File Search connector overview' })
-  overview(@Req() req: any, @Param('id') id: string) {
+  @ApiOperation({
+    summary: 'Get a File Search connector overview',
+    description: 'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
+  })
+  async overview(@Req() req: any, @Param('id') id: string) {
+    await this.hideUnlessVisible(req, id);
     return this.svc.overview(req.user, id);
   }
 
@@ -77,8 +98,12 @@ export class FileSearchController {
   }
 
   @Get('connectors/:id/scans/:scanId')
-  @ApiOperation({ summary: 'Get the status and results of a scan' })
-  getScan(@Req() req: any, @Param('id') id: string, @Param('scanId') scanId: string) {
+  @ApiOperation({
+    summary: 'Get the status and results of a scan',
+    description: 'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
+  })
+  async getScan(@Req() req: any, @Param('id') id: string, @Param('scanId') scanId: string) {
+    await this.hideUnlessVisible(req, id);
     return this.svc.getScan(req.user, id, scanId);
   }
 
@@ -107,26 +132,42 @@ export class FileSearchController {
   }
 
   @Get('connectors/:id/tree')
-  @ApiOperation({ summary: 'Get the folder tree of a connector' })
-  tree(@Req() req: any, @Param('id') id: string) {
+  @ApiOperation({
+    summary: 'Get the folder tree of a connector',
+    description: 'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
+  })
+  async tree(@Req() req: any, @Param('id') id: string) {
+    await this.hideUnlessVisible(req, id);
     return this.svc.tree(req.user, id);
   }
 
   @Get('connectors/:id/problems')
-  @ApiOperation({ summary: 'List indexing problems for a connector' })
-  problems(@Req() req: any, @Param('id') id: string, @Query() query: PageQueryDto) {
+  @ApiOperation({
+    summary: 'List indexing problems for a connector',
+    description: 'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
+  })
+  async problems(@Req() req: any, @Param('id') id: string, @Query() query: PageQueryDto) {
+    await this.hideUnlessVisible(req, id);
     return this.svc.problems(req.user, id, query);
   }
 
   @Get('connectors/:id/runs')
-  @ApiOperation({ summary: 'List sync runs for a connector' })
-  runs(@Req() req: any, @Param('id') id: string) {
+  @ApiOperation({
+    summary: 'List sync runs for a connector',
+    description: 'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
+  })
+  async runs(@Req() req: any, @Param('id') id: string) {
+    await this.hideUnlessVisible(req, id);
     return this.svc.runs(req.user, id);
   }
 
   @Post('connectors/:id/sync')
-  @ApiOperation({ summary: 'Trigger an immediate sync' })
-  syncNow(@Req() req: any, @Param('id') id: string) {
+  @ApiOperation({
+    summary: 'Trigger an immediate sync',
+    description: 'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
+  })
+  async syncNow(@Req() req: any, @Param('id') id: string) {
+    await this.hideUnlessVisible(req, id);
     return this.svc.syncNow(req.user, id);
   }
 
@@ -155,8 +196,12 @@ export class FileSearchController {
   }
 
   @Get('connectors/:id/access-rules')
-  @ApiOperation({ summary: 'Get per-connector access rules' })
-  getRules(@Req() req: any, @Param('id') id: string) {
+  @ApiOperation({
+    summary: 'Get per-connector access rules',
+    description: 'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
+  })
+  async getRules(@Req() req: any, @Param('id') id: string) {
+    await this.hideUnlessVisible(req, id);
     return this.svc.getAccessRules(req.user, id);
   }
 
