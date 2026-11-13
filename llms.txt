@@ -37,6 +37,7 @@
 - [Operations](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/README.md): Documents that exist for the people running AnythingMCP in production rather than the people building it.
 - [Backup & restore](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/backup-restore.md): AnythingMCP stores all state in PostgreSQL.
 - [Disaster recovery](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/disaster-recovery.md): Targets we hold ourselves to for AnythingMCP-the-managed-product.
+- [Member visibility](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/member-visibility.md): Limit what members who are not admins see in the dashboard and the API to their own calls and what their MCP roles reach.
 - [Observability](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/observability.md): Configure structured logging, Sentry error reporting, and Prometheus metrics for your deployment.
 - [Row-Level Security (defense-in-depth tenant isolation)](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/row-level-security.md): AnythingMCP isolates tenants at the application layer today: every org-scoped query carries an explicit where: { organizationId }, and the MCP endpoints are...
 - [Service level objectives](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/operations/slo.md): These are the SLOs we commit to for the managed AnythingMCP cloud.

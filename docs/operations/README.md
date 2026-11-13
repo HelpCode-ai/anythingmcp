@@ -7,6 +7,7 @@ Documents that exist for the people running AnythingMCP in production rather tha
 | [`backup-restore.md`](./backup-restore.md) | What to back up, how, and how to restore. |
 | [`disaster-recovery.md`](./disaster-recovery.md) | RPO / RTO, failure modes, runbook drill. |
 | [`slo.md`](./slo.md) | Service level objectives + how we measure them. |
+| [`member-visibility.md`](./member-visibility.md) | What members who are not admins see in the dashboard and the API (Open / Restricted), and how it combines with MCP roles and SSO group mapping. |
 | [`observability.md`](./observability.md) | Logs (always on), Sentry (opt-in), OpenTelemetry (opt-in), and the cloud host's uptime probe and weekly stuck-users report. |
 | [`signup-attribution.md`](./signup-attribution.md) | Cloud: which channel brings sign-ups, verified sign-ups and paying customers (SQL), and the `sign_up_verified` GTM event. |
 | [`card-trial-offer.md`](./card-trial-offer.md) | Cloud: the card-trial offer after a workspace's first successful tool call (in-app and one email), the checkout source every Cloud checkout carries to Stripe (`metadata.checkout_source`, per entry point) and the weekly funnel (SQL + Stripe). |

@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { StatCard } from '@/components/ui/stat-card';
 import { ToolPerformanceCard } from '@/components/tool-performance-card';
 import { cn } from '@/lib/utils';
+import { useMemberVisibility } from '@/lib/use-member-visibility';
 
 type Analytics = Awaited<ReturnType<typeof audit.analytics>>;
 
@@ -17,6 +18,9 @@ const RANGES = [7, 30, 90];
 export default function AnalyticsPage() {
   const { token } = useAuth();
   const t = useTranslations('analytics');
+  // A restricted member's numbers cover their own calls only, so the
+  // "by user" panel would only ever hold their own row.
+  const { restrictedForMe } = useMemberVisibility();
   const [days, setDays] = useState(30);
   const [bd, setBd] = useState<AuditBreakdowns | null>(null);
   const [an, setAn] = useState<Analytics | null>(null);
@@ -66,6 +70,9 @@ export default function AnalyticsPage() {
       }
     >
       <div className="flex flex-col gap-[18px]">
+        {restrictedForMe && (
+          <p role="note" className="text-xs text-[var(--text-3)]">{t('ownCallsOnly')}</p>
+        )}
         {error !== null && (
           <div className="rounded-[11px] border border-[var(--danger)]/30 bg-[var(--t-danger-bg)] px-4 py-3 text-sm text-[var(--t-danger-fg)]">
             {error || t('loadFailed')}
@@ -144,7 +151,7 @@ export default function AnalyticsPage() {
             {/* Secondary breakdowns */}
             <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
               <Breakdown title={t('byServer')} rows={bd.byServer} />
-              <Breakdown title={t('byUser')} rows={bd.byUser} />
+              {!restrictedForMe && <Breakdown title={t('byUser')} rows={bd.byUser} />}
             </div>
 
             <p className="text-xs text-[var(--text-3)]">
