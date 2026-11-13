@@ -364,9 +364,16 @@ export class AuditService implements OnModuleDestroy {
       connectorId?: string;
       mcpServerId?: string;
       organizationId?: string;
+      /**
+       * Restricted member visibility: only calls made by this user. Absent on
+       * the open path; when present (even empty) it is always applied, so a
+       * bad value matches nothing instead of everything.
+       */
+      onlyUserId?: string;
     },
   ) {
     const where: any = { ...this.orgScope(filters?.organizationId) };
+    if (filters?.onlyUserId !== undefined) where.userId = filters.onlyUserId;
     if (filters?.toolId) where.toolId = filters.toolId;
     if (filters?.status) where.status = filters.status;
     if (filters?.mcpServerId) where.mcpServerId = filters.mcpServerId;
@@ -400,11 +407,16 @@ export class AuditService implements OnModuleDestroy {
     });
   }
 
-  async getStats(organizationId?: string) {
+  /**
+   * `onlyUserId` (restricted member visibility) narrows every counter to the
+   * calls of that user, on top of the organisation scope.
+   */
+  async getStats(organizationId?: string, onlyUserId?: string) {
     const now = new Date();
     const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const scope = this.orgScope(organizationId);
+    if (onlyUserId !== undefined) scope.userId = onlyUserId;
 
     const [total24h, errors24h, total7d, totalAll] = await Promise.all([
       this.countCalls({ createdAt: { gte: last24h }, ...scope }),
@@ -433,8 +445,10 @@ export class AuditService implements OnModuleDestroy {
    * Semantics are unchanged: a row counts `repeat_count` calls (repeats of
    * the same failure), while durations are averaged per stored row for days
    * and the whole window and per call for tools, as before.
+   *
+   * `onlyUserId` (restricted member visibility) narrows it to that user's calls.
    */
-  async getAnalytics(organizationId: string, days = ANALYTICS_DEFAULT_DAYS) {
+  async getAnalytics(organizationId: string, days = ANALYTICS_DEFAULT_DAYS, onlyUserId?: string) {
     const safeDays = Math.min(
       Math.max(Math.floor(days) || ANALYTICS_DEFAULT_DAYS, 1),
       ANALYTICS_MAX_DAYS,
@@ -443,7 +457,7 @@ export class AuditService implements OnModuleDestroy {
     const since = new Date(now.getTime() - safeDays * 24 * 60 * 60 * 1000);
 
     const groups = organizationId
-      ? await this.prisma.$queryRaw<AnalyticsGroupRow[]>(analyticsQuery(organizationId, since))
+      ? await this.prisma.$queryRaw<AnalyticsGroupRow[]>(analyticsQuery(organizationId, since, onlyUserId))
       : [];
 
     const dailyMap = new Map<string, AnalyticsGroupRow>();
@@ -508,7 +522,12 @@ export class AuditService implements OnModuleDestroy {
     };
   }
 
-  async getToolPerformance(organizationId: string, options: ToolPerformanceQueryDto = {}) {
+  /** `onlyUserId` (restricted member visibility) narrows it to that user's calls. */
+  async getToolPerformance(
+    organizationId: string,
+    options: ToolPerformanceQueryDto = {},
+    onlyUserId?: string,
+  ) {
     if (!organizationId) return { items: [], hasMore: false };
 
     const hours = options.hours ?? TOOL_PERFORMANCE_DEFAULT_HOURS;
@@ -516,7 +535,7 @@ export class AuditService implements OnModuleDestroy {
     const until = new Date();
     const since = new Date(until.getTime() - hours * 60 * 60 * 1000);
     const rows = await this.prisma.$queryRaw<ToolPerformanceRow[]>(
-      toolPerformanceQuery(organizationId, since, until, options, limit),
+      toolPerformanceQuery(organizationId, since, until, options, limit, onlyUserId),
     );
 
     return {
@@ -553,11 +572,15 @@ export class AuditService implements OnModuleDestroy {
    * scales far better than loading every row. Cost has no LLM-token component:
    * estimate = calls × COST_PER_CALL_MICROS + proxyCalls × COST_PER_PROXY_CALL_MICROS
    * (both env-configurable, default 0 → shows 0 until an operator sets rates).
+   *
+   * `onlyUserId` (restricted member visibility) narrows every list and total
+   * to that user's calls, so `byUser` holds at most the caller's own row.
    */
-  async getBreakdowns(organizationId: string, days = 30) {
+  async getBreakdowns(organizationId: string, days = 30, onlyUserId?: string) {
     const safeDays = Math.min(Math.max(days || 30, 1), 365);
     const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000);
-    const where = { organizationId, createdAt: { gte: since } };
+    const where: Prisma.ToolInvocationWhereInput = { organizationId, createdAt: { gte: since } };
+    if (onlyUserId !== undefined) where.userId = onlyUserId;
     const errWhere = { ...where, status: 'ERROR' as InvocationStatus };
 
     const [
@@ -665,8 +688,13 @@ export interface AnalyticsGroupRow {
  * a UTC `timestamp without time zone`, so to_char gives the same UTC date as
  * `toISOString().slice(0, 10)` whatever the session time zone is, and the
  * bound is converted to UTC explicitly for the same reason.
+ *
+ * `onlyUserId` (restricted member visibility) adds `AND ti.user_id = $n` as a
+ * bound value; without it the query is the workspace-wide one.
  */
-export function analyticsQuery(organizationId: string, since: Date): Prisma.Sql {
+export function analyticsQuery(organizationId: string, since: Date, onlyUserId?: string): Prisma.Sql {
+  const userFilter =
+    onlyUserId !== undefined ? Prisma.sql`AND ti.user_id = ${onlyUserId}` : Prisma.empty;
   return Prisma.sql`
     WITH scoped AS (
       SELECT
@@ -681,6 +709,7 @@ export function analyticsQuery(organizationId: string, since: Date): Prisma.Sql 
       JOIN connectors c ON c.id = t.connector_id
       WHERE c.organization_id = ${organizationId}
         AND ti.created_at >= (${since.toISOString()}::timestamptz AT TIME ZONE 'UTC')
+        ${userFilter}
     )
     SELECT
       GROUPING(day) AS by_tool,
