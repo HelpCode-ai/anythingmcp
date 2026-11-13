@@ -2294,7 +2294,7 @@
       "email": "Email",
       "appRole": "Ruolo nell'app",
       "mcpRole": "Ruolo per gli strumenti MCP",
-      "noRestriction": "Nessuna restrizione (accesso completo)",
+      "noRestriction": "Nessun ruolo",
       "emailFailed": "Invio dell'email non riuscito:",
       "link": "Link di invito (da condividere manualmente):",
       "sending": "Invio...",
@@ -2359,7 +2359,7 @@
     "dismiss": "chiudi",
     "loading": "Caricamento...",
     "title": "Ruoli personalizzati",
-    "intro": "Crea ruoli per decidere a quali strumenti MCP possono accedere i diversi utenti. Gli utenti senza ruolo hanno accesso completo. ADMIN ha sempre accesso completo.",
+    "intro": "Crea ruoli per decidere a quali strumenti MCP possono accedere i diversi utenti. Finché nessun ruolo ha un elenco di strumenti, gli utenti senza ruolo possono usare tutti gli strumenti; appena un ruolo ha un elenco di strumenti, gli utenti senza ruolo non ne ricevono nessuno. ADMIN ha sempre accesso completo.",
     "cancel": "Annulla",
     "createRole": "Crea ruolo",
     "form": {
@@ -2399,12 +2399,12 @@
     },
     "assign": {
       "title": "Ruoli MCP degli utenti",
-      "intro": "Assegna ruoli MCP agli utenti per decidere a quali strumenti possono accedere tramite MCP. Gli utenti senza ruolo hanno accesso illimitato. Gli utenti ADMIN hanno sempre accesso completo.",
+      "intro": "Assegna ruoli MCP agli utenti per decidere a quali strumenti possono accedere tramite MCP. Finché nessun ruolo ha un elenco di strumenti, gli utenti senza ruolo possono usare tutti gli strumenti; appena un ruolo ha un elenco di strumenti, gli utenti senza ruolo non ne ricevono nessuno. Gli utenti ADMIN hanno sempre accesso completo.",
       "user": "Utente",
       "appRole": "Ruolo nell'app",
       "mcpRole": "Ruolo per gli strumenti MCP",
       "fullAccess": "Accesso completo (admin)",
-      "noRestriction": "Nessuna restrizione (accesso completo)"
+      "noRestriction": "Nessun ruolo"
     }
   },
   "settingsAdmin": {
