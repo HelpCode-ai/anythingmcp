@@ -432,7 +432,7 @@ services:
         max-file: "5"
 
   file-extractor:
-    image: ${FILE_EXTRACTOR_IMAGE:-anythingmcp-file-extractor:2}
+    image: ${FILE_EXTRACTOR_IMAGE:-anythingmcp-file-extractor:3}
     build:
       context: ./deploy/ee/file-extractor
     profiles: [files]

@@ -14,3 +14,6 @@ python-pptx==1.0.2
 striprtf==0.0.33
 extract-msg==0.56.1
 pyxlsb==1.0.10
+# Security floor for a transitive dependency (beautifulsoup4, via extract-msg):
+# soupsieve < 4.0.0 has a polynomial-time selector match (Dependabot #134/#135).
+soupsieve>=4.0.0
