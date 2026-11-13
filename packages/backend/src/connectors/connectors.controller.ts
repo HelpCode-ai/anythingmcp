@@ -114,6 +114,14 @@ import {
   mergeSummaries,
   type SecretMoveSummary,
 } from './secret-extraction.util';
+import {
+  MemberVisibilityService,
+  canSeeConnector,
+  connectorWhere,
+  serverWhere,
+  visibleTools,
+  type VisibilityScope,
+} from '../settings/member-visibility.service';
 
 class UpdateCredentialScopeDto {
   @ApiProperty({
@@ -722,6 +730,19 @@ function mayExportSecrets(req: any): boolean {
   return req.user?.role === 'ADMIN' && req.mcpKeyScope !== 'MANAGEMENT_READ';
 }
 
+const UNRESTRICTED_SCOPE: VisibilityScope = Object.freeze({ restricted: false as const });
+
+/**
+ * Member visibility (settings/member-visibility.service.ts) on this
+ * controller: in a workspace set to `restricted`, a member who is not an admin
+ * reads only the connectors they own or that hold a tool their roles allow,
+ * and of those only the allowed tools unless they own the connector. Every GET
+ * route with a connector id answers a hidden connector with exactly the 404 an
+ * unknown id gets; exports cover owned connectors only. Writes keep their
+ * owner-or-admin rule. Admins and open workspaces take today's code path.
+ * The route-by-route rules are listed in connectors.member-visibility.spec.ts.
+ */
+
 @ApiTags('Connectors')
 @ApiBearerAuth()
 @ApiSecurity('api-key')
@@ -750,6 +771,9 @@ export class ConnectorsController {
     private readonly webhookEvents: WebhookEventsService,
     @Optional() private readonly edition?: EditionService,
     @Optional() private readonly userCredentials?: UserCredentialsService,
+    // Not @Optional: Nest refuses to boot without it. It is missing only in
+    // unit specs that build the controller by hand and predate the setting.
+    private readonly visibility?: MemberVisibilityService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -763,6 +787,36 @@ export class ConnectorsController {
     if (connector.organizationId !== req.user.organizationId) {
       throw new ForbiddenException('Resource not found');
     }
+  }
+
+  /** The caller's member visibility; unrestricted for admins and open workspaces. */
+  private scopeFor(req: any): Promise<VisibilityScope> {
+    return this.visibility ? this.visibility.scopeFor(req.user) : Promise.resolve(UNRESTRICTED_SCOPE);
+  }
+
+  /** A connector the scope may not see: exactly the 404 ConnectorsService.findById gives an unknown id. */
+  private assertVisible(scope: VisibilityScope, connector: { userId: string; tools?: Array<{ id: string }> }, id: string) {
+    if (!canSeeConnector(scope, { userId: connector.userId, tools: connector.tools ?? [] })) {
+      throw new NotFoundException(`Connector ${id} not found`);
+    }
+  }
+
+  /**
+   * For a restricted member: another workspace's connector stays the 403 it is
+   * today, a hidden one is a 404. Nothing at all for admins and open workspaces.
+   */
+  private async hideUnlessVisible(req: any, connector: any, id: string): Promise<void> {
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) return;
+    this.assertOrgMatch(connector, req);
+    this.assertVisible(scope, connector, id);
+  }
+
+  /** `tools` narrowed to the ones the scope may see (all of them for the owner). */
+  private narrowTools<V extends object>(scope: VisibilityScope, connector: { userId: string }, view: V): V {
+    const tools = (view as { tools?: unknown }).tools;
+    if (!Array.isArray(tools)) return view;
+    return { ...view, tools: visibleTools(scope, connector, tools as Array<{ id: string }>) };
   }
 
   private assertCanCreate(req: any) {
@@ -790,16 +844,28 @@ export class ConnectorsController {
       '`setupStatus` says whether the connector can serve calls: `ready`, `needs_input` (the variables in ' +
       '`missingVariables` are empty) or `needs_authorization` (a sign-in at the provider is pending). ' +
       'Without `limit` all connectors are returned.\n\n' +
-      '```bash\namcp api GET "/api/connectors?limit=50"\n```',
+      '```bash\namcp api GET "/api/connectors?limit=50"\n```\n\n' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets only the connectors they own ' +
+      'or that hold a tool their roles allow, each with only the allowed tools unless they own it.',
   })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size, 1..200. Omit for all.', example: 50 })
   @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip.', example: 0 })
   async list(@Req() req: any, @Query() pagination: PaginationQueryDto) {
-    const rows = await this.connectorsService.findByOrg(req.user.organizationId, {
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) {
+      const rows = await this.connectorsService.findByOrg(req.user.organizationId, {
+        limit: pagination.limit,
+        offset: pagination.offset,
+      });
+      return rows.map((c) => this.withSetupState(c));
+    }
+    // Filtered in the query, so limit and offset page over visible rows only.
+    // The setup state is computed from all tools, as for an admin.
+    const rows = await this.connectorsService.findVisibleByOrg(req.user.organizationId, connectorWhere(scope), {
       limit: pagination.limit,
       offset: pagination.offset,
     });
-    return rows.map((c) => this.withSetupState(c));
+    return rows.map((c) => this.narrowTools(scope, c, this.withSetupState(c)));
   }
 
   /**
@@ -1209,7 +1275,8 @@ export class ConnectorsController {
     description:
       'Runs a health check against all active connectors and returns their status. Each check is a real request to the ' +
       'provider (the connector\'s `healthcheckPath`, or its type\'s test). A connector whose credential the provider ' +
-      'refused for good is reported as `needs_reauth` without being called again.',
+      'refused for good is reported as `needs_reauth` without being called again. In a workspace with restricted ' +
+      'member visibility, a member who is not an admin gets only the connectors they can see in the list.',
   })
   @ApiResponse({
     status: 200,
@@ -1227,7 +1294,10 @@ export class ConnectorsController {
     },
   })
   async healthCheck(@Req() req: any) {
-    const allConnectors = await this.connectorsService.findByOrg(req.user.organizationId);
+    const scope = await this.scopeFor(req);
+    const allConnectors = !scope.restricted
+      ? await this.connectorsService.findByOrg(req.user.organizationId)
+      : await this.connectorsService.findVisibleByOrg(req.user.organizationId, connectorWhere(scope));
     const active = allConnectors.filter((c) => c.isActive);
 
     const results = await Promise.allSettled(
@@ -1291,14 +1361,25 @@ export class ConnectorsController {
       'variables and headers are exported only to admins, so that a backup ' +
       'can be restored; for every other role, and for a read-only ' +
       '(MANAGEMENT_READ) API key, they are left empty and named in ' +
-      '`maskedEnvVars` / `maskedHeaders`.',
+      '`maskedEnvVars` / `maskedHeaders`. In a workspace with restricted ' +
+      'member visibility, a member who is not an admin exports only the ' +
+      'connectors they own.',
   })
   async exportAll(@Req() req: any) {
-    const allConnectors = await this.prisma.connector.findMany({
-      where: { organizationId: requireOrganizationId(req) },
+    const organizationId = requireOrganizationId(req);
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) {
+      const allConnectors = await this.prisma.connector.findMany({
+        where: { organizationId },
+        include: { tools: true },
+      });
+      return toExportEnvelope(allConnectors, mayExportSecrets(req));
+    }
+    const owned = await this.prisma.connector.findMany({
+      where: { organizationId, userId: scope.userId },
       include: { tools: true },
     });
-    return toExportEnvelope(allConnectors, mayExportSecrets(req));
+    return toExportEnvelope(owned, mayExportSecrets(req));
   }
 
   @Get(':id/export')
@@ -1310,7 +1391,8 @@ export class ConnectorsController {
       'exported. Secret environment variables and headers are exported only ' +
       'to admins; for every other role, and for a read-only (MANAGEMENT_READ) ' +
       'API key, they are left empty and named in `maskedEnvVars` / `maskedHeaders`. ' +
-      'The `X-Secrets-Included` response header says which it was.\n\n' +
+      'The `X-Secrets-Included` response header says which it was. In a workspace with restricted member ' +
+      'visibility, a member who is not an admin gets 404 for a connector they do not own.\n\n' +
       '```bash\ncurl -s "$AMCP_URL/api/connectors/<id>/export?format=yaml" -H "Authorization: Bearer $AMCP_API_KEY" -o acme.yaml\n```',
   })
   @ApiQuery({ name: 'format', required: false, enum: ['json', 'yaml'], description: 'File format (default json).', example: 'yaml' })
@@ -1324,10 +1406,13 @@ export class ConnectorsController {
     if (!EXPORT_FORMATS.includes(fmt)) {
       throw new BadRequestException('format must be "json" or "yaml"');
     }
-    // Scoped in the query itself: a connector of another workspace is simply
-    // not found, so its existence is not revealed either.
+    const organizationId = requireOrganizationId(req);
+    const scope = await this.scopeFor(req);
+    // Scoped in the query itself: a connector of another workspace (or, for a
+    // restricted member, one they do not own) is simply not found, so its
+    // existence is not revealed either.
     const connector = await this.prisma.connector.findFirst({
-      where: { id, organizationId: requireOrganizationId(req) },
+      where: !scope.restricted ? { id, organizationId } : { id, organizationId, userId: scope.userId },
       include: { tools: true },
     });
     if (!connector) {
@@ -1349,11 +1434,33 @@ export class ConnectorsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get connector details' })
+  @ApiOperation({
+    summary: 'Get connector details',
+    description:
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they ' +
+      'cannot see, only the tools their roles allow unless they own it, and only the MCP servers they can see.',
+  })
   async findOne(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
-    return this.withSetupState(connector);
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) {
+      return this.withSetupState(connector);
+    }
+    this.assertVisible(scope, connector as any, id);
+    // findById loads `mcpServers: [{ mcpServerId }]` with the connector.
+    const view: any = this.narrowTools(scope, connector, this.withSetupState(connector));
+    const servers: Array<{ mcpServerId: string }> = Array.isArray(view.mcpServers) ? view.mcpServers : [];
+    const serverIds = servers.map((s) => s.mcpServerId);
+    if (serverIds.length === 0) return view;
+    // A server holding a visible connector is visible by the servers rule, so
+    // today this keeps every entry; asked anyway so the two rules cannot drift.
+    const visible = await this.prisma.mcpServerConfig.findMany({
+      where: { AND: [{ id: { in: serverIds }, organizationId: connector.organizationId }, serverWhere(scope)] },
+      select: { id: true },
+    });
+    const keep = new Set(visible.map((s) => s.id));
+    return { ...view, mcpServers: servers.filter((s) => keep.has(s.mcpServerId)) };
   }
 
   @Get(':id/webhook/url')
@@ -1361,10 +1468,12 @@ export class ConnectorsController {
     summary: 'The inbound webhook URL for this connector',
     description:
       'Computed by the server from SERVER_URL, like GET /api/connectors/oauth/redirect-uri, so it always matches ' +
-      'the path webhook-ingest.controller.ts listens on.',
+      'the path webhook-ingest.controller.ts listens on. Connector owner or admin; in a workspace with restricted ' +
+      'member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
   })
   async webhookUrl(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
+    await this.hideUnlessVisible(req, connector, id);
     this.assertCanWrite(connector, req);
     return { url: `${this.serverBaseUrl()}/api/webhooks/${connector.id}` };
   }
@@ -1376,7 +1485,8 @@ export class ConnectorsController {
       'Metadata only, unlike the `<prefix>_recent_events` MCP tool: `payload` is left out, since it can carry ' +
       'whatever personal data the provider sent (e.g. a Stripe customer\'s name, e-mail and address) and the ' +
       'dashboard only ever shows type, id and time. Each event was verified (signature checked) before being ' +
-      'stored. Gated like any other connector setting: the connector owner or an admin.',
+      'stored. Gated like any other connector setting: the connector owner or an admin. In a workspace with ' +
+      'restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
   })
   @ApiQuery({ name: 'limit', required: false, schema: { type: 'integer' }, description: 'At most this many events (default 20, max 50).' })
   @ApiQuery({ name: 'since', required: false, schema: { type: 'string' }, description: 'ISO 8601 timestamp; only events received at or after this time.' })
@@ -1387,6 +1497,7 @@ export class ConnectorsController {
     @Query('since') since?: string,
   ) {
     const connector = await this.connectorsService.findById(id);
+    await this.hideUnlessVisible(req, connector, id);
     this.assertCanWrite(connector, req);
     const events = await this.webhookEvents.recentEvents(connector.id, connector.organizationId, {
       limit: limit !== undefined ? Number(limit) : undefined,
@@ -1586,11 +1697,14 @@ export class ConnectorsController {
     description:
       'Returns the endpoints, client id and token-endpoint auth method so the ' +
       'UI can show the current configuration. The client secret and the issued ' +
-      'tokens are never returned — only booleans saying whether they are set.',
+      'tokens are never returned — only booleans saying whether they are set. ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector ' +
+      'they cannot see.',
   })
   async getOAuthConfig(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
+    await this.hideUnlessVisible(req, connector, id);
 
     let cfg: Record<string, unknown> = {};
     if (connector.authConfig) {
@@ -1681,11 +1795,14 @@ export class ConnectorsController {
     summary: 'Your own sign-in to a connector with per-user credentials',
     description:
       'Whether you are connected, since when, and whether the provider refused your sign-in. ' +
-      '`available` says whether the workspace may use per-user sign-in at all (Enterprise). No token is returned.',
+      '`available` says whether the workspace may use per-user sign-in at all (Enterprise). No token is returned. ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector ' +
+      'they cannot see.',
   })
   async getMyCredential(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
+    await this.hideUnlessVisible(req, connector, id);
     const available = (await this.edition?.hasEnterprise(connector.organizationId)) ?? false;
     if (!this.userCredentials || connector.credentialScope !== 'USER') return { connected: false, available };
     return {
@@ -1697,11 +1814,15 @@ export class ConnectorsController {
   @Delete(':id/my-credential')
   @ApiOperation({
     summary: 'Disconnect your own account from a connector with per-user credentials',
-    description: 'Removes your stored tokens. The provider-side authorization stays until you revoke it there.',
+    description:
+      'Removes your stored tokens. The provider-side authorization stays until you revoke it there. ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector ' +
+      'they cannot see.',
   })
   async deleteMyCredential(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
+    await this.hideUnlessVisible(req, connector, id);
     const removed = this.userCredentials
       ? await this.userCredentials.remove(connector.id, connector.organizationId, req.user.sub)
       : false;
@@ -1916,7 +2037,8 @@ export class ConnectorsController {
       'Returns an authorization URL for the user to visit.\n\n' +
       'Open `authorizationUrl` in a browser and sign in at the provider; the provider then sends the browser back to ' +
       'this server, which stores the tokens on the connector (or, for per-user credentials, for you only). ' +
-      'When the flow cannot start, the answer is `{ "error": "…" }` instead, e.g. for a connector whose auth type is not OAUTH2.\n\n' +
+      'When the flow cannot start, the answer is `{ "error": "…" }` instead, e.g. for a connector whose auth type is not OAUTH2. ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.\n\n' +
       '```bash\namcp api POST /api/connectors/cmob60dvv00c01zrpeujwmnep/oauth/authorize --yes\n```',
   })
   @ApiBody({
@@ -1952,6 +2074,7 @@ export class ConnectorsController {
     @Body() body?: { returnTo?: string },
   ) {
     const connector = await this.connectorsService.findById(id);
+    await this.hideUnlessVisible(req, connector, id);
     // Per-user credentials: every member signs in with their own account,
     // which changes nothing on the connector but that member's own sign-in.
     const forUser = connector.credentialScope === 'USER';
@@ -2668,9 +2791,13 @@ export class ConnectorsController {
     summary:
       'Preview catalog updates for a connector installed from the catalog. ' +
       'Returns the tool diff (safe vs structural) without applying anything.',
+    description:
+      'Connector owner or admin. In a workspace with restricted member visibility, a member who is not an admin gets ' +
+      '404 for a connector they cannot see.',
   })
   async catalogDiff(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
+    await this.hideUnlessVisible(req, connector, id);
     this.assertCanWrite(connector, req);
     const diff = await this.catalogResync.computeDiff(id);
     if (!diff) {

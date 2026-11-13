@@ -11,6 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
+import type { Prisma } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
 import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine, WsdlReadError } from './engines/soap.engine';
@@ -108,6 +109,28 @@ export class ConnectorsService {
   ): Promise<Array<Connector & { icon: string | null }>> {
     const rows = await this.prisma.connector.findMany({
       where: { organizationId },
+      include: { tools: true },
+      orderBy: { createdAt: 'desc' },
+      ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
+      ...(opts?.offset !== undefined ? { skip: opts.offset } : {}),
+    });
+    return rows.map((c) => ({ ...c, icon: resolveAdapterIcon(c) }));
+  }
+
+  /**
+   * `findByOrg` narrowed by an extra `where` (member visibility, see
+   * settings/member-visibility.service.ts `connectorWhere`). The filter is
+   * added to the workspace filter with AND, in the query, so `limit` and
+   * `offset` page over visible connectors only. Each row keeps all its tools;
+   * the caller filters them.
+   */
+  async findVisibleByOrg(
+    organizationId: string,
+    visibility: Prisma.ConnectorWhereInput,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<Array<Connector & { icon: string | null }>> {
+    const rows = await this.prisma.connector.findMany({
+      where: { AND: [{ organizationId }, visibility] },
       include: { tools: true },
       orderBy: { createdAt: 'desc' },
       ...(opts?.limit !== undefined ? { take: opts.limit } : {}),

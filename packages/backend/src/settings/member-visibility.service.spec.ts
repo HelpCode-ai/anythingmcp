@@ -8,6 +8,7 @@ import {
   connectorWhere,
   parseMemberVisibilityMode,
   serverWhere,
+  toolWhere,
   visibleTools,
 } from './member-visibility.service';
 
@@ -316,6 +317,32 @@ describe('visibility helpers', () => {
         { id: 't3', name: 'c' },
       ]);
       expect(visibleTools(noTools, { userId: 'u9' }, tools)).toEqual([]);
+    });
+  });
+
+  describe('toolWhere', () => {
+    it('adds nothing when not restricted, when roles narrow nothing, or for the owner', () => {
+      expect(toolWhere(open, { userId: 'u9' })).toEqual({});
+      expect(toolWhere(noWhitelist, { userId: 'u9' })).toEqual({});
+      expect(toolWhere(someTools, { userId: 'u1' })).toEqual({});
+      expect(toolWhere(noTools, { userId: 'u1' })).toEqual({});
+    });
+
+    it('matches only the allowed ids for anyone else', () => {
+      expect(toolWhere(someTools, { userId: 'u9' })).toEqual({ id: { in: ['t1', 't3'] } });
+      expect(toolWhere(noTools, { userId: 'u9' })).toEqual({ id: { in: [] } });
+    });
+
+    it('agrees with visibleTools on the same inputs', () => {
+      const tools = [{ id: 't1' }, { id: 't2' }, { id: 't3' }];
+      const matches = (where: any, t: { id: string }) => (where.id ? where.id.in.includes(t.id) : true);
+      for (const scope of [open, noWhitelist, someTools, noTools]) {
+        for (const owner of ['u1', 'u9']) {
+          expect(visibleTools(scope, { userId: owner }, tools)).toEqual(
+            tools.filter((t) => matches(toolWhere(scope, { userId: owner }), t)),
+          );
+        }
+      }
     });
   });
 

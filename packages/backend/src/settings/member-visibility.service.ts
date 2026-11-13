@@ -96,6 +96,17 @@ export function visibleTools<T extends { id: string }>(
 }
 
 /**
+ * SQL twin of `visibleTools`: Prisma `where` for the tools of one connector
+ * the scope may see. `{}` for the owner and when nothing narrows, otherwise
+ * the allowed ids only. Combine it with the `connectorId` filter using AND.
+ */
+export function toolWhere(scope: VisibilityScope, connector: { userId: string }): Prisma.McpToolWhereInput {
+  if (!scope.restricted || scope.allowedToolIds === null) return {};
+  if (connector.userId === scope.userId) return {};
+  return { id: { in: scope.allowedToolIds } };
+}
+
+/**
  * Prisma `where` for MCP servers the scope may see: owned by the caller, or
  * holding at least one connector the caller may see. `{}` when not
  * restricted. A server with no connector is visible to its owner only. Always
