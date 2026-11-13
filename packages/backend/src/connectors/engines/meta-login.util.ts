@@ -30,7 +30,8 @@
  * INSTAGRAM_APP_SECRET), else, for the `instagram` adapter only, the
  * server's (META_PLATFORM_APP_ID / META_PLATFORM_APP_SECRET /
  * META_PLATFORM_CONFIG_ID), read from the process environment the same way
- * on Cloud and self-hosted. Instagram Login has no server app: new Meta apps
+ * on Cloud and self-hosted. META_PLATFORM_ORG_IDS can limit the server's app
+ * to some organizations. Instagram Login has no server app: new Meta apps
  * cannot get it, so it always takes an app of the user's own.
  */
 
@@ -177,13 +178,36 @@ export function metaLoginPlatformApp(
 }
 
 /**
+ * Whether the server's app is offered to an organization. With
+ * META_PLATFORM_ORG_IDS unset or empty: to everyone. With a comma-separated
+ * list of organization ids: only to those, and every other organization is
+ * treated as on a server without an app (it sets up an app of its own or
+ * pastes a token). For the time a Meta app is in Development mode or in App
+ * Review, when only its testers can finish the sign-in.
+ */
+export function metaPlatformAppOpenTo(
+  organizationId: string | null | undefined,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const allowed = (env.META_PLATFORM_ORG_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (allowed.length === 0) return true;
+  return !!organizationId && allowed.includes(organizationId);
+}
+
+/**
  * The app a connector authorizes with: its own when it names an app id, else
- * the server's (not for Instagram Login). `missing` lists the connector
- * variables to fill in when there is neither (or only half of its own).
+ * the server's (not for Instagram Login, and only when the server's app is
+ * open to `organizationId`, see metaPlatformAppOpenTo). `missing` lists the
+ * connector variables to fill in when there is neither (or only half of its
+ * own).
  */
 export function metaLoginAppOf(
   flavour: MetaLoginFlavour,
   envVars: Record<string, unknown> | null | undefined,
+  organizationId: string | null | undefined,
   env: Record<string, string | undefined> = process.env,
 ): { app?: MetaLoginApp; usesPlatformApp: boolean; missing: string[] } {
   const vars = FLAVOURS[flavour].ownAppVars;
@@ -196,7 +220,7 @@ export function metaLoginAppOf(
   if (appId || appSecret) {
     return { usesPlatformApp: false, missing: [appId ? vars.appSecret : vars.appId] };
   }
-  const platform = metaLoginPlatformApp(flavour, env);
+  const platform = metaPlatformAppOpenTo(organizationId, env) ? metaLoginPlatformApp(flavour, env) : undefined;
   if (platform) return { app: platform, usesPlatformApp: true, missing: [] };
   return { usesPlatformApp: false, missing: [vars.appId, vars.appSecret] };
 }

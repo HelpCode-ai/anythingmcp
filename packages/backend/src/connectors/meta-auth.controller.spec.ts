@@ -52,6 +52,7 @@ describe('MetaAuthController', () => {
     delete process.env.META_PLATFORM_APP_ID;
     delete process.env.META_PLATFORM_APP_SECRET;
     delete process.env.META_PLATFORM_CONFIG_ID;
+    delete process.env.META_PLATFORM_ORG_IDS;
     delete process.env.INSTAGRAM_PLATFORM_APP_ID;
     delete process.env.INSTAGRAM_PLATFORM_APP_SECRET;
     connector = {
@@ -143,7 +144,7 @@ describe('MetaAuthController', () => {
     const ig = new URL((await controller.authorize(admin, 'conn-1')).authorizationUrl!);
     expect(ig.origin + ig.pathname).toBe('https://www.instagram.com/oauth/authorize');
     expect(ig.searchParams.get('client_id')).toBe('778');
-    expect(controller.platform()).toEqual({
+    expect(controller.platform(admin)).toEqual({
       facebook: true,
       unified: false,
       instagram: false,
@@ -151,12 +152,33 @@ describe('MetaAuthController', () => {
     });
   });
 
+  it("offers the server's app only to the organizations in META_PLATFORM_ORG_IDS", async () => {
+    connector.envVars = {};
+    process.env.META_PLATFORM_APP_ID = '900';
+    process.env.META_PLATFORM_APP_SECRET = 'server-secret';
+    process.env.META_PLATFORM_CONFIG_ID = '77';
+
+    process.env.META_PLATFORM_ORG_IDS = 'org-9';
+    expect(controller.platform(admin)).toMatchObject({ facebook: false, unified: false });
+    const refused = await controller.authorize(admin, 'conn-1');
+    expect(refused.authorizationUrl).toBeUndefined();
+    expect(refused.error).toMatch(/META_APP_ID and META_APP_SECRET/);
+    // An app of the connector's own still signs in.
+    connector.envVars = { META_APP_ID: '1', META_APP_SECRET: 'own-secret' };
+    expect(new URL((await controller.authorize(admin, 'conn-1')).authorizationUrl!).searchParams.get('client_id')).toBe('1');
+
+    connector.envVars = {};
+    process.env.META_PLATFORM_ORG_IDS = 'org-9, org-1';
+    expect(controller.platform(admin)).toMatchObject({ facebook: true, unified: true });
+    expect(new URL((await controller.authorize(admin, 'conn-1')).authorizationUrl!).searchParams.get('client_id')).toBe('900');
+  });
+
   it("signs in with Unified Login through the server's configuration, stores a token that never renews", async () => {
     connector.envVars = {};
     process.env.META_PLATFORM_APP_ID = '1785424892691435';
     process.env.META_PLATFORM_APP_SECRET = 'server-secret';
     process.env.META_PLATFORM_CONFIG_ID = '2539939149839675';
-    expect(controller.platform()).toMatchObject({ facebook: true, unified: true });
+    expect(controller.platform(admin)).toMatchObject({ facebook: true, unified: true });
     const { out, state } = await start();
     const url = new URL(out.authorizationUrl!);
     expect(url.origin + url.pathname).toBe('https://www.facebook.com/dialog/oauth');
