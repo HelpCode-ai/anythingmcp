@@ -2294,7 +2294,7 @@
       "email": "Email",
       "appRole": "App Role",
       "mcpRole": "MCP Tool Role",
-      "noRestriction": "No restriction (full access)",
+      "noRestriction": "No role",
       "emailFailed": "Failed to send email:",
       "link": "Invitation link (share manually):",
       "sending": "Sending...",
@@ -2359,7 +2359,7 @@
     "dismiss": "dismiss",
     "loading": "Loading...",
     "title": "Custom Roles",
-    "intro": "Create roles to control which MCP tools different users can access. Users without a role have full access. ADMIN always has full access.",
+    "intro": "Create roles to control which MCP tools different users can access. While no role has a tool list, users without a role can use every tool; as soon as one role has a tool list, users without a role get no tools. ADMIN always has full access.",
     "cancel": "Cancel",
     "createRole": "Create Role",
     "form": {
@@ -2399,12 +2399,12 @@
     },
     "assign": {
       "title": "User MCP Role Assignment",
-      "intro": "Assign MCP roles to users to control which tools they can access via MCP. Users without a role have unrestricted access. ADMIN users always have full access.",
+      "intro": "Assign MCP roles to users to control which tools they can access via MCP. While no role has a tool list, users without a role can use every tool; as soon as one role has a tool list, users without a role get no tools. ADMIN users always have full access.",
       "user": "User",
       "appRole": "App Role",
       "mcpRole": "MCP Tool Role",
       "fullAccess": "Full access (admin)",
-      "noRestriction": "No restriction (full access)"
+      "noRestriction": "No role"
     }
   },
   "settingsAdmin": {

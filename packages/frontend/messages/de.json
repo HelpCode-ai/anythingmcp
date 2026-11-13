@@ -2294,7 +2294,7 @@
       "email": "E-Mail",
       "appRole": "App-Rolle",
       "mcpRole": "MCP-Tool-Rolle",
-      "noRestriction": "Keine Einschränkung (voller Zugriff)",
+      "noRestriction": "Keine Rolle",
       "emailFailed": "E-Mail konnte nicht gesendet werden:",
       "link": "Einladungslink (manuell weitergeben):",
       "sending": "Wird gesendet...",
@@ -2359,7 +2359,7 @@
     "dismiss": "ausblenden",
     "loading": "Wird geladen...",
     "title": "Eigene Rollen",
-    "intro": "Legen Sie Rollen an, um festzulegen, auf welche MCP-Tools verschiedene Benutzer zugreifen können. Benutzer ohne Rolle haben vollen Zugriff. ADMIN hat immer vollen Zugriff.",
+    "intro": "Legen Sie Rollen an, um festzulegen, auf welche MCP-Tools verschiedene Benutzer zugreifen können. Solange keine Rolle eine Tool-Liste hat, können Benutzer ohne Rolle alle Tools nutzen; sobald eine Rolle eine Tool-Liste hat, erhalten Benutzer ohne Rolle keine Tools. ADMIN hat immer vollen Zugriff.",
     "cancel": "Abbrechen",
     "createRole": "Rolle erstellen",
     "form": {
@@ -2399,12 +2399,12 @@
     },
     "assign": {
       "title": "MCP-Rollen der Benutzer",
-      "intro": "Weisen Sie Benutzern MCP-Rollen zu, um festzulegen, auf welche Tools sie über MCP zugreifen können. Benutzer ohne Rolle haben uneingeschränkten Zugriff. ADMIN-Benutzer haben immer vollen Zugriff.",
+      "intro": "Weisen Sie Benutzern MCP-Rollen zu, um festzulegen, auf welche Tools sie über MCP zugreifen können. Solange keine Rolle eine Tool-Liste hat, können Benutzer ohne Rolle alle Tools nutzen; sobald eine Rolle eine Tool-Liste hat, erhalten Benutzer ohne Rolle keine Tools. ADMIN-Benutzer haben immer vollen Zugriff.",
       "user": "Benutzer",
       "appRole": "App-Rolle",
       "mcpRole": "MCP-Tool-Rolle",
       "fullAccess": "Voller Zugriff (Admin)",
-      "noRestriction": "Keine Einschränkung (voller Zugriff)"
+      "noRestriction": "Keine Rolle"
     }
   },
   "settingsAdmin": {
