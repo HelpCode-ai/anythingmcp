@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { SupportIdentityService, connectorLinks, splitName } from './support-identity.service';
+import { SupportIdentityService, connectorLinks, mcpServerUrls, splitName } from './support-identity.service';
 import { instanceHost, supportChatConfig, supportModuleEnabled, supportTriageConfig } from './support-config';
 
 const SAVED = { ...process.env };
@@ -30,6 +30,9 @@ function fakePrisma() {
         { id: 'c2', name: 'Shopify', isActive: true, authStatus: null, authStatusMessage: null },
         { id: 'c3', name: 'Old', isActive: false, authStatus: null, authStatusMessage: null },
       ]),
+    },
+    mcpServerConfig: {
+      findMany: jest.fn().mockResolvedValue([{ id: 's1', name: 'Default (Ada)' }]),
     },
     toolInvocation: {
       groupBy: jest.fn().mockResolvedValue([{ connectorId: 'c2', _count: { _all: 7 } }]),
@@ -99,6 +102,7 @@ describe('SupportIdentityService', () => {
     process.env.SUPPORT_CHAT_INBOX_ID = 'inbox-uuid';
     process.env.SUPPORT_CHAT_SECRET = 'inbox-secret';
     process.env.FRONTEND_URL = 'https://cloud.anythingmcp.com';
+    process.env.SERVER_URL = 'https://cloud.anythingmcp.com/';
   });
   afterEach(() => {
     process.env = { ...SAVED };
@@ -161,6 +165,24 @@ describe('SupportIdentityService', () => {
     expect(out.length).toBeLessThanOrEqual(1500);
     expect(out.split(' | ').length).toBeLessThanOrEqual(15);
     expect(out).not.toContain('com//connectors');
+  });
+
+  it("gives the workspace's MCP server URL, the address an AI client connects to", async () => {
+    const { svc, prisma } = build();
+    const attrs = await svc.contactAttributes('u1', 'org1');
+    expect(attrs.mcp_server_urls).toBe('Default (Ada): https://cloud.anythingmcp.com/mcp/s1');
+    const q = prisma.mcpServerConfig.findMany.mock.calls[0][0];
+    expect(q.where).toEqual({ organizationId: 'org1', isActive: true });
+  });
+
+  it('builds no server URL without a public server URL, and keeps the list bounded', () => {
+    expect(mcpServerUrls([{ id: 's1', name: 'Default' }], undefined)).toBe('');
+    expect(mcpServerUrls([{ id: 's1', name: 'Default' }], 'not a url')).toBe('');
+    const many = Array.from({ length: 6 }, (_, i) => ({ id: `s${i}`, name: `S${i}` }));
+    const out = mcpServerUrls(many, 'https://cloud.anythingmcp.com');
+    expect(out.split(' | ')).toHaveLength(5);
+    expect(out).toContain('and more on the MCP Servers page');
+    expect(out).not.toContain('/connectors/');
   });
 
   it('says "never" when no AI client has called a tool yet', async () => {

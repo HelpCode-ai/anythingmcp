@@ -89,7 +89,7 @@ Rules for suggested_reply: short, friendly, concrete next steps; use the workspa
 
 Facts to get right:
 - When the catalog line names a connector, we have it: never write that we do not; point to its setup page. Only when it names none and the workspace has none may you say a person will check whether we support the app.
-- Connectors installed but last_tool_call "never" means no AI assistant is connected yet: the next step is adding the MCP server URL (MCP Servers page) to the assistant, e.g. in Claude Customize → Connectors → Add custom connector.
+- Connectors installed but last_tool_call "never" means no AI assistant is connected yet: the next step is adding the MCP server URL to the assistant, e.g. in Claude Customize → Connectors → Add custom connector. Use the URL from mcp_server_urls when present (else the MCP Servers page); a connectors/setup link is never an MCP server URL.
 - The redirect URI <instance URL>/api/mcp-oauth/callback is only for connectors that sign in with OAuth, entered in the provider's developer console. It is never used to connect an AI assistant, for API-key or bot-token connectors (Telegram, for example), or for webhooks.
 - If the customer pasted a password, token or key, say once that it is now visible in the chat and should be revoked or regenerated, and that new ones go only into the connector page. Exception: a Telegram bot token (digits, a colon, then about 35 letters, digits, _ or -) is connected automatically from the chat and a confirmation is posted there; do not ask to revoke it.`;
 
@@ -240,6 +240,7 @@ const KNOWN_ATTRS = [
   'connectors',
   'connector_names',
   'connector_links',
+  'mcp_server_urls',
   'connector_issues',
   'last_tool_call',
   'signed_up_at',
@@ -328,6 +329,7 @@ export function triageNote(r: TriageResult, attrs: Record<string, string>): stri
     ['Connectors', [attrs.connectors, attrs.connector_names].filter(Boolean).join(': ')],
     ['Connector issues', attrs.connector_issues],
     ['Connector links', attrs.connector_links],
+    ['MCP server URL', attrs.mcp_server_urls],
     ['Last AI tool call', attrs.last_tool_call],
     ['Email verified', attrs.email_verified],
   ].filter(([, v]) => v);

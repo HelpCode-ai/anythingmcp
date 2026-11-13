@@ -784,6 +784,8 @@ describe('OAuth2TokenService', () => {
         'Basic ' + Buffer.from('cid:sec').toString('base64'),
       );
       expect(body).not.toContain('client_secret=');
+      // Okta (Constant Contact) refuses a body client_id next to the header.
+      expect(body).not.toContain('client_id=');
     });
   });
 
