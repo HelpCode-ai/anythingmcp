@@ -3,6 +3,7 @@ import {
   cleanMetaCode,
   isUnifiedLogin,
   metaLoginAppOf,
+  metaPlatformAppOpenTo,
   metaLoginFlavourOf,
   metaLoginFlavourOfSlug,
   metaLoginNeedsAuthorization,
@@ -76,37 +77,73 @@ describe('meta-login.util', () => {
     expect(cleanMetaCode(' AQBx-abc ')).toBe('AQBx-abc');
   });
 
+  describe('server app limited to some organizations', () => {
+    const app = { META_PLATFORM_APP_ID: '9', META_PLATFORM_APP_SECRET: 's9', META_PLATFORM_CONFIG_ID: '77' };
+
+    it('is open to everyone without a list', () => {
+      expect(metaPlatformAppOpenTo('org1', {})).toBe(true);
+      expect(metaPlatformAppOpenTo('org1', { META_PLATFORM_ORG_IDS: ' , ' })).toBe(true);
+      expect(metaPlatformAppOpenTo(undefined, {})).toBe(true);
+    });
+
+    it('is open only to the listed organizations', () => {
+      const env = { META_PLATFORM_ORG_IDS: 'org1, org2' };
+      expect(metaPlatformAppOpenTo('org1', env)).toBe(true);
+      expect(metaPlatformAppOpenTo('org2', env)).toBe(true);
+      expect(metaPlatformAppOpenTo('org3', env)).toBe(false);
+      expect(metaPlatformAppOpenTo('org', env)).toBe(false);
+      expect(metaPlatformAppOpenTo(undefined, env)).toBe(false);
+    });
+
+    it('gives a listed organization the server app and the others none', () => {
+      const env = { ...app, META_PLATFORM_ORG_IDS: 'org1' };
+      expect(metaLoginAppOf('facebook', {}, 'org1', env)).toMatchObject({ usesPlatformApp: true, app: { appId: '9' } });
+      expect(metaLoginAppOf('facebook', {}, 'org3', env)).toEqual({
+        usesPlatformApp: false,
+        missing: ['META_APP_ID', 'META_APP_SECRET'],
+      });
+    });
+
+    it('never takes away an app of the connector itself', () => {
+      const env = { ...app, META_PLATFORM_ORG_IDS: 'org1' };
+      expect(metaLoginAppOf('facebook', { META_APP_ID: '1', META_APP_SECRET: 's1' }, 'org3', env)).toMatchObject({
+        usesPlatformApp: false,
+        app: { appId: '1' },
+      });
+    });
+  });
+
   describe('which app', () => {
     const server = { META_PLATFORM_APP_ID: '900', META_PLATFORM_APP_SECRET: 's-900', META_PLATFORM_CONFIG_ID: '42' };
 
     it("prefers the connector's own app, else the server's", () => {
-      expect(metaLoginAppOf('facebook', { META_APP_ID: '1', META_APP_SECRET: 's1' }, server)).toEqual({
+      expect(metaLoginAppOf('facebook', { META_APP_ID: '1', META_APP_SECRET: 's1' }, 'org1', server)).toEqual({
         app: { appId: '1', appSecret: 's1' },
         usesPlatformApp: false,
         missing: [],
       });
-      expect(metaLoginAppOf('facebook', {}, server)).toEqual({
+      expect(metaLoginAppOf('facebook', {}, 'org1', server)).toEqual({
         app: { appId: '900', appSecret: 's-900', configId: '42' },
         usesPlatformApp: true,
         missing: [],
       });
       // A connector's own configuration id goes with its own app only.
-      expect(metaLoginAppOf('facebook', { META_APP_ID: '1', META_APP_SECRET: 's1', META_CONFIG_ID: '7' }, server).app).toEqual({
+      expect(metaLoginAppOf('facebook', { META_APP_ID: '1', META_APP_SECRET: 's1', META_CONFIG_ID: '7' }, 'org1', server).app).toEqual({
         appId: '1',
         appSecret: 's1',
         configId: '7',
       });
-      expect(metaLoginAppOf('facebook', { META_APP_ID: '1', META_APP_SECRET: 's1' }, server).app).toEqual({ appId: '1', appSecret: 's1' });
+      expect(metaLoginAppOf('facebook', { META_APP_ID: '1', META_APP_SECRET: 's1' }, 'org1', server).app).toEqual({ appId: '1', appSecret: 's1' });
       // Placeholders count as empty.
-      expect(metaLoginAppOf('facebook', { META_APP_ID: '{{META_APP_ID}}' }, server).usesPlatformApp).toBe(true);
+      expect(metaLoginAppOf('facebook', { META_APP_ID: '{{META_APP_ID}}' }, 'org1', server).usesPlatformApp).toBe(true);
     });
 
     it('never mixes half an own app with the server app, and names what is missing', () => {
-      expect(metaLoginAppOf('facebook', { META_APP_ID: '1' }, server)).toEqual({
+      expect(metaLoginAppOf('facebook', { META_APP_ID: '1' }, 'org1', server)).toEqual({
         usesPlatformApp: false,
         missing: ['META_APP_SECRET'],
       });
-      expect(metaLoginAppOf('instagram', {}, {})).toEqual({
+      expect(metaLoginAppOf('instagram', {}, 'org1', {})).toEqual({
         usesPlatformApp: false,
         missing: ['INSTAGRAM_APP_ID', 'INSTAGRAM_APP_SECRET'],
       });

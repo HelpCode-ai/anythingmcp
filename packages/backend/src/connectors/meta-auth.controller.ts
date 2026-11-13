@@ -39,6 +39,7 @@ import {
   metaLoginFlavourOf,
   metaLoginOwnAppVars,
   metaLoginPlatformApp,
+  metaPlatformAppOpenTo,
   metaLoginProviderName,
 } from './engines/meta-login.util';
 
@@ -151,8 +152,9 @@ export class MetaAuthController {
       '`instagram-login`) is always false: that login takes an app of your own. With a server app, the setup ' +
       'page does not ask for an app id and secret.',
   })
-  platform(): { facebook: boolean; unified: boolean; instagram: boolean; redirectUrl: string } {
-    const app = metaLoginPlatformApp('facebook');
+  platform(@Req() req: any): { facebook: boolean; unified: boolean; instagram: boolean; redirectUrl: string } {
+    // An organization the server's app is not open to sees a server without one.
+    const app = metaPlatformAppOpenTo(req.user?.organizationId) ? metaLoginPlatformApp('facebook') : undefined;
     return {
       facebook: !!app,
       unified: isUnifiedLogin(app),
@@ -198,7 +200,7 @@ export class MetaAuthController {
     if (!flavour || connector.authType !== 'BEARER_TOKEN') {
       return { error: 'This connector does not sign in with Facebook or Instagram.' };
     }
-    const { app, missing } = metaLoginAppOf(flavour, this.envOf(connector));
+    const { app, missing } = metaLoginAppOf(flavour, this.envOf(connector), connector.organizationId);
     if (!app) {
       return {
         error:
@@ -316,7 +318,7 @@ export class MetaAuthController {
     if (!flavour) {
       throw new BadRequestException({ message: 'This connector does not sign in with Facebook or Instagram.', connectorId: flow.connectorId });
     }
-    const { app, usesPlatformApp, missing } = metaLoginAppOf(flavour, this.envOf(connector));
+    const { app, usesPlatformApp, missing } = metaLoginAppOf(flavour, this.envOf(connector), connector.organizationId);
     if (!app) {
       throw new BadRequestException({
         message: `The connector has no Meta app any more (${missing.join(', ')}). Set it and authorize again.`,
@@ -421,7 +423,7 @@ export class MetaAuthController {
   private async accountsOf(connector: ConnectorRow, token: string): Promise<MetaInstagramAccount[]> {
     // A Unified Login token reaches the accounts the client shared; a
     // Facebook User token the ones linked to its Pages.
-    const { app } = metaLoginAppOf('facebook', this.envOf(connector));
+    const { app } = metaLoginAppOf('facebook', this.envOf(connector), connector.organizationId);
     try {
       return isUnifiedLogin(app)
         ? await this.metaLogin.unifiedAccounts(token, app)
