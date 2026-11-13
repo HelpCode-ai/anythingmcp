@@ -24,8 +24,8 @@ import {
   ValidateNested,
   MaxLength,
 } from 'class-validator';
-import { MAX_TOOL_NAME_LENGTH } from './parsers/tool-name.util';
-import { Type } from 'class-transformer';
+import { MAX_TOOL_NAME_LENGTH, trimToolName } from './parsers/tool-name.util';
+import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { DynamicMcpTools } from '../mcp-server/dynamic-mcp-tools';
@@ -93,11 +93,12 @@ const RESPONSE_MAPPING_EXAMPLE = {
   },
 };
 
-class CreateToolDto {
+export class CreateToolDto {
   @ApiProperty({
     description: 'Tool name exposed via MCP (unique per connector).',
     example: 'list_invoices',
   })
+  @Transform(({ value }) => trimToolName(value))
   @IsString()
   @MaxLength(MAX_TOOL_NAME_LENGTH)
   name: string;
@@ -143,8 +144,9 @@ class CreateToolDto {
   responseMapping?: Record<string, unknown>;
 }
 
-class UpdateToolDto {
+export class UpdateToolDto {
   @ApiPropertyOptional({ description: 'Tool name.' })
+  @Transform(({ value }) => trimToolName(value))
   @IsOptional()
   @IsString()
   @MaxLength(MAX_TOOL_NAME_LENGTH)
@@ -191,7 +193,7 @@ class UpdateToolDto {
   isEnabled?: boolean;
 }
 
-class BulkCreateToolsDto {
+export class BulkCreateToolsDto {
   @ApiProperty({
     description: 'Tools to create in a single call. Duplicates (same name) on the connector are skipped.',
     type: [CreateToolDto],
