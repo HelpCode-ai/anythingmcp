@@ -43,7 +43,7 @@ class UpdateRoleDto {
 class SetToolAccessDto {
   @ApiProperty({
     description:
-      'Tool IDs this role can invoke. Replaces the existing assignment. Members without an MCP role keep unrestricted access.',
+      'Tool IDs this role can invoke. Replaces the existing assignment. While no role of the workspace has a tool list, members without an MCP role can call every tool; once one role has a tool list, members without a role get no tools.',
     type: [String],
   })
   @IsArray()

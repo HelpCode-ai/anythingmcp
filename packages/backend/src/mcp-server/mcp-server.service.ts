@@ -378,7 +378,8 @@ export class McpServerService implements OnModuleInit {
    *
    * The handler checks role-based access: if the requesting user has a
    * custom MCP role, only tools assigned to that role are executable.
-   * ADMIN users and users without a custom role have unrestricted access.
+   * ADMIN users have unrestricted access. Users without a custom role have it
+   * only while the workspace has no tool whitelist (see RolesService.getAllowedToolIds).
    */
   private registerMcpTool(
     name: string,
