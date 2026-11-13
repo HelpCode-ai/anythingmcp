@@ -12,6 +12,7 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional, ApiSecurity } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
@@ -27,6 +28,12 @@ import {
 import { MAX_TOOL_NAME_LENGTH, trimToolName } from './parsers/tool-name.util';
 import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../common/prisma.service';
+import {
+  MemberVisibilityService,
+  canSeeConnector,
+  toolWhere,
+  type VisibilityScope,
+} from '../settings/member-visibility.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { DynamicMcpTools } from '../mcp-server/dynamic-mcp-tools';
 import { ConnectorsService } from './connectors.service';
@@ -304,6 +311,16 @@ class PreviewMappingDto {
   sample?: unknown;
 }
 
+const UNRESTRICTED_SCOPE: VisibilityScope = Object.freeze({ restricted: false as const });
+
+/**
+ * Member visibility (settings/member-visibility.service.ts) on the tools of a
+ * connector: in a workspace set to `restricted`, a member who is not an admin
+ * gets 404 (the body an unknown connector id gets) on every GET route of a
+ * connector they cannot see, and the list holds only the tools their roles
+ * allow unless they own the connector. Writes keep their owner-or-admin rule.
+ * Admins and open workspaces take today's code path.
+ */
 @ApiTags('Tools')
 @ApiBearerAuth()
 @ApiSecurity('api-key')
@@ -317,7 +334,33 @@ export class ToolsController {
     private readonly edition: EditionService,
     private readonly licenseGuard: LicenseGuardService,
     private readonly toolExecutor: DynamicMcpTools,
+    // Not @Optional: Nest refuses to boot without it. It is missing only in
+    // unit specs that build the controller by hand and predate the setting.
+    private readonly visibility?: MemberVisibilityService,
   ) {}
+
+  /** The caller's member visibility; unrestricted for admins and open workspaces. */
+  private scopeFor(req: any): Promise<VisibilityScope> {
+    return this.visibility ? this.visibility.scopeFor(req.user) : Promise.resolve(UNRESTRICTED_SCOPE);
+  }
+
+  /** A connector the scope may not see: exactly the 404 ConnectorsService.findById gives an unknown id. */
+  private assertVisible(scope: VisibilityScope, connector: { userId: string; tools?: Array<{ id: string }> }, connectorId: string) {
+    if (!canSeeConnector(scope, { userId: connector.userId, tools: connector.tools ?? [] })) {
+      throw new NotFoundException(`Connector ${connectorId} not found`);
+    }
+  }
+
+  /**
+   * For a restricted member: another workspace's connector stays the 403 it is
+   * today, a hidden one is a 404. Nothing at all for admins and open workspaces.
+   */
+  private async hideUnlessVisible(connectorId: string, req: any): Promise<void> {
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) return;
+    const connector = await this.assertConnectorOrgMatch(connectorId, req);
+    this.assertVisible(scope, connector as any, connectorId);
+  }
 
   /**
    * Validate and authorize a code tool at save time (shape + authority gates).
@@ -473,11 +516,24 @@ export class ToolsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List tools for a connector' })
+  @ApiOperation({
+    summary: 'List tools for a connector',
+    description:
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they ' +
+      'cannot see, and only the tools their roles allow unless they own the connector.',
+  })
   async list(@Req() req: any, @Param('connectorId') connectorId: string) {
-    await this.assertConnectorOrgMatch(connectorId, req);
+    const connector = await this.assertConnectorOrgMatch(connectorId, req);
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) {
+      return this.prisma.mcpTool.findMany({
+        where: { connectorId },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+    this.assertVisible(scope, connector as any, connectorId);
     return this.prisma.mcpTool.findMany({
-      where: { connectorId },
+      where: { AND: [{ connectorId }, toolWhere(scope, connector)] },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -715,13 +771,15 @@ export class ToolsController {
       'Returns `derived` (inferred from the connector: HTTP verb, ' +
       'query/mutation, readOnly flag, SQL text), `override` (the stored ' +
       'explicit value, if any) and `effective` (what MCP clients actually ' +
-      'see). Also lists the supported keys.',
+      'see). Also lists the supported keys. Connector owner or admin; in a workspace with restricted member ' +
+      'visibility, a member who is not an admin gets 404 for a connector they cannot see.',
   })
   async getAnnotations(
     @Req() req: any,
     @Param('toolId') toolId: string,
     @Param('connectorId') connectorId: string,
   ) {
+    await this.hideUnlessVisible(connectorId, req);
     const connector = await this.assertCanWriteConnector(connectorId, req);
     const tool = await this.prisma.mcpTool.findFirst({
       where: { id: toolId, connectorId },
@@ -804,13 +862,15 @@ export class ToolsController {
     summary: 'Get the response mapping configured for a tool',
     description:
       'Returns the stored `transform` (or null), whether it is active, and ' +
-      'whether a recent real response is available to preview it against.',
+      'whether a recent real response is available to preview it against. Connector owner or admin; in a workspace ' +
+      'with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
   })
   async getResponseMapping(
     @Req() req: any,
     @Param('toolId') toolId: string,
     @Param('connectorId') connectorId: string,
   ) {
+    await this.hideUnlessVisible(connectorId, req);
     await this.assertCanWriteConnector(connectorId, req);
     const tool = await this.prisma.mcpTool.findFirst({
       where: { id: toolId, connectorId },
