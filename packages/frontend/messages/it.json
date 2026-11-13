@@ -391,6 +391,7 @@
   "auditLog": {
     "title": "Registro di audit",
     "subtitle": "Cronologia delle chiamate agli strumenti nei tuoi connettori e server MCP.",
+    "ownCallsOnly": "Vedi le tue chiamate. Gli admin del workspace vedono tutte le chiamate.",
     "refresh": "Aggiorna",
     "filters": {
       "all": "Tutte",
@@ -456,6 +457,7 @@
   "analytics": {
     "title": "Analisi",
     "subtitle": "Volume di chiamate agli strumenti, tasso di successo e costi del tuo server MCP.",
+    "ownCallsOnly": "Vedi le tue chiamate. Gli admin del workspace vedono tutte le chiamate.",
     "range": "{days} g",
     "loading": "Caricamento…",
     "loadFailed": "Caricamento non riuscito",
@@ -556,6 +558,7 @@
     "active": "Attivo",
     "inactive": "Inattivo",
     "empty": "Nessun server MCP configurato.",
+    "nothingShared": "Non è ancora stato condiviso nulla con te. Chiedi un ruolo a un admin del workspace.",
     "createFirst": "Crea il tuo primo server MCP",
     "noMatches": "Nessun server MCP corrisponde alla ricerca.",
     "exposes": "Espone <b>{names}</b>",
@@ -776,7 +779,8 @@
       "description": "Aggiungi il tuo primo connettore API per iniziare a generare strumenti MCP.",
       "supports": "Supporta {types}",
       "browse": "Sfoglia gli adapter",
-      "importBackup": "Importa da backup"
+      "importBackup": "Importa da backup",
+      "nothingShared": "Non è ancora stato condiviso nulla con te. Chiedi un ruolo a un admin del workspace."
     },
     "filter": {
       "placeholder": "Filtra connettori…",
@@ -2199,6 +2203,21 @@
       "title": "Sicurezza",
       "body": "Disconnetti ogni membro dalla dashboard e da ogni client AI collegato, compresi i client che hanno un refresh token. Nessuno perde ruolo o accessi; tutti devono solo accedere di nuovo. Usalo dopo una sospetta fuga di credenziali o un cambio del tuo identity provider. Le chiavi API MCP non sono sessioni e restano invariate, a meno che tu non scelga diversamente.",
       "button": "Disconnetti tutti"
+    },
+    "visibility": {
+      "title": "Visibilità per i membri",
+      "body": "Decidi cosa vedono nella dashboard e nell'API i membri che non sono admin. Gli admin vedono sempre tutto. I client AI non cambiano: i ruoli decidono già quali strumenti possono chiamare. Una modifica può richiedere fino a 30 secondi per essere applicata.",
+      "open": {
+        "label": "Aperta",
+        "description": "Ogni membro vede tutti i connettori, i server MCP e le chiamate agli strumenti del workspace. È l'impostazione predefinita."
+      },
+      "restricted": {
+        "label": "Limitata",
+        "description": "I membri che non sono admin vedono solo le proprie chiamate agli strumenti, i connettori raggiunti dai loro ruoli e i server MCP che ne contengono almeno uno."
+      },
+      "noToolList": "Nessun ruolo limita ancora gli strumenti, quindi i membri vedono ancora tutti i connettori. Crea un ruolo con un elenco di strumenti in <link>Ruoli</link>.",
+      "saved": "Visibilità per i membri salvata.",
+      "saveFailed": "Impossibile salvare la visibilità per i membri."
     },
     "revokeDialog": {
       "title": "Disconnetti tutti",
