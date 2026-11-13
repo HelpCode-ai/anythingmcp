@@ -1,6 +1,12 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
+import {
+  MemberVisibilityService,
+  connectorWhere,
+  serverWhere,
+  type VisibilityScope,
+} from '../settings/member-visibility.service';
 
 /**
  * What a grant resolved to, for the caller that is about to build a tool list.
@@ -49,6 +55,9 @@ export class McpConnectionGrantService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly events?: ProductEventService,
+    // Not @Optional: Nest refuses to boot without it. It is missing only in
+    // unit specs that build the service by hand and predate the setting.
+    private readonly visibility?: MemberVisibilityService,
   ) {}
 
   /**
@@ -109,6 +118,11 @@ export class McpConnectionGrantService {
    * if nothing is left the grant is not written at all, so a caller cannot turn
    * an entirely invalid selection into a stored empty grant.
    *
+   * In a workspace with restricted member visibility, a server a member who is
+   * not an admin there cannot see counts as unreachable too: it is dropped
+   * exactly like an unknown id. Used by `PUT /api/mcp-connections/:clientId`
+   * and by the OAuth consent page.
+   *
    * Returns the ids actually granted.
    */
   async grantServers(
@@ -116,7 +130,7 @@ export class McpConnectionGrantService {
     userId: string,
     serverIds: string[],
   ): Promise<string[]> {
-    const valid = await this.validateServers(userId, serverIds);
+    const valid = await this.keepVisible(userId, await this.validateServers(userId, serverIds));
     const dropped = serverIds.length - valid.length;
     if (dropped > 0) {
       this.logger.warn(
@@ -159,6 +173,12 @@ export class McpConnectionGrantService {
    * reason as {@link validateServers}: a workspace the user does not belong to
    * cannot appear in the result at all, so it cannot be offered and then
    * accidentally accepted.
+   *
+   * Member visibility is decided per workspace, by that workspace's own mode
+   * and the user's role there: in a restricted workspace where the user is not
+   * an admin, only the servers they own or that hold a connector they may see
+   * are listed, each with the count of those connectors. Feeds both
+   * `GET /api/mcp-connections/targets` and the OAuth consent page's picker.
    */
   async listSelectableTargets(userId: string): Promise<
     {
@@ -172,6 +192,7 @@ export class McpConnectionGrantService {
     const memberships = await this.prisma.organizationMember.findMany({
       where: { userId, deactivatedAt: null },
       select: {
+        role: true,
         organization: {
           select: {
             id: true,
@@ -191,7 +212,7 @@ export class McpConnectionGrantService {
       orderBy: { joinedAt: 'asc' },
     });
 
-    return memberships.map((m) => ({
+    const targets = memberships.map((m) => ({
       organizationId: m.organization.id,
       organizationName: m.organization.name,
       servers: m.organization.mcpServers.map((s) => ({
@@ -200,6 +221,80 @@ export class McpConnectionGrantService {
         connectorCount: s._count.connectors,
       })),
     }));
+    if (!this.visibility) return targets;
+
+    // One workspace at a time: the mode and the role differ per workspace.
+    for (let i = 0; i < memberships.length; i++) {
+      const scope = await this.scopeIn(userId, memberships[i].role, targets[i].organizationId);
+      if (!scope.restricted) continue;
+      targets[i].servers = await this.visibleActiveServers(targets[i].organizationId, scope);
+    }
+    return targets;
+  }
+
+  /** The user's member visibility in one workspace, from their role there. */
+  private scopeIn(userId: string, role: string, organizationId: string): Promise<VisibilityScope> {
+    // Only called when the service is present (see the callers).
+    return this.visibility!.scopeFor({ sub: userId, role, organizationId });
+  }
+
+  /**
+   * The active servers of one workspace the scope may see, oldest first, each
+   * with the count of its connectors the scope may see. Filtered in SQL.
+   */
+  private async visibleActiveServers(
+    organizationId: string,
+    scope: VisibilityScope,
+  ): Promise<{ id: string; name: string; connectorCount: number }[]> {
+    const rows = await this.prisma.mcpServerConfig.findMany({
+      where: { AND: [{ organizationId, isActive: true }, serverWhere(scope)] },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        _count: { select: { connectors: { where: { connector: connectorWhere(scope) } } } },
+      },
+    });
+    return rows.map((s) => ({ id: s.id, name: s.name, connectorCount: s._count.connectors }));
+  }
+
+  /**
+   * Of servers the user can already reach (see {@link validateServers}), the
+   * ones member visibility lets them see, in the same order. A workspace in
+   * open mode, or where the user is an admin, keeps all of its servers. The
+   * role comes from the membership row; a server whose membership row is
+   * gone is dropped (fail closed).
+   */
+  private async keepVisible(
+    userId: string,
+    servers: { id: string; organizationId: string }[],
+  ): Promise<{ id: string; organizationId: string }[]> {
+    if (!this.visibility || servers.length === 0) return servers;
+
+    const orgIds = [...new Set(servers.map((s) => s.organizationId))];
+    const memberships = await this.prisma.organizationMember.findMany({
+      where: { userId, organizationId: { in: orgIds }, deactivatedAt: null },
+      select: { organizationId: true, role: true },
+    });
+    const roleIn = new Map(memberships.map((m) => [m.organizationId, m.role as string]));
+
+    const keep = new Set<string>();
+    for (const organizationId of orgIds) {
+      const role = roleIn.get(organizationId);
+      if (!role) continue;
+      const ids = servers.filter((s) => s.organizationId === organizationId).map((s) => s.id);
+      const scope = await this.scopeIn(userId, role, organizationId);
+      if (!scope.restricted) {
+        ids.forEach((id) => keep.add(id));
+        continue;
+      }
+      const visible = await this.prisma.mcpServerConfig.findMany({
+        where: { AND: [{ id: { in: ids }, organizationId }, serverWhere(scope)] },
+        select: { id: true },
+      });
+      visible.forEach((s) => keep.add(s.id));
+    }
+    return servers.filter((s) => keep.has(s.id));
   }
 
   /** Everything this user has granted, for the dashboard's revoke list. */

@@ -103,6 +103,10 @@ export class McpConnectionsController {
   @Get('targets')
   @ApiOperation({
     summary: 'Workspaces and MCP servers this user can grant access to',
+    description:
+      'In a workspace with restricted member visibility where you are not an admin, only the servers you own or that ' +
+      'hold a connector you can see are listed, each counting only those connectors; every workspace follows its own ' +
+      'setting and your role there.',
   })
   async targets(@Req() req: any) {
     return this.grants.listSelectableTargets(req.user.sub);
@@ -116,7 +120,8 @@ export class McpConnectionsController {
       'workspace (`organizationId`) or a list of MCP servers (`serverIds`), as listed by GET /api/mcp-connections/targets. ' +
       'When both are given, `organizationId` wins. The change applies from the client\'s next request.\n\n' +
       'Answers `{ "ok": true }`, or `{ "ok": false, "reason": … }`: `not-a-member` (you are not in that workspace), ' +
-      '`nothing-granted` (you can reach none of the servers; unreachable ids are dropped) or `empty-selection` (neither field given).\n\n' +
+      '`nothing-granted` (you can reach none of the servers; unreachable ids are dropped) or `empty-selection` (neither field given). ' +
+      'In a workspace with restricted member visibility where you are not an admin, a server you cannot see is dropped like an unknown id.\n\n' +
       '```bash\namcp api PUT /api/mcp-connections/$CLIENT_ID --data \'{"serverIds":["cmo9x1k2a0001abcdpq7rs8tu"]}\' --yes\n```',
   })
   @ApiBody({
