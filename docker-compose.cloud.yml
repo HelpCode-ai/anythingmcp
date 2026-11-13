@@ -184,6 +184,7 @@ x-backend: &backend
     - META_PLATFORM_APP_ID=${META_PLATFORM_APP_ID:-}
     - META_PLATFORM_APP_SECRET=${META_PLATFORM_APP_SECRET:-}
     - META_PLATFORM_CONFIG_ID=${META_PLATFORM_CONFIG_ID:-}
+    - META_PLATFORM_ORG_IDS=${META_PLATFORM_ORG_IDS:-}
     # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
     # a private docker IP, which the guard blocks by default). Harmless on
     # self-host (no such host on their network).
