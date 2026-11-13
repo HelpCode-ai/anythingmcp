@@ -9,7 +9,7 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 UV="${UV:-uv}"
-CUTOFF="${CUTOFF:-2026-10-17T23:59:59Z}"
+CUTOFF="${CUTOFF:-2026-11-04T23:59:59Z}"
 HEADER="# Licensed under the AnythingMCP Commercial License, see deploy/ee/LICENSE."
 COMMON="--universal --python-version 3.12 --exclude-newer $CUTOFF --generate-hashes --quiet"
 
