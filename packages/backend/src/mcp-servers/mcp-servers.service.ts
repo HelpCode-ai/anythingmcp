@@ -8,6 +8,11 @@ import {
 import { KnowledgeFoldersService } from '../knowledge-folders/knowledge-folders.service';
 import { connectorInstructions } from '../adapters/instruction-facts';
 import { McpSessionManager } from './mcp-session.manager';
+import {
+  connectorWhere,
+  serverWhere,
+  type VisibilityScope,
+} from '../settings/member-visibility.service';
 
 /** What the per-server endpoint may serve as text to one caller. */
 export interface VisibleServerContent {
@@ -159,6 +164,77 @@ export class McpServersService {
       ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
       ...(opts?.offset !== undefined ? { skip: opts.offset } : {}),
     });
+  }
+
+  /**
+   * `findAllByOrg` for a member whose view is narrowed by member visibility:
+   * only the servers they own or that hold a connector they may see, and in
+   * each one only those connectors (names and `_count.connectors`). Filtered
+   * in the query, so `limit` and `offset` page over visible servers only.
+   */
+  async findAllVisibleByOrg(
+    organizationId: string,
+    scope: VisibilityScope,
+    opts?: { limit?: number; offset?: number },
+  ) {
+    const visibleConnector = { connector: connectorWhere(scope) };
+    return this.prisma.mcpServerConfig.findMany({
+      where: { AND: [{ organizationId }, serverWhere(scope)] },
+      include: {
+        _count: {
+          select: {
+            connectors: { where: visibleConnector },
+            apiKeys: { where: { isSupport: false } },
+          },
+        },
+        connectors: {
+          where: visibleConnector,
+          select: { connector: { select: { name: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+      ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
+      ...(opts?.offset !== undefined ? { skip: opts.offset } : {}),
+    });
+  }
+
+  /**
+   * `findById` for a member whose view is narrowed by member visibility:
+   * null when the server is not in the workspace or not visible to them (the
+   * caller answers both with the unknown-id 404), otherwise the server with
+   * only the connectors they may see.
+   */
+  async findVisibleById(id: string, organizationId: string, scope: VisibilityScope) {
+    const visibleConnector = { connector: connectorWhere(scope) };
+    return this.prisma.mcpServerConfig.findFirst({
+      where: { AND: [{ id, organizationId }, serverWhere(scope)] },
+      include: {
+        connectors: {
+          where: visibleConnector,
+          include: {
+            connector: {
+              select: { id: true, name: true, type: true, isActive: true },
+            },
+          },
+        },
+        _count: {
+          select: {
+            connectors: { where: visibleConnector },
+            apiKeys: { where: { isSupport: false } },
+          },
+        },
+      },
+    });
+  }
+
+  /** Whether the server is in the workspace and visible to the scope. */
+  async isVisibleTo(id: string, organizationId: string, scope: VisibilityScope): Promise<boolean> {
+    const row = await this.prisma.mcpServerConfig.findFirst({
+      where: { AND: [{ id, organizationId }, serverWhere(scope)] },
+      select: { id: true },
+    });
+    return !!row;
   }
 
   /**
