@@ -17,6 +17,7 @@ import { UsersModule } from './users/users.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
 import { SettingsModule } from './settings/settings.module';
+import { MemberVisibilityModule } from './settings/member-visibility.module';
 import { RolesModule } from './roles/roles.module';
 import { KgModule } from './knowledge-graph/kg.module';
 import { MemoryModule } from './memory/memory.module';
@@ -176,6 +177,7 @@ if (useOAuth) {
     IdentityProvidersModule,
     HealthModule,
     SettingsModule,
+    MemberVisibilityModule,
     RolesModule,
     KgModule,
     MemoryModule,
