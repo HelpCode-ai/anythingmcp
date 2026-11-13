@@ -16,13 +16,20 @@ export interface ToolPerformanceRow {
   last_error_at: Date | null;
 }
 
-/** Page groups before looking up their latest errors, avoiding an array of every error in the window. */
+/**
+ * Page groups before looking up their latest errors, avoiding an array of every error in the window.
+ *
+ * `onlyUserId` (restricted member visibility) keeps only that user's calls, in
+ * the groups and in the latest-error lookup, so another member's error text
+ * never shows. It is a bound value; without it the query is the workspace-wide one.
+ */
 export function toolPerformanceQuery(
   organizationId: string,
   since: Date,
   until: Date,
   options: ToolPerformanceQueryDto,
   limit: number,
+  onlyUserId?: string,
 ): Prisma.Sql {
   const connectorFilter = options.connectorId
     ? Prisma.sql`AND c.id = ${options.connectorId}`
@@ -30,6 +37,8 @@ export function toolPerformanceQuery(
   const serverFilter = options.mcpServerId
     ? Prisma.sql`AND ti.mcp_server_id = ${options.mcpServerId}`
     : Prisma.empty;
+  const userFilter =
+    onlyUserId !== undefined ? Prisma.sql`AND ti.user_id = ${onlyUserId}` : Prisma.empty;
 
   return Prisma.sql`
     WITH page AS (
@@ -56,6 +65,7 @@ export function toolPerformanceQuery(
         AND ti.created_at < (${until.toISOString()}::timestamptz AT TIME ZONE 'UTC')
         ${connectorFilter}
         ${serverFilter}
+        ${userFilter}
       GROUP BY t.id, t.name, c.id, c.name, ti.mcp_server_id, s.name
       ORDER BY calls DESC, c.id, t.id, ti.mcp_server_id NULLS FIRST
       LIMIT ${limit + 1} OFFSET ${options.offset ?? 0}
@@ -73,6 +83,7 @@ export function toolPerformanceQuery(
         AND ti.error IS NOT NULL AND ti.error <> ''
         AND ti.created_at >= (${since.toISOString()}::timestamptz AT TIME ZONE 'UTC')
         AND ti.created_at < (${until.toISOString()}::timestamptz AT TIME ZONE 'UTC')
+        ${userFilter}
       ORDER BY ti.created_at DESC, ti.id DESC
       LIMIT 1
     ) latest ON true

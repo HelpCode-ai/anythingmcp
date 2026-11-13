@@ -8,6 +8,15 @@ import {
   AnalyticsQueryDto,
 } from './analytics-query.dto';
 import { ToolPerformanceQueryDto } from './tool-performance-query.dto';
+import { MemberVisibilityService } from '../settings/member-visibility.service';
+
+/**
+ * Every read route of this controller is scoped by member visibility: in a
+ * workspace set to `restricted`, a member who is not an admin gets only the
+ * calls they made themselves (rows without a user are hidden). Admins and open
+ * workspaces take the unchanged workspace-wide path. The organisation filter
+ * stays in every query; the user filter is added to it with AND, in SQL.
+ */
 
 @ApiTags('Audit')
 @ApiBearerAuth()
@@ -15,7 +24,10 @@ import { ToolPerformanceQueryDto } from './tool-performance-query.dto';
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/audit')
 export class AuditController {
-  constructor(private readonly auditService: AuditService) {}
+  constructor(
+    private readonly auditService: AuditService,
+    private readonly visibility: MemberVisibilityService,
+  ) {}
 
   @Get('invocations')
   @ApiOperation({
@@ -26,7 +38,9 @@ export class AuditController {
       'A failure repeated within a minute is stored once with `repeatCount`. Filters combine with AND.\n\n' +
       'Typical uses: the last failures (`status=ERROR`), the calls of one tool or connector, or what one AI client did ' +
       'on one server (`mcpServerId`).\n\n' +
-      '```bash\namcp api GET "/api/audit/invocations?status=ERROR&limit=20"\n```',
+      '```bash\namcp api GET "/api/audit/invocations?status=ERROR&limit=20"\n```\n\n' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets only the calls they made ' +
+      'themselves; calls without a user are hidden.',
   })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Rows to return (default 100).', example: 20 })
   @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip, for paging.', example: 0 })
@@ -80,17 +94,35 @@ export class AuditController {
     @Query('connectorId') connectorId?: string,
     @Query('mcpServerId') mcpServerId?: string,
   ) {
+    const scope = await this.visibility.scopeFor(req.user);
+    if (!scope.restricted) {
+      return this.auditService.getRecentInvocations(
+        limit ? parseInt(limit, 10) : 100,
+        offset ? parseInt(offset, 10) : 0,
+        { toolId, status: status as any, search, connectorId, mcpServerId, organizationId: req.user.organizationId },
+      );
+    }
     return this.auditService.getRecentInvocations(
       limit ? parseInt(limit, 10) : 100,
       offset ? parseInt(offset, 10) : 0,
-      { toolId, status: status as any, search, connectorId, mcpServerId, organizationId: req.user.organizationId },
+      {
+        toolId,
+        status: status as any,
+        search,
+        connectorId,
+        mcpServerId,
+        organizationId: req.user.organizationId,
+        onlyUserId: scope.userId,
+      },
     );
   }
 
   @Get('stats')
   @ApiOperation({
     summary: 'Get invocation statistics',
-    description: 'Tool-call counters for your workspace: last 24 hours, errors in the last 24 hours, last 7 days and all time.',
+    description:
+      'Tool-call counters for your workspace: last 24 hours, errors in the last 24 hours, last 7 days and all time.' +
+      ' In a workspace with restricted member visibility, a member who is not an admin gets only their own calls.',
   })
   @ApiResponse({
     status: 200,
@@ -100,7 +132,11 @@ export class AuditController {
     },
   })
   async getStats(@Req() req: any) {
-    return this.auditService.getStats(req.user.organizationId);
+    const scope = await this.visibility.scopeFor(req.user);
+    if (!scope.restricted) {
+      return this.auditService.getStats(req.user.organizationId);
+    }
+    return this.auditService.getStats(req.user.organizationId, scope.userId);
   }
 
   @Get('analytics')
@@ -109,7 +145,8 @@ export class AuditController {
     description:
       'Returns a daily breakdown (UTC days, last `days`, default 7) of invocations by status, ' +
       'top 10 most-used tools, success rate, and average duration.\n\n' +
-      '```bash\namcp api GET "/api/audit/analytics?days=30"\n```',
+      '```bash\namcp api GET "/api/audit/analytics?days=30"\n```\n\n' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets only their own calls.',
   })
   @ApiQuery({
     name: 'days',
@@ -118,9 +155,17 @@ export class AuditController {
     description: `Window in days, 1 to ${ANALYTICS_MAX_DAYS} (default ${ANALYTICS_DEFAULT_DAYS})`,
   })
   async getAnalytics(@Req() req: any, @Query() query: AnalyticsQueryDto) {
+    const scope = await this.visibility.scopeFor(req.user);
+    if (!scope.restricted) {
+      return this.auditService.getAnalytics(
+        req.user.organizationId,
+        query.days ?? ANALYTICS_DEFAULT_DAYS,
+      );
+    }
     return this.auditService.getAnalytics(
       req.user.organizationId,
       query.days ?? ANALYTICS_DEFAULT_DAYS,
+      scope.userId,
     );
   }
 
@@ -130,7 +175,8 @@ export class AuditController {
     description:
       'Groups the last hours (default 24, maximum 2160) by tool, connector and MCP server. ' +
       'ERROR and TIMEOUT count as failures. Latency percentiles use stored duration samples; ' +
-      'repeated failures retain their first recorded server and duration.',
+      'repeated failures retain their first recorded server and duration.' +
+      ' In a workspace with restricted member visibility, a member who is not an admin gets only their own calls.',
   })
   @ApiQuery({ name: 'hours', required: false, type: Number })
   @ApiQuery({ name: 'connectorId', required: false, type: String })
@@ -138,10 +184,14 @@ export class AuditController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
   async getToolPerformance(
-    @Req() req: { user: { organizationId: string } },
+    @Req() req: { user: { sub: string; role: string; organizationId: string } },
     @Query() query: ToolPerformanceQueryDto,
   ) {
-    return this.auditService.getToolPerformance(req.user.organizationId, query);
+    const scope = await this.visibility.scopeFor(req.user);
+    if (!scope.restricted) {
+      return this.auditService.getToolPerformance(req.user.organizationId, query);
+    }
+    return this.auditService.getToolPerformance(req.user.organizationId, query, scope.userId);
   }
 
   @Get('breakdowns')
@@ -151,7 +201,8 @@ export class AuditController {
       'Aggregates the last N days (default 30) of tool calls per connector, per ' +
       'MCP server and per user, with error counts, proxy-call metering and a ' +
       'volume-based cost estimate. Each list holds the top 20 by calls; `estCostMicros` is 0 unless the ' +
-      'instance sets per-call rates.',
+      'instance sets per-call rates.' +
+      ' In a workspace with restricted member visibility, a member who is not an admin gets only their own calls: every list and total counts only their calls, and `byUser` holds only their own row.',
   })
   @ApiQuery({ name: 'days', required: false, type: Number, description: 'Window in days, 1 to 365 (default 30).', example: 30 })
   @ApiResponse({
@@ -172,9 +223,17 @@ export class AuditController {
     },
   })
   async getBreakdowns(@Req() req: any, @Query('days') days?: string) {
+    const scope = await this.visibility.scopeFor(req.user);
+    if (!scope.restricted) {
+      return this.auditService.getBreakdowns(
+        req.user.organizationId,
+        days ? parseInt(days, 10) : 30,
+      );
+    }
     return this.auditService.getBreakdowns(
       req.user.organizationId,
       days ? parseInt(days, 10) : 30,
+      scope.userId,
     );
   }
 }

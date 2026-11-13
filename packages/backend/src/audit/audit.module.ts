@@ -9,10 +9,13 @@ import { ProductEventService } from './product-event.service';
 import { ProductEventController } from './product-event.controller';
 import { SignupAttributionController } from './signup-attribution.controller';
 import { AlertsModule } from '../alerts/alerts.module';
+// MemberVisibilityModule, never SettingsModule: the File Search worker loads
+// SettingsModule without RolesModule / AuditModule.
+import { MemberVisibilityModule } from '../settings/member-visibility.module';
 
 @Global()
 @Module({
-  imports: [AlertsModule],
+  imports: [AlertsModule, MemberVisibilityModule],
   controllers: [AuditController, ProductEventController, SignupAttributionController],
   providers: [
     AuditService,
