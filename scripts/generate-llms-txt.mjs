@@ -34,6 +34,7 @@ const DESCRIPTIONS = {
   'docs/api-reference.md': 'REST API reference for authentication, connectors, tools, MCP servers, and administration.',
   'docs/tool-definition.md': 'Define MCP tool parameters, endpoint mappings, response transforms, and adapter metadata.',
   'docs/operations/observability.md': 'Configure structured logging, Sentry error reporting, and Prometheus metrics for your deployment.',
+  'docs/operations/member-visibility.md': 'Limit what members who are not admins see in the dashboard and the API to their own calls and what their MCP roles reach.',
   'docs/ROADMAP.md': 'Review current development priorities, planned features, and contribution opportunities.',
   'docs/guides/connect-sorare-to-chatgpt.md': 'Connect Sorare fantasy football tools to ChatGPT through AnythingMCP.',
   'docs/guides/connect-sorare-to-claude.md': 'Connect Sorare fantasy football tools to Claude Desktop and Claude Code.',

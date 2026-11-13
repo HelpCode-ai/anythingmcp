@@ -481,6 +481,25 @@ cache immediately on the instance handling the edit; other replicas observe
 new limits within five seconds. Positive policies are still read fresh per
 call, so cached presence never replaces the caller's current role policy.
 
+### Member visibility
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings/member-visibility` | Any member: `{ mode, restrictedForMe }` of the current workspace |
+| PUT | `/api/admin/settings/member-visibility` | Admin: set `{ "mode": "open" }` or `{ "mode": "restricted" }` |
+
+In a workspace set to `restricted`, a member who is not an admin gets only
+their own calls from the audit endpoints, only the connectors and MCP servers
+their roles reach, and 404 for the others. Admins and `open` workspaces (the
+default) see everything. What each endpoint returns, how it combines with
+roles and SSO group mapping, and what stays visible:
+[member visibility](operations/member-visibility.md).
+
+```bash
+amcp api GET /api/settings/member-visibility
+amcp api PUT /api/admin/settings/member-visibility --data '{"mode":"restricted"}' --yes
+```
+
 ---
 
 ## MCP API Keys

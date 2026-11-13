@@ -132,6 +132,13 @@ Resolution rules:
 - A sync will **not** demote the last remaining admin of a workspace. The
   attempt is refused and audited as `LAST_ADMIN_PROTECTION_TRIGGERED`.
 
+The same MCP roles can also decide what members see in the dashboard: with
+[member visibility](operations/member-visibility.md) set to Restricted, a
+member who is not an admin sees only their own tool calls, the connectors
+their roles reach and the MCP servers that hold one of them. Map groups to
+the Viewer workspace role and to MCP roles with tool lists, then switch the
+mode under **Settings → Organization → Security**.
+
 ### When nothing matches
 
 | Fallback | Behaviour |

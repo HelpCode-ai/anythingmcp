@@ -19,6 +19,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { ActionMenu } from '@/components/ui/action-menu';
 import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
+import { useMemberVisibility } from '@/lib/use-member-visibility';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -94,8 +95,13 @@ const SUPPORTED_TYPES = [
 ];
 
 export default function ConnectorsPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const t = useTranslations('connectors');
+  // A VIEWER cannot create or import connectors (the API answers 403), so
+  // the page does not offer it.
+  const canCreate = user?.role !== 'VIEWER';
+  // Restricted member visibility: an empty list means nothing was shared yet.
+  const { restrictedForMe } = useMemberVisibility();
   const authTypeLabel = useAuthTypeLabel();
   // Only "Database" and "Email" are words; the other type names are the same everywhere.
   const typeLabel = (type: string) =>
@@ -271,7 +277,7 @@ export default function ConnectorsPage() {
   const utilityActions = [
     { label: checkingHealth ? t('menu.checking') : t('menu.healthCheck'), icon: <HeartPulseIcon />, onSelect: handleHealthCheck, disabled: checkingHealth },
     { label: t('menu.exportAll'), icon: <DownloadIcon />, onSelect: handleExportAll },
-    { label: t('menu.importFromFile'), icon: <UploadIcon />, onSelect: () => setShowImportModal(true) },
+    ...(canCreate ? [{ label: t('menu.importFromFile'), icon: <UploadIcon />, onSelect: () => setShowImportModal(true) }] : []),
     { label: t('menu.browseAdapters'), icon: <StoreIcon />, href: '/connectors/store' },
   ];
 
@@ -292,10 +298,12 @@ export default function ConnectorsPage() {
         <DownloadIcon />
         <span>{t('header.export')}</span>
       </Button>
-      <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title={t('header.importTitle')} className="max-md:hidden">
-        <UploadIcon />
-        <span>{t('header.import')}</span>
-      </Button>
+      {canCreate && (
+        <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)} title={t('header.importTitle')} className="max-md:hidden">
+          <UploadIcon />
+          <span>{t('header.import')}</span>
+        </Button>
+      )}
       <Link
         href="/connectors/store"
         title={t('header.adaptersTitle')}
@@ -305,10 +313,12 @@ export default function ConnectorsPage() {
         <span>{t('header.adapters')}</span>
       </Link>
       <ActionMenu items={utilityActions} className="md:hidden" />
-      <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
-      <PlusIcon />
-      {t('add')}
-      </Link>
+      {canCreate && (
+        <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
+          <PlusIcon />
+          {t('add')}
+        </Link>
+      )}
     </div>
   );
 
@@ -460,6 +470,16 @@ export default function ConnectorsPage() {
             </Card>
           ))}
         </div>
+      ) : list.length === 0 && restrictedForMe ? (
+        <div className="rounded-[14px] border border-dashed border-[var(--border-strong)] px-6 py-16 text-center" data-testid="nothing-shared">
+          <p className="mb-6 text-sm text-[var(--text-3)]">{t('empty.nothingShared')}</p>
+          {canCreate && (
+            <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
+              <PlusIcon />
+              {t('add')}
+            </Link>
+          )}
+        </div>
       ) : list.length === 0 ? (
         <div className="rounded-[14px] border border-dashed border-[var(--border-strong)] py-16 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--brand-tint)]">
@@ -481,18 +501,22 @@ export default function ConnectorsPage() {
             })}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
-              <PlusIcon />
-              {t('add')}
-            </Link>
+            {canCreate && (
+              <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
+                <PlusIcon />
+                {t('add')}
+              </Link>
+            )}
             <Link href="/connectors/store" className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>
               <StoreIcon />
               {t('empty.browse')}
             </Link>
-            <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)}>
-              <UploadIcon size={14} />
-              {t('empty.importBackup')}
-            </Button>
+            {canCreate && (
+              <Button variant="secondary" size="md" onClick={() => setShowImportModal(true)}>
+                <UploadIcon size={14} />
+                {t('empty.importBackup')}
+              </Button>
+            )}
           </div>
         </div>
       ) : (
@@ -595,19 +619,21 @@ export default function ConnectorsPage() {
             })}
 
             {/* Add a connector tile */}
-            <Link
-              href="/connectors/new"
-              className={cn(
-                'flex min-h-[140px] flex-col items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-[var(--border-strong)] p-[18px] text-[var(--text-2)]',
-                'transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] hover:text-[var(--brand)]'
-              )}
-            >
-              <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[var(--surface-2)]">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-              </span>
-              <span className="text-[13px] font-semibold">{t('addTile.title')}</span>
-              <span className="text-[12px] text-[var(--text-3)]">{t('addTile.hint')}</span>
-            </Link>
+            {canCreate && (
+              <Link
+                href="/connectors/new"
+                className={cn(
+                  'flex min-h-[140px] flex-col items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-[var(--border-strong)] p-[18px] text-[var(--text-2)]',
+                  'transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] hover:text-[var(--brand)]'
+                )}
+              >
+                <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[var(--surface-2)]">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                </span>
+                <span className="text-[13px] font-semibold">{t('addTile.title')}</span>
+                <span className="text-[12px] text-[var(--text-3)]">{t('addTile.hint')}</span>
+              </Link>
+            )}
           </div>
         </>
       )}

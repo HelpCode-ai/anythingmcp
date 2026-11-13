@@ -391,6 +391,7 @@
   "auditLog": {
     "title": "Audit Log",
     "subtitle": "Tool invocation history across your connectors and MCP servers.",
+    "ownCallsOnly": "You see your own calls. Workspace admins see all calls.",
     "refresh": "Refresh",
     "filters": {
       "all": "All",
@@ -456,6 +457,7 @@
   "analytics": {
     "title": "Analytics",
     "subtitle": "Tool-call volume, success rate and cost across your MCP server.",
+    "ownCallsOnly": "You see your own calls. Workspace admins see all calls.",
     "range": "{days}d",
     "loading": "Loading…",
     "loadFailed": "Failed to load",
@@ -556,6 +558,7 @@
     "active": "Active",
     "inactive": "Inactive",
     "empty": "No MCP servers configured yet.",
+    "nothingShared": "Nothing has been shared with you yet. Ask a workspace admin for a role.",
     "createFirst": "Create your first MCP Server",
     "noMatches": "No MCP servers match your search.",
     "exposes": "Exposes <b>{names}</b>",
@@ -776,7 +779,8 @@
       "description": "Add your first API connector to start generating MCP tools.",
       "supports": "Supports {types}",
       "browse": "Browse Adapters",
-      "importBackup": "Import from Backup"
+      "importBackup": "Import from Backup",
+      "nothingShared": "Nothing has been shared with you yet. Ask a workspace admin for a role."
     },
     "filter": {
       "placeholder": "Filter connectors…",
@@ -2199,6 +2203,21 @@
       "title": "Security",
       "body": "Sign every member out of the dashboard and of every connected AI client, including clients that hold a refresh token. Nobody loses their role or access; everyone simply has to sign in again. Use it after a suspected credential leak or a change in your identity provider. MCP API keys are not sessions and are left alone unless you say otherwise.",
       "button": "Sign everyone out"
+    },
+    "visibility": {
+      "title": "Member visibility",
+      "body": "Decide what members who are not admins see in the dashboard and the API. Admins always see everything. AI clients are not affected: roles already decide which tools they can call. A change can take up to 30 seconds to apply.",
+      "open": {
+        "label": "Open",
+        "description": "Every member sees every connector, MCP server and tool call of the workspace. This is the default."
+      },
+      "restricted": {
+        "label": "Restricted",
+        "description": "Members who are not admins see only their own tool calls, the connectors their roles reach and the MCP servers that hold one of them."
+      },
+      "noToolList": "No role limits tools yet, so members still see every connector. Create a role with a tool list under <link>Roles</link>.",
+      "saved": "Member visibility saved.",
+      "saveFailed": "Could not save member visibility."
     },
     "revokeDialog": {
       "title": "Sign everyone out",
