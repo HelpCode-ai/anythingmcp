@@ -1528,7 +1528,11 @@
       "authorizeRemote": "Autorizza presso il server remoto",
       "authorizeProvider": "Autorizza presso il provider",
       "discovering": "Rilevamento...",
-      "rediscover": "Rileva di nuovo gli strumenti"
+      "rediscover": "Rileva di nuovo gli strumenti",
+      "keysMissing": "Salva prima il client ID e il secret della tua app, poi autorizza. Il provider ne ha bisogno per aprire la sua pagina di accesso (per Etsy: Keystring e Shared Secret).",
+      "keysStillEmpty": "Ancora vuoti: {names}",
+      "enterKeys": "Inserisci le chiavi",
+      "clientId": "client ID"
     },
     "shopee": {
       "title": "Autorizzazione del negozio Shopee",

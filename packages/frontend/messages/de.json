@@ -1528,7 +1528,11 @@
       "authorizeRemote": "Beim Remote-Server autorisieren",
       "authorizeProvider": "Beim Anbieter autorisieren",
       "discovering": "Wird erkannt...",
-      "rediscover": "Tools erneut erkennen"
+      "rediscover": "Tools erneut erkennen",
+      "keysMissing": "Speichere zuerst die Client-ID und das Secret deiner App und autorisiere danach. Der Anbieter braucht sie, um seine Anmeldeseite zu öffnen (bei Etsy: Keystring und Shared Secret).",
+      "keysStillEmpty": "Noch leer: {names}",
+      "enterKeys": "Schlüssel eingeben",
+      "clientId": "Client-ID"
     },
     "shopee": {
       "title": "Shopee-Shop-Autorisierung",
