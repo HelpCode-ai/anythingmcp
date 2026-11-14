@@ -38,6 +38,8 @@ export default function SettingsPage() {
   const [serverUrl, setServerUrl] = useState('');
   // Cloud only: onboarding tips and offers by email (the drip, win-back).
   const [isCloud, setIsCloud] = useState(false);
+  // Whether server info has answered (or failed): until then isCloud is only a guess.
+  const [deploymentKnown, setDeploymentKnown] = useState(false);
   const [marketingOptOut, setMarketingOptOut] = useState<boolean | null>(null);
   // Management API keys (scope !== MCP): the credential the amcp CLI uses to
   // drive /api/*. MCP tool keys stay on the per-server page.
@@ -75,7 +77,7 @@ export default function SettingsPage() {
       setOauthEndpoints(info.oauthEndpoints);
       setServerUrl(info.serverUrl);
       setIsCloud(info.deploymentMode === 'cloud');
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setDeploymentKnown(true));
   }, []);
 
   useEffect(() => {
@@ -130,7 +132,8 @@ export default function SettingsPage() {
   };
 
   const loadLinkable = () => {
-    if (!token) return;
+    // SSO is self-hosted only: on Cloud the route answers 404, so don't ask.
+    if (!token || !deploymentKnown || isCloud) return;
     // Silently empty when the workspace has no provider: this card should not
     // announce a feature the workspace has not configured.
     sso.myProviders(token).then(setLinkable).catch(() => setLinkable([]));
@@ -150,7 +153,7 @@ export default function SettingsPage() {
   useEffect(() => {
     loadLinkable();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, deploymentKnown, isCloud]);
 
   useEffect(() => {
     loadSocial();
