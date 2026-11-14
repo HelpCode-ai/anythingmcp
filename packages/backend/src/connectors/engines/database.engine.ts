@@ -123,7 +123,16 @@ export class DatabaseEngine {
     try {
       url = new URL(baseUrl);
     } catch {
-      return baseUrl; // not a URL we can edit — hand it to the driver as-is
+      // `new URL` refuses a multi-host MongoDB URL: put the credentials in
+      // after the scheme, unless the string carries some already. A string
+      // with no scheme (ADO.NET) goes to the driver as-is.
+      const start = baseUrl.indexOf('://') + 3;
+      const rest = baseUrl.slice(start);
+      const stop = rest.search(/[/?#]/);
+      if (start < 3 || (stop === -1 ? rest : rest.slice(0, stop)).includes('@')) return baseUrl;
+      const password = authConfig?.password;
+      const secret = typeof password === 'string' && password !== '' ? `:${encodeURIComponent(password)}` : '';
+      return `${baseUrl.slice(0, start)}${encodeURIComponent(username)}${secret}@${rest}`;
     }
     if (url.username) return baseUrl;
     url.username = encodeURIComponent(username);

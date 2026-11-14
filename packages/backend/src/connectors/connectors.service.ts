@@ -17,7 +17,7 @@ import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine, WsdlReadError } from './engines/soap.engine';
 import { wsdlUrlForLog } from './parsers/wsdl.parser';
 import { connectorSecretValues } from './connector-secrets.util';
-import { moveUrlCredentials } from './database-url-credentials.util';
+import { moveUrlCredentials, urlUserinfo } from './database-url-credentials.util';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
@@ -243,12 +243,13 @@ export class ConnectorsService {
       webhookSecret: string;
     }>,
   ): Promise<Connector> {
-    // Only the type (base URL normalisation) and the stored credential (auth
-    // status below) are needed: loading every tool, resource and prompt here
-    // made each save as heavy as the connector was large.
+    // Only the type (base URL normalisation), the stored credential (auth
+    // status below) and the stored base URL (DATABASE credentials) are
+    // needed: loading every tool, resource and prompt here made each save as
+    // heavy as the connector was large.
     const existing = await this.prisma.connector.findUnique({
       where: { id },
-      select: { type: true, authConfig: true },
+      select: { type: true, authConfig: true, baseUrl: true },
     });
     if (!existing) {
       throw new NotFoundException(`Connector ${id} not found`);
@@ -256,11 +257,22 @@ export class ConnectorsService {
     assertValidHeaderNames(data.headers, data.authConfig);
 
     if (existing.type === 'DATABASE' && data.baseUrl !== undefined) {
-      const moved = moveUrlCredentials(
-        data.baseUrl,
-        data.authConfig ?? this.readAuthConfig(existing.authConfig),
-      );
+      let authConfig = data.authConfig ?? this.readAuthConfig(existing.authConfig);
+      // Credentials retyped into the URL replace the ones in authConfig, as
+      // the URL is where the database form asks for them (the Basic Auth
+      // fields send authConfig themselves). An unchanged userinfo keeps the
+      // rule that credentials already in authConfig are left alone.
+      const typed = urlUserinfo(data.baseUrl);
+      const retyped = !data.authConfig && typed !== urlUserinfo(existing.baseUrl);
+      if (retyped) {
+        const { username: _username, password: _password, ...rest } = authConfig;
+        authConfig = rest;
+      }
+      const moved = moveUrlCredentials(data.baseUrl, authConfig);
       if (moved) data = { ...data, baseUrl: moved.baseUrl, authConfig: moved.authConfig };
+      // Not movable (no password, or {{VAR}} references) but typed with a
+      // username: the URL's credentials are the ones to use from now on.
+      else if (retyped && typed !== '' && !typed.startsWith(':')) data = { ...data, authConfig };
     }
 
     const updateData: any = { ...data };

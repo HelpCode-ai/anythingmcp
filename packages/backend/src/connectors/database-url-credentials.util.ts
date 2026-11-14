@@ -12,6 +12,9 @@
 /** What a DATABASE `baseUrl` shows in place of its password. */
 export const URL_PASSWORD_MASK = '********';
 
+/** A `{{VAR}}` reference, as in VAR_PATTERN (connector-secrets.util.ts); a lone `{{` is just a character. */
+const VAR_REF = /\{\{[^{}]+\}\}/;
+
 function hasValue(v: unknown): boolean {
   return typeof v === 'string' ? v !== '' : v !== undefined && v !== null;
 }
@@ -45,16 +48,34 @@ export function maskUrlPassword(value: string): string {
   const span = passwordSpan(value);
   if (!span) return value;
   const password = value.slice(span.start, span.end);
-  if (password.includes('{{')) return value;
+  if (VAR_REF.test(password)) return value;
   return value.slice(0, span.start) + URL_PASSWORD_MASK + value.slice(span.end);
 }
 
 /**
- * Apply an edit made against the masked view: a URL sent back exactly as it
- * was shown keeps the stored one, password included.
+ * Apply an edit made against the masked view: a password slot that still
+ * holds the mask keeps the stored password, so editing the host or database
+ * name does not save the mask over it. When the stored URL no longer holds a
+ * password, the view predates its move to authConfig, so the masked
+ * `user:********@` is dropped and authConfig keeps the credentials. A retyped
+ * password is taken as sent.
  */
 export function keepMaskedUrlPassword(incoming: string, stored: string): string {
-  return incoming !== stored && incoming === maskUrlPassword(stored) ? stored : incoming;
+  const sent = passwordSpan(incoming);
+  if (!sent || incoming.slice(sent.start, sent.end) !== URL_PASSWORD_MASK) return incoming;
+  const kept = passwordSpan(stored);
+  if (!kept) return incoming.slice(0, incoming.indexOf('://') + 3) + incoming.slice(sent.end + 1);
+  return incoming.slice(0, sent.start) + stored.slice(kept.start, kept.end) + incoming.slice(sent.end);
+}
+
+/** `user:password` as written in a connection string; '' when it is not a URL. */
+export function urlUserinfo(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.username}:${url.password}`;
+  } catch {
+    return '';
+  }
 }
 
 function decode(part: string): string | null {
@@ -72,8 +93,8 @@ function decode(part: string): string | null {
  * - authConfig already holds a username or password: which one the engine
  *   uses then differs by driver, so moving could change who connects;
  * - the string is not a URL `new URL` can parse (an ADO.NET string, a
- *   multi-host MongoDB URL): the engine could not splice the credentials
- *   back into it;
+ *   multi-host MongoDB URL): the strip below could not be checked against
+ *   the parser, so the credentials stay in the string, masked on read;
  * - there is no password, no username (the engine only splices a password
  *   together with a username), a `{{VAR}}` reference, or the mask itself
  *   (an export taken from the masked view).
@@ -96,7 +117,7 @@ export function moveUrlCredentials(
   const username = decode(url.username);
   const password = decode(url.password);
   if (!username || !password) return null;
-  if (username.includes('{{') || password.includes('{{') || password === URL_PASSWORD_MASK) {
+  if (VAR_REF.test(username) || VAR_REF.test(password) || password === URL_PASSWORD_MASK) {
     return null;
   }
 

@@ -963,6 +963,16 @@ curl -s http://localhost:4000/api/connectors \
   }'
 ```
 
+### Where the password is stored
+
+You can type the username and password into the connection string, as above. When the connector is saved, AnythingMCP moves them into the connector's encrypted credentials and stores the connection string without them; the database engine puts them back when it connects.
+
+- The dashboard and the API show the connection string without `user:password@`. An older connection string that still holds its password shows it as `********`.
+- To change the password, type `user:password@` into the connection string again. A string that still shows `********` keeps the stored password.
+- An API request that sends `authConfig` replaces it whole, the moved username and password included.
+- No export contains a password that has moved, an admin export included, so a connector restored from a backup needs it typed in again.
+- A connection string the parser cannot read, such as a multi-host MongoDB URL typed with its credentials, keeps them in place; the password is shown as `********`.
+
 ---
 
 ## Auto-Generated Tools
