@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { license, productEvents, type PlanFits } from '@/lib/api';
 import { LogoIcon } from '@/components/logo-icon';
 import { PlanPicker } from '@/components/plan-picker';
+import { PaywallIntl } from '@/components/paywall-intl';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -72,7 +73,16 @@ function deviceKind(): 'mobile' | 'desktop' {
   }
 }
 
+/** The card-trial page, in the visitor's language among the website's seven. */
 export default function StartTrialPage() {
+  return (
+    <PaywallIntl fallback={<div className="min-h-screen bg-[var(--bg)]" />}>
+      <StartTrialContent />
+    </PaywallIntl>
+  );
+}
+
+function StartTrialContent() {
   const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
   const localPricing = useLocalPricing(deploymentMode === 'cloud');
   const router = useRouter();
@@ -231,7 +241,7 @@ export default function StartTrialPage() {
       ? t('start.tryAgain')
       : paysToday
         ? t('start.checkout')
-        : t('start.withCard');
+        : t('start.trial');
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
@@ -305,6 +315,10 @@ export default function StartTrialPage() {
             >
               {startLabel}
             </Button>
+            {/* Right under the button: what is due today, and that a card is not the only way to pay. */}
+            <p data-testid="payment-methods" className="-mt-1 text-xs font-medium text-[var(--text-2)] text-center">
+              {paysToday ? t('methods.pay') : t('methods.trial')}
+            </p>
             {promo && (
               <p className="text-xs font-medium text-[var(--ok)] text-center">
                 {t('promo', { code: promo })}

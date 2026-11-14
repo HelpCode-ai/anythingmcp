@@ -355,30 +355,34 @@
       "paysToday": "Mantieni attivo il tuo workspace",
       "trial": "La tua prova gratuita"
     },
-    "ending": "La tua prova gratuita termina il <strong>{date}</strong>, troppo presto per continuare con una prova con carta. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
-    "endingSoon": "La tua prova gratuita termina a breve, troppo presto per continuare con una prova con carta. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
-    "returning": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con carta non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono, e la tua prova attuale continua fino al <strong>{date}</strong> se decidi più avanti.",
-    "returningNoDate": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con carta non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
-    "trial": "Tutte le funzioni, gratis fino al <strong>{date}</strong>. Aggiungi ora una carta e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: la prova senza carta ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere una carta in qualsiasi momento per sbloccare il piano completo.",
-    "trialNoDate": "Tutte le funzioni, gratis fino alla fine della prova. Aggiungi ora una carta e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: la prova senza carta ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere una carta in qualsiasi momento per sbloccare il piano completo.",
+    "ending": "La tua prova gratuita termina il <strong>{date}</strong>, troppo presto per aggiungere un metodo di pagamento e continuare a provare gratis. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "endingSoon": "La tua prova gratuita termina a breve, troppo presto per aggiungere un metodo di pagamento e continuare a provare gratis. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "returning": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con metodo di pagamento non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono, e la tua prova attuale continua fino al <strong>{date}</strong> se decidi più avanti.",
+    "returningNoDate": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con metodo di pagamento non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "trial": "Tutte le funzioni, gratis fino al <strong>{date}</strong>. Aggiungi ora un metodo di pagamento e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: quella prova ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere un metodo di pagamento in qualsiasi momento per sbloccare il piano completo.",
+    "trialNoDate": "Tutte le funzioni, gratis fino alla fine della prova. Aggiungi ora un metodo di pagamento e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: quella prova ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere un metodo di pagamento in qualsiasi momento per sbloccare il piano completo.",
     "authorizationReturn": "In ogni caso, tornerai subito a completare il collegamento del tuo client AI.",
     "chargesToday": "Questo indirizzo ha già avuto un abbonamento, quindi il checkout addebiterà {amount} oggi.",
     "start": {
       "opening": "Apertura del checkout…",
       "tryAgain": "Riprova",
       "checkout": "Continua al checkout",
-      "withCard": "Inizia la prova gratuita con carta"
+      "trial": "Inizia la prova gratuita"
     },
     "promo": "Il codice {code} verrà applicato al checkout.",
     "price": "{amount}/{period, select, yearly {anno} other {mese}}",
     "priceLocal": "≈ {local}/{period, select, yearly {anno} other {mese}} ({exact})",
     "finePrintPaysToday": "{plan}, {price}, addebitato oggi e poi {period, select, yearly {ogni anno} other {ogni mese}}. Checkout sicuro con Stripe. Disdici quando vuoi dal portale di fatturazione.",
-    "finePrintTrial": "0 € oggi. {plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dal {date}. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
-    "finePrintTrialNoDate": "0 € oggi. {plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dalla fine della prova. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
+    "finePrintTrial": "{plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dal {date}. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
+    "finePrintTrialNoDate": "{plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dalla fine della prova. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
     "notReady": "Non sei ancora pronto?",
-    "notReadyCard": "Non vuoi ancora aggiungere una carta?",
+    "notReadyCard": "Non vuoi ancora aggiungere un metodo di pagamento?",
     "keepFree": "Continua a usare la prova gratuita",
-    "tryFree": "Prova gratis senza dati di pagamento"
+    "tryFree": "Prova gratis senza dati di pagamento",
+    "methods": {
+      "trial": "0 € oggi · carta, PayPal e altri metodi",
+      "pay": "Carta, PayPal e altri metodi"
+    }
   },
   "appShell": {
     "toggleTheme": "Cambia tema",
@@ -3737,7 +3741,55 @@
     "workspaces": "{count} workspace su AnythingMCP Cloud",
     "directory": "Presente nella Claude Directory",
     "directoryChatgpt": "Presente nella directory dei plugin di ChatGPT",
-    "directoryBoth": "Presente nelle directory di Claude e ChatGPT"
+    "directoryBoth": "Presente nelle directory di Claude e ChatGPT",
+    "workspaceLabel": "Workspace:",
+    "reasons": {
+      "paymentFailed": {
+        "title": "Il pagamento non è andato a buon fine",
+        "bodyAdmin": "L’ultimo pagamento non è andato a buon fine, quindi il tuo abbonamento è sospeso. Aggiorna il metodo di pagamento e riparte subito: il pagamento in sospeso viene addebitato appena salvi quello nuovo. I tuoi connettori e le tue impostazioni restano.",
+        "bodyMember": "L’ultimo pagamento dell’abbonamento di questo workspace non è andato a buon fine, quindi l’abbonamento è sospeso. Chiedi a un admin del workspace di aggiornare il metodo di pagamento. I tuoi connettori e le tue impostazioni restano."
+      },
+      "noLicense": {
+        "title": "Licenza necessaria",
+        "body": "Questo workspace non ha una licenza attiva. Avvia una prova o acquista un piano per continuare."
+      },
+      "trialEnded": {
+        "title": "La tua prova è terminata",
+        "body": "La tua prova di 7 giorni è terminata. Acquista una licenza per continuare a usare AnythingMCP Cloud. I tuoi connettori e le tue impostazioni restano."
+      },
+      "lapsed": {
+        "title": "Il tuo abbonamento non è attivo",
+        "body": "Il tuo abbonamento non è attivo, di solito per un rinnovo non andato a buon fine. Aggiorna il metodo di pagamento nel portale di fatturazione e riparte; acquistando un nuovo piano avvieresti un secondo abbonamento accanto a questo. I tuoi connettori e le tue impostazioni restano."
+      },
+      "expired": {
+        "title": "La tua licenza è scaduta",
+        "body": "La tua licenza non è più attiva. Acquista o rinnova una licenza per continuare a usare AnythingMCP. I tuoi connettori e le tue impostazioni restano."
+      }
+    },
+    "startTrial": {
+      "start": "Inizia la prova gratuita di 7 giorni",
+      "starting": "Avvio…",
+      "failed": "Non è stato possibile avviare la prova. Riprova o contatta il supporto."
+    },
+    "viewPlans": "Vedi i piani e acquista una licenza",
+    "openingCheckout": "Apertura del checkout…",
+    "subscribeTo": "Abbonati a {plan}",
+    "comparePlans": "Confronta i piani",
+    "opening": "Apertura…",
+    "payment": {
+      "update": "Aggiorna il metodo di pagamento",
+      "updated": "Ho aggiornato il metodo di pagamento",
+      "checking": "Verifica…",
+      "openFailed": "Non è stato possibile aprire la pagina di pagamento. Riprova o contatta il supporto.",
+      "notYet": "Il pagamento non è ancora arrivato. Se hai appena aggiornato il metodo di pagamento, riprova tra un minuto.",
+      "checkFailed": "Impossibile verificare in questo momento. Riprova tra un minuto."
+    },
+    "updateBilling": "Aggiorna la fatturazione",
+    "switchWorkspace": "Passa a un altro workspace",
+    "alreadyPurchased": "Hai già acquistato?",
+    "enterKey": "Inserisci la chiave di licenza",
+    "notContinuing": "Non vuoi continuare?",
+    "deleteAccount": "Elimina il tuo account"
   },
   "planFit": {
     "title": "Cosa cambia con {plan}",
@@ -3824,5 +3876,54 @@
     "after": "Dopo la disdetta torni qui.",
     "openFailed": "Impossibile aprire la pagina di disdetta.",
     "licensePage": "Apri Impostazioni → Licenza"
+  },
+  "planPicker": {
+    "periodLabel": "Periodo di fatturazione",
+    "planLabel": "Piano",
+    "monthly": "Mensile",
+    "yearly": "Annuale",
+    "twoMonthsFree": "2 mesi gratis",
+    "mostPopular": "Il più scelto",
+    "summary": "{connectors} connettori · {mcpServers} server MCP · {users, plural, one {# utente} other {fino a # utenti}}",
+    "price": "{amount}/{period, select, yearly {anno} other {mese}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {anno} other {mese}}",
+    "exactly": "esattamente {price}",
+    "yearlyPerMonth": "≈ {amount}/mese",
+    "outgrown": "Questo workspace ha {items}",
+    "usage": {
+      "connectors": "{count, plural, one {# connettore} other {# connettori}}",
+      "mcpServers": "{count, plural, one {# server MCP} other {# server MCP}}",
+      "users": "{count, plural, one {# utente} other {# utenti}}"
+    },
+    "footer": {
+      "vat": "Prezzi in EUR, IVA inclusa.",
+      "noVat": "Prezzi in EUR.",
+      "local": "Prezzi in EUR, pagamento in {currency} al checkout.",
+      "localVat": "Prezzi in EUR, pagamento in {currency} al checkout, IVA inclusa."
+    },
+    "enterpriseQuestion": "Più utenti, single sign-on o SCIM?",
+    "pastTeam": "Questo workspace va oltre Team.",
+    "enterpriseLink": "Chiedi di Enterprise",
+    "listSeparator": ", "
+  },
+  "cardCheckout": {
+    "failed": "Non siamo riusciti ad aprire il checkout. Riprova tra un momento."
+  },
+  "trialBanner": {
+    "today": "La tua prova scade oggi.",
+    "tomorrow": "La tua prova scade domani.",
+    "daysLeft": "Prova: {days} giorni rimasti.",
+    "includesTeam": "Include tutto ciò che offre Team.",
+    "aboveStarter": {
+      "link": "Oltre Starter: vedi cosa cambia",
+      "title": "Il tuo workspace va oltre Starter",
+      "body": "La prova include tutto ciò che offre Team. Se scegli Starter, questo cambia quando la prova finisce. Con Team resta tutto com’è.",
+      "close": "Chiudi"
+    },
+    "choosePlan": "Scegli un piano",
+    "openingCheckout": "Apertura del checkout…",
+    "addPaymentBefore": "Aggiungi un metodo di pagamento: nessun addebito prima del {date}",
+    "addPayment": "Aggiungi un metodo di pagamento",
+    "upgrade": "Passa a un piano"
   }
 }

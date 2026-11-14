@@ -1,19 +1,16 @@
 'use client';
 
+import { useLocale, useTranslations } from 'next-intl';
 import {
   CLOUD_PLANS,
-  describeUsage,
-  fitFor,
   formatEur,
   limitsExceeded,
   smallestFittingPlan,
-  formatPlanPrice,
   yearlyPerMonth,
   type BillingPeriod,
   type PlanSelection,
   type WorkspaceUsage,
 } from '@/lib/card-trial';
-import type { PlanFits } from '@/lib/api';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { useAuth } from '@/lib/auth-context';
 import { formatLocal, useLocalPricing } from '@/lib/local-currency';
@@ -29,6 +26,7 @@ function PeriodToggle({
   onChange: (p: BillingPeriod) => void;
   disabled?: boolean;
 }) {
+  const t = useTranslations('planPicker');
   const option = (p: BillingPeriod, label: React.ReactNode) => (
     <button
       type="button"
@@ -37,7 +35,7 @@ function PeriodToggle({
       disabled={disabled}
       onClick={() => onChange(p)}
       className={cn(
-        'h-8 rounded-[7px] px-3 text-[12.5px] font-semibold transition-colors',
+        'min-h-8 whitespace-nowrap rounded-[7px] px-3 py-1 text-[12.5px] font-semibold leading-tight transition-colors',
         value === p
           ? 'bg-[var(--surface)] text-[var(--text)] shadow-[var(--shadow-sm)]'
           : 'text-[var(--text-2)] hover:text-[var(--text)]',
@@ -49,14 +47,19 @@ function PeriodToggle({
   return (
     <div
       role="radiogroup"
-      aria-label="Billing period"
+      aria-label={t('periodLabel')}
       className="inline-flex items-center gap-1 rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-1"
     >
-      {option('monthly', 'Monthly')}
+      {option('monthly', t('monthly'))}
       {option(
         'yearly',
         <>
-          Yearly <span className="font-medium text-[var(--brand)]">· 2 months free</span>
+          {t('yearly')}{' '}
+          {/* Under 360 px the saving goes on a line of its own instead of breaking in the middle. */}
+          <span className="font-medium text-[var(--brand)] max-[359px]:block max-[359px]:text-[11px]">
+            <span className="max-[359px]:hidden">· </span>
+            {t('twoMonthsFree')}
+          </span>
         </>,
       )}
     </div>
@@ -85,16 +88,19 @@ export function PlanPicker({
   usage?: WorkspaceUsage | null;
 }) {
   const { deploymentMode } = useAuth();
+  const t = useTranslations('planPicker');
+  // Amounts in the UI language ("15,83 €" in German and Italian).
+  const locale = useLocale();
+  const eur = (amount: number) => formatEur(amount, locale);
   // Outside the euro area Stripe charges in the visitor's currency: lead with
   // that estimate and keep the exact euro price under it, as the pricing page
   // does. Outside the EU no VAT is charged.
   const pricing = useLocalPricing(deploymentMode === 'cloud');
-  const per = value.period === 'yearly' ? 'year' : 'month';
   const footer = pricing?.currency
-    ? `Prices in EUR, paid in ${pricing.currency} at checkout${pricing.vat === false ? '' : ', VAT included'}.`
+    ? t(pricing.vat === false ? 'footer.local' : 'footer.localVat', { currency: pricing.currency })
     : pricing?.vat === false
-      ? 'Prices in EUR.'
-      : 'Prices in EUR, VAT included.';
+      ? t('footer.noVat')
+      : t('footer.vat');
   // Past Team too: Enterprise is the plan that fits.
   const outgrewAll = !!usage && smallestFittingPlan(usage) === null;
   return (
@@ -109,13 +115,18 @@ export function PlanPicker({
 
       <div
         role="radiogroup"
-        aria-label="Plan"
+        aria-label={t('planLabel')}
         className={cn('grid gap-3', compact ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2')}
       >
         {CLOUD_PLANS.map((plan) => {
           const selected = value.plan === plan.id;
           const local = formatLocal(value.period === 'yearly' ? plan.yearly : plan.monthly, pricing);
           const exceeded = usage ? limitsExceeded(plan, usage) : [];
+          const summary = t('summary', { ...plan.limits }).split(' · ');
+          const exact = t('price', {
+            amount: eur(value.period === 'yearly' ? plan.yearly : plan.monthly),
+            period: value.period,
+          });
           return (
             <button
               key={plan.id}
@@ -144,34 +155,48 @@ export function PlanPicker({
                   >
                     {selected && <span className="h-2 w-2 rounded-full bg-[var(--brand)]" />}
                   </span>
-                  <span className="text-sm font-semibold text-[var(--text)]">{plan.name}</span>
-                  {plan.popular && (
-                    <span className="rounded-md bg-[var(--brand-tint)] px-1.5 py-[2px] text-[10.5px] font-semibold text-[var(--brand)]">
-                      Most popular
-                    </span>
-                  )}
+                  {/* On a narrow screen the badge goes under the name, never in two lines. */}
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="text-sm font-semibold text-[var(--text)]">{plan.name}</span>
+                    {plan.popular && (
+                      <span className="whitespace-nowrap rounded-md bg-[var(--brand-tint)] px-1.5 py-[2px] text-[10.5px] font-semibold text-[var(--brand)]">
+                        {t('mostPopular')}
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <p className={cn('text-xs text-[var(--text-2)]', compact ? 'mt-0.5 pl-6' : 'mt-2')}>
-                  {plan.summary}
+                  {/* Each limit stays whole: a line breaks between them, not inside "MCP-Server". */}
+                  {summary.map((item, i) => (
+                    <span key={item}>
+                      {i > 0 && ' '}
+                      <span className="whitespace-nowrap">
+                        {item}
+                        {i < summary.length - 1 && ' ·'}
+                      </span>
+                    </span>
+                  ))}
                 </p>
                 {exceeded.length > 0 && usage && (
                   <p className={cn('text-xs text-[var(--warning-text)]', compact ? 'mt-0.5 pl-6' : 'mt-1')}>
-                    This workspace has {describeUsage(usage, exceeded)}
+                    {t('outgrown', {
+                      items: exceeded.map((k) => t(`usage.${k}`, { count: usage[k] })).join(t('listSeparator')),
+                    })}
                   </p>
                 )}
               </div>
               <div className={cn(compact ? 'text-right flex-shrink-0' : 'mt-3')}>
                 <div className="text-sm font-semibold text-[var(--text)] whitespace-nowrap">
-                  {local ? `≈ ${local}/${per}` : formatPlanPrice(plan, value.period)}
+                  {local ? t('priceLocal', { amount: local, period: value.period }) : exact}
                 </div>
                 {local ? (
                   <div className="text-[11px] text-[var(--text-3)] whitespace-nowrap">
-                    {formatPlanPrice(plan, value.period)} exactly
+                    {t('exactly', { price: exact })}
                   </div>
                 ) : (
                   value.period === 'yearly' && (
                     <div className="text-[11px] text-[var(--text-3)] whitespace-nowrap">
-                      ≈ {formatEur(yearlyPerMonth(plan))}/month
+                      {t('yearlyPerMonth', { amount: eur(yearlyPerMonth(plan)) })}
                     </div>
                   )
                 )}
@@ -181,15 +206,19 @@ export function PlanPicker({
         })}
       </div>
       <p className="text-center text-[11px] text-[var(--text-3)]">
-        {footer} {outgrewAll ? 'This workspace goes past Team.' : 'More users, single sign-on or SCIM?'}{' '}
-        <a
-          href={buildEnterpriseContactUrl()}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[var(--brand)] hover:underline"
-        >
-          Ask about Enterprise
-        </a>
+        {footer}{' '}
+        {/* The question and its link move to the next line together. */}
+        <span className="inline-block">
+          {outgrewAll ? t('pastTeam') : t('enterpriseQuestion')}{' '}
+          <a
+            href={buildEnterpriseContactUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="whitespace-nowrap text-[var(--brand)] hover:underline"
+          >
+            {t('enterpriseLink')}
+          </a>
+        </span>
       </p>
     </div>
   );

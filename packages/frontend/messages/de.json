@@ -355,30 +355,34 @@
       "paysToday": "Halten Sie Ihren Workspace am Laufen",
       "trial": "Ihre kostenlose Testphase"
     },
-    "ending": "Ihre kostenlose Testphase endet am <strong>{date}</strong>, zu früh, um mit einer Testphase mit Karte weiterzumachen. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "endingSoon": "Ihre kostenlose Testphase endet bald, zu früh, um mit einer Testphase mit Karte weiterzumachen. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "returning": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Karte nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind, und Ihre aktuelle Testphase läuft bis zum <strong>{date}</strong> weiter, falls Sie sich später entscheiden.",
-    "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Karte nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Karte, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Die Testphase ohne Karte hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Karte hinzufügen, um Ihren vollen Tarif freizuschalten.",
-    "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Karte, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Die Testphase ohne Karte hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Karte hinzufügen, um Ihren vollen Tarif freizuschalten.",
+    "ending": "Ihre kostenlose Testphase endet am <strong>{date}</strong>, zu früh, um eine Zahlungsmethode zu hinterlegen und kostenlos weiterzutesten. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "endingSoon": "Ihre kostenlose Testphase endet bald, zu früh, um eine Zahlungsmethode zu hinterlegen und kostenlos weiterzutesten. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "returning": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Zahlungsmethode nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind, und Ihre aktuelle Testphase läuft bis zum <strong>{date}</strong> weiter, falls Sie sich später entscheiden.",
+    "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Zahlungsmethode nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
+    "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
     "authorizationReturn": "So oder so geht es danach direkt zurück, um die Verbindung Ihres KI-Clients abzuschließen.",
     "chargesToday": "Diese Adresse hatte bereits ein Abonnement, daher berechnet der Checkout heute {amount}.",
     "start": {
       "opening": "Checkout wird geöffnet…",
       "tryAgain": "Erneut versuchen",
       "checkout": "Weiter zum Checkout",
-      "withCard": "Kostenlos testen mit Karte"
+      "trial": "Kostenlos testen"
     },
     "promo": "Der Code {code} wird beim Checkout angewendet.",
     "price": "{amount}/{period, select, yearly {Jahr} other {Monat}}",
     "priceLocal": "≈ {local}/{period, select, yearly {Jahr} other {Monat}} ({exact})",
     "finePrintPaysToday": "{plan}, {price}, heute abgerechnet und danach {period, select, yearly {jährlich} other {monatlich}}. Sicherer Checkout über Stripe. Jederzeit im Abrechnungsportal kündbar.",
-    "finePrintTrial": "Heute 0 €. {plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab dem {date}. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
-    "finePrintTrialNoDate": "Heute 0 €. {plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab Ende Ihrer Testphase. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
+    "finePrintTrial": "{plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab dem {date}. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
+    "finePrintTrialNoDate": "{plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab Ende Ihrer Testphase. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
     "notReady": "Noch nicht so weit?",
-    "notReadyCard": "Noch keine Karte hinterlegen?",
+    "notReadyCard": "Noch keine Zahlungsmethode hinterlegen?",
     "keepFree": "Kostenlose Testphase weiter nutzen",
-    "tryFree": "Kostenlos ohne Zahlungsdaten testen"
+    "tryFree": "Kostenlos ohne Zahlungsdaten testen",
+    "methods": {
+      "trial": "Heute 0 € · Karte, PayPal und weitere Methoden",
+      "pay": "Karte, PayPal und weitere Methoden"
+    }
   },
   "appShell": {
     "toggleTheme": "Design wechseln",
@@ -3737,7 +3741,55 @@
     "workspaces": "{count} Workspaces auf AnythingMCP Cloud",
     "directory": "Gelistet im Claude Directory",
     "directoryChatgpt": "Gelistet im ChatGPT-Plugin-Verzeichnis",
-    "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT"
+    "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT",
+    "workspaceLabel": "Workspace:",
+    "reasons": {
+      "paymentFailed": {
+        "title": "Ihre Zahlung ist fehlgeschlagen",
+        "bodyAdmin": "Ihre letzte Zahlung ist fehlgeschlagen, daher ruht Ihr Abo. Aktualisieren Sie Ihre Zahlungsmethode, und es läuft sofort weiter: Die offene Zahlung wird eingezogen, sobald die neue gespeichert ist. Ihre Connectors und Einstellungen bleiben erhalten.",
+        "bodyMember": "Die letzte Zahlung für das Abo dieses Workspace ist fehlgeschlagen, daher ruht das Abo. Bitten Sie einen Workspace-Admin, die Zahlungsmethode zu aktualisieren. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "noLicense": {
+        "title": "Lizenz erforderlich",
+        "body": "Dieser Workspace hat keine aktive Lizenz. Starten Sie eine Testphase oder kaufen Sie einen Tarif, um fortzufahren."
+      },
+      "trialEnded": {
+        "title": "Ihre Testphase ist abgelaufen",
+        "body": "Ihre 7-tägige Testphase ist beendet. Kaufen Sie eine Lizenz, um AnythingMCP Cloud weiter zu nutzen. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "lapsed": {
+        "title": "Ihr Abo ist nicht aktiv",
+        "body": "Ihr Abo ist nicht aktiv, meist wegen einer fehlgeschlagenen Verlängerungszahlung. Aktualisieren Sie Ihre Zahlungsmethode im Abrechnungsportal, und es läuft weiter; ein neuer Tarif würde ein zweites Abo neben diesem starten. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "expired": {
+        "title": "Ihre Lizenz ist abgelaufen",
+        "body": "Ihre Lizenz ist nicht mehr aktiv. Kaufen oder verlängern Sie eine Lizenz, um AnythingMCP weiter zu nutzen. Ihre Connectors und Einstellungen bleiben erhalten."
+      }
+    },
+    "startTrial": {
+      "start": "7 Tage kostenlos testen",
+      "starting": "Wird gestartet…",
+      "failed": "Die Testphase konnte nicht gestartet werden. Bitte versuchen Sie es erneut oder wenden Sie sich an den Support."
+    },
+    "viewPlans": "Tarife ansehen und Lizenz kaufen",
+    "openingCheckout": "Checkout wird geöffnet…",
+    "subscribeTo": "{plan} abonnieren",
+    "comparePlans": "Tarife vergleichen",
+    "opening": "Wird geöffnet…",
+    "payment": {
+      "update": "Zahlungsmethode aktualisieren",
+      "updated": "Ich habe meine Zahlungsmethode aktualisiert",
+      "checking": "Wird geprüft…",
+      "openFailed": "Die Zahlungsseite konnte nicht geöffnet werden. Bitte versuchen Sie es erneut oder wenden Sie sich an den Support.",
+      "notYet": "Die Zahlung ist noch nicht eingegangen. Wenn Sie Ihre Zahlungsmethode gerade aktualisiert haben, versuchen Sie es in einer Minute erneut.",
+      "checkFailed": "Die Prüfung ist gerade nicht möglich. Bitte versuchen Sie es in einer Minute erneut."
+    },
+    "updateBilling": "Zahlungsdaten aktualisieren",
+    "switchWorkspace": "Zu einem anderen Workspace wechseln",
+    "alreadyPurchased": "Bereits gekauft?",
+    "enterKey": "Lizenzschlüssel eingeben",
+    "notContinuing": "Sie möchten nicht weitermachen?",
+    "deleteAccount": "Konto löschen"
   },
   "planFit": {
     "title": "Was sich mit {plan} ändert",
@@ -3824,5 +3876,54 @@
     "after": "Nach der Kündigung kommst du hierher zurück.",
     "openFailed": "Die Kündigungsseite konnte nicht geöffnet werden.",
     "licensePage": "Einstellungen → Lizenz öffnen"
+  },
+  "planPicker": {
+    "periodLabel": "Abrechnungszeitraum",
+    "planLabel": "Tarif",
+    "monthly": "Monatlich",
+    "yearly": "Jährlich",
+    "twoMonthsFree": "2 Monate gratis",
+    "mostPopular": "Am beliebtesten",
+    "summary": "{connectors} Connectors · {mcpServers} MCP-Server · {users, plural, one {# Nutzer} other {bis zu # Nutzer}}",
+    "price": "{amount}/{period, select, yearly {Jahr} other {Monat}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {Jahr} other {Monat}}",
+    "exactly": "genau {price}",
+    "yearlyPerMonth": "≈ {amount}/Monat",
+    "outgrown": "Dieser Workspace hat {items}",
+    "usage": {
+      "connectors": "{count, plural, one {# Connector} other {# Connectors}}",
+      "mcpServers": "{count, plural, one {# MCP-Server} other {# MCP-Server}}",
+      "users": "{count, plural, one {# Nutzer} other {# Nutzer}}"
+    },
+    "footer": {
+      "vat": "Preise in EUR, inkl. MwSt.",
+      "noVat": "Preise in EUR.",
+      "local": "Preise in EUR, Zahlung im Checkout in {currency}.",
+      "localVat": "Preise in EUR, Zahlung im Checkout in {currency}, inkl. MwSt."
+    },
+    "enterpriseQuestion": "Mehr Nutzer, Single Sign-on oder SCIM?",
+    "pastTeam": "Dieser Workspace geht über Team hinaus.",
+    "enterpriseLink": "Enterprise anfragen",
+    "listSeparator": ", "
+  },
+  "cardCheckout": {
+    "failed": "Der Checkout konnte gerade nicht geöffnet werden. Bitte versuchen Sie es gleich noch einmal."
+  },
+  "trialBanner": {
+    "today": "Ihre Testphase endet heute.",
+    "tomorrow": "Ihre Testphase endet morgen.",
+    "daysLeft": "Testphase: noch {days} Tage.",
+    "includesTeam": "Sie enthält alles aus Team.",
+    "aboveStarter": {
+      "link": "Über Starter: Was sich ändert",
+      "title": "Ihr Workspace liegt über Starter",
+      "body": "Ihre Testphase enthält alles aus Team. Wenn Sie Starter wählen, ändert sich das mit dem Ende der Testphase. Mit Team bleibt alles, wie es ist.",
+      "close": "Schließen"
+    },
+    "choosePlan": "Tarif wählen",
+    "openingCheckout": "Checkout wird geöffnet…",
+    "addPaymentBefore": "Zahlungsmethode hinterlegen: keine Abbuchung vor dem {date}",
+    "addPayment": "Zahlungsmethode hinterlegen",
+    "upgrade": "Jetzt upgraden"
   }
 }
