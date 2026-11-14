@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 776 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 780 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -92,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-776 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
+780 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
 
 | Category | Examples |
 |---|---|
@@ -1880,9 +1880,13 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   "tokenTTLSeconds": 2592000,                        // fallback when expiry is absent (30 days)
 
   // ─── Or: the session is a cookie the login sets ────────────────
-  "tokenSource": "cookie",                           // body (default) | cookie
+  "tokenSource": "cookie",                           // body (default) | cookie | header
   "cookieName":  "B1SESSION",                        // the cookie whose value is ${token}
   "cookieMode":  "single",                           // single (default) | all — see below
+
+  // ─── Or: the token comes back in a response header ─────────────
+  "tokenSource": "header",                           // body (default) | cookie | header
+  "tokenHeaderName": "access_token",                 // the response header whose value is ${token}
 
   // ─── Re-login policy ───────────────────────────────────────────
   "refreshOn401": true,                              // re-login on a 401 and retry once (default true)
@@ -2076,6 +2080,43 @@ With `"tokenSource": "cookie"` the token is read from the login response's
 
 The body can still supply `${aud}` through `audJsonPath` (`"."` takes the
 whole body, for logins that answer with a bare token string).
+
+### Token in a response header
+
+With `"tokenSource": "header"` the token is the value of the login response's
+header named `tokenHeaderName`, and the body is not read for it, so
+`tokenJsonPath` is not needed. Ceneo's token call works this way: a `GET` with
+the API key in `Authorization: Basic <key>` answers an empty body and the
+headers `access_token`, `expires_in` and `token_type`.
+
+```json
+"loginUrl": "https://developers.ceneo.pl/AuthorizationService.svc/GetToken?grantType='client_credentials'",
+"loginMethod": "GET",
+"loginHeaders": { "Authorization": "Basic {{CENEO_API_KEY}}" },
+"loginBody": {},
+"username": "{{CENEO_API_KEY}}",
+"password": "{{CENEO_API_KEY}}",
+"tokenSource": "header",
+"tokenHeaderName": "access_token",
+"tokenTTLSeconds": 900,
+"proactiveRefreshSeconds": 120
+```
+
+- The header name is matched without regard to case (`access_token`,
+  `Access_Token` and `ACCESS_TOKEN` are the same header). White space around
+  the value is dropped.
+- The login fails with `header "<name>" not found in the login response
+  headers` when the response has no such header or an empty one. A
+  `tokenSource` of `header` without `tokenHeaderName` is refused before any
+  request is sent, and `scripts/validate-adapters.mjs` reports it (rule
+  `login-token-source`).
+- The expiry is not read from a header: set `tokenTTLSeconds` to the token's
+  lifetime (900 for Ceneo's 15 minutes), or `expiryJsonPath` when the body
+  carries it.
+- `username` and `password` are still required. A login that only sends a key
+  in `loginHeaders` sets both to that key and `"loginBody": {}`, so nothing
+  but the header travels (a `GET` login sends `loginBody` as query
+  parameters, and without a `loginBody` the credentials themselves).
 
 ---
 
@@ -3115,6 +3156,46 @@ way. Set `tokenAuthMethod` to `private_key_jwt` and describe the signature under
   (`BEGIN EC PRIVATE KEY`). A key pasted into a single-line field, with its line breaks gone, still works.
   Passphrase-protected keys are refused with a message saying how to export one without a passphrase.
 
+#### Token answers inside a wrapper (`tokenResponsePath`)
+
+RFC 6749 §5.1 puts `access_token`, `refresh_token` and `expires_in` at the top level of the token answer,
+and that is where they are read. A few providers wrap them in an answer of their own. Joom's token and
+refresh calls answer:
+
+```json
+{ "code": 0, "message": "", "data": { "access_token": "…", "refresh_token": "…", "expires_in": 2592000 } }
+```
+
+Name the object that holds the token fields in `authConfig.tokenResponsePath`, as a dotted path of keys:
+
+```json
+"authConfig": {
+  "grant": "refresh_token",
+  "authorizationUrl": "https://api-merchant.joom.com/api/v2/oauth/authorize",
+  "tokenUrl": "https://api-merchant.joom.com/api/v2/oauth/access_token",
+  "refreshUrl": "https://api-merchant.joom.com/api/v2/oauth/refresh_token",
+  "tokenResponsePath": "data",
+  "pkce": false,
+  "clientId": "{{JOOM_CLIENT_ID}}",
+  "clientSecret": "{{JOOM_CLIENT_SECRET}}",
+  "refreshToken": "{{JOOM_REFRESH_TOKEN}}"
+}
+```
+
+- The setting applies to the authorization-code exchange, to every refresh and to the `client_credentials`
+  and `password` grants: the access token, the refresh token and the lifetime are all read from that object.
+- It is opt-in. Without it nothing changes: the fields are read at the top level and a `data` object in the
+  answer is not looked into.
+- When the answer has no object at the path, the sign-in or the renewal fails with a message that names
+  the path and quotes the provider's own top-level `code` and `message` (how these APIs report a refused
+  code or refresh token inside a `200`). Nothing else of the answer is quoted.
+- It is part of the adapter definition (or of a connector's `authConfig` set through the API); the connector
+  form has no field for it. `scripts/validate-adapters.mjs` checks it (rule `token-response-path`): a dotted
+  path of keys, on `OAUTH2` only.
+
+`refreshUrl`, in the same example, is for providers that renew at another address than the one that issues
+the first token; without it refreshes go to `tokenUrl`.
+
 ---
 
 ## Environment Variables
@@ -3898,6 +3979,16 @@ Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
 value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
 leaves out the PKCE challenge and verifier for providers that do not use them.
 
+The token answer is read as RFC 6749 has it, with `access_token`,
+`refresh_token` and `expires_in` at the top level. A provider that wraps them
+(Joom answers `{ "code": 0, "message": "", "data": { "access_token": … } }`)
+names the wrapping object in `authConfig.tokenResponsePath`, a dotted path of
+keys such as `"data"`. The code exchange, the refreshes and the
+`client_credentials` and `password` grants then read the token fields from
+that object, and fail with the provider's own `code` and `message` when it is
+missing. Without the field nothing changes. See
+[REST connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/rest.md#token-answers-inside-a-wrapper-tokenresponsepath>).
+
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
 also sent on the token requests: the authorization-code exchange, refreshes
@@ -4059,6 +4150,100 @@ body in the app secret: `{{SECRET}}${pathname}${sortedParams}${body}{{SECRET}}`,
 with `queryParams: { "app_key": ... }` and `excludeMultipartBody: true`. Pass
 array values as comma-separated strings on this kind of adapter: TikTok signs
 one value per query key.
+
+#### Plain digest and body placement (opt-in)
+
+Some platforms take every call as a JSON body that carries its own signature,
+and compute it as a plain hash rather than an HMAC (Temu's Partner API). These
+fields describe that; a signature without any of them is computed exactly as
+described above.
+
+| Field | Meaning |
+|-------|---------|
+| `mode` | `hmac` (default) or `digest`: a plain hash of the rendered template, with no key. The secret is then written into `template`, where the vendor puts it; `secret` is not used. |
+| `algorithm` | Also `md5`, accepted in `digest` mode only. |
+| `placement` | Also `body`: the digest is written into the JSON body as the field `paramName` (default `sign`). The tool must be a `POST`, `PUT`, `PATCH` or `DELETE` that sends a JSON object (a `bodyMapping` or `bodyTemplate`, or no body of its own). |
+| `bodyParams` | Static fields written into the JSON body of every call (an app key, an access token, a fixed `data_type`), signed like the tool's own fields. They win over a tool's field of the same name. Text, numbers or `true`/`false`. |
+| `timestampParam` | With `placement: "body"` the timestamp is written into the body: as a JSON number for the `s` and `ms` formats, as text for `iso`. |
+
+With `placement: "body"`, `${sortedParams}` is built from the JSON body
+instead of the query:
+
+- every top-level field of the body as sent (the tool's fields, `bodyParams`
+  and the timestamp), sorted by name in ASCII order and concatenated as name +
+  value with no separators; the query is not part of it;
+- a string contributes its text as it is;
+- every other value contributes its JSON text, exactly as the body carries it:
+  a number in its shortest form (`0`, `19.9`), `true`, `false`, `null`, and an
+  array or object as compact JSON without spaces, with its keys in the order
+  they are sent (`[{"skuId":1,"quantity":2}]`);
+- the signature field itself is left out; an empty string is sent, so its name
+  is signed.
+
+Temu (`intl/temu.json`) signs `app_secret + sorted fields + app_secret` with
+MD5 in capitals:
+
+```json
+"signature": {
+  "mode": "digest",
+  "algorithm": "md5",
+  "encoding": "hex-upper",
+  "placement": "body",
+  "paramName": "sign",
+  "timestampParam": "timestamp",
+  "bodyParams": {
+    "app_key": "{{TEMU_APP_KEY}}",
+    "access_token": "{{TEMU_ACCESS_TOKEN}}",
+    "data_type": "JSON"
+  },
+  "template": "{{TEMU_APP_SECRET}}${sortedParams}{{TEMU_APP_SECRET}}"
+}
+```
+
+Each tool then only names its operation and its own fields:
+`"bodyMapping": { "type": "bg.order.detail.v2.get", "parentOrderSn": "$parent_order_sn" }`.
+A tool cannot replace `app_key`, the timestamp or the signature, and the
+secret never leaves the server. A digest can also go in a header or the query
+(`mode: "digest"` with the default placement or `placement: "query"`).
+
+One limit of the string above: a top-level text value is signed as it is. A
+vendor that signs such a value as JSON text instead (with `"` and `\` escaped)
+agrees with this for every value without those characters, which covers ids,
+codes and dates; send free text in a nested object, where it is JSON text on
+both sides.
+
+#### Nonce and header template (opt-in)
+
+Some platforms mix a random string into the key and send it along with the
+digest (SHEIN Open Platform: the key is secret + 5 random characters, and the
+header is those characters followed by the Base64 of the hex digest).
+
+| Field | Meaning |
+|-------|---------|
+| `nonceLength` | 1 to 64. A random string of that many characters (`A-Z a-z 0-9`) is drawn for every signature and is available as `${nonce}` in `template`, in `secret` and in `headerTemplate`. |
+| `secret` | May contain `${nonce}`: `"{{KEY}}${nonce}"` is an HMAC key of the secret followed by the nonce. |
+| `headerTemplate` | The header value around the digest: `${signature}` is the digest, `${nonce}` the random string. Default: the digest alone. It must contain `${signature}`. (A signed-JWT signature has its own `headerTemplate`, see above.) |
+| `encoding` | Also `hex-base64`: the Base64 of the lower-case hex text of the digest. |
+
+```json
+"signature": {
+  "algorithm": "sha256",
+  "encoding": "hex-base64",
+  "secret": "{{SECRET_KEY}}${nonce}",
+  "nonceLength": 5,
+  "template": "{{OPEN_KEY_ID}}&${timestamp}&${pathname}",
+  "timestampFormat": "ms",
+  "headerName": "x-lt-signature",
+  "headerTemplate": "${nonce}${signature}",
+  "timestampHeader": "x-lt-timestamp",
+  "extraHeaders": { "x-lt-openKeyId": "{{OPEN_KEY_ID}}" }
+}
+```
+
+`scripts/validate-adapters.mjs` refuses a signature whose `mode`, `placement`,
+`encoding` or `algorithm` is not one of the values above, `md5` outside
+`digest` mode, `bodyParams` without `placement: "body"`, and `${nonce}`
+without `nonceLength` (rule `hmac-signature`).
 
 #### Shop authorization (token providers)
 
@@ -5120,6 +5305,8 @@ A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenti
 When the login answer is not documented, `tokenJsonPath` may be a list of paths tried in order (the first non-empty string wins), e.g. `["AuthenticationResult.IdToken", "idToken", "token", "."]`.
 
 An XML API (Fnac Darty's marketplace) logs in with an XML document and carries the token in the body of every request instead of a header. Four opt-in fields cover it: `"loginBodyFormat": "xml"` (a string `loginBody` is XML, its values are XML-escaped), `"loginResponseFormat": "xml"` (the XML login answer is parsed, so `tokenJsonPath` reads `auth_response.token`), `"tokenPlacement": "body"` (no token header; the token is `${loginToken}` in a tool's `bodyTemplate`) and `"refreshOnBody401": true` (log in again when a `config.errorWhen` rule with `status: 401` matches the response body). `scripts/validate-adapters.mjs` checks the combinations (rule `login-token-xml`).
+
+A login that answers the token in a response header instead of the body (Ceneo's `GetToken` answers it in a header called `access_token`) sets `"tokenSource": "header"` and `"tokenHeaderName": "access_token"`. The name is matched without regard to case, `tokenJsonPath` is not needed, and the lifetime comes from `tokenTTLSeconds`. `scripts/validate-adapters.mjs` checks the pair (rule `login-token-source`).
 
 See [`docs/connectors/login-token-auth.md`](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md>) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
 

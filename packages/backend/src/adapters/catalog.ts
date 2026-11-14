@@ -370,6 +370,7 @@ import * as iterable from './intl/iterable.json';
 import * as jev from './intl/jev.json';
 import * as jisr from './intl/jisr.json';
 import * as jobber from './intl/jobber.json';
+import * as joom from './intl/joom.json';
 import * as jotform from './intl/jotform.json';
 import * as judgeMe from './intl/judge-me.json';
 import * as kashflow from './intl/kashflow.json';
@@ -616,6 +617,7 @@ import * as snyk from './intl/snyk.json';
 import * as softr from './intl/softr.json';
 import * as sonarqube from './intl/sonarqube.json';
 import * as sorare from './intl/sorare.json';
+import * as spartoo from './intl/spartoo.json';
 import * as spartooShop from './intl/spartoo-shop.json';
 import * as splunk from './intl/splunk.json';
 import * as sportmonks from './intl/sportmonks.json';
@@ -647,6 +649,7 @@ import * as teamworkProjects from './intl/teamwork-projects.json';
 import * as ted from './intl/ted.json';
 import * as telegramBot from './intl/telegram-bot.json';
 import * as telnyx from './intl/telnyx.json';
+import * as temu from './intl/temu.json';
 import * as tezga from './intl/tezga.json';
 import * as theOddsApi from './intl/the-odds-api.json';
 import * as threads from './intl/threads.json';
@@ -786,6 +789,7 @@ import * as brreg from './no/brreg.json';
 import * as prhYtj from './fi/prh-ytj.json';
 import * as ares from './cz/ares.json';
 import * as ceneo from './pl/ceneo.json';
+import * as ceneoOrders from './pl/ceneo-orders.json';
 import * as empik from './pl/empik.json';
 import * as inpost from './pl/inpost.json';
 import * as krs from './pl/krs.json';
@@ -1462,6 +1466,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   jev as unknown as AdapterDefinition,
   jisr as unknown as AdapterDefinition,
   jobber as unknown as AdapterDefinition,
+  joom as unknown as AdapterDefinition,
   jotform as unknown as AdapterDefinition,
   judgeMe as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
@@ -1708,6 +1713,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   softr as unknown as AdapterDefinition,
   sonarqube as unknown as AdapterDefinition,
   sorare as unknown as AdapterDefinition,
+  spartoo as unknown as AdapterDefinition,
   spartooShop as unknown as AdapterDefinition,
   splunk as unknown as AdapterDefinition,
   sportmonks as unknown as AdapterDefinition,
@@ -1739,6 +1745,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   ted as unknown as AdapterDefinition,
   telegramBot as unknown as AdapterDefinition,
   telnyx as unknown as AdapterDefinition,
+  temu as unknown as AdapterDefinition,
   tezga as unknown as AdapterDefinition,
   theOddsApi as unknown as AdapterDefinition,
   threads as unknown as AdapterDefinition,
@@ -1878,6 +1885,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   prhYtj as unknown as AdapterDefinition,
   ares as unknown as AdapterDefinition,
   ceneo as unknown as AdapterDefinition,
+  ceneoOrders as unknown as AdapterDefinition,
   empik as unknown as AdapterDefinition,
   inpost as unknown as AdapterDefinition,
   krs as unknown as AdapterDefinition,
