@@ -1539,6 +1539,33 @@ describe('Connector secrets are never returned', () => {
       const result: any = await controller.exportAll(req('ADMIN'));
       expect(result.connectors[0]).not.toHaveProperty('authConfig');
     });
+
+    describe('DATABASE connection string with a password (#1245)', () => {
+      const STORED = 'postgresql://app:s3cret@db.example.com:5432/shop';
+      const buildDbExport = () =>
+        buildController({
+          prisma: {
+            connector: {
+              findMany: jest.fn().mockResolvedValue([
+                catalogConnector({ type: 'DATABASE', baseUrl: STORED, headers: null, config: null, envVars: null }),
+              ]),
+            },
+          },
+        });
+
+      it.each(['VIEWER', 'EDITOR'])('masks the password for %s', async (role) => {
+        const { controller } = buildDbExport();
+        const result: any = await controller.exportAll(req(role));
+        expect(result.connectors[0].baseUrl).toBe('postgresql://app:********@db.example.com:5432/shop');
+        expect(JSON.stringify(result)).not.toContain('s3cret');
+      });
+
+      it('keeps the stored URL for an admin backup', async () => {
+        const { controller } = buildDbExport();
+        const result: any = await controller.exportAll(req('ADMIN'));
+        expect(result.connectors[0].baseUrl).toBe(STORED);
+      });
+    });
   });
 
   describe('PUT :id/env-vars', () => {
@@ -1627,11 +1654,26 @@ describe('Connector secrets are never returned', () => {
         expect(JSON.stringify(result)).not.toContain('s3cret');
       });
 
-      it('takes an edited URL as sent', async () => {
+      it('keeps the stored password when the rest of the masked URL is edited', async () => {
         const { controller, connectorsService } = build(dbConnector());
-        const edited = 'postgresql://app:********@db2.example.com:5432/shop';
-        await controller.update(req('EDITOR'), 'c1', { baseUrl: edited });
-        expect(connectorsService.update).toHaveBeenCalledWith('c1', { baseUrl: edited });
+        await controller.update(req('EDITOR'), 'c1', {
+          baseUrl: 'postgresql://app:********@db2.example.com:5432/shop',
+        });
+        expect(connectorsService.update).toHaveBeenCalledWith('c1', {
+          baseUrl: 'postgresql://app:s3cret@db2.example.com:5432/shop',
+        });
+      });
+
+      it('drops a stale masked password once the stored one has moved to authConfig', async () => {
+        // Another tab saved first, so the stored URL no longer holds the password.
+        const { controller, connectorsService } = build(
+          catalogConnector({ userId: 'u1', type: 'DATABASE', baseUrl: 'postgresql://db.example.com:5432/shop', headers: null, config: null, envVars: null }),
+        );
+        await controller.update(req('EDITOR'), 'c1', { name: 'x', baseUrl: MASKED });
+        expect(connectorsService.update).toHaveBeenCalledWith('c1', {
+          name: 'x',
+          baseUrl: 'postgresql://db.example.com:5432/shop',
+        });
       });
     });
   });

@@ -81,13 +81,66 @@ describe('ConnectorsService: DATABASE connection-string credentials', () => {
     expect(authConfigOf(data)).toEqual({ domain: 'CORP', username: 'app', password: 's3cret' });
   });
 
-  it('update leaves the URL alone when the connector already holds credentials', async () => {
-    stored.authConfig = encrypt(JSON.stringify({ username: 'app', password: 'old' }), KEY);
+  it('update replaces moved credentials with ones retyped into the URL', async () => {
+    // mssql, oracle and hana prefer authConfig, so a password left in the URL
+    // would be ignored and the old one used.
+    stored.baseUrl = 'mssql://db.example.com:1433/shop';
+    stored.authConfig = encrypt(JSON.stringify({ domain: 'CORP', username: 'sa', password: 'old' }), KEY);
 
-    await service.update('c1', { baseUrl: URL_WITH_PASSWORD });
+    await service.update('c1', { baseUrl: 'mssql://sa:n3w@db.example.com:1433/shop' });
 
     const data = prisma.connector.update.mock.calls[0][0].data;
-    expect(data.baseUrl).toBe(URL_WITH_PASSWORD);
+    expect(data.baseUrl).toBe('mssql://db.example.com:1433/shop');
+    expect(authConfigOf(data)).toEqual({ domain: 'CORP', username: 'sa', password: 'n3w' });
+  });
+
+  it.each([
+    ['only a username', 'mssql://bob@db.example.com:1433/shop'],
+    ['variable references', 'mssql://{{DB_USER}}:{{DB_PASSWORD}}@db.example.com:1433/shop'],
+  ])('update lets credentials retyped as %s replace the moved ones', async (_case, typed) => {
+    stored.baseUrl = 'mssql://db.example.com:1433/shop';
+    stored.authConfig = encrypt(JSON.stringify({ domain: 'CORP', username: 'sa', password: 'old' }), KEY);
+
+    await service.update('c1', { baseUrl: typed });
+
+    const data = prisma.connector.update.mock.calls[0][0].data;
+    expect(data.baseUrl).toBe(typed);
+    expect(authConfigOf(data)).toEqual({ domain: 'CORP' });
+  });
+
+  it('update keeps moved credentials when the URL becomes multi-host MongoDB', async () => {
+    // `new URL` cannot read it; the engine puts the credentials back in.
+    stored.baseUrl = 'mongodb://m1.example.com:27017/shop';
+    stored.authConfig = encrypt(JSON.stringify({ username: 'app', password: 's3cret' }), KEY);
+    const edited = 'mongodb://m1.example.com:27017,m2.example.com:27017/shop';
+
+    await service.update('c1', { baseUrl: edited });
+
+    const data = prisma.connector.update.mock.calls[0][0].data;
+    expect(data.baseUrl).toBe(edited);
+    expect(data).not.toHaveProperty('authConfig');
+  });
+
+  it('update keeps moved credentials when only the host changes', async () => {
+    stored.authConfig = encrypt(JSON.stringify({ username: 'app', password: 's3cret' }), KEY);
+    const edited = 'postgresql://db2.example.com:5432/shop';
+
+    await service.update('c1', { baseUrl: edited });
+
+    const data = prisma.connector.update.mock.calls[0][0].data;
+    expect(data.baseUrl).toBe(edited);
+    expect(data).not.toHaveProperty('authConfig');
+  });
+
+  it('update leaves the URL alone when its credentials are unchanged and authConfig holds some', async () => {
+    stored.baseUrl = URL_WITH_PASSWORD;
+    stored.authConfig = encrypt(JSON.stringify({ username: 'other', password: 'pw' }), KEY);
+    const edited = 'postgresql://app:s3cret@db2.example.com:5432/shop';
+
+    await service.update('c1', { baseUrl: edited });
+
+    const data = prisma.connector.update.mock.calls[0][0].data;
+    expect(data.baseUrl).toBe(edited);
     expect(data).not.toHaveProperty('authConfig');
   });
 

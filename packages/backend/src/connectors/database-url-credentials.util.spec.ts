@@ -40,6 +40,13 @@ describe('moveUrlCredentials', () => {
     expect(moved?.baseUrl).toBe('postgresql://db.example.com/shop?application_name=ops@example');
   });
 
+  it('moves a password that contains {{ without being a variable reference', () => {
+    expect(moveUrlCredentials('postgresql://app:Xy{{9z@db.example.com/shop', undefined)).toEqual({
+      baseUrl: 'postgresql://db.example.com/shop',
+      authConfig: { username: 'app', password: 'Xy{{9z' },
+    });
+  });
+
   it('keeps other authConfig keys', () => {
     const moved = moveUrlCredentials('mssql://app:s3cret@sql.example.com/shop', { domain: 'CORP' });
     expect(moved?.authConfig).toEqual({ domain: 'CORP', username: 'app', password: 's3cret' });
@@ -57,6 +64,7 @@ describe('moveUrlCredentials', () => {
     ['a user without a password', 'postgresql://app@db.example.com/shop'],
     ['a password without a user', 'postgresql://:s3cret@db.example.com/shop'],
     ['variable references', 'postgresql://{{DB_USER}}:{{DB_PASSWORD}}@db.example.com/shop'],
+    ['a password built around a variable', 'postgresql://app:pre{{DB_PASSWORD}}@db.example.com/shop'],
     ['the mask from a masked export', `postgresql://app:${M}@db.example.com/shop`],
     ['an ADO.NET string', 'Server=sql.example.com;User Id=app;Password=s3cret;'],
     ['a multi-host MongoDB URL', 'mongodb://app:s3cret@m1.example.com:27017,m2.example.com:27017/shop'],
@@ -77,6 +85,26 @@ describe('moveUrlCredentials', () => {
     };
     expect(engine.withUrlCredentials(moved.baseUrl, moved.authConfig)).toBe(new URL(input).href);
   });
+
+  describe('a URL `new URL` cannot parse', () => {
+    const engine = new DatabaseEngine() as unknown as {
+      withUrlCredentials(baseUrl: string, authConfig?: Record<string, unknown>): string;
+    };
+    const auth = { username: 'app+ro', password: 'p@ss' };
+
+    it('gets moved credentials back when edited to multi-host MongoDB', () => {
+      expect(
+        engine.withUrlCredentials('mongodb://m1.example.com:27017,m2.example.com:27017/shop?replicaSet=rs0', auth),
+      ).toBe('mongodb://app%2Bro:p%40ss@m1.example.com:27017,m2.example.com:27017/shop?replicaSet=rs0');
+    });
+
+    it.each([
+      'mongodb://other:pw@m1.example.com:27017,m2.example.com:27017/shop',
+      'Server=sql.example.com;Database=shop;',
+    ])('leaves %s as it is', (input) => {
+      expect(engine.withUrlCredentials(input, auth)).toBe(input);
+    });
+  });
 });
 
 describe('maskUrlPassword', () => {
@@ -87,6 +115,7 @@ describe('maskUrlPassword', () => {
       `mongodb://app:${M}@m1.example.com:27017,m2.example.com:27017/shop`,
     ],
     ['postgresql://app:p@ss@db.example.com/shop', `postgresql://app:${M}@db.example.com/shop`],
+    ['postgresql://app:Xy{{9z@db.example.com/shop', `postgresql://app:${M}@db.example.com/shop`],
   ])('masks the password in %s', (input, masked) => {
     expect(maskUrlPassword(input)).toBe(masked);
   });
@@ -95,6 +124,7 @@ describe('maskUrlPassword', () => {
     'postgresql://db.example.com/shop',
     'postgresql://app@db.example.com/shop',
     'postgresql://{{DB_USER}}:{{DB_PASSWORD}}@db.example.com/shop',
+    'postgresql://app:pre{{DB_PASSWORD}}@db.example.com/shop',
     'Server=sql.example.com;User Id=app;Password=s3cret;',
   ])('leaves %s as it is', (input) => {
     expect(maskUrlPassword(input)).toBe(input);
@@ -108,12 +138,23 @@ describe('keepMaskedUrlPassword', () => {
     expect(keepMaskedUrlPassword(maskUrlPassword(stored), stored)).toBe(stored);
   });
 
-  it('takes an edited URL as sent', () => {
-    const edited = `postgresql://app:${M}@db2.example.com/shop`;
-    expect(keepMaskedUrlPassword(edited, stored)).toBe(edited);
+  it('keeps the stored password when the rest of the masked URL is edited', () => {
+    expect(keepMaskedUrlPassword(`postgresql://app:${M}@db2.example.com/shop`, stored)).toBe(
+      'postgresql://app:s3cret@db2.example.com/shop',
+    );
+  });
+
+  it('takes a retyped password as sent', () => {
     expect(keepMaskedUrlPassword('postgresql://app:new@db.example.com/shop', stored)).toBe(
       'postgresql://app:new@db.example.com/shop',
     );
+  });
+
+  it('drops a masked userinfo once the stored URL no longer holds a password', () => {
+    // A view loaded before the credentials moved to authConfig.
+    expect(
+      keepMaskedUrlPassword(`postgresql://app:${M}@db2.example.com/shop`, 'postgresql://db.example.com/shop'),
+    ).toBe('postgresql://db2.example.com/shop');
   });
 });
 
