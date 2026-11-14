@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Reverb Listings connector">
+  <rect width="128" height="128" rx="24" fill="#F6870F"/>
+  <path fill-rule="evenodd" d="M40 100V28h28c16 0 26 9 26 22 0 10-6 18-15 21l18 29H80L65 73H54v27Zm14-39h13c8 0 12-4 12-10s-4-10-12-10H54Z" fill="#fff"/>
+</svg>
