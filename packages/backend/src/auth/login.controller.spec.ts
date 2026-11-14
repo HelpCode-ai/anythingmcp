@@ -1488,6 +1488,22 @@ describe('LoginController', () => {
       expect(html).toContain(link('other'));
     });
 
+    it('tells the sign-up page a Raycast client is Raycast, with the same badges and tiles as any other client', async () => {
+      const link = (client: string) => `href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=${client}"`;
+      for (const [uri, name] of [
+        ['raycast://oauth?package_name=Extension', 'Raycast'],
+        ['raycast://oauth?package_name=Extension', 'client-abc'],
+        ['https://raycast.com/redirect?packageName=Extension', 'MCP Client'],
+      ]) {
+        session(uri, name);
+        const html = await page(make(DEPLOY.cloud));
+        expect(html).toContain(link('raycast'));
+        expect(html).toContain('Listed in the Claude and ChatGPT directories');
+        expect(html).toContain('class="tile tile-initial"');
+        expect(html).toContain('value="approve"');
+      }
+    });
+
     it('shows no directory badge on self-hosted, for any client', async () => {
       for (const [uri, name] of [
         ['https://claude.ai/api/mcp/auth_callback', 'Claude'],

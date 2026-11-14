@@ -1994,7 +1994,9 @@ export class LoginController {
     const server = this.escapeHtml(serverName);
     const client = consent ? this.escapeHtml(consent.clientName) : '';
     const known = consent ? knownClientFor(consent.redirectHost) : null;
-    const signupClient = consent ? signupClientFor(consent.clientName, consent.redirectHost) : null;
+    const signupClient = consent
+      ? signupClientFor(consent.clientName, consent.redirectHost, consent.redirectUri)
+      : null;
 
     const errorHtml = error
       ? `<div class="error" role="alert">${this.escapeHtml(error)}</div>`

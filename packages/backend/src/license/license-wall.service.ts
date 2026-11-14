@@ -48,6 +48,7 @@ export function knownClientName(raw: unknown): string | null {
   if (n.includes('chatgpt') || n.includes('openai')) return 'ChatGPT';
   if (n.includes('cursor')) return 'Cursor';
   if (n.includes('copilot')) return 'Copilot';
+  if (n.includes('raycast')) return 'Raycast';
   return null;
 }
 
