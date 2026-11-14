@@ -391,6 +391,7 @@
   "auditLog": {
     "title": "Audit-Log",
     "subtitle": "Verlauf der Tool-Aufrufe über Ihre Connectors und MCP-Server.",
+    "ownCallsOnly": "Sie sehen Ihre eigenen Aufrufe. Admins des Workspace sehen alle Aufrufe.",
     "refresh": "Aktualisieren",
     "filters": {
       "all": "Alle",
@@ -456,6 +457,7 @@
   "analytics": {
     "title": "Analysen",
     "subtitle": "Volumen der Tool-Aufrufe, Erfolgsquote und Kosten Ihres MCP-Servers.",
+    "ownCallsOnly": "Sie sehen Ihre eigenen Aufrufe. Admins des Workspace sehen alle Aufrufe.",
     "range": "{days} T",
     "loading": "Wird geladen…",
     "loadFailed": "Laden fehlgeschlagen",
@@ -556,6 +558,7 @@
     "active": "Aktiv",
     "inactive": "Inaktiv",
     "empty": "Noch keine MCP-Server eingerichtet.",
+    "nothingShared": "Mit Ihnen wurde noch nichts geteilt. Bitten Sie einen Admin des Workspace um eine Rolle.",
     "createFirst": "Ersten MCP-Server erstellen",
     "noMatches": "Keine MCP-Server entsprechen Ihrer Suche.",
     "exposes": "Stellt bereit: <b>{names}</b>",
@@ -776,7 +779,8 @@
       "description": "Fügen Sie Ihren ersten API-Connector hinzu, um MCP-Tools zu erzeugen.",
       "supports": "Unterstützt {types}",
       "browse": "Adapter durchsuchen",
-      "importBackup": "Aus Backup importieren"
+      "importBackup": "Aus Backup importieren",
+      "nothingShared": "Mit Ihnen wurde noch nichts geteilt. Bitten Sie einen Admin des Workspace um eine Rolle."
     },
     "filter": {
       "placeholder": "Connectors filtern…",
@@ -2204,6 +2208,21 @@
       "body": "Meldet jedes Mitglied vom Dashboard und von jedem verbundenen KI-Client ab, auch von Clients mit einem Refresh-Token. Niemand verliert Rolle oder Zugriff; alle müssen sich nur erneut anmelden. Verwenden Sie dies nach einem vermuteten Leck von Zugangsdaten oder einer Änderung bei Ihrem Identity Provider. MCP-API-Schlüssel sind keine Sitzungen und bleiben unverändert, sofern Sie nichts anderes angeben.",
       "button": "Alle abmelden"
     },
+    "visibility": {
+      "title": "Sichtbarkeit für Mitglieder",
+      "body": "Legen Sie fest, was Mitglieder ohne Admin-Rolle im Dashboard und in der API sehen. Admins sehen immer alles. KI-Clients sind nicht betroffen: Welche Tools sie aufrufen können, entscheiden bereits die Rollen. Eine Änderung kann bis zu 30 Sekunden brauchen, bis sie gilt.",
+      "open": {
+        "label": "Offen",
+        "description": "Jedes Mitglied sieht alle Connectors, MCP-Server und Tool-Aufrufe des Workspace. Das ist die Voreinstellung."
+      },
+      "restricted": {
+        "label": "Eingeschränkt",
+        "description": "Mitglieder ohne Admin-Rolle sehen nur ihre eigenen Tool-Aufrufe, die Connectors, die ihre Rollen erreichen, und die MCP-Server, die einen davon enthalten."
+      },
+      "noToolList": "Noch keine Rolle schränkt Tools ein, daher sehen Mitglieder weiterhin alle Connectors. Legen Sie unter <link>Rollen</link> eine Rolle mit einer Tool-Liste an.",
+      "saved": "Sichtbarkeit für Mitglieder gespeichert.",
+      "saveFailed": "Die Sichtbarkeit für Mitglieder konnte nicht gespeichert werden."
+    },
     "revokeDialog": {
       "title": "Alle abmelden",
       "description": "Alle Mitglieder von <strong>{name}</strong> müssen sich erneut anmelden, im Dashboard und in jedem KI-Client. Mitglieder, die auch zu anderen Workspaces gehören, werden dort ebenfalls abgemeldet. Geben Sie zur Bestätigung unten den Namen der Organisation ein.",
@@ -2298,7 +2317,7 @@
       "email": "E-Mail",
       "appRole": "App-Rolle",
       "mcpRole": "MCP-Tool-Rolle",
-      "noRestriction": "Keine Einschränkung (voller Zugriff)",
+      "noRestriction": "Keine Rolle",
       "emailFailed": "E-Mail konnte nicht gesendet werden:",
       "link": "Einladungslink (manuell weitergeben):",
       "sending": "Wird gesendet...",
@@ -2363,7 +2382,7 @@
     "dismiss": "ausblenden",
     "loading": "Wird geladen...",
     "title": "Eigene Rollen",
-    "intro": "Legen Sie Rollen an, um festzulegen, auf welche MCP-Tools verschiedene Benutzer zugreifen können. Benutzer ohne Rolle haben vollen Zugriff. ADMIN hat immer vollen Zugriff.",
+    "intro": "Legen Sie Rollen an, um festzulegen, auf welche MCP-Tools verschiedene Benutzer zugreifen können. Solange keine Rolle eine Tool-Liste hat, können Benutzer ohne Rolle alle Tools nutzen; sobald eine Rolle eine Tool-Liste hat, erhalten Benutzer ohne Rolle keine Tools. ADMIN hat immer vollen Zugriff.",
     "cancel": "Abbrechen",
     "createRole": "Rolle erstellen",
     "form": {
@@ -2403,12 +2422,12 @@
     },
     "assign": {
       "title": "MCP-Rollen der Benutzer",
-      "intro": "Weisen Sie Benutzern MCP-Rollen zu, um festzulegen, auf welche Tools sie über MCP zugreifen können. Benutzer ohne Rolle haben uneingeschränkten Zugriff. ADMIN-Benutzer haben immer vollen Zugriff.",
+      "intro": "Weisen Sie Benutzern MCP-Rollen zu, um festzulegen, auf welche Tools sie über MCP zugreifen können. Solange keine Rolle eine Tool-Liste hat, können Benutzer ohne Rolle alle Tools nutzen; sobald eine Rolle eine Tool-Liste hat, erhalten Benutzer ohne Rolle keine Tools. ADMIN-Benutzer haben immer vollen Zugriff.",
       "user": "Benutzer",
       "appRole": "App-Rolle",
       "mcpRole": "MCP-Tool-Rolle",
       "fullAccess": "Voller Zugriff (Admin)",
-      "noRestriction": "Keine Einschränkung (voller Zugriff)"
+      "noRestriction": "Keine Rolle"
     }
   },
   "settingsAdmin": {

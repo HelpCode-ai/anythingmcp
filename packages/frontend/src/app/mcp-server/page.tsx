@@ -15,11 +15,16 @@ import { AppSelect } from '@/components/ui/select';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { copyText } from '@/lib/clipboard';
 import { timeAgo, type TimeAgoTranslate } from '@/components/connection-check';
+import { useMemberVisibility } from '@/lib/use-member-visibility';
 
 export default function McpServerListPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const router = useRouter();
   const t = useTranslations('mcpServers');
+  // A VIEWER cannot create a server (the API answers 403), so the page does not offer it.
+  const canCreate = user?.role !== 'VIEWER';
+  // Restricted member visibility: an empty list means nothing was shared yet.
+  const { restrictedForMe } = useMemberVisibility();
   const tAgo = useTranslations('timeAgo');
   const [servers, setServers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,15 +90,17 @@ export default function McpServerListPage() {
     <AppShell
       title={t('title')}
       actions={
-        <Button onClick={() => setShowCreate(true)}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-          {t('new')}
-        </Button>
+        canCreate ? (
+          <Button onClick={() => setShowCreate(true)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+            {t('new')}
+          </Button>
+        ) : undefined
       }
     >
       <div className="flex flex-col gap-[18px]">
         {/* Create dialog */}
-        {showCreate && (
+        {showCreate && canCreate && (
           <Card className="border-[var(--brand)] p-6">
             <h3 className="mb-4 text-base font-semibold tracking-[-0.01em]">{t('createTitle')}</h3>
             <div className="max-w-md space-y-3">
@@ -191,8 +198,12 @@ export default function McpServerListPage() {
             <span className="flex h-12 w-12 items-center justify-center rounded-[12px]" style={{ background: 'var(--t-emerald-bg)', color: 'var(--t-emerald-fg)' }}>
               <ServerIcon />
             </span>
-            <p className="text-sm text-[var(--text-3)]">{t('empty')}</p>
-            <Button onClick={() => setShowCreate(true)}>{t('createFirst')}</Button>
+            {restrictedForMe ? (
+              <p className="text-sm text-[var(--text-3)]" data-testid="nothing-shared">{t('nothingShared')}</p>
+            ) : (
+              <p className="text-sm text-[var(--text-3)]">{t('empty')}</p>
+            )}
+            {canCreate && <Button onClick={() => setShowCreate(true)}>{t('createFirst')}</Button>}
           </Card>
         ) : filtered.length === 0 ? (
           <Card className="px-6 py-12 text-center">

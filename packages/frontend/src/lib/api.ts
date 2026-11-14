@@ -1793,6 +1793,26 @@ export const siteSettings = {
     request<Array<{ label: string; url: string }>>('/api/settings/footer-links', { token }),
 };
 
+export type MemberVisibilityMode = 'open' | 'restricted';
+
+/**
+ * What members who are not admins see in the dashboard. `restrictedForMe` is
+ * true when the mode is `restricted` and the caller is not an admin.
+ */
+export interface MemberVisibilityState {
+  mode: MemberVisibilityMode;
+  restrictedForMe: boolean;
+}
+
+export const memberVisibility = {
+  /** Any member: the workspace's mode and whether it narrows the caller's view. */
+  get: (token: string) =>
+    request<MemberVisibilityState>('/api/settings/member-visibility', { token }),
+  /** Admin only. */
+  set: (mode: MemberVisibilityMode, token: string) =>
+    request<MemberVisibilityState>('/api/admin/settings/member-visibility', { method: 'PUT', body: { mode }, token }),
+};
+
 export const versionApi = {
   get: (token: string) =>
     request<{ version: string; commit: string; buildDate: string | null; deploymentMode: string }>('/api/version', { token, skipAutoLogout: true }),

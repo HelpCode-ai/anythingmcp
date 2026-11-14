@@ -100,6 +100,8 @@ export const SecurityEvents = {
   MEMORY_ERASED: 'MEMORY_ERASED',
   /** The roles a knowledge folder (and its subtree) is limited to changed. */
   KNOWLEDGE_FOLDER_ACCESS_CHANGED: 'KNOWLEDGE_FOLDER_ACCESS_CHANGED',
+  /** An admin switched the workspace's member visibility between open and restricted. */
+  MEMBER_VISIBILITY_CHANGED: 'MEMBER_VISIBILITY_CHANGED',
 
   // ── Consent plane: which AI client was authorized, by whom ──────────────
   CONSENT_GRANTED: 'CONSENT_GRANTED',

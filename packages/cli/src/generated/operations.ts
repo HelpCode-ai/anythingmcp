@@ -160,6 +160,16 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "admin/settings",
+    "action": "setMemberVisibility",
+    "method": "PUT",
+    "path": "/api/admin/settings/member-visibility",
+    "summary": "Set the member visibility mode of the current workspace (ADMIN)",
+    "admin": true,
+    "pathParams": [],
+    "hasBody": true
+  },
+  {
+    "resource": "admin/settings",
     "action": "deleteSmtpConfig",
     "method": "DELETE",
     "path": "/api/admin/settings/smtp",
@@ -2195,6 +2205,16 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "method": "GET",
     "path": "/api/settings/footer-links",
     "summary": "Footer links of the caller's workspace, falling back to the instance-wide links",
+    "admin": false,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
+    "resource": "settings",
+    "action": "getMemberVisibility",
+    "method": "GET",
+    "path": "/api/settings/member-visibility",
+    "summary": "Member visibility mode of the caller's workspace, and whether it narrows the caller's view",
     "admin": false,
     "pathParams": [],
     "hasBody": false

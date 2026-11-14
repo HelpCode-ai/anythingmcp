@@ -391,6 +391,7 @@
   "auditLog": {
     "title": "Registro di audit",
     "subtitle": "Cronologia delle chiamate agli strumenti nei tuoi connettori e server MCP.",
+    "ownCallsOnly": "Vedi le tue chiamate. Gli admin del workspace vedono tutte le chiamate.",
     "refresh": "Aggiorna",
     "filters": {
       "all": "Tutte",
@@ -456,6 +457,7 @@
   "analytics": {
     "title": "Analisi",
     "subtitle": "Volume di chiamate agli strumenti, tasso di successo e costi del tuo server MCP.",
+    "ownCallsOnly": "Vedi le tue chiamate. Gli admin del workspace vedono tutte le chiamate.",
     "range": "{days} g",
     "loading": "Caricamento…",
     "loadFailed": "Caricamento non riuscito",
@@ -556,6 +558,7 @@
     "active": "Attivo",
     "inactive": "Inattivo",
     "empty": "Nessun server MCP configurato.",
+    "nothingShared": "Non è ancora stato condiviso nulla con te. Chiedi un ruolo a un admin del workspace.",
     "createFirst": "Crea il tuo primo server MCP",
     "noMatches": "Nessun server MCP corrisponde alla ricerca.",
     "exposes": "Espone <b>{names}</b>",
@@ -776,7 +779,8 @@
       "description": "Aggiungi il tuo primo connettore API per iniziare a generare strumenti MCP.",
       "supports": "Supporta {types}",
       "browse": "Sfoglia gli adapter",
-      "importBackup": "Importa da backup"
+      "importBackup": "Importa da backup",
+      "nothingShared": "Non è ancora stato condiviso nulla con te. Chiedi un ruolo a un admin del workspace."
     },
     "filter": {
       "placeholder": "Filtra connettori…",
@@ -2204,6 +2208,21 @@
       "body": "Disconnetti ogni membro dalla dashboard e da ogni client AI collegato, compresi i client che hanno un refresh token. Nessuno perde ruolo o accessi; tutti devono solo accedere di nuovo. Usalo dopo una sospetta fuga di credenziali o un cambio del tuo identity provider. Le chiavi API MCP non sono sessioni e restano invariate, a meno che tu non scelga diversamente.",
       "button": "Disconnetti tutti"
     },
+    "visibility": {
+      "title": "Visibilità per i membri",
+      "body": "Decidi cosa vedono nella dashboard e nell'API i membri che non sono admin. Gli admin vedono sempre tutto. I client AI non cambiano: i ruoli decidono già quali strumenti possono chiamare. Una modifica può richiedere fino a 30 secondi per essere applicata.",
+      "open": {
+        "label": "Aperta",
+        "description": "Ogni membro vede tutti i connettori, i server MCP e le chiamate agli strumenti del workspace. È l'impostazione predefinita."
+      },
+      "restricted": {
+        "label": "Limitata",
+        "description": "I membri che non sono admin vedono solo le proprie chiamate agli strumenti, i connettori raggiunti dai loro ruoli e i server MCP che ne contengono almeno uno."
+      },
+      "noToolList": "Nessun ruolo limita ancora gli strumenti, quindi i membri vedono ancora tutti i connettori. Crea un ruolo con un elenco di strumenti in <link>Ruoli</link>.",
+      "saved": "Visibilità per i membri salvata.",
+      "saveFailed": "Impossibile salvare la visibilità per i membri."
+    },
     "revokeDialog": {
       "title": "Disconnetti tutti",
       "description": "Ogni membro di <strong>{name}</strong> dovrà accedere di nuovo, sulla dashboard e in ogni client AI. I membri che appartengono anche ad altri workspace vengono disconnessi anche lì. Per confermare, digita qui sotto il nome dell'organizzazione.",
@@ -2298,7 +2317,7 @@
       "email": "Email",
       "appRole": "Ruolo nell'app",
       "mcpRole": "Ruolo per gli strumenti MCP",
-      "noRestriction": "Nessuna restrizione (accesso completo)",
+      "noRestriction": "Nessun ruolo",
       "emailFailed": "Invio dell'email non riuscito:",
       "link": "Link di invito (da condividere manualmente):",
       "sending": "Invio...",
@@ -2363,7 +2382,7 @@
     "dismiss": "chiudi",
     "loading": "Caricamento...",
     "title": "Ruoli personalizzati",
-    "intro": "Crea ruoli per decidere a quali strumenti MCP possono accedere i diversi utenti. Gli utenti senza ruolo hanno accesso completo. ADMIN ha sempre accesso completo.",
+    "intro": "Crea ruoli per decidere a quali strumenti MCP possono accedere i diversi utenti. Finché nessun ruolo ha un elenco di strumenti, gli utenti senza ruolo possono usare tutti gli strumenti; appena un ruolo ha un elenco di strumenti, gli utenti senza ruolo non ne ricevono nessuno. ADMIN ha sempre accesso completo.",
     "cancel": "Annulla",
     "createRole": "Crea ruolo",
     "form": {
@@ -2403,12 +2422,12 @@
     },
     "assign": {
       "title": "Ruoli MCP degli utenti",
-      "intro": "Assegna ruoli MCP agli utenti per decidere a quali strumenti possono accedere tramite MCP. Gli utenti senza ruolo hanno accesso illimitato. Gli utenti ADMIN hanno sempre accesso completo.",
+      "intro": "Assegna ruoli MCP agli utenti per decidere a quali strumenti possono accedere tramite MCP. Finché nessun ruolo ha un elenco di strumenti, gli utenti senza ruolo possono usare tutti gli strumenti; appena un ruolo ha un elenco di strumenti, gli utenti senza ruolo non ne ricevono nessuno. Gli utenti ADMIN hanno sempre accesso completo.",
       "user": "Utente",
       "appRole": "Ruolo nell'app",
       "mcpRole": "Ruolo per gli strumenti MCP",
       "fullAccess": "Accesso completo (admin)",
-      "noRestriction": "Nessuna restrizione (accesso completo)"
+      "noRestriction": "Nessun ruolo"
     }
   },
   "settingsAdmin": {

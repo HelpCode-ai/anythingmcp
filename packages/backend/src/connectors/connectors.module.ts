@@ -31,6 +31,7 @@ import { LicenseModule } from '../license/license.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { FileSearchCoreModule } from '../file-search/file-search-core.module';
 import { IdentityProvidersModule } from '../identity-providers/identity-providers.module';
+import { MemberVisibilityModule } from '../settings/member-visibility.module';
 
 const ENGINES = [
   RestEngine,
@@ -53,7 +54,16 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 // not each log in.
 @Module({
   // IdentityProvidersModule: SsoService, for signing in on the connect page.
-  imports: [McpServerModule, McpServersModule, LicenseModule, IdentityProvidersModule, FileSearchCoreModule],
+  // MemberVisibilityModule (not SettingsModule): what a restricted member may
+  // read on the connectors and tools routes.
+  imports: [
+    McpServerModule,
+    McpServersModule,
+    LicenseModule,
+    IdentityProvidersModule,
+    FileSearchCoreModule,
+    MemberVisibilityModule,
+  ],
   controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, TikTokShopAuthController, MetaAuthController, WooCommerceAuthController, ToolsController, WebhookIngestController],
   providers: [
     ConnectorsService,

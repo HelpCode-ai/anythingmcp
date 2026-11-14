@@ -8,6 +8,7 @@ import { AuditController } from './audit.controller';
 import { AuditService } from './audit.service';
 import { toolPerformanceQuery, ToolPerformanceRow } from './tool-performance.query';
 import { ToolPerformanceQueryDto } from './tool-performance-query.dto';
+import { MemberVisibilityService } from '../settings/member-visibility.service';
 
 // All tables are connection-local TEMP tables; no application table is changed.
 const databaseUrl = process.env.AUDIT_TEST_DATABASE_URL;
@@ -73,6 +74,9 @@ describePostgres('tool performance aggregation (PostgreSQL)', () => {
             $queryRaw: async (sql: Prisma.Sql) => (await db.query(sql.text, sql.values)).rows,
           },
         },
+        // Open workspace: the controller takes today's path. Restricted mode is
+        // covered in audit.member-visibility.integration.spec.ts.
+        { provide: MemberVisibilityService, useValue: { scopeFor: async () => ({ restricted: false }) } },
       ],
     })
       .overrideGuard(JwtOrManagementKeyGuard)

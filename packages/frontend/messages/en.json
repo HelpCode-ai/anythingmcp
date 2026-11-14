@@ -391,6 +391,7 @@
   "auditLog": {
     "title": "Audit Log",
     "subtitle": "Tool invocation history across your connectors and MCP servers.",
+    "ownCallsOnly": "You see your own calls. Workspace admins see all calls.",
     "refresh": "Refresh",
     "filters": {
       "all": "All",
@@ -456,6 +457,7 @@
   "analytics": {
     "title": "Analytics",
     "subtitle": "Tool-call volume, success rate and cost across your MCP server.",
+    "ownCallsOnly": "You see your own calls. Workspace admins see all calls.",
     "range": "{days}d",
     "loading": "Loading…",
     "loadFailed": "Failed to load",
@@ -556,6 +558,7 @@
     "active": "Active",
     "inactive": "Inactive",
     "empty": "No MCP servers configured yet.",
+    "nothingShared": "Nothing has been shared with you yet. Ask a workspace admin for a role.",
     "createFirst": "Create your first MCP Server",
     "noMatches": "No MCP servers match your search.",
     "exposes": "Exposes <b>{names}</b>",
@@ -776,7 +779,8 @@
       "description": "Add your first API connector to start generating MCP tools.",
       "supports": "Supports {types}",
       "browse": "Browse Adapters",
-      "importBackup": "Import from Backup"
+      "importBackup": "Import from Backup",
+      "nothingShared": "Nothing has been shared with you yet. Ask a workspace admin for a role."
     },
     "filter": {
       "placeholder": "Filter connectors…",
@@ -2204,6 +2208,21 @@
       "body": "Sign every member out of the dashboard and of every connected AI client, including clients that hold a refresh token. Nobody loses their role or access; everyone simply has to sign in again. Use it after a suspected credential leak or a change in your identity provider. MCP API keys are not sessions and are left alone unless you say otherwise.",
       "button": "Sign everyone out"
     },
+    "visibility": {
+      "title": "Member visibility",
+      "body": "Decide what members who are not admins see in the dashboard and the API. Admins always see everything. AI clients are not affected: roles already decide which tools they can call. A change can take up to 30 seconds to apply.",
+      "open": {
+        "label": "Open",
+        "description": "Every member sees every connector, MCP server and tool call of the workspace. This is the default."
+      },
+      "restricted": {
+        "label": "Restricted",
+        "description": "Members who are not admins see only their own tool calls, the connectors their roles reach and the MCP servers that hold one of them."
+      },
+      "noToolList": "No role limits tools yet, so members still see every connector. Create a role with a tool list under <link>Roles</link>.",
+      "saved": "Member visibility saved.",
+      "saveFailed": "Could not save member visibility."
+    },
     "revokeDialog": {
       "title": "Sign everyone out",
       "description": "Every member of <strong>{name}</strong> will have to sign in again, on the dashboard and in every AI client. Members who also belong to other workspaces are signed out there too. To confirm, type the organization name below.",
@@ -2298,7 +2317,7 @@
       "email": "Email",
       "appRole": "App Role",
       "mcpRole": "MCP Tool Role",
-      "noRestriction": "No restriction (full access)",
+      "noRestriction": "No role",
       "emailFailed": "Failed to send email:",
       "link": "Invitation link (share manually):",
       "sending": "Sending...",
@@ -2363,7 +2382,7 @@
     "dismiss": "dismiss",
     "loading": "Loading...",
     "title": "Custom Roles",
-    "intro": "Create roles to control which MCP tools different users can access. Users without a role have full access. ADMIN always has full access.",
+    "intro": "Create roles to control which MCP tools different users can access. While no role has a tool list, users without a role can use every tool; as soon as one role has a tool list, users without a role get no tools. ADMIN always has full access.",
     "cancel": "Cancel",
     "createRole": "Create Role",
     "form": {
@@ -2403,12 +2422,12 @@
     },
     "assign": {
       "title": "User MCP Role Assignment",
-      "intro": "Assign MCP roles to users to control which tools they can access via MCP. Users without a role have unrestricted access. ADMIN users always have full access.",
+      "intro": "Assign MCP roles to users to control which tools they can access via MCP. While no role has a tool list, users without a role can use every tool; as soon as one role has a tool list, users without a role get no tools. ADMIN users always have full access.",
       "user": "User",
       "appRole": "App Role",
       "mcpRole": "MCP Tool Role",
       "fullAccess": "Full access (admin)",
-      "noRestriction": "No restriction (full access)"
+      "noRestriction": "No role"
     }
   },
   "settingsAdmin": {

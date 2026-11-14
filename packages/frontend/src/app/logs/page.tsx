@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { copyText } from '@/lib/clipboard';
 import { buildToolCallCurl } from '@/lib/curl';
 import { getApiOrigin } from '@/lib/origin';
+import { useMemberVisibility } from '@/lib/use-member-visibility';
 
 const PAGE_SIZE = 50;
 
@@ -92,6 +93,7 @@ function UserCell({ log }: { log: any }) {
 export default function LogsPage() {
   const { token } = useAuth();
   const t = useTranslations('auditLog');
+  const { restrictedForMe } = useMemberVisibility();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -265,6 +267,10 @@ export default function LogsPage() {
       subtitle={t('subtitle')}
       actions={exportButton}
     >
+      {restrictedForMe && (
+        <p role="note" className="mb-3 text-xs text-[var(--text-3)]">{t('ownCallsOnly')}</p>
+      )}
+
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         {/* Segmented status filter */}

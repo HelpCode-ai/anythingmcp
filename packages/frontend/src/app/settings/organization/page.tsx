@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
-import { organizations, knowledgeGraph, type KgSettings } from '@/lib/api';
+import { organizations, knowledgeGraph, memberVisibility, roles, type KgSettings, type MemberVisibilityMode } from '@/lib/api';
+import { notifyMemberVisibilityChanged, useMemberVisibility } from '@/lib/use-member-visibility';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -47,6 +49,17 @@ export default function OrganizationSettingsPage() {
   const [kg, setKg] = useState<KgSettings | null>(null);
   const [kgSaving, setKgSaving] = useState(false);
 
+  // Member visibility (admin only): what members who are not admins see.
+  const visibility = useMemberVisibility();
+  const [visibilityChoice, setVisibilityChoice] = useState<MemberVisibilityMode | null>(null);
+  const [visibilitySaving, setVisibilitySaving] = useState(false);
+  const [visibilityMessage, setVisibilityMessage] = useState('');
+  const [visibilityMessageIsError, setVisibilityMessageIsError] = useState(false);
+  // Whether a role of this workspace has a tool list. Without one, roles
+  // narrow nothing and restricted members still see every connector.
+  // null while unknown: then no warning is shown.
+  const [hasToolList, setHasToolList] = useState<boolean | null>(null);
+
   const isAdmin = user?.role === 'ADMIN';
 
   useEffect(() => {
@@ -58,6 +71,38 @@ export default function OrganizationSettingsPage() {
     }).catch(() => {});
     knowledgeGraph.getSettings(token).then(setKg).catch(() => {});
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !isAdmin) return;
+    roles
+      .list(token)
+      .then((list) =>
+        setHasToolList(list.some((r: any) => !r.isSystem && (r._count?.toolAccess ?? 0) > 0)),
+      )
+      .catch(() => setHasToolList(null));
+  }, [token, isAdmin]);
+
+  // The saved mode until the admin picks another one.
+  const visibilitySelected: MemberVisibilityMode = visibilityChoice ?? visibility.mode;
+
+  const handleSaveVisibility = async () => {
+    if (!token || !visibility.loaded) return;
+    setVisibilitySaving(true);
+    setVisibilityMessage('');
+    try {
+      const saved = await memberVisibility.set(visibilitySelected, token);
+      notifyMemberVisibilityChanged(token, user?.organizationId, saved);
+      // Kept, not cleared: the hook picks the new mode up a moment later.
+      setVisibilityChoice(saved.mode === 'restricted' ? 'restricted' : 'open');
+      setVisibilityMessageIsError(false);
+      setVisibilityMessage(t('visibility.saved'));
+    } catch (err: any) {
+      setVisibilityMessageIsError(true);
+      setVisibilityMessage(err?.message || t('visibility.saveFailed'));
+    } finally {
+      setVisibilitySaving(false);
+    }
+  };
 
   const updateFlag = async (patch: { enabled?: boolean; llmEnabled?: boolean; captureIntent?: boolean; autoExtend?: boolean; skillAutoApply?: boolean; edgeAutoApply?: boolean }) => {
     if (!token || !kg) return;
@@ -320,6 +365,69 @@ export default function OrganizationSettingsPage() {
             {t('security.button')}
           </Button>
           {revokeResult && <p className="text-xs text-[var(--ok)]">{revokeResult}</p>}
+
+          <div className="space-y-3 border-t border-[var(--border)] pt-4" data-testid="member-visibility">
+            <h4 className="text-sm font-semibold text-[var(--text)]">{t('visibility.title')}</h4>
+            <p className="text-xs text-[var(--text-2)]">{t('visibility.body')}</p>
+            <div role="radiogroup" aria-label={t('visibility.title')} className="space-y-2">
+              {(['open', 'restricted'] as const).map((mode) => {
+                const checked = visibilitySelected === mode;
+                return (
+                  <label
+                    key={mode}
+                    className={`flex cursor-pointer items-start gap-3 rounded-[10px] border p-3 ${
+                      checked ? 'border-[var(--brand)] bg-[var(--brand-tint)]' : 'border-[var(--border)]'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="member-visibility"
+                      value={mode}
+                      checked={checked}
+                      disabled={!visibility.loaded || visibilitySaving}
+                      onChange={() => {
+                        setVisibilityChoice(mode);
+                        setVisibilityMessage('');
+                      }}
+                      className="mt-0.5 accent-[var(--brand)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-[var(--text)]">{t(`visibility.${mode}.label`)}</span>
+                      <span className="mt-0.5 block text-xs text-[var(--text-2)]">{t(`visibility.${mode}.description`)}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            {visibilitySelected === 'restricted' && hasToolList === false && (
+              <p
+                role="note"
+                className="rounded-[10px] border border-[var(--warn)]/40 bg-[var(--t-warn-bg)] px-3 py-2 text-xs text-[var(--t-warn-fg)]"
+              >
+                {t.rich('visibility.noToolList', {
+                  link: (chunks) => (
+                    <Link href="/settings/roles" className="font-medium underline">
+                      {chunks}
+                    </Link>
+                  ),
+                })}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="secondary"
+                onClick={handleSaveVisibility}
+                disabled={!visibility.loaded || visibilitySaving || visibilitySelected === visibility.mode}
+              >
+                {visibilitySaving ? t('saving') : t('save')}
+              </Button>
+              {visibilityMessage && (
+                <p className={`text-xs ${visibilityMessageIsError ? 'text-[var(--danger)]' : 'text-[var(--ok)]'}`}>
+                  {visibilityMessage}
+                </p>
+              )}
+            </div>
+          </div>
         </Card>
       )}
 
