@@ -21,7 +21,7 @@ function setup(opts: { cloud?: boolean; record?: unknown; license?: unknown } = 
       key === 'DEPLOYMENT_MODE' ? (opts.cloud ? 'cloud' : 'self-hosted') : key === 'FRONTEND_URL' ? 'https://app.test' : undefined,
     ),
   };
-  const licenseService = { requestTrialLicense: jest.fn().mockResolvedValue(undefined) };
+  const licenseService = { requestTrialAtSignup: jest.fn().mockResolvedValue(undefined) };
   const adsSignup = { onEmailVerified: jest.fn() };
   const service = new EmailVerificationService(
     prisma as any,
@@ -68,7 +68,7 @@ describe('EmailVerificationService', () => {
       data: { usedAt: expect.any(Date) },
     });
     expect(usersService.update).toHaveBeenCalledWith('u1', { emailVerified: true });
-    expect(licenseService.requestTrialLicense).toHaveBeenCalledWith('a@b.com', 'A', 'org-1');
+    expect(licenseService.requestTrialAtSignup).toHaveBeenCalledWith('a@b.com', 'A', 'org-1');
     expect(adsSignup.onEmailVerified).toHaveBeenCalledWith('u1');
   });
 
@@ -82,12 +82,12 @@ describe('EmailVerificationService', () => {
   it('starts no second trial for a workspace that has a licence, and none on self-hosted', async () => {
     const withLicence = setup({ cloud: true, record: { id: 't1' }, license: { id: 'l1' } });
     await withLicence.service.verifyCode('u1', '123456');
-    expect(withLicence.licenseService.requestTrialLicense).not.toHaveBeenCalled();
+    expect(withLicence.licenseService.requestTrialAtSignup).not.toHaveBeenCalled();
 
     const selfHosted = setup({ cloud: false, record: { id: 't1' } });
     await selfHosted.service.verifyCode('u1', '123456');
     expect(selfHosted.usersService.update).toHaveBeenCalledWith('u1', { emailVerified: true });
-    expect(selfHosted.licenseService.requestTrialLicense).not.toHaveBeenCalled();
+    expect(selfHosted.licenseService.requestTrialAtSignup).not.toHaveBeenCalled();
   });
 
   it('counts the codes sent in a window', async () => {

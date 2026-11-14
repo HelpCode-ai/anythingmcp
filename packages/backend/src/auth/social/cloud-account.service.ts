@@ -93,7 +93,9 @@ export class CloudAccountService {
         where: { organizationId: user.organizationId },
       });
       if (existing) return;
-      await this.licenses.requestTrialLicense(user.email, user.name || user.email, user.organizationId);
+      // One attempt while the user waits in the sign-in callback; the licence
+      // service asks again in the background when it fails.
+      await this.licenses.requestTrialAtSignup(user.email, user.name || user.email, user.organizationId);
       this.logger.log(`Cloud trial activated for org ${user.organizationId} on social sign-up.`);
     } catch (err: any) {
       this.logger.warn(`Cloud trial activation failed for user ${userId}: ${err?.message ?? err}`);
