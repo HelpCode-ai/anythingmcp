@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Amazon Shipping connector">
+  <rect width="128" height="128" rx="24" fill="#232F3E"/>
+  <path d="M56 24h16l26 62H82l-5-13H51l-5 13H30Zm-.300 37h16.600L64 39.500Z" fill="#fff" fill-rule="evenodd"/>
+  <path d="M30 96h56v-8l16 13-16 13v-8H30Z" fill="#FF9900"/>
+</svg>

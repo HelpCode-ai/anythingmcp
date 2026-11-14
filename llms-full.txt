@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 757 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 774 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -92,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-757 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
+774 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
 
 | Category | Examples |
 |---|---|
@@ -2117,7 +2117,7 @@ The MCP Bridge supports automatic token refresh for OAuth2-protected remote serv
 | **Basic Auth** | `Authorization: Basic base64(username:password)`, e.g. an Atlassian personal API token as `email:token` |
 | **OAuth2** | Sign in at the provider ("Authorize with Provider"); tokens refresh automatically |
 | **API Key** | API key in a header of your choice |
-| **None** | For unprotected local MCP servers |
+| **None** | For servers that need no credentials: a public catalog endpoint (Decathlon US Shop, Spartoo Shop) or an unprotected local MCP server. No `Authorization` header is sent |
 
 ### OAuth2 against a remote MCP server
 
@@ -2167,6 +2167,7 @@ install. Through the API they can be set on any MCP connector.
 | `mcpPath` | Endpoint path when the base URL cannot say it. A base URL without a path means `<origin>/mcp`, so a server at the root of its host (Stripe, Apify) sets `"/"`. |
 | `mcpToolPrefix` | Prepended to the remote tool names (`linear_` turns `list_issues` into `linear_list_issues`), so two bridges with tools of the same name can share an MCP server. Characters outside `[A-Za-z0-9_]` become `_`, and a name that already starts with the prefix keeps it once. Calls still use the remote name. |
 | `mcpOAuth` | How "Authorize with Provider" works for this connector, below. |
+| `mcpFixedArguments` | An object merged into the arguments of every tool call, and left out of the tool schemas the model sees. See [Fixed arguments](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md#fixed-arguments-mcpfixedarguments>). |
 
 `mcpOAuth` (every field optional):
 
@@ -2189,6 +2190,50 @@ install. Through the API they can be set on any MCP connector.
 | `tokenAuthMethod` | `none`, `client_secret_post` or `client_secret_basic`: for a pre-registered client, how it authenticates at the token endpoint; for dynamic registration, the method to register with. |
 | `resource` | RFC 8707 indicator. Default: sent when the server publishes a protected-resource document, with that document's `resource` (else the MCP URL). `true` always sends it, `false` never, a string sends that value. |
 
+### Fixed arguments (`mcpFixedArguments`)
+
+Some servers want the same argument on every call, with a value that belongs to the connector
+and not to the conversation: a shop that speaks the Universal Commerce Protocol asks each
+`tools/call` for the URL of the calling agent's profile in `meta.ucp-agent.profile`.
+`mcpFixedArguments` holds such arguments once, on the connector:
+
+```json
+"config": {
+  "mcpToolPrefix": "acme_shop_",
+  "mcpFixedArguments": {
+    "meta": { "ucp-agent": { "profile": "https://example.com/.well-known/ucp-agent.json" } }
+  }
+}
+```
+
+It is the counterpart of a tool's `omitParameters`: that only hides a parameter, this hides it
+and sends its value.
+
+- **On every call** the object is merged into the arguments before they go to the remote
+  server. Objects merge key by key, so other fields the caller puts into `meta` are kept. At a
+  path the connector fixes, the fixed value always wins over what the caller sent. Arrays and
+  plain values are replaced as a whole.
+- **In the tool schemas** the fixed paths are dropped, at install, after "Authorize with
+  Provider" and on every **Discover tools**, so the model is never asked for them. A fixed
+  value removes its parameter, also from `required`. A nested object loses only the fixed
+  fields: when it has no other properties the whole parameter disappears (a `meta` that only
+  carried `ucp-agent`), otherwise it stays with the rest (a `meta` that also takes an
+  `idempotency-key`). A parameter that is fixed as an object and declares no properties of its
+  own is dropped; one described through `$ref`, `anyOf`, `oneOf` or `allOf` is left as it is.
+  Tools already stored keep their schema until the next **Discover tools**.
+- **Values may use `{{VAR}}`** placeholders. They are resolved from the connector's
+  environment variables on each call, like the base URL and headers; a call with a variable
+  that has no value is refused before anything is sent.
+- **Opt-in.** A connector without the key behaves exactly as before. The key is read on MCP
+  connectors only, and the adapter validator refuses it on any other type or when it is not an
+  object.
+
+It applies to `tools/call` only. `initialize` and `tools/list` are sent as they are, and the
+tool-import dialog (**Import tools** from an MCP source) stores the schemas as the server lists
+them.
+
+In both Cloud and self-hosted deployments the setting works the same way.
+
 ### Vendor MCP servers in the catalog
 
 These catalog adapters bridge a vendor's official remote MCP server. At install AnythingMCP lists
@@ -2209,6 +2254,8 @@ declares none, so a refused token is reported on the setup form before anything 
 | Apify | `https://mcp.apify.com` (root, `mcpPath: "/"`) | Bearer (API token) |
 | Notion | `https://mcp.notion.com/mcp` | OAuth2, dynamic registration |
 | Helium 10 | `https://mcp.helium10.com/mcp` | OAuth2, dynamic registration |
+| Decathlon US Shop | `https://www.decathlon.com/api/ucp/mcp` | None (the agent profile URL goes out as a fixed argument) |
+| Spartoo Shop | `https://www.spartoo.<tld>/mcp`, one per country site | None |
 
 One authorization serves every caller of a connector: whoever clicks "Authorize" is the identity
 the tools act as. For per-user tools (Notion, Slack, Salesforce) use a dedicated account until
@@ -4003,6 +4050,18 @@ leaves out (the server's own hints win). `omitParameters` (an array of
 top-level parameter names) drops those parameters from the schema the server
 lists, at install and on every **Discover tools**, for vendor fields such as
 attribution that a workspace has no use for.
+When the server needs the same argument on every call instead (an agent
+profile URL, a fixed channel), set `connector.config.mcpFixedArguments` to an
+object: it is merged into the arguments of every tool call, its values win
+over the caller's, `{{VAR}}` is resolved in them, and its paths are dropped
+from the listed schemas (nested ones too, so
+`{ "meta": { "ucp-agent": { "profile": "…" } } }` removes `meta` where it holds
+nothing else). Write the snapshot's `parameters` without those paths: the
+snapshot is installed as it is when the server cannot be reached. The
+validator accepts the setting on `MCP` connectors only, as an object. See
+[MCP Bridge](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md#fixed-arguments-mcpfixedarguments>).
+A public server that needs no credentials uses `authType: "NONE"` with no
+`authConfig` and an empty `requiredEnvVars` (see `intl/decathlon-shop.json`).
 Each tool's `endpointMapping` is `{ "method": "<remote tool name>", "path": "/mcp" }`
 (`"/"` for a server at the root of its host, together with
 `connector.config.mcpPath: "/"`).

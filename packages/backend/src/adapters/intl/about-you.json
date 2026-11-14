@@ -1,0 +1,1163 @@
+{
+  "slug": "about-you",
+  "name": "ABOUT YOU",
+  "description": "ABOUT YOU Seller Center API for marketplace partners: orders, shipping with tracking, invoices and packing slips, products with approval status, stock, prices, categories and attributes, brands and reports. API key.",
+  "instructions": "## ABOUT YOU\nThis connector works with the **ABOUT YOU Seller Center API** (v1) at `https://partner.aboutyou.com/api/v1`, for brands and retailers that sell on the ABOUT YOU fashion marketplace: orders, shipping with tracking, invoices and packing slips, products, stock, prices, categories, attributes, brands and reports.\n\n**Setup (about 2 minutes)**\n1. Sign in to the ABOUT YOU Seller Center as an **Admin** user. Member users cannot create API keys.\n2. Open **Settings**, then **API Keys**, and click **+ Add**.\n3. Enter a label, optionally an expiry date, and click **Add Key**.\n4. Copy the key at once into `ABOUT_YOU_API_KEY`: Seller Center shows it only this one time.\n\nThe key is sent in the `X-API-Key` header. For test data, create a sandbox under **Settings, Sandbox, Create Sandbox**: it has its own API key on the same address, products go live there without approval, and test orders come from the **Receive Orders** button on the Orders page.\n\n**Where to start**: `about_you_list_orders` with order_status open shows what is waiting to be shipped. `about_you_list_products` shows your catalogue with stock and prices. `about_you_list_countries` is the cheap call that proves the key works.\n\n**Orders and shipping**: `about_you_list_orders` returns the items of each order with their `id`; the ship, cancel and return tools take these item ids, never SKUs. Ship with `about_you_ship_order_items` (carrier key from `about_you_list_carriers`, shipment tracking key and return tracking key are all required). `about_you_get_delivery_document` returns the packing slip of a dropshipping order and `about_you_get_order_invoices` the customer invoices, both as files. `about_you_cancel_order_items` and `about_you_return_order_items` are installed switched off: a cancelled item cannot be shipped later, and marking an item returned makes ABOUT YOU refund the customer automatically. Check a return within 24 hours of receipt; do not register one you reject.\n\n**Asynchronous writes**: every write answers at once with a `batchRequestId` and is processed in the background. Read the outcome with `about_you_get_batch_result` (pick the matching result_type) until status is completed or failed; each item carries success and errors. Results are kept 7 days. The same payload sent twice within a short time returns the same batch id and is not processed again.\n\n**Products**: one row is one SKU (a size of a colour of a style). Create or change them with `about_you_upsert_products` using ids from `about_you_list_categories`, `about_you_list_category_attribute_groups` and `about_you_list_brands`, then send the style to approval with `about_you_publish_product`. Statuses: draft, pending_approval (locked while ABOUT YOU reviews), rejected (reasons in `about_you_list_rejected_products`), pending_active, active, inactive and problem (an active product that became invalid; it returns to active once fixed). `about_you_update_product_status` (also draft and inactive) and `about_you_delete_product` are installed switched off.\n\n**Stock and prices**: `about_you_update_stock` and `about_you_update_prices` take up to 1000 rows per call and are always applied, unlike stock or prices sent through the product upsert. Product prices are decimal numbers in the currency of the country (49.99), while order amounts are integers in the smallest unit (4999 = 49.99 EUR). Send `currency` with every price.\n\n**Reports and webhooks**: `about_you_list_reports` and `about_you_download_report` (stock and movement reports for goods in ABOUT YOU warehouses, DAC7), `about_you_list_webhooks` (read only).\n\n**Paging**: lists return `items` and `pagination`. Orders and products should be paged with `cursor` = `pagination.next_cursor`; the page parameter still works there but is deprecated. Smaller lists use page and per_page (max 100).\n\n**Fulfilment types**: `dropshipping` means you ship; `fulfillment_by_marketplace` means ABOUT YOU ships from its own warehouse (FbAY), so there is nothing to ship and no delivery document for those orders.\n\n**Rate limits** (per endpoint and per key): orders 100 per minute, ship 200, cancel and return 50, stock 1000, prices 200, product list 1000, product upsert and status 100, batch results 200, invoices and reports 10. The headers `X-RateLimit-Limit` and `X-RateLimit-Remaining` show the budget; a 429 means wait for the next minute.\n\n**Errors**: 400 and 401 answer with a JSON `message`. A 404 on a document means the order has no such file. This API has no payout or payment call; the only action that leads to a refund is registering a return, which is switched off.",
+  "aliases": [
+    "AboutYou",
+    "ABOUT YOU Seller Center",
+    "About You Marketplace"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "about-you",
+  "docsUrl": "https://docs.partner.aboutyou.com/api/getting-started",
+  "requiredEnvVars": [
+    "ABOUT_YOU_API_KEY"
+  ],
+  "envVarMeta": {
+    "ABOUT_YOU_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Seller Center, signed in as an Admin user: Settings, API Keys, + Add. Copy the key when it is shown; it is not shown again.",
+      "link": "https://docs.partner.aboutyou.com/api/getting-started/api-authentication",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the API key only, without spaces or the X-API-Key label."
+    }
+  },
+  "verifyHints": {
+    "400": "ABOUT YOU refused the request; the message field names what is wrong (a filter value, a missing field).",
+    "401": "ABOUT YOU did not accept this API key. Create a new one in Seller Center under Settings, API Keys (Admin users only) and check it has not expired. A sandbox key only reads sandbox data.",
+    "403": "ABOUT YOU refused the call: this key has no access to that resource.",
+    "404": "ABOUT YOU found no order, product, report or document with that id.",
+    "rate_limited": "ABOUT YOU limits each endpoint per minute (orders 100, invoices and reports 10). Wait a minute and try again; X-RateLimit-Remaining shows the budget."
+  },
+  "probe": {
+    "tool": "about_you_list_countries",
+    "params": {}
+  },
+  "prerequisites": "An ABOUT YOU marketplace partner account with an Admin user in Seller Center, to create an API key under Settings, API Keys. About 2 minutes.",
+  "connector": {
+    "name": "ABOUT YOU Seller Center API",
+    "type": "REST",
+    "baseUrl": "https://partner.aboutyou.com/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-Key",
+      "apiKey": "{{ABOUT_YOU_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "about_you_list_orders",
+      "description": "List orders: per order order_number, status (open, shipped, cancelled, returned, mixed), fulfillment_type, carrier_key, cost_with_tax and cost_without_tax, currency_code, customer_key, billing and shipping address, created_at, updated_at, delivery_document_url, and order_items[] with id, sku, status, price_with_tax, vat and tracking keys. Amounts are integers in the smallest currency unit (cents). The item `id` is what the ship, cancel and return tools take. 20 rows per page (max 100); page on with cursor = `pagination.next_cursor`. Read-only, 100 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Exact order numbers to fetch, up to 100."
+          },
+          "order_status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "shipped",
+              "cancelled",
+              "returned",
+              "mixed"
+            ],
+            "description": "Order status: open (still to ship), shipped, cancelled, returned, or mixed (items in different states)."
+          },
+          "order_item_status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "shipped",
+              "cancelled",
+              "returned"
+            ],
+            "description": "Only orders with an item in this status."
+          },
+          "orders_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only orders from this moment on, ISO 8601 (e.g. `2026-11-01T00:00:00Z`)."
+          },
+          "orders_to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only orders up to this moment, ISO 8601."
+          },
+          "fulfillment_type": {
+            "type": "string",
+            "enum": [
+              "dropshipping",
+              "fulfillment_by_marketplace"
+            ],
+            "description": "`dropshipping` (you ship) or `fulfillment_by_marketplace` (ABOUT YOU ships from its warehouse, FbAY)."
+          },
+          "carrier_key": {
+            "type": "string",
+            "description": "Only orders for this carrier key (key of about_you_list_carriers, e.g. `DHL_STD_NATIONAL`)."
+          },
+          "shop_country": {
+            "type": "string",
+            "description": "Only orders placed in this shop country, e.g. `DE`."
+          },
+          "customer_key": {
+            "type": "string",
+            "description": "Only orders of this customer (customer_key of an order)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination.next_cursor` of the previous answer. In cursor mode the answer has no `page`, `pages` or `total`."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1 (offset paging, deprecated by ABOUT YOU and slow on large accounts). Leave it out when you pass cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/",
+        "queryParams": {
+          "order_number": "$order_numbers",
+          "order_status": "$order_status",
+          "order_item_status": "$order_item_status",
+          "orders_from": "$orders_from",
+          "orders_to": "$orders_to",
+          "fulfillment_type": "$fulfillment_type",
+          "carrier_key": "$carrier_key",
+          "shop_country": "$shop_country",
+          "customer_key": "$customer_key",
+          "per_page": "$per_page",
+          "cursor": "$cursor",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_list_carriers",
+      "description": "List the carriers you may ship with: key (e.g. DHL_STD_NATIONAL, the value for carrier_key when shipping), carrier_name, display_label and country_code. Read-only, 20 rows per page (max 100), 100 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/carriers/",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_ship_order_items",
+      "description": "Mark open order items as shipped, one entry per parcel: the order item ids in it, the carrier key, the shipment tracking key and the return tracking key (all four are required by ABOUT YOU). Use the carrier_key of the order: the carrier the customer chose cannot be changed. Items of several orders may go in one parcel. Asynchronous: answers `batchRequestId`; read the outcome per item with about_you_get_batch_result (result_type ship-orders). 200 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_items": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "minItems": 1,
+                  "description": "Order item ids in this parcel (order_items[].id of about_you_list_orders, not SKUs)."
+                },
+                "carrier_key": {
+                  "type": "string",
+                  "description": "Carrier key from about_you_list_carriers."
+                },
+                "shipment_tracking_key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Tracking number of the parcel to the customer."
+                },
+                "return_tracking_key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Tracking number of the return label enclosed for the customer."
+                }
+              },
+              "required": [
+                "order_items",
+                "carrier_key",
+                "shipment_tracking_key",
+                "return_tracking_key"
+              ],
+              "description": "One parcel."
+            },
+            "minItems": 1,
+            "description": "Shipments, e.g. `[{\"order_items\": [1234567], \"carrier_key\": \"DHL_STD_NATIONAL\", \"shipment_tracking_key\": \"00340434161094042557\", \"return_tracking_key\": \"00340434161094042564\"}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/ship",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "about_you_cancel_order_items",
+      "description": "Cancel open order items you cannot deliver (for example out of stock). Cancelled items cannot be shipped later, the stock is not added back, and cancellations count towards your cancellation rate. Installed switched off. Asynchronous: answers `batchRequestId`; read the outcome per item with about_you_get_batch_result (result_type cancel-orders). 50 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Order item id (order_items[].id of about_you_list_orders)."
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "description": "One order item."
+            },
+            "minItems": 1,
+            "description": "Items to cancel, e.g. `[{\"id\": 1234567}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/cancel",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "about_you_return_order_items",
+      "description": "Register shipped order items as returned to you, with the return tracking key. Once an item is marked returned, ABOUT YOU refunds the customer automatically, so register only returns you inspected and accept; for a return you reject, contact ABOUT YOU instead. Installed switched off. Asynchronous: answers `batchRequestId`; read the outcome per item with about_you_get_batch_result (result_type return-orders). 50 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_items": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "minItems": 1,
+                  "description": "Order item ids that came back (order_items[].id of about_you_list_orders)."
+                },
+                "return_tracking_key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Tracking number of the return parcel."
+                }
+              },
+              "required": [
+                "order_items",
+                "return_tracking_key"
+              ],
+              "description": "One returned parcel."
+            },
+            "minItems": 1,
+            "description": "Returns, e.g. `[{\"order_items\": [1234567], \"return_tracking_key\": \"00340434161094042564\"}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/return",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "about_you_get_order_invoices",
+      "description": "Download the customer invoices of one order. The answer is a file attached to the result: a PDF, or a ZIP when the order has several invoices. Read-only, 10 calls per minute, so fetch only the orders you need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Order number (order_number of about_you_list_orders)."
+          },
+          "fulfillment_type": {
+            "type": "string",
+            "enum": [
+              "dropshipping",
+              "fulfillment_by_marketplace"
+            ],
+            "description": "An order number can exist once per fulfillment type. Without it ABOUT YOU takes the dropshipping order if there is one."
+          }
+        },
+        "required": [
+          "order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_number}/invoices",
+        "queryParams": {
+          "fulfillment_type": "$fulfillment_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_get_delivery_document",
+      "description": "Download the delivery document (packing slip) of a dropshipping order as a PDF attached to the result. Orders shipped by ABOUT YOU (fulfillment_by_marketplace) have none and answer 404. Read-only, 100 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Order number (order_number of about_you_list_orders)."
+          }
+        },
+        "required": [
+          "order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_number}/delivery_document"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_list_products",
+      "description": "List your product variants (one row per SKU): sku, style_key, colorway_key, ean, name, status (draft, pending_approval, rejected, pending_active, active, inactive, problem), quantity (your stock), quantity_fbm (stock in ABOUT YOU warehouses), category, brand, color and size ids, countries, images and prices[] per country (retail_price, sale_price, currency as decimal numbers). 20 rows per page (max 100); page on with cursor = `pagination.next_cursor`. Read-only, 1000 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "maxItems": 100,
+            "description": "Exact SKUs to fetch, up to 100."
+          },
+          "style_key": {
+            "type": "string",
+            "description": "Only variants of this style (your style key, shared by all colours and sizes of one product)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending_approval",
+              "rejected",
+              "pending_active",
+              "active",
+              "inactive",
+              "problem"
+            ],
+            "description": "Only variants in this status."
+          },
+          "with": {
+            "type": "string",
+            "enum": [
+              "problems"
+            ],
+            "description": "`problems` adds, per SKU, why it cannot go live (missing data, reported problems, rejection reasons)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor for the next page: `pagination.next_cursor` of the previous answer. In cursor mode the answer has no `page`, `pages` or `total`."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number from 1 (offset paging, deprecated by ABOUT YOU and slow on large accounts). Leave it out when you pass cursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/",
+        "queryParams": {
+          "sku": "$skus",
+          "style_key": "$style_key",
+          "status": "$status",
+          "with": "$with",
+          "per_page": "$per_page",
+          "cursor": "$cursor",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_list_rejected_products",
+      "description": "List products ABOUT YOU rejected in the approval: style_key, rejection_message, rejection_reasons[] (key, type Image Requirements or Inconsistent Data, name, description) and a hint which variants are affected. Fix the data, then publish again. Read-only, 20 rows per page (max 100), 50 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "style_key": {
+            "type": "string",
+            "description": "Only this style key."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/rejected",
+        "queryParams": {
+          "style_key": "$style_key",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_upsert_products",
+      "description": "Create or update up to 100 product variants (one entry per SKU). New products start as draft; publish them with about_you_publish_product. Ids for category, brand, color, size and attributes come from about_you_list_categories, about_you_list_brands and about_you_list_category_attribute_groups. For stock and price changes use about_you_update_stock and about_you_update_prices instead: the same payload sent again within a few hours is not processed twice. Asynchronous: answers `batchRequestId`; read the outcome per item with about_you_get_batch_result (result_type products). 100 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "style_key": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "Your key for the product (style), shared by all its colours and sizes. Max 120 characters."
+                },
+                "colorway_key": {
+                  "type": "string",
+                  "description": "Your key for this colour of the style. Send it, so the colours are written to the right colourway."
+                },
+                "sku": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "Your SKU for this size of this colour. Max 120 characters; fixed once the product is published."
+                },
+                "ean": {
+                  "type": "string",
+                  "description": "EAN-13 barcode, 13 digits with a valid checksum."
+                },
+                "hs_code": {
+                  "type": "string",
+                  "maxLength": 20,
+                  "description": "Customs tariff (HS) code, e.g. `6109.10`."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Product or design name only, without category, colour or material."
+                },
+                "descriptions": {
+                  "type": "object",
+                  "description": "Description per locale, e.g. `{\"de\": \"Weiches T-Shirt\", \"en\": \"Soft t-shirt\"}`. Locales from about_you_list_countries."
+                },
+                "color": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "minItems": 1,
+                  "description": "Color attribute ids, e.g. `[1234]`."
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Size attribute id."
+                },
+                "second_size": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Second size attribute id (e.g. length), when the category has one."
+                },
+                "brand": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Brand id from about_you_list_brands."
+                },
+                "category": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Category id from about_you_list_categories."
+                },
+                "category_secondary": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Unisex counterpart category (unisex_counterpart of the category), to list the product in both."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Stock quantity."
+                },
+                "weight": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100000,
+                  "description": "Weight in grams, 0 to 100000."
+                },
+                "countries": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Countries to sell in, ISO alpha-2 codes, e.g. `[\"DE\", \"AT\"]`."
+                },
+                "country_of_origin": {
+                  "type": "string",
+                  "description": "ISO alpha-2 country the product was made in, e.g. `PT`."
+                },
+                "attributes": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "description": "Other category attribute ids. Do not repeat size, brand or color here. Send `[]` when there are none."
+                },
+                "material_composition_textile": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "Textile composition, e.g. `[{\"cluster_id\": 164593, \"components\": [{\"material_id\": 293177, \"fraction\": 100}]}]` (fraction in percent)."
+                },
+                "material_composition_non_textile": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "Non-textile composition, e.g. `[{\"cluster_id\": 164588, \"components\": [{\"material_id\": 186717}]}]`."
+                },
+                "prices": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "country_code": {
+                        "type": "string",
+                        "description": "ISO 3166-1 alpha-2 country the price is for, e.g. `DE`."
+                      },
+                      "currency": {
+                        "type": "string",
+                        "description": "ISO 4217 currency of that country, e.g. `EUR` (see about_you_list_countries). Always send it: ABOUT YOU is making it mandatory."
+                      },
+                      "retail_price": {
+                        "type": "number",
+                        "description": "Regular price as a decimal number in that currency, e.g. 49.99 (at most 1,000,000)."
+                      },
+                      "sale_price": {
+                        "type": "number",
+                        "description": "Reduced price as a decimal number, lower than retail_price. Leave out when the item is not on sale."
+                      }
+                    },
+                    "required": [
+                      "country_code",
+                      "retail_price"
+                    ],
+                    "description": "Price for one country."
+                  },
+                  "description": "One price per country."
+                },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "description": "1 to 10 public image URLs. A changed image needs a new URL: Seller Center caches a URL for at least three days."
+                }
+              },
+              "required": [
+                "style_key",
+                "sku",
+                "color",
+                "size",
+                "brand",
+                "category",
+                "weight",
+                "country_of_origin",
+                "attributes",
+                "prices",
+                "images"
+              ],
+              "description": "One variant (SKU)."
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Product variants, 1 to 100."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "about_you_publish_product",
+      "description": "Publish one product (all variants of a style key). A draft goes to ABOUT YOU's approval (pending_approval, then pending_active, then active); a product approved before goes live again at once. While it is in approval it cannot be edited. After publishing, SKUs and sizes can only be added, not changed. Asynchronous: answers `batchRequestId`; read the outcome per item with about_you_get_batch_result (result_type status). 100 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "style_key": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Style key of the product to publish."
+          }
+        },
+        "required": [
+          "style_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/status",
+        "bodyMapping": {
+          "items": [
+            {
+              "style_key": "$style_key",
+              "status": "published"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "about_you_update_product_status",
+      "description": "Set the status of one or more products by style key: `published` (send to approval or back online), `draft` (withdraw from approval; only before the product was approved) or `inactive` (take an approved product offline; it stays in the account). Installed switched off because inactive removes products from the shop; to publish one product use about_you_publish_product. Asynchronous: answers `batchRequestId`; read the outcome per item with about_you_get_batch_result (result_type status). 100 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "style_key": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "Style key of the product."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "published",
+                    "draft",
+                    "inactive"
+                  ],
+                  "description": "published, draft or inactive."
+                }
+              },
+              "required": [
+                "style_key",
+                "status"
+              ],
+              "description": "One product."
+            },
+            "minItems": 1,
+            "description": "Status changes, e.g. `[{\"style_key\": \"EDT1110-5\", \"status\": \"inactive\"}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/status",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "about_you_update_stock",
+      "description": "Set the stock quantity of up to 1000 SKUs (your own warehouse stock; a quantity of 0 makes the size unavailable). An update with an older valid_at than the last one applied is ignored. Asynchronous: answers `batchRequestId`; read the outcome per item with about_you_get_batch_result (result_type stocks). 1000 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "Your SKU."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "New stock quantity, 0 to 1,000,000."
+                },
+                "valid_at": {
+                  "type": "string",
+                  "description": "When this quantity was true on your side, ISO 8601 (e.g. `2026-11-14T10:30:00Z`). A future time is cut to now."
+                }
+              },
+              "required": [
+                "sku",
+                "quantity"
+              ],
+              "description": "One SKU."
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "Stock rows, e.g. `[{\"sku\": \"MY-SKU-2\", \"quantity\": 12}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/stocks",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "about_you_update_prices",
+      "description": "Set the price of up to 1000 SKU and country pairs: retail price and optional sale price, as decimal numbers in the currency of the country. One entry holds one country; repeat the SKU for more countries. Asynchronous: answers `batchRequestId`; read the outcome per item with about_you_get_batch_result (result_type prices). 200 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "maxLength": 120,
+                  "description": "Your SKU."
+                },
+                "price": {
+                  "type": "object",
+                  "properties": {
+                    "country_code": {
+                      "type": "string",
+                      "description": "ISO 3166-1 alpha-2 country the price is for, e.g. `DE`."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "ISO 4217 currency of that country, e.g. `EUR` (see about_you_list_countries). Always send it: ABOUT YOU is making it mandatory."
+                    },
+                    "retail_price": {
+                      "type": "number",
+                      "description": "Regular price as a decimal number in that currency, e.g. 49.99 (at most 1,000,000)."
+                    },
+                    "sale_price": {
+                      "type": "number",
+                      "description": "Reduced price as a decimal number, lower than retail_price. Leave out when the item is not on sale."
+                    }
+                  },
+                  "required": [
+                    "country_code"
+                  ],
+                  "description": "Price in one country."
+                },
+                "valid_at": {
+                  "type": "string",
+                  "description": "When this price was true on your side, ISO 8601. Older than the last applied update means ignored."
+                }
+              },
+              "required": [
+                "sku",
+                "price"
+              ],
+              "description": "One SKU in one country."
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "Price rows, e.g. `[{\"sku\": \"MY-SKU-2\", \"price\": {\"country_code\": \"DE\", \"currency\": \"EUR\", \"retail_price\": 49.99, \"sale_price\": 39.99}}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/prices",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "about_you_delete_product",
+      "description": "Delete one variant by SKU. When it was the last size of a colour the colour is deleted too, and with the last colour the whole product. This cannot be undone; to take a product offline use status inactive instead. Installed switched off. 50 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "SKU to delete."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/{sku}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "about_you_list_categories",
+      "description": "Search the ABOUT YOU category tree: id (the category value for products), name, path (for display), parent_id, material_composition_type (textile or non-textile) and unisex_counterpart. Read-only, 20 rows per page (max 100), 100 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text matched against the category path, e.g. `Sneaker`."
+          },
+          "parent_category": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only the children of this category id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/",
+        "queryParams": {
+          "query": "$query",
+          "parent_category": "$parent_category",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_list_category_attribute_groups",
+      "description": "List the attribute groups a category demands (colour, size, material groups and other attributes): per group id, name, frontend_name, is_mandatory, is_multiselect and attributes[] with id, name and is_default. The attribute ids go into color, size and attributes of a product. Read-only, 300 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Category id from about_you_list_categories."
+          },
+          "with": {
+            "type": "string",
+            "enum": [
+              "optional"
+            ],
+            "description": "`optional` adds the groups the category offers without demanding them."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/{category_id}/attribute-groups",
+        "queryParams": {
+          "with": "$with"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_list_brands",
+      "description": "List the brands your account may sell: id (the brand value for products) and name. Read-only, one call returns all, 50 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brands/"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_list_countries",
+      "description": "List the countries your account sells in (code, name), the locales for product descriptions and the currency of each country (country_code, code). Read-only, 100 calls per minute. Also the connection check.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/countries/"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_get_batch_result",
+      "description": "Read the outcome of an asynchronous write: status (pending, processing, completed, retry, failed) and items[] with the request item, success and errors[]. Results are kept 7 days. Poll every few seconds until status is completed or failed. Read-only, 200 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "result_type": {
+            "type": "string",
+            "enum": [
+              "products",
+              "status",
+              "stocks",
+              "prices",
+              "ship-orders",
+              "cancel-orders",
+              "return-orders"
+            ],
+            "description": "Which write the batch came from: products (about_you_upsert_products), status (publish or status change), stocks, prices, ship-orders, cancel-orders or return-orders."
+          },
+          "batch_request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The `batchRequestId` (UUID) the write answered."
+          }
+        },
+        "required": [
+          "result_type",
+          "batch_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/results/{result_type}",
+        "queryParams": {
+          "batch_request_id": "$batch_request_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_list_reports",
+      "description": "List the report files ABOUT YOU generated for your account: id, type (SELLABLE_STOCK, WAREHOUSE_MOVEMENTS, DAC7), file_name, date, created_at. Download one with about_you_download_report. Read-only, 20 rows per page (max 100), 10 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "SELLABLE_STOCK",
+              "WAREHOUSE_MOVEMENTS",
+              "DAC7"
+            ],
+            "description": "Report type: SELLABLE_STOCK and WAREHOUSE_MOVEMENTS (stock in ABOUT YOU warehouses) or DAC7 (tax reporting)."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search by report id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/",
+        "queryParams": {
+          "type": "$type",
+          "query": "$query",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_download_report",
+      "description": "Download one report file by id. A text file (CSV) comes back as text, any other format as a file attached to the result. Read-only, 10 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Report id from about_you_list_reports."
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report_id}/download"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "about_you_list_webhooks",
+      "description": "List the webhook subscriptions of the account: id, url, events (order.created, order.shipped, stock.updated and others), enabled, description and deactivated_at (set when ABOUT YOU stopped delivering because the endpoint kept failing). Read-only, 50 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks/"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
