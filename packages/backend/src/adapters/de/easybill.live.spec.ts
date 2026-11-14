@@ -67,6 +67,42 @@ describe('easybill adapter — static spec conformance', () => {
   });
 });
 
+describe('easybill adapter: payments and document workflow', () => {
+  const tools = (adapter as unknown as {
+    tools: Array<{ name: string; enabled?: boolean; endpointMapping: { method: string; path: string; queryParams?: Record<string, string> } }>;
+  }).tools;
+  const t = (name: string) => {
+    const found = tools.find((x) => x.name === name);
+    if (!found) throw new Error(`missing tool ${name}`);
+    return found;
+  };
+
+  it('maps the documented payment and document endpoints', () => {
+    const expected: Array<[string, string, string]> = [
+      ['easybill_list_payments', 'GET', '/document-payments'],
+      ['easybill_get_document_payment', 'GET', '/document-payments/{id}'],
+      ['easybill_record_payment', 'POST', '/document-payments'],
+      ['easybill_remove_payment', 'DELETE', '/document-payments/{id}'],
+      ['easybill_draft_document', 'POST', '/documents'],
+      ['easybill_complete_document', 'PUT', '/documents/{id}/done'],
+      ['easybill_send_document', 'POST', '/documents/{id}/send/{type}'],
+      ['easybill_create_storno', 'POST', '/documents/{id}/cancel'],
+    ];
+    for (const [name, method, path] of expected) {
+      expect(t(name).endpointMapping).toMatchObject({ method, path });
+    }
+    expect(t('easybill_record_payment').endpointMapping.queryParams).toEqual({ paid: '$paid' });
+  });
+
+  it('installs the payment delete and the cancellation switched off and keeps the other writes on', () => {
+    expect(t('easybill_remove_payment').enabled).toBe(false);
+    expect(t('easybill_create_storno').enabled).toBe(false);
+    for (const name of ['easybill_record_payment', 'easybill_draft_document', 'easybill_complete_document', 'easybill_send_document']) {
+      expect(t(name).enabled).toBeUndefined();
+    }
+  });
+});
+
 const maybe = process.env.RUN_EASYBILL_LIVE ? describe : describe.skip;
 
 maybe('easybill adapter — live edge reachability', () => {

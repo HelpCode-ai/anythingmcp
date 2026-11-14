@@ -303,6 +303,87 @@ describe('AdaptersService install — a base URL variable without https://', () 
   });
 });
 
+describe('AdaptersService — values that cannot be the real ones', () => {
+  function build() {
+    const execute = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      connector: { create: jest.fn().mockResolvedValue({ id: 'c1' }), findUnique: jest.fn().mockResolvedValue(null) },
+      mcpTool: { create: jest.fn(), createMany: jest.fn(async ({ data }: any) => ({ count: data.length })) },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma, execute };
+  }
+  const mysql = { MYSQL_PORT: '3306', MYSQL_DATABASE: 'shop', MYSQL_USER: 'reader', MYSQL_PASSWORD: 'pw-123456' };
+
+  it('the check names a MySQL host left as "host" and sends nothing', async () => {
+    const { service, execute } = build();
+    const out: any = await service.verifyCredentials('mysql', 'org1', { ...mysql, MYSQL_HOST: 'host' });
+    expect(out).toMatchObject({ ok: false, kind: 'invalid_input', fields: { MYSQL_HOST: expect.stringMatching(/not the real address/) } });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('the check applies the adapter pattern the form applies (Odoo address with /web)', async () => {
+    const { service } = build();
+    const out: any = await service.verifyCredentials('odoo', 'org1', {
+      ODOO_URL: 'https://erp.acme.de/web',
+      ODOO_DB: 'acme',
+      ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
+    });
+    expect(Object.keys(out.fields)).toEqual(['ODOO_URL']);
+    expect(out.fields.ODOO_URL).toMatch(/Remove \/web after the host: https:\/\/erp\.acme\.de\./);
+  });
+
+  it('adds the missing https:// to an address before the pattern check, and calls with it', async () => {
+    const { service, execute } = build();
+    const out: any = await service.verifyCredentials('odoo', 'org1', {
+      ODOO_URL: 'amcp-e2e-test.odoo.com',
+      ODOO_DB: 'amcp-e2e-test',
+      ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
+    });
+    expect(out.fields).toBeUndefined();
+    expect(execute).toHaveBeenCalled();
+    expect(execute.mock.calls[0][0].envVars.ODOO_URL).toBe('https://amcp-e2e-test.odoo.com');
+  });
+
+  it('the install stores an address field outside the base URL with its https:// (Zoho accounts server)', async () => {
+    const { service, prisma } = build();
+    await service.importAdapter('zoho-mail', 'u1', 'org1', {
+      ZOHO_MAIL_CLIENT_ID: '1000.ABCDEFGHIJKLMNOP',
+      ZOHO_MAIL_CLIENT_SECRET: 'f00ba4c0ffee1234567890abcdef',
+      ZOHO_MAIL_API_URL: 'mail.zoho.eu',
+      ZOHO_MAIL_ACCOUNTS_URL: 'accounts.zoho.eu',
+    });
+    const data = prisma.connector.create.mock.calls[0][0].data;
+    expect(data.envVars).toMatchObject({
+      ZOHO_MAIL_API_URL: 'https://mail.zoho.eu',
+      ZOHO_MAIL_ACCOUNTS_URL: 'https://accounts.zoho.eu',
+    });
+  });
+
+  it('"Save anyway" (the install) refuses them too, before anything is written', async () => {
+    const { service, prisma } = build();
+    const key = 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e';
+    await expect(
+      service.importAdapter('odoo', 'u1', 'org1', { ODOO_URL: 'https://erp.acme.de', ODOO_DB: 'acme', ODOO_API_KEY: key + key }),
+    ).rejects.toMatchObject({
+      response: { code: 'invalid_values', fields: { ODOO_API_KEY: expect.stringMatching(/Paste it once/) } },
+    });
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
+
+  it('real values still go through', async () => {
+    const { service, execute } = build();
+    const out: any = await service.verifyCredentials('mysql', 'org1', { ...mysql, MYSQL_HOST: 'db.acme.internal' });
+    expect(out.fields).toBeUndefined();
+    expect(execute).toHaveBeenCalled();
+  });
+});
+
 describe('AdaptersService install — weclapp tenant pasted as an address (#733)', () => {
   function build() {
     const prisma = {
@@ -442,6 +523,53 @@ describe('AdaptersService install — a variable the operator provides (Deutsche
   });
 });
 
+describe('AdaptersService install — part of the address still to come', () => {
+  function build(execute = jest.fn()) {
+    const prisma = {
+      connector: {
+        create: jest.fn().mockResolvedValue({ id: 'c1' }),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      mcpTool: {
+        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn(async ({ data }: any) => ({ count: data.length })),
+      },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { service, prisma, execute };
+  }
+
+  it('still refuses an install without them by default', async () => {
+    const { service, prisma } = build();
+    await expect(service.importAdapter('telegram-bot', 'u1', 'org1', {})).rejects.toThrow(
+      /TELEGRAM_BOT_TOKEN is required to install "telegram-bot"/,
+    );
+    expect(prisma.connector.create).not.toHaveBeenCalled();
+  });
+
+  it('creates the connector waiting for them with addressMayWait, and calls nothing', async () => {
+    const { service, prisma, execute } = build();
+    const out = await service.importAdapter('shopify', 'u1', 'org1', {}, { addressMayWait: true });
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.baseUrl).toContain('{{SHOPIFY_STORE}}');
+    expect(out.probe).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a whole URL pasted into an address part with addressMayWait', async () => {
+    const { service } = build();
+    await expect(
+      service.importAdapter('insightly', 'u1', 'org1', { INSIGHTLY_POD: 'https://api.na1.insightly.com/v3.1' }, { addressMayWait: true }),
+    ).rejects.toThrow();
+  });
+});
+
 describe('AdaptersService starter pack', () => {
   const { STARTER_PACK } = jest.requireActual('./starter-pack');
   const { getAdapter } = jest.requireActual('./catalog');
@@ -502,6 +630,8 @@ describe('AdaptersService starter pack', () => {
 });
 
 describe('AdaptersService.verifyCredentials', () => {
+  // Shaped like real Etsy app keys: the check enforces the adapter's patterns too.
+  const ETSY_KEYS = { ETSY_CLIENT_ID: 'abcdefghij0123456789wxyz', ETSY_CLIENT_SECRET: 'sharedsecret01' };
   function build(execute: jest.Mock) {
     const prisma = { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } };
     const service = new AdaptersService(
@@ -549,6 +679,28 @@ describe('AdaptersService.verifyCredentials', () => {
     expect(out.message).toContain('An internal error occurred.');
   });
 
+  it('shows the words of a web page answer, never its markup', async () => {
+    // 2 Nov 2026: an Odoo check showed "<html><body><script>window.location…".
+    const err: any = new Error('Request failed with status code 404');
+    err.response = {
+      status: 404,
+      data: '<!DOCTYPE html><html><head><title>Error</title><style>p{color:red}</style></head><body><h1>404 Not Found</h1><p>No route &amp; no page.</p></body></html>',
+    };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'k' });
+    expect(out.message).toContain('the server answered with a web page: "Error 404 Not Found No route & no page."');
+    expect(out.message).not.toMatch(/<|color:red/);
+  });
+
+  it('says a page with nothing to read is a web page, not API data', async () => {
+    const err: any = new Error('Request failed with status code 404');
+    err.response = { status: 404, data: '<html><body><script>window.location = "https://example.com/";</script></body></html>' };
+    const { service } = build(jest.fn().mockRejectedValue(err));
+    const out: any = await service.verifyCredentials('lexware-office', 'org1', { LEXWARE_API_KEY: 'k' });
+    expect(out.message).toContain('the server answered with a web page, not API data');
+    expect(out.message).not.toContain('window.location');
+  });
+
   it('does not repeat a body the error message already carries', async () => {
     const err: any = new Error('401 Unauthorized: invalid token');
     err.status = 401;
@@ -578,14 +730,14 @@ describe('AdaptersService.verifyCredentials', () => {
     outbound.mockReset().mockResolvedValue({ status: 200, data: '{"application_id":1}' } as any);
     const execute = jest.fn();
     const { service } = build(execute);
-    const out = await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
+    const out = await service.verifyCredentials('etsy', 'org1', ETSY_KEYS);
     expect(out).toEqual({ ok: null, skipped: 'authorization' });
     expect(execute).not.toHaveBeenCalled();
     expect(outbound).toHaveBeenCalledWith(
       expect.objectContaining({
         method: 'GET',
         url: 'https://openapi.etsy.com/v3/application/openapi-ping',
-        headers: { 'x-api-key': 'ks:ss' },
+        headers: { 'x-api-key': `${ETSY_KEYS.ETSY_CLIENT_ID}:${ETSY_KEYS.ETSY_CLIENT_SECRET}` },
       }),
     );
   });
@@ -598,21 +750,53 @@ describe('AdaptersService.verifyCredentials', () => {
       data: '{"error":"API key not found or not active, or incorrect shared secret for API key."}',
     } as any);
     const { service } = build(jest.fn());
-    const out = await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' });
+    const out = await service.verifyCredentials('etsy', 'org1', ETSY_KEYS);
     expect(out).toMatchObject({ ok: false, kind: 'auth_failed', status: 403 });
-    expect((out as any).message).toContain('stays Pending until Etsy approves it');
+    expect((out as any).message).toContain('stays Pending Personal Approval until Etsy approves it');
     expect((out as any).message).toContain('API key not found or not active');
+    // Watched: the page keeps the keys and the owner hears when Etsy approves.
+    expect(out).toMatchObject({ appPending: true });
+  });
+
+  it('flags only a 403 of a watched adapter as waiting for approval', async () => {
+    outbound.mockReset().mockResolvedValue({ status: 401, data: 'nope' } as any);
+    const { service } = build(jest.fn());
+    const out = await service.verifyCredentials('etsy', 'org1', ETSY_KEYS);
+    expect(out).toMatchObject({ ok: false, status: 401 });
+    expect((out as any).appPending).toBeUndefined();
+  });
+
+  it('re-checks stored app keys with the same call: accepted, refused or unknown', async () => {
+    const { service } = build(jest.fn());
+    const env = { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' };
+    const base = 'https://openapi.etsy.com/v3/application';
+    outbound.mockReset().mockResolvedValue({ status: 200, data: '{}' } as any);
+    expect(await service.recheckAppKeys('etsy', base, env)).toBe('accepted');
+    expect(outbound).toHaveBeenCalledWith(
+      expect.objectContaining({ url: `${base}/openapi-ping`, headers: { 'x-api-key': 'ks:ss' } }),
+    );
+    outbound.mockReset().mockResolvedValue({ status: 403, data: 'pending' } as any);
+    expect(await service.recheckAppKeys('etsy', base, env)).toBe('refused');
+    outbound.mockReset().mockResolvedValue({ status: 503, data: 'down' } as any);
+    expect(await service.recheckAppKeys('etsy', base, env)).toBe('unknown');
+    outbound.mockReset().mockRejectedValue(new Error('ETIMEDOUT'));
+    expect(await service.recheckAppKeys('etsy', base, env)).toBe('unknown');
+    // A key missing: nothing is sent.
+    outbound.mockReset();
+    expect(await service.recheckAppKeys('etsy', base, { ETSY_CLIENT_ID: 'ks' })).toBe('unknown');
+    expect(outbound).not.toHaveBeenCalled();
+    expect(await service.recheckAppKeys('google-search-console', base, env)).toBe('unknown');
   });
 
   it('does not hold the sign-in back when Etsy cannot be reached or answers something else', async () => {
     const { service } = build(jest.fn());
     outbound.mockReset().mockRejectedValue(new Error('ETIMEDOUT'));
-    expect(await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' })).toEqual({
+    expect(await service.verifyCredentials('etsy', 'org1', ETSY_KEYS)).toEqual({
       ok: null,
       skipped: 'authorization',
     });
     outbound.mockReset().mockResolvedValue({ status: 503, data: 'down' } as any);
-    expect(await service.verifyCredentials('etsy', 'org1', { ETSY_CLIENT_ID: 'ks', ETSY_CLIENT_SECRET: 'ss' })).toEqual({
+    expect(await service.verifyCredentials('etsy', 'org1', ETSY_KEYS)).toEqual({
       ok: null,
       skipped: 'authorization',
     });
@@ -622,7 +806,7 @@ describe('AdaptersService.verifyCredentials', () => {
     outbound.mockReset();
     const { service } = build(jest.fn());
     const out = await service.verifyCredentials('google-search-console', 'org1', {
-      GOOGLE_CLIENT_ID: 'id',
+      GOOGLE_CLIENT_ID: '1234567890-abc.apps.googleusercontent.com',
       GOOGLE_CLIENT_SECRET: 'secret',
     });
     expect(out).toEqual({ ok: null, skipped: 'authorization' });
@@ -823,7 +1007,7 @@ describe('AdaptersService popular connectors', () => {
     const { svc } = service({ rows: [{ slug: 'etsy', workspaces: 40n }] });
     const etsy = (await svc.popularConnectors('org1')).find((i) => i.slug === 'etsy')!;
     expect(etsy.setupKind).toBe('oauth_browser');
-    expect(etsy.needs).toEqual(['Keystring', 'Shared secret']);
+    expect(etsy.needs).toEqual(['Keystring', 'Shared Secret']);
   });
 
   it('marks what the workspace already has', async () => {
@@ -993,11 +1177,28 @@ describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
     );
   });
 
+  it('below 19, offers the switch to the JSON-RPC setup with the address and database, never the key', async () => {
+    odooAnswers({ version: [16, 0, 0, 'final', 0, ''], serie: '16.0' });
+    const out: any = await build().verifyCredentials('odoo', 'org1', {
+      // Typed without https://, as the address bar shows it.
+      ODOO_URL: 'binikit.odoo.com',
+      ODOO_DB: 'binikit',
+      ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
+    });
+    expect(out.switchTo).toEqual({
+      slug: 'odoo-jsonrpc',
+      name: 'Odoo 14-18 (JSON-RPC)',
+      prefill: { ODOO_URL: 'https://binikit.odoo.com', ODOO_DB: 'binikit' },
+    });
+    expect(JSON.stringify(out.switchTo)).not.toContain('a3f9c27e');
+  });
+
   it('on Odoo 19 says the database name is wrong and names the right one, at the root of the address', async () => {
     odooAnswers({ version: ['saas~19', 3, 0, 'final', 0, 'e'], serie: 'saas~19.3', databases: ['binikit-main-12245208'] });
     const out: any = await build().verifyCredentials('odoo', 'org1', creds);
     expect(out.ok).toBe(false);
     expect(out.suggest).toBeUndefined();
+    expect(out.switchTo).toBeUndefined();
     expect(out.message).toMatch(/version saas~19\.3 and has the JSON-2 API, so the database name "binikit" is wrong/);
     expect(out.message).toContain('"binikit-main-12245208"');
     const urls = outbound.mock.calls.map(([c]: any) => c.url);
@@ -1014,11 +1215,116 @@ describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
     expect(out.message).toMatch(/Check the address you open Odoo at/);
   });
 
+  /** The probe answers 404 unless ODOO_DB is `accepted`; there it answers `then` (ok, or a refused key). */
+  function buildAccepting(accepted: string, then: 'ok' | 'auth') {
+    const execute = jest.fn(async (connector: any) => {
+      if (connector.envVars.ODOO_DB !== accepted) {
+        throw Object.assign(new Error('404 NOT FOUND: Request failed with status code 404'), { status: 404 });
+      }
+      if (then === 'auth') {
+        throw Object.assign(new Error('401 UNAUTHORIZED: Invalid apikey'), { status: 401 });
+      }
+      return [{ id: 1, name: 'My Company' }];
+    });
+    const svc = new AdaptersService(
+      { connector: { create: jest.fn() }, mcpTool: { create: jest.fn() } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      { executeConnectorCall: execute } as any,
+    );
+    return { svc, execute };
+  }
+
+  it('tries the one database the address serves and returns it to fill in when Odoo accepts it', async () => {
+    // 9 Nov 2026: 19 Odoo setups were stuck on a database name the check had
+    // already named; none had typed it in.
+    odooAnswers({ version: ['saas~19', 3, 0, 'final', 0, 'e'], serie: 'saas~19.3', databases: ['binikit-main-12245208'] });
+    const { svc, execute } = buildAccepting('binikit-main-12245208', 'ok');
+    const out: any = await svc.verifyCredentials('odoo', 'org1', creds);
+    expect(out).toMatchObject({ ok: true, corrected: { ODOO_DB: 'binikit-main-12245208' } });
+    expect(out.note).toContain('"binikit-main-12245208"');
+    expect(out).not.toHaveProperty('odooDatabase');
+    expect(execute.mock.calls.map(([c]: any) => c.envVars.ODOO_DB)).toEqual(['binikit', 'binikit-main-12245208']);
+  });
+
+  it('still fills in the database when only the key is refused with it', async () => {
+    odooAnswers({ version: ['saas~19', 3, 0, 'final', 0, 'e'], serie: 'saas~19.3', databases: ['binikit-main-12245208'] });
+    const { svc } = buildAccepting('binikit-main-12245208', 'auth');
+    const out: any = await svc.verifyCredentials('odoo', 'org1', creds);
+    expect(out).toMatchObject({ ok: false, kind: 'auth_failed', corrected: { ODOO_DB: 'binikit-main-12245208' } });
+    expect(out.message).toMatch(/^Your Odoo's database is called "binikit-main-12245208": it is filled in for you\./);
+  });
+
+  it('does not guess between several databases, and keeps the first answer when the other fails the same way', async () => {
+    odooAnswers({ version: [19, 0, 0, 'final', 0, ''], serie: '19.0', databases: ['prod', 'staging'] });
+    const several = buildAccepting('prod', 'ok');
+    const out: any = await several.svc.verifyCredentials('odoo', 'org1', creds);
+    expect(out.ok).toBe(false);
+    expect(out.corrected).toBeUndefined();
+    expect(out).not.toHaveProperty('odooDatabase');
+    expect(several.execute).toHaveBeenCalledTimes(1);
+
+    odooAnswers({ version: [19, 0, 0, 'final', 0, ''], serie: '19.0', databases: ['other'] });
+    const none = buildAccepting('nothing-matches', 'ok');
+    const again: any = await none.svc.verifyCredentials('odoo', 'org1', creds);
+    expect(again.ok).toBe(false);
+    expect(again.corrected).toBeUndefined();
+    expect(again.message).toContain('"other"');
+    expect(again).not.toHaveProperty('odooDatabase');
+    expect(none.execute).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the old hint and suggestion when Odoo does not tell its version', async () => {
     outbound.mockReset();
     outbound.mockRejectedValue(new Error('ECONNREFUSED'));
     const out: any = await build().verifyCredentials('odoo', 'org1', creds);
     expect(out).toMatchObject({ ok: false, suggest: 'odoo-jsonrpc' });
     expect(out.message).toMatch(/older than 19, or the database name is wrong/);
+  });
+});
+
+describe('AdaptersService check — a server that only accepts approved IPs', () => {
+  const saved = process.env.EGRESS_IPS;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.EGRESS_IPS;
+    else process.env.EGRESS_IPS = saved;
+  });
+
+  function build(execute: jest.Mock) {
+    return new AdaptersService(
+      { connector: { findUnique: jest.fn().mockResolvedValue(null) } } as any,
+      { reloadConnectorTools: jest.fn() } as any,
+      {
+        get: (k: string) =>
+          k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : k === 'DEPLOYMENT_MODE' ? 'cloud' : undefined,
+      } as any,
+      { executeConnectorCall: execute } as any,
+    );
+  }
+
+  it('names the address to allow when the firewall answers with a page', async () => {
+    // 3 Nov 2026: a self-hosted Bitrix24 behind an IP allowlist answered 403
+    // "Access Restricted"; the check said nothing the user could act on.
+    process.env.EGRESS_IPS = '104.248.242.235';
+    const execute = jest.fn().mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 403'), {
+        response: {
+          status: 403,
+          data: '<!DOCTYPE html><html lang="en"><head><title>Access Restricted</title></head><body>Access Restricted</body></html>',
+        },
+      }),
+    );
+    const out: any = await build(execute).verifyCredentials('bitrix24', 'org1', {
+      BITRIX24_WEBHOOK_URL: 'https://crm.example.com/rest/1/abcdef123456/',
+    });
+    expect(out).toMatchObject({ ok: false, status: 403 });
+    expect(out.message).toMatch(/AnythingMCP Cloud calls every API from the fixed IP address 104\.248\.242\.235/);
+  });
+
+  it('keeps describing the adapter with the addresses to show', () => {
+    process.env.EGRESS_IPS = '104.248.242.235';
+    const info = build(jest.fn()).describe('emag-marketplace');
+    expect(info.egressIps).toEqual(['104.248.242.235']);
+    expect(info.requiresIpAllowlist).toBe(true);
   });
 });

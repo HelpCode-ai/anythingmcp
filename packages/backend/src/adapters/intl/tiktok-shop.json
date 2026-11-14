@@ -1,0 +1,2777 @@
+{
+  "slug": "tiktok-shop",
+  "name": "TikTok Shop Seller",
+  "aliases": [
+    "TikTok Shop Open API",
+    "TikTok Shop Partner Center",
+    "TikTok Seller Center"
+  ],
+  "description": "Let your AI work with your TikTok shop: orders with buyer notes and addresses, products, stock, warehouses, shipping labels and tracking, returns and settlements, with shipping, product, stock and price changes available on request.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "tiktok-shop",
+  "docsUrl": "https://partner.tiktokshop.com/docv2/page/seller-authorization-guide",
+  "instructions": "## TikTok Shop Seller\nThis connector calls the **TikTok Shop Open API** (Partner Center, versioned paths such as `/order/202309/...`) for one TikTok shop: orders and their price detail, products, categories, brands and stock, warehouses, carriers, packages, shipping labels and tracking, returns, cancellations and settlements. Writes (shipping, product changes, stock and price) are included but installed switched off.\n\n**What you need**: the shop owner's Seller Center account and a TikTok Shop app the seller authorizes. When this AnythingMCP server has a TikTok Shop app of its own, the connector uses it and the setup does not ask for any app keys. Otherwise, or to use an app of your own, you need an app in the TikTok Shop Partner Center with its **App key**, **App secret** and **Service ID**. TikTok only lets a seller register as a **seller developer** (and create an app for their own shop) when the shop has an **assigned account manager**; without one, Partner Center answers \"This account is not eligible for seller developer registration\". In that case ask TikTok Shop for an account manager eligibility review in the Seller Center Help Center, or use an app of a developer who has one.\n\n**Setup with the server's app** (about 5 minutes): install the connector with App key, App secret and Service ID left empty, then click **Authorize with Provider**: TikTok Shop asks you to pick the region, sign in to Seller Center and approve the app, and you come back to AnythingMCP with the connector ready. Installing the server's app from the TikTok Shop App Store works too: TikTok sends you to AnythingMCP, you sign in or create an account, and the connector is added to your workspace (or one still waiting for its authorization is used) and authorized. For a US shop set `TIKTOK_SHOP_MARKET` to `US` before you authorize from the connector.\n\n**Setup with your own app** (about 15 minutes once the app exists)\n1. Sign in at https://partner.tiktokshop.com (US shops: https://partner.us.tiktokshop.com) with the shop owner account, open **App & Service** and create a custom app for your shop. Under **Manage API**, enable the scopes the tools need: Shop authorized information, Order information, Product basic and Product write, Fulfillment basic, Logistics basic, Return and refund basic, Finance information.\n2. Set the app's **Redirect URL** to `<your AnythingMCP address>/api/tiktok-shop/callback`: on AnythingMCP Cloud `https://cloud.anythingmcp.com/api/tiktok-shop/callback`, when self-hosted your own `SERVER_URL` followed by `/api/tiktok-shop/callback`.\n3. Copy the app's **App key** into `TIKTOK_SHOP_APP_KEY`, its **App secret** into `TIKTOK_SHOP_APP_SECRET` and its **Service ID** (App & Service, the app, Basic Information) into `TIKTOK_SHOP_SERVICE_ID`. For a US shop set `TIKTOK_SHOP_MARKET` to `US`; leave it empty for the UK, the EU and every other market.\n4. Install the connector with these values, open it in AnythingMCP and click **Authorize with Provider**. TikTok Shop asks you to pick the region, sign in to Seller Center and approve the app; you come back to AnythingMCP and the connector is ready. If the authorization covers several shops (cross-border sellers), the connector uses the one named in `TIKTOK_SHOP_SHOP_ID` (shop id, shop code or exact name; set it before you authorize), else the first one. `tiktok_shop_get_authorized_shops` lists them.\n\nCloud and self-hosted work the same way: a connector with an App key of its own always uses that app; one with the App key empty uses the server's app. A server has one only when its operator sets `TIKTOK_SHOP_PLATFORM_APP_KEY`, `TIKTOK_SHOP_PLATFORM_APP_SECRET` and `TIKTOK_SHOP_PLATFORM_SERVICE_ID`; its secret is never stored on the connector or shown in the dashboard.\n\n**How it signs**: every call carries `app_key`, `timestamp` and `sign` in the query, and the shop's `shop_cipher` where TikTok asks for it. `sign` is an HMAC-SHA256, keyed with the app secret, over the path, the sorted query parameters and the JSON body, wrapped in the app secret. The access token goes in the `x-tts-access-token` header. The app secret never leaves AnythingMCP. A timestamp more than 5 minutes old is refused, so a host clock that is off gives a timestamp error.\n\n**Tokens**: the access token lasts 7 days and is renewed automatically before it expires; the refresh token lasts as long as the seller's authorization and is stored encrypted on the connector. When the authorization expires or the seller cancels it (Seller Center, App Store, My apps and incidents), TikTok refuses the refresh token: the connector then shows that it needs a new authorization, its owner gets one email, and calls stop until someone clicks **Authorize with Provider** again.\n\n**Where to start**: `tiktok_shop_get_authorized_shops` checks the connection. Orders: `tiktok_shop_search_orders` (filters by status and time, returns full orders), `tiktok_shop_get_orders` for up to 50 order ids, `tiktok_shop_get_order_price_detail` for the money. Fulfilment: an order's `packages` give package ids; `tiktok_shop_get_package`, `tiktok_shop_get_shipping_document` (label or packing slip to print), `tiktok_shop_get_order_tracking`. For orders you ship yourself, `tiktok_shop_list_warehouses`, `tiktok_shop_get_delivery_options` and `tiktok_shop_get_shipping_providers` give the carrier id for tracking. Products: `tiktok_shop_search_products`, `tiktok_shop_get_product`, `tiktok_shop_get_inventory`. New products: `tiktok_shop_recommend_category`, `tiktok_shop_get_category_attributes`, `tiktok_shop_get_category_rules`, `tiktok_shop_get_brands`, `tiktok_shop_upload_product_image`, then `tiktok_shop_create_product`. After-sales: `tiktok_shop_search_returns`, `tiktok_shop_search_cancellations`. Money: `tiktok_shop_get_statements`, `tiktok_shop_get_order_transactions`.\n\n**Ids, times and paging**: ids are long numbers; always pass them as strings. Times are Unix seconds. Lists page with `page_token`: pass `next_page_token` from the previous answer while it is not empty.\n\n**Errors**: TikTok answers with a `code` (0 is success) and a `message`. `106001`: the signature is wrong; with your own app, `TIKTOK_SHOP_APP_KEY` and `TIKTOK_SHOP_APP_SECRET` do not belong together. `36009004` names what is invalid: the app key, the access token header or the timestamp. `105002`: the access token expired; the connector renews it and retries once. `105005`: the app or the authorization lacks the scope for that API: enable it in Partner Center (Manage API) and authorize again. `106013`: no shop cipher; authorize again. `36009033`: the app has an IP allow list that does not include AnythingMCP's address. `36009002` or HTTP 429: rate limit, wait and try again.\n\n**Writes**: `tiktok_shop_ship_package`, `tiktok_shop_mark_package_shipped`, `tiktok_shop_update_order_shipping_info`, `tiktok_shop_create_product`, `tiktok_shop_edit_product`, `tiktok_shop_partial_edit_product`, `tiktok_shop_update_inventory`, `tiktok_shop_update_price`, `tiktok_shop_activate_products` and `tiktok_shop_deactivate_products` change the live shop or what buyers see and are installed switched off; turn on the ones you need per connector, and confirm every change with the user first. `tiktok_shop_upload_product_image` only stores an image for later use. Nothing here moves money, cancels orders or answers buyers.",
+  "prerequisites": "The shop owner's TikTok Shop Seller Center account. A Partner Center app of your own (App key, App secret, Service ID, with your AnythingMCP address followed by /api/tiktok-shop/callback as its Redirect URL) is needed only when this server has no TikTok Shop app of its own; TikTok only lets sellers with an assigned account manager register as seller developers. About 5 minutes with the server's app, 15 with your own once it exists.",
+  "appRegistrationUrl": "https://partner.tiktokshop.com",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "TIKTOK_SHOP_APP_KEY",
+    "TIKTOK_SHOP_APP_SECRET",
+    "TIKTOK_SHOP_SERVICE_ID",
+    "TIKTOK_SHOP_MARKET",
+    "TIKTOK_SHOP_SHOP_ID"
+  ],
+  "envVarMeta": {
+    "TIKTOK_SHOP_APP_KEY": {
+      "label": "App key",
+      "kind": "credential",
+      "help": "Only for an app of your own: Partner Center, App & Service, your app, the App key. Leave empty to use this server's TikTok Shop app.",
+      "link": "https://partner.tiktokshop.com",
+      "pattern": "^[A-Za-z0-9]{4,64}$",
+      "patternMessage": "Paste the App key alone: letters and digits, without spaces or quotes."
+    },
+    "TIKTOK_SHOP_APP_SECRET": {
+      "label": "App secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only for an app of your own: same page as the App key, the App secret. It signs every request and is never sent. Leave empty with the App key.",
+      "link": "https://partner.tiktokshop.com",
+      "pattern": "^[A-Za-z0-9]{16,128}$",
+      "patternMessage": "Paste the App secret alone: letters and digits, without spaces or quotes."
+    },
+    "TIKTOK_SHOP_SERVICE_ID": {
+      "label": "Service ID",
+      "kind": "setting",
+      "help": "Only for an app of your own: Partner Center, App & Service, your app, Basic Information, the Service ID. The authorization link is built from it. Leave empty with the App key.",
+      "link": "https://partner.tiktokshop.com",
+      "pattern": "^[A-Za-z0-9_-]{4,64}$",
+      "patternMessage": "Paste the Service ID alone, without spaces."
+    },
+    "TIKTOK_SHOP_MARKET": {
+      "label": "Market",
+      "kind": "setting",
+      "help": "US for a US shop (it authorizes on TikTok Shop's US site). Leave empty for the UK, the EU and every other market.",
+      "example": "US",
+      "pattern": "^(US|ROW|us|row)?$",
+      "patternMessage": "Use US, or leave it empty."
+    },
+    "TIKTOK_SHOP_SHOP_ID": {
+      "label": "Shop (optional)",
+      "kind": "setting",
+      "help": "Only when one authorization covers several shops: the shop id, shop code or exact shop name to use. Set it before you authorize. Empty uses the first shop."
+    }
+  },
+  "instructionFacts": [
+    "This connector is set to work with the shop {{TIKTOK_SHOP_SHOP_ID}} (TIKTOK_SHOP_SHOP_ID) when the authorization covers several shops.",
+    "This connector's shop market is set to {{TIKTOK_SHOP_MARKET}} (TIKTOK_SHOP_MARKET); US shops authorize on TikTok Shop's US site."
+  ],
+  "verifyHints": {
+    "401": "TikTok Shop refused the signature or the shop authorization. With your own app, check that TIKTOK_SHOP_APP_KEY and TIKTOK_SHOP_APP_SECRET belong to the same app; then click Authorize with Provider again.",
+    "403": "TikTok Shop refused this API: enable its scope for your app in Partner Center (Manage API) and authorize again, or remove the IP allow list of the app.",
+    "429": "TikTok Shop is rate limiting this app. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "tiktok_shop_get_authorized_shops"
+  },
+  "connector": {
+    "name": "TikTok Shop Open API",
+    "type": "REST",
+    "baseUrl": "https://open-api.tiktokglobalshop.com",
+    "authType": "HMAC",
+    "authConfig": {
+      "tokenProvider": "tiktok-shop",
+      "appKey": "{{TIKTOK_SHOP_APP_KEY}}",
+      "serviceId": "{{TIKTOK_SHOP_SERVICE_ID}}",
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex",
+        "secret": "{{TIKTOK_SHOP_APP_SECRET}}",
+        "placement": "query",
+        "paramName": "sign",
+        "timestampParam": "timestamp",
+        "queryParams": {
+          "app_key": "{{TIKTOK_SHOP_APP_KEY}}"
+        },
+        "excludeMultipartBody": true,
+        "template": "{{TIKTOK_SHOP_APP_SECRET}}${pathname}${sortedParams}${body}{{TIKTOK_SHOP_APP_SECRET}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/authorization/202309/shops",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "in": [
+            105002,
+            106001,
+            36009004,
+            101000,
+            36004004
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 401
+        },
+        {
+          "path": "code",
+          "in": [
+            105005,
+            36009033
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 403
+        },
+        {
+          "path": "code",
+          "in": [
+            36009002
+          ],
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 429
+        },
+        {
+          "path": "code",
+          "matches": "^[1-9][0-9]*$",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "tiktok_shop_get_authorized_shops",
+      "description": "List the shops this connector's authorization covers: id, name, region (GB, US, DE...), seller type and shop code. Start here to check the connection. The connector uses one of them (TIKTOK_SHOP_SHOP_ID, else the first).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authorization/202309/shops"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_search_orders",
+      "description": "Search the shop's orders, newest first, up to 100 per page, filtered by status, creation or update time, shipping type or buyer. Returns full orders (line items, buyer message, recipient address, packages). Page with page_token while next_page_token is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_status": {
+            "type": "string",
+            "description": "Only orders in this status.",
+            "enum": [
+              "UNPAID",
+              "ON_HOLD",
+              "AWAITING_SHIPMENT",
+              "PARTIALLY_SHIPPING",
+              "AWAITING_COLLECTION",
+              "IN_TRANSIT",
+              "DELIVERED",
+              "COMPLETED",
+              "CANCELLED"
+            ]
+          },
+          "create_time_ge": {
+            "type": "integer",
+            "description": "Created at or after. Unix time in seconds."
+          },
+          "create_time_lt": {
+            "type": "integer",
+            "description": "Created before. Unix time in seconds."
+          },
+          "update_time_ge": {
+            "type": "integer",
+            "description": "Updated at or after. Unix time in seconds."
+          },
+          "update_time_lt": {
+            "type": "integer",
+            "description": "Updated before. Unix time in seconds."
+          },
+          "shipping_type": {
+            "type": "string",
+            "description": "TIKTOK (TikTok shipping label) or SELLER (you ship, own carrier).",
+            "enum": [
+              "TIKTOK",
+              "SELLER",
+              "TIKTOK_DIGITAL"
+            ]
+          },
+          "buyer_user_id": {
+            "type": "string",
+            "description": "Only this buyer's orders."
+          },
+          "is_buyer_request_cancel": {
+            "type": "boolean",
+            "description": "Only orders whose buyer asked to cancel."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_page_token from the previous answer."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Sort by create_time (default) or update_time.",
+            "enum": [
+              "create_time",
+              "update_time"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "DESC (default) or ASC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          }
+        },
+        "required": [
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/202309/orders/search",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "sort_field": "$sort_field",
+          "sort_order": "$sort_order"
+        },
+        "bodyMapping": {
+          "order_status": "$order_status",
+          "create_time_ge": "$create_time_ge",
+          "create_time_lt": "$create_time_lt",
+          "update_time_ge": "$update_time_ge",
+          "update_time_lt": "$update_time_lt",
+          "shipping_type": "$shipping_type",
+          "buyer_user_id": "$buyer_user_id",
+          "is_buyer_request_cancel": "$is_buyer_request_cancel"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_orders",
+      "description": "Read up to 50 orders by id: status, line items (product, SKU id, seller SKU, variant name, price), buyer message and seller note, recipient name, phone and address, payment totals, shipping provider, tracking number and packages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Order ids separated by commas, 1 to 50, e.g. 576461413038785752,576461413038785753."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/202507/orders",
+        "queryParams": {
+          "ids": "$ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_order_price_detail",
+      "description": "Price breakdown of one order: subtotal, shipping fee, seller and platform discounts, taxes, and what the buyer paid, per order and per line item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/202407/orders/{order_id}/price_detail"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_search_products",
+      "description": "Search the shop's products, up to 100 per page, by status, seller SKU, SKU id, or creation or update time. Returns product id, title, status and SKUs with price and stock. Page with page_token while next_page_token is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Product status, default ALL.",
+            "enum": [
+              "ALL",
+              "DRAFT",
+              "PENDING",
+              "FAILED",
+              "ACTIVATE",
+              "SELLER_DEACTIVATED",
+              "PLATFORM_DEACTIVATED",
+              "FREEZE",
+              "DELETED"
+            ]
+          },
+          "seller_skus": {
+            "type": "array",
+            "description": "Only products with these seller SKU codes.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sku_ids": {
+            "type": "array",
+            "description": "Only products with these SKU ids (up to 10).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10
+          },
+          "create_time_ge": {
+            "type": "integer",
+            "description": "Created at or after. Unix time in seconds."
+          },
+          "create_time_le": {
+            "type": "integer",
+            "description": "Created at or before. Unix time in seconds."
+          },
+          "update_time_ge": {
+            "type": "integer",
+            "description": "Updated at or after. Unix time in seconds."
+          },
+          "update_time_le": {
+            "type": "integer",
+            "description": "Updated at or before. Unix time in seconds."
+          },
+          "category_version": {
+            "type": "string",
+            "description": "Category tree: v1 (3 levels, every market except the US) or v2 (7 levels, US). Default: the shop's tree.",
+            "enum": [
+              "v1",
+              "v2"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_page_token from the previous answer."
+          }
+        },
+        "required": [
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202502/products/search",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        },
+        "bodyMapping": {
+          "status": "$status",
+          "seller_skus": "$seller_skus",
+          "sku_ids": "$sku_ids",
+          "create_time_ge": "$create_time_ge",
+          "create_time_le": "$create_time_le",
+          "update_time_ge": "$update_time_ge",
+          "update_time_le": "$update_time_le",
+          "category_version": "$category_version"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_product",
+      "description": "Read one product in full: title, description, category, brand, images (with their uri, reusable when creating or editing), attributes, package size and weight, audit status, and every SKU with seller SKU, variant attributes, price and stock per warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id."
+          },
+          "return_under_review_version": {
+            "type": "boolean",
+            "description": "For a live product sent back to review after an edit: true returns the version under review, false (default) the live one."
+          },
+          "locale": {
+            "type": "string",
+            "description": "BCP-47 locale for category and attribute names, e.g. en-GB, de-DE, en-US. Default: the shop's locale."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/202309/products/{product_id}",
+        "queryParams": {
+          "return_under_review_version": "$return_under_review_version",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_inventory",
+      "description": "Stock of up to 100 products or 600 SKUs: available quantity per SKU and per warehouse. If both lists are given, sku_ids wins.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "description": "Product ids, up to 100.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "sku_ids": {
+            "type": "array",
+            "description": "SKU ids, up to 600.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 600
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202309/inventory/search",
+        "bodyMapping": {
+          "product_ids": "$product_ids",
+          "sku_ids": "$sku_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_recommend_category",
+      "description": "Suggest the leaf category for a new product from its title (and optionally description and images). Returns the category path with ids; use the leaf id in tiktok_shop_create_product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_title": {
+            "type": "string",
+            "description": "The product title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Product description."
+          },
+          "images": {
+            "type": "array",
+            "description": "Images already uploaded.",
+            "items": {
+              "type": "object",
+              "description": "An image already uploaded with tiktok_shop_upload_product_image.",
+              "properties": {
+                "uri": {
+                  "type": "string",
+                  "description": "The image uri."
+                }
+              },
+              "required": [
+                "uri"
+              ]
+            }
+          },
+          "category_version": {
+            "type": "string",
+            "description": "Category tree: v1 (3 levels, every market except the US) or v2 (7 levels, US). Default: the shop's tree.",
+            "enum": [
+              "v1",
+              "v2"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "description": "BCP-47 locale for category and attribute names, e.g. en-GB, de-DE, en-US. Default: the shop's locale."
+          }
+        },
+        "required": [
+          "product_title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202309/categories/recommend",
+        "bodyMapping": {
+          "product_title": "$product_title",
+          "description": "$description",
+          "images": "$images",
+          "category_version": "$category_version",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_categories",
+      "description": "The categories this shop may list in, with id, parent id, name, whether it is a leaf and its permission status. Filter with keyword. Products go in leaf categories only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Only categories whose name contains this word."
+          },
+          "category_version": {
+            "type": "string",
+            "description": "Category tree: v1 (3 levels, every market except the US) or v2 (7 levels, US). Default: the shop's tree.",
+            "enum": [
+              "v1",
+              "v2"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "description": "BCP-47 locale for category and attribute names, e.g. en-GB, de-DE, en-US. Default: the shop's locale."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/202309/categories",
+        "queryParams": {
+          "keyword": "$keyword",
+          "category_version": "$category_version",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_category_attributes",
+      "description": "The attributes of a leaf category: product attributes (material, country of origin...) and sales attributes (colour, size), with their value lists and which ones are mandatory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Leaf category id."
+          },
+          "category_version": {
+            "type": "string",
+            "description": "Category tree: v1 (3 levels, every market except the US) or v2 (7 levels, US). Default: the shop's tree.",
+            "enum": [
+              "v1",
+              "v2"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "description": "BCP-47 locale for category and attribute names, e.g. en-GB, de-DE, en-US. Default: the shop's locale."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/202309/categories/{category_id}/attributes",
+        "queryParams": {
+          "category_version": "$category_version",
+          "locale": "$locale"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_category_rules",
+      "description": "The listing rules of a leaf category: required certifications, size chart, package dimensions, product identifier codes and cash on delivery.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Leaf category id."
+          },
+          "category_version": {
+            "type": "string",
+            "description": "Category tree: v1 (3 levels, every market except the US) or v2 (7 levels, US). Default: the shop's tree.",
+            "enum": [
+              "v1",
+              "v2"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "description": "BCP-47 locale for category and attribute names, e.g. en-GB, de-DE, en-US. Default: the shop's locale."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/202309/categories/{category_id}/rules",
+        "queryParams": {
+          "category_version": "$category_version",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_brands",
+      "description": "Brands available to the shop, optionally for one category and by name prefix, with whether the shop is authorized to sell them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Only brands available in this category."
+          },
+          "brand_name": {
+            "type": "string",
+            "description": "Only brands whose name starts with this text."
+          },
+          "is_authorized": {
+            "type": "boolean",
+            "description": "Only brands the shop is authorized to sell."
+          },
+          "category_version": {
+            "type": "string",
+            "description": "Category tree: v1 (3 levels, every market except the US) or v2 (7 levels, US). Default: the shop's tree.",
+            "enum": [
+              "v1",
+              "v2"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Brands per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_page_token from the previous answer."
+          }
+        },
+        "required": [
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/202309/brands",
+        "queryParams": {
+          "category_id": "$category_id",
+          "brand_name": "$brand_name",
+          "is_authorized": "$is_authorized",
+          "category_version": "$category_version",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_list_warehouses",
+      "description": "The shop's warehouses (sales and return), with id, name, address, type and whether one is the default. Warehouse ids are needed for stock updates and new SKUs.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logistics/202309/warehouses"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_delivery_options",
+      "description": "The delivery options of a warehouse (standard, express...), with their ids and limits. Use an id with tiktok_shop_get_shipping_providers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "Warehouse id from tiktok_shop_list_warehouses."
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logistics/202309/warehouses/{warehouse_id}/delivery_options"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_shipping_providers",
+      "description": "The carriers of a delivery option, with the shipping_provider_id that tracking updates need (Royal Mail, Evri, DPD and so on in the UK).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_option_id": {
+            "type": "string",
+            "description": "Delivery option id from tiktok_shop_get_delivery_options, or from an order (delivery_option_id)."
+          }
+        },
+        "required": [
+          "delivery_option_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logistics/202309/delivery_options/{delivery_option_id}/shipping_providers"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_search_packages",
+      "description": "Search packages, up to 50 per page, by status and creation or update time: package id, order ids, status, carrier and tracking number. Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_status": {
+            "type": "string",
+            "description": "Only packages in this status.",
+            "enum": [
+              "PROCESSING",
+              "FULFILLING",
+              "COMPLETED",
+              "CANCELLED"
+            ]
+          },
+          "create_time_ge": {
+            "type": "integer",
+            "description": "Created at or after. Unix time in seconds."
+          },
+          "create_time_lt": {
+            "type": "integer",
+            "description": "Created before. Unix time in seconds."
+          },
+          "update_time_ge": {
+            "type": "integer",
+            "description": "Updated at or after. Unix time in seconds."
+          },
+          "update_time_lt": {
+            "type": "integer",
+            "description": "Updated before. Unix time in seconds."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Packages per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_page_token from the previous answer."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Sort by create_time, update_time or order_pay_time.",
+            "enum": [
+              "create_time",
+              "update_time",
+              "order_pay_time"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "DESC (default) or ASC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          }
+        },
+        "required": [
+          "page_size"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fulfillment/202309/packages/search",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "sort_field": "$sort_field",
+          "sort_order": "$sort_order"
+        },
+        "bodyMapping": {
+          "package_status": "$package_status",
+          "create_time_ge": "$create_time_ge",
+          "create_time_lt": "$create_time_lt",
+          "update_time_ge": "$update_time_ge",
+          "update_time_lt": "$update_time_lt"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_package",
+      "description": "Read one package: orders and line items in it, status, delivery option (SEND_BY_SELLER means you ship and add tracking yourself), carrier, tracking number, handover method and pickup slot.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "Package id (from an order's packages, or tiktok_shop_search_packages)."
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fulfillment/202309/packages/{package_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_package_handover_time_slots",
+      "description": "Pickup and drop-off options for a package that ships with a TikTok shipping label: available pickup slots and whether drop-off is possible. Use before tiktok_shop_ship_package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "Package id."
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fulfillment/202309/packages/{package_id}/handover_time_slots"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_shipping_document",
+      "description": "Get a download link for a package's shipping label, packing slip or both (PDF, A6 or A5; or the label as PNG), to print. The link expires after a while: fetch a new one rather than storing it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "Package id."
+          },
+          "document_type": {
+            "type": "string",
+            "description": "SHIPPING_LABEL, PACKING_SLIP, SHIPPING_LABEL_AND_PACKING_SLIP, SHIPPING_LABEL_PICTURE (PNG) or HAZMAT_LABEL.",
+            "enum": [
+              "SHIPPING_LABEL",
+              "PACKING_SLIP",
+              "SHIPPING_LABEL_AND_PACKING_SLIP",
+              "SHIPPING_LABEL_PICTURE",
+              "HAZMAT_LABEL"
+            ]
+          },
+          "document_size": {
+            "type": "string",
+            "description": "A6 (default) or A5, for PDF documents.",
+            "enum": [
+              "A6",
+              "A5"
+            ]
+          }
+        },
+        "required": [
+          "package_id",
+          "document_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fulfillment/202309/packages/{package_id}/shipping_documents",
+        "queryParams": {
+          "document_type": "$document_type",
+          "document_size": "$document_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_order_tracking",
+      "description": "The carrier's tracking events of an order's shipment, newest first, with time and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fulfillment/202309/orders/{order_id}/tracking"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_search_returns",
+      "description": "Search return and refund requests by order, status, type or time, 10 to 50 per page: return id, order, type (REFUND, RETURN_AND_REFUND, REPLACEMENT), status, reason, amounts and items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "description": "Only returns of these orders.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "return_ids": {
+            "type": "array",
+            "description": "Only these returns.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "return_status": {
+            "type": "array",
+            "description": "Statuses, e.g. RETURN_OR_REFUND_REQUEST_PENDING, AWAITING_BUYER_SHIP, BUYER_SHIPPED_ITEM, REFUND_OR_RETURN_REQUEST_REJECT, RETURN_OR_REFUND_REQUEST_SUCCESS, RETURN_OR_REFUND_REQUEST_CANCEL, RETURN_OR_REFUND_REQUEST_COMPLETE.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "return_types": {
+            "type": "array",
+            "description": "Types: REFUND, RETURN_AND_REFUND, REPLACEMENT.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "create_time_ge": {
+            "type": "integer",
+            "description": "Created at or after. Unix time in seconds."
+          },
+          "create_time_lt": {
+            "type": "integer",
+            "description": "Created before. Unix time in seconds."
+          },
+          "update_time_ge": {
+            "type": "integer",
+            "description": "Updated at or after. Unix time in seconds."
+          },
+          "update_time_lt": {
+            "type": "integer",
+            "description": "Updated before. Unix time in seconds."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page, 10 to 50.",
+            "minimum": 10,
+            "maximum": 50,
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_page_token from the previous answer."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Sort by create_time (default) or update_time.",
+            "enum": [
+              "create_time",
+              "update_time"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ASC (default) or DESC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/return_refund/202602/returns/search",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "sort_field": "$sort_field",
+          "sort_order": "$sort_order"
+        },
+        "bodyMapping": {
+          "order_ids": "$order_ids",
+          "return_ids": "$return_ids",
+          "return_status": "$return_status",
+          "return_types": "$return_types",
+          "create_time_ge": "$create_time_ge",
+          "create_time_lt": "$create_time_lt",
+          "update_time_ge": "$update_time_ge",
+          "update_time_lt": "$update_time_lt"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_search_cancellations",
+      "description": "Search order cancellation requests by order, status or time: cancel id, order, who asked, reason, status and items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "description": "Only cancellations of these orders.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cancel_ids": {
+            "type": "array",
+            "description": "Only these cancellations.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cancel_status": {
+            "type": "array",
+            "description": "Statuses, e.g. CANCELLATION_REQUEST_PENDING, CANCELLATION_REQUEST_SUCCESS, CANCELLATION_REQUEST_CANCEL, CANCELLATION_REQUEST_COMPLETE.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "create_time_ge": {
+            "type": "integer",
+            "description": "Created at or after. Unix time in seconds."
+          },
+          "create_time_lt": {
+            "type": "integer",
+            "description": "Created before. Unix time in seconds."
+          },
+          "update_time_ge": {
+            "type": "integer",
+            "description": "Updated at or after. Unix time in seconds."
+          },
+          "update_time_lt": {
+            "type": "integer",
+            "description": "Updated before. Unix time in seconds."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_page_token from the previous answer."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Sort by create_time or update_time.",
+            "enum": [
+              "create_time",
+              "update_time"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ASC or DESC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/return_refund/202602/cancellations/search",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "sort_field": "$sort_field",
+          "sort_order": "$sort_order"
+        },
+        "bodyMapping": {
+          "order_ids": "$order_ids",
+          "cancel_ids": "$cancel_ids",
+          "cancel_status": "$cancel_status",
+          "create_time_ge": "$create_time_ge",
+          "create_time_lt": "$create_time_lt",
+          "update_time_ge": "$update_time_ge",
+          "update_time_lt": "$update_time_lt"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "expression": "@",
+          "maxBytes": 200000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_statements",
+      "description": "The shop's settlement statements (daily payouts), with revenue, fees, adjustments, settlement amount and payment status, in a time window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statement_time_ge": {
+            "type": "integer",
+            "description": "Generated at or after. Unix time in seconds."
+          },
+          "statement_time_lt": {
+            "type": "integer",
+            "description": "Generated before. Unix time in seconds."
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "PAID, FAILED or PROCESSING.",
+            "enum": [
+              "PAID",
+              "FAILED",
+              "PROCESSING"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Statements per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Leave out for the first page; then next_page_token from the previous answer."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ASC or DESC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Always statement_time.",
+            "enum": [
+              "statement_time"
+            ],
+            "default": "statement_time"
+          }
+        },
+        "required": [
+          "sort_field"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/202309/statements",
+        "queryParams": {
+          "statement_time_ge": "$statement_time_ge",
+          "statement_time_lt": "$statement_time_lt",
+          "payment_status": "$payment_status",
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "sort_order": "$sort_order",
+          "sort_field": "$sort_field"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_get_order_transactions",
+      "description": "The settlement of one order: revenue, each fee and commission, shipping costs, taxes and the amount settled to the seller.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/202501/orders/{order_id}/statement_transactions"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_upload_product_image",
+      "description": "Upload an image to TikTok Shop from a public link, for use in a product (gallery, variant, description, size chart or certification). Returns the image uri to pass to tiktok_shop_create_product or the edit tools. JPG, PNG, WEBP, HEIC or BMP, up to 10 MB; gallery images 300 to 4000 px a side. Does not change any listing on its own.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "image_url": {
+            "type": "string",
+            "description": "Public HTTPS link to the image.",
+            "format": "uri"
+          },
+          "use_case": {
+            "type": "string",
+            "description": "What the image is for, default MAIN_IMAGE.",
+            "enum": [
+              "MAIN_IMAGE",
+              "ATTRIBUTE_IMAGE",
+              "DESCRIPTION_IMAGE",
+              "CERTIFICATION_IMAGE",
+              "SIZE_CHART_IMAGE"
+            ]
+          }
+        },
+        "required": [
+          "image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202309/images/upload",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "data": {
+            "__file": "$image_url"
+          },
+          "use_case": "$use_case"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "tiktok_shop_ship_package",
+      "description": "Arrange shipment of a package. With a TikTok shipping label: choose PICKUP (with a slot from tiktok_shop_get_package_handover_time_slots) or DROP_OFF. When you ship yourself (delivery option SEND_BY_SELLER): pass self_shipment with tracking number and shipping_provider_id; the buyer sees it. Installed switched off. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "Package id."
+          },
+          "handover_method": {
+            "type": "string",
+            "description": "PICKUP or DROP_OFF (TikTok shipping label).",
+            "enum": [
+              "PICKUP",
+              "DROP_OFF"
+            ]
+          },
+          "pickup_slot": {
+            "type": "object",
+            "description": "Pickup slot for PICKUP.",
+            "properties": {
+              "start_time": {
+                "type": "integer",
+                "description": "Start. Unix time in seconds."
+              },
+              "end_time": {
+                "type": "integer",
+                "description": "End. Unix time in seconds."
+              }
+            }
+          },
+          "self_shipment": {
+            "type": "object",
+            "description": "Only when you ship yourself.",
+            "properties": {
+              "tracking_number": {
+                "type": "string",
+                "description": "Carrier tracking number."
+              },
+              "shipping_provider_id": {
+                "type": "string",
+                "description": "Carrier id from tiktok_shop_get_shipping_providers."
+              }
+            },
+            "required": [
+              "tracking_number",
+              "shipping_provider_id"
+            ]
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fulfillment/202309/packages/{package_id}/ship",
+        "bodyMapping": {
+          "handover_method": "$handover_method",
+          "pickup_slot": "$pickup_slot",
+          "self_shipment": "$self_shipment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_mark_package_shipped",
+      "description": "Mark an order (or some of its line items) as shipped with your own carrier and send the tracking number to the buyer: for orders you ship yourself (shipping type SELLER). Creates the package. Installed switched off. Confirm the order, items, carrier and tracking number with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Carrier tracking number, 4 to 50 letters, digits, hyphens, underscores or dots."
+          },
+          "shipping_provider_id": {
+            "type": "string",
+            "description": "Carrier id from tiktok_shop_get_shipping_providers."
+          },
+          "order_line_list": {
+            "type": "array",
+            "description": "Only these line items; leave out to ship the whole order.",
+            "items": {
+              "type": "object",
+              "description": "One line item.",
+              "properties": {
+                "order_line_id": {
+                  "type": "string",
+                  "description": "Line item id (line_items[].id of the order)."
+                },
+                "sub_item_id": {
+                  "type": "string",
+                  "description": "For bundle products only: the sub-item id."
+                }
+              },
+              "required": [
+                "order_line_id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_number",
+          "shipping_provider_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fulfillment/202610/orders/{order_id}/packages",
+        "bodyMapping": {
+          "order_line_list": "$order_line_list",
+          "shipping_info_list": [
+            {
+              "tracking_number": "$tracking_number",
+              "shipping_provider_id": "$shipping_provider_id"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_update_order_shipping_info",
+      "description": "Correct the tracking number or carrier of an order already marked as shipped (shipping type SELLER). The buyer sees the change. Installed switched off. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "New tracking number."
+          },
+          "shipping_provider_id": {
+            "type": "string",
+            "description": "Carrier id from tiktok_shop_get_shipping_providers."
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_number",
+          "shipping_provider_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fulfillment/202309/orders/{order_id}/shipping_info/update",
+        "bodyMapping": {
+          "tracking_number": "$tracking_number",
+          "shipping_provider_id": "$shipping_provider_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_create_product",
+      "description": "Create a product, listed after TikTok's review or kept as a draft (save_mode AS_DRAFT). Needs a leaf category, gallery images uploaded with tiktok_shop_upload_product_image, the SKUs with price and stock per warehouse, and the mandatory attributes of the category (tiktok_shop_get_category_attributes, tiktok_shop_get_category_rules). Returns the product and SKU ids. Installed switched off. Show the user the full product first and confirm.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Product title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description in HTML (p, img, ul, ol, li, br, strong, b, i, em, u, h1 to h4, table). Images inside must be uploaded with use_case DESCRIPTION_IMAGE."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Leaf category id (tiktok_shop_recommend_category or tiktok_shop_get_categories)."
+          },
+          "category_version": {
+            "type": "string",
+            "description": "Category tree: v1 (3 levels, every market except the US) or v2 (7 levels, US). Default: the shop's tree.",
+            "enum": [
+              "v1",
+              "v2"
+            ]
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id from tiktok_shop_get_brands; leave out for no brand."
+          },
+          "main_images": {
+            "type": "array",
+            "description": "Gallery images, the first is the cover; up to 9.",
+            "items": {
+              "type": "object",
+              "description": "An image already uploaded with tiktok_shop_upload_product_image.",
+              "properties": {
+                "uri": {
+                  "type": "string",
+                  "description": "The image uri."
+                }
+              },
+              "required": [
+                "uri"
+              ]
+            }
+          },
+          "skus": {
+            "type": "array",
+            "description": "The SKUs (variants), up to 100.",
+            "items": {
+              "type": "object",
+              "description": "One SKU (variant).",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "SKU id, only when editing an existing SKU (from tiktok_shop_get_product)."
+                },
+                "seller_sku": {
+                  "type": "string",
+                  "description": "Your own SKU code."
+                },
+                "sales_attributes": {
+                  "type": "array",
+                  "description": "Variant attributes of this SKU, e.g. Colour: Red. Use a built-in attribute id from tiktok_shop_get_category_attributes, or a custom name and value_name.",
+                  "items": {
+                    "type": "object",
+                    "description": "One variant attribute.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Built-in sales attribute id."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Custom attribute name, e.g. Colour."
+                      },
+                      "value_id": {
+                        "type": "string",
+                        "description": "Built-in value id."
+                      },
+                      "value_name": {
+                        "type": "string",
+                        "description": "Custom value, e.g. Red."
+                      },
+                      "sku_img": {
+                        "type": "object",
+                        "description": "An image already uploaded with tiktok_shop_upload_product_image.",
+                        "properties": {
+                          "uri": {
+                            "type": "string",
+                            "description": "The image uri."
+                          }
+                        },
+                        "required": [
+                          "uri"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "price": {
+                  "type": "object",
+                  "description": "Price.",
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "description": "Local display price before discounts, as a decimal string, e.g. \"12.99\" (global sellers: the pre-tax price)."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "Currency: GBP (UK), EUR, USD and so on."
+                    },
+                    "sale_price": {
+                      "type": "string",
+                      "description": "Global sellers only: the display price shown on the product page."
+                    }
+                  },
+                  "required": [
+                    "currency"
+                  ]
+                },
+                "inventory": {
+                  "type": "array",
+                  "description": "Stock per warehouse (tiktok_shop_list_warehouses). List every warehouse the SKU is stored in.",
+                  "items": {
+                    "type": "object",
+                    "description": "Stock in one warehouse.",
+                    "properties": {
+                      "warehouse_id": {
+                        "type": "string",
+                        "description": "Warehouse id."
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Units in stock that can ship now, 1 to 99,999.",
+                        "minimum": 0,
+                        "maximum": 99999
+                      }
+                    },
+                    "required": [
+                      "warehouse_id"
+                    ]
+                  }
+                },
+                "external_sku_id": {
+                  "type": "string",
+                  "description": "Id of this SKU in another system of yours."
+                },
+                "identifier_code": {
+                  "type": "object",
+                  "description": "Product identifier.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "The code."
+                    },
+                    "type": {
+                      "type": "string",
+                      "description": "GTIN, EAN, UPC or ISBN."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "product_attributes": {
+            "type": "array",
+            "description": "Product attributes from tiktok_shop_get_category_attributes (brand-independent facts such as material). Mandatory ones depend on the category.",
+            "items": {
+              "type": "object",
+              "description": "One attribute.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Attribute id."
+                },
+                "values": {
+                  "type": "array",
+                  "description": "Values: a built-in value id, or a custom name.",
+                  "items": {
+                    "type": "object",
+                    "description": "One value.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Value id."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Custom value."
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "values"
+              ]
+            }
+          },
+          "package_weight": {
+            "type": "object",
+            "description": "Package weight.",
+            "properties": {
+              "value": {
+                "type": "string",
+                "description": "Weight as a decimal string, e.g. \"0.25\"."
+              },
+              "unit": {
+                "type": "string",
+                "description": "KILOGRAM or POUND.",
+                "enum": [
+                  "KILOGRAM",
+                  "POUND"
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "unit"
+            ]
+          },
+          "package_dimensions": {
+            "type": "object",
+            "description": "Package dimensions.",
+            "properties": {
+              "length": {
+                "type": "string",
+                "description": "Length as a decimal string."
+              },
+              "width": {
+                "type": "string",
+                "description": "Width as a decimal string."
+              },
+              "height": {
+                "type": "string",
+                "description": "Height as a decimal string."
+              },
+              "unit": {
+                "type": "string",
+                "description": "CENTIMETER or INCH.",
+                "enum": [
+                  "CENTIMETER",
+                  "INCH"
+                ]
+              }
+            },
+            "required": [
+              "length",
+              "width",
+              "height",
+              "unit"
+            ]
+          },
+          "is_cod_allowed": {
+            "type": "boolean",
+            "description": "Offer cash on delivery, where the market supports it."
+          },
+          "external_product_id": {
+            "type": "string",
+            "description": "Id of this product in another system of yours."
+          },
+          "save_mode": {
+            "type": "string",
+            "description": "LISTING (submit for review and list, default) or AS_DRAFT (keep as a draft).",
+            "enum": [
+              "LISTING",
+              "AS_DRAFT"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Any unique string; repeating a request with the same key does not create a second product."
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "category_id",
+          "main_images",
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202309/products",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "category_id": "$category_id",
+          "category_version": "$category_version",
+          "brand_id": "$brand_id",
+          "main_images": "$main_images",
+          "skus": "$skus",
+          "product_attributes": "$product_attributes",
+          "package_weight": "$package_weight",
+          "package_dimensions": "$package_dimensions",
+          "is_cod_allowed": "$is_cod_allowed",
+          "external_product_id": "$external_product_id",
+          "save_mode": "$save_mode",
+          "idempotency_key": "$idempotency_key"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_edit_product",
+      "description": "Replace a product with a full new version: every field left out is removed, SKUs left out are deleted. Read it with tiktok_shop_get_product first and send it back whole with the changes. A live product goes back to review. Prefer tiktok_shop_partial_edit_product for small changes. Installed switched off. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Product title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description in HTML (p, img, ul, ol, li, br, strong, b, i, em, u, h1 to h4, table). Images inside must be uploaded with use_case DESCRIPTION_IMAGE."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Leaf category id (tiktok_shop_recommend_category or tiktok_shop_get_categories)."
+          },
+          "category_version": {
+            "type": "string",
+            "description": "Category tree: v1 (3 levels, every market except the US) or v2 (7 levels, US). Default: the shop's tree.",
+            "enum": [
+              "v1",
+              "v2"
+            ]
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id from tiktok_shop_get_brands; leave out for no brand."
+          },
+          "main_images": {
+            "type": "array",
+            "description": "Gallery images, the first is the cover; up to 9.",
+            "items": {
+              "type": "object",
+              "description": "An image already uploaded with tiktok_shop_upload_product_image.",
+              "properties": {
+                "uri": {
+                  "type": "string",
+                  "description": "The image uri."
+                }
+              },
+              "required": [
+                "uri"
+              ]
+            }
+          },
+          "skus": {
+            "type": "array",
+            "description": "The SKUs (variants), up to 100.",
+            "items": {
+              "type": "object",
+              "description": "One SKU (variant).",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "SKU id, only when editing an existing SKU (from tiktok_shop_get_product)."
+                },
+                "seller_sku": {
+                  "type": "string",
+                  "description": "Your own SKU code."
+                },
+                "sales_attributes": {
+                  "type": "array",
+                  "description": "Variant attributes of this SKU, e.g. Colour: Red. Use a built-in attribute id from tiktok_shop_get_category_attributes, or a custom name and value_name.",
+                  "items": {
+                    "type": "object",
+                    "description": "One variant attribute.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Built-in sales attribute id."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Custom attribute name, e.g. Colour."
+                      },
+                      "value_id": {
+                        "type": "string",
+                        "description": "Built-in value id."
+                      },
+                      "value_name": {
+                        "type": "string",
+                        "description": "Custom value, e.g. Red."
+                      },
+                      "sku_img": {
+                        "type": "object",
+                        "description": "An image already uploaded with tiktok_shop_upload_product_image.",
+                        "properties": {
+                          "uri": {
+                            "type": "string",
+                            "description": "The image uri."
+                          }
+                        },
+                        "required": [
+                          "uri"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "price": {
+                  "type": "object",
+                  "description": "Price.",
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "description": "Local display price before discounts, as a decimal string, e.g. \"12.99\" (global sellers: the pre-tax price)."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "Currency: GBP (UK), EUR, USD and so on."
+                    },
+                    "sale_price": {
+                      "type": "string",
+                      "description": "Global sellers only: the display price shown on the product page."
+                    }
+                  },
+                  "required": [
+                    "currency"
+                  ]
+                },
+                "inventory": {
+                  "type": "array",
+                  "description": "Stock per warehouse (tiktok_shop_list_warehouses). List every warehouse the SKU is stored in.",
+                  "items": {
+                    "type": "object",
+                    "description": "Stock in one warehouse.",
+                    "properties": {
+                      "warehouse_id": {
+                        "type": "string",
+                        "description": "Warehouse id."
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Units in stock that can ship now, 1 to 99,999.",
+                        "minimum": 0,
+                        "maximum": 99999
+                      }
+                    },
+                    "required": [
+                      "warehouse_id"
+                    ]
+                  }
+                },
+                "external_sku_id": {
+                  "type": "string",
+                  "description": "Id of this SKU in another system of yours."
+                },
+                "identifier_code": {
+                  "type": "object",
+                  "description": "Product identifier.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "The code."
+                    },
+                    "type": {
+                      "type": "string",
+                      "description": "GTIN, EAN, UPC or ISBN."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "product_attributes": {
+            "type": "array",
+            "description": "Product attributes from tiktok_shop_get_category_attributes (brand-independent facts such as material). Mandatory ones depend on the category.",
+            "items": {
+              "type": "object",
+              "description": "One attribute.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Attribute id."
+                },
+                "values": {
+                  "type": "array",
+                  "description": "Values: a built-in value id, or a custom name.",
+                  "items": {
+                    "type": "object",
+                    "description": "One value.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Value id."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Custom value."
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "values"
+              ]
+            }
+          },
+          "package_weight": {
+            "type": "object",
+            "description": "Package weight.",
+            "properties": {
+              "value": {
+                "type": "string",
+                "description": "Weight as a decimal string, e.g. \"0.25\"."
+              },
+              "unit": {
+                "type": "string",
+                "description": "KILOGRAM or POUND.",
+                "enum": [
+                  "KILOGRAM",
+                  "POUND"
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "unit"
+            ]
+          },
+          "package_dimensions": {
+            "type": "object",
+            "description": "Package dimensions.",
+            "properties": {
+              "length": {
+                "type": "string",
+                "description": "Length as a decimal string."
+              },
+              "width": {
+                "type": "string",
+                "description": "Width as a decimal string."
+              },
+              "height": {
+                "type": "string",
+                "description": "Height as a decimal string."
+              },
+              "unit": {
+                "type": "string",
+                "description": "CENTIMETER or INCH.",
+                "enum": [
+                  "CENTIMETER",
+                  "INCH"
+                ]
+              }
+            },
+            "required": [
+              "length",
+              "width",
+              "height",
+              "unit"
+            ]
+          },
+          "is_cod_allowed": {
+            "type": "boolean",
+            "description": "Offer cash on delivery, where the market supports it."
+          },
+          "external_product_id": {
+            "type": "string",
+            "description": "Id of this product in another system of yours."
+          },
+          "save_mode": {
+            "type": "string",
+            "description": "LISTING (submit for review and list, default) or AS_DRAFT (keep as a draft).",
+            "enum": [
+              "LISTING",
+              "AS_DRAFT"
+            ]
+          }
+        },
+        "required": [
+          "product_id",
+          "title",
+          "description",
+          "category_id",
+          "main_images",
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/product/202509/products/{product_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "category_id": "$category_id",
+          "category_version": "$category_version",
+          "brand_id": "$brand_id",
+          "main_images": "$main_images",
+          "skus": "$skus",
+          "product_attributes": "$product_attributes",
+          "package_weight": "$package_weight",
+          "package_dimensions": "$package_dimensions",
+          "is_cod_allowed": "$is_cod_allowed",
+          "external_product_id": "$external_product_id",
+          "save_mode": "$save_mode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_partial_edit_product",
+      "description": "Change only the fields given (title, description, images, attributes, package, brand, SKUs): everything else stays. For skus, send the complete list with ids from tiktok_shop_get_product; a live product may go back to review. Use tiktok_shop_update_inventory and tiktok_shop_update_price for stock and price alone. Installed switched off. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Product title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description in HTML (p, img, ul, ol, li, br, strong, b, i, em, u, h1 to h4, table). Images inside must be uploaded with use_case DESCRIPTION_IMAGE."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Leaf category id (tiktok_shop_recommend_category or tiktok_shop_get_categories)."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id from tiktok_shop_get_brands; leave out for no brand."
+          },
+          "main_images": {
+            "type": "array",
+            "description": "Gallery images, the first is the cover; up to 9.",
+            "items": {
+              "type": "object",
+              "description": "An image already uploaded with tiktok_shop_upload_product_image.",
+              "properties": {
+                "uri": {
+                  "type": "string",
+                  "description": "The image uri."
+                }
+              },
+              "required": [
+                "uri"
+              ]
+            }
+          },
+          "skus": {
+            "type": "array",
+            "description": "The SKUs (variants), up to 100.",
+            "items": {
+              "type": "object",
+              "description": "One SKU (variant).",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "SKU id, only when editing an existing SKU (from tiktok_shop_get_product)."
+                },
+                "seller_sku": {
+                  "type": "string",
+                  "description": "Your own SKU code."
+                },
+                "sales_attributes": {
+                  "type": "array",
+                  "description": "Variant attributes of this SKU, e.g. Colour: Red. Use a built-in attribute id from tiktok_shop_get_category_attributes, or a custom name and value_name.",
+                  "items": {
+                    "type": "object",
+                    "description": "One variant attribute.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Built-in sales attribute id."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Custom attribute name, e.g. Colour."
+                      },
+                      "value_id": {
+                        "type": "string",
+                        "description": "Built-in value id."
+                      },
+                      "value_name": {
+                        "type": "string",
+                        "description": "Custom value, e.g. Red."
+                      },
+                      "sku_img": {
+                        "type": "object",
+                        "description": "An image already uploaded with tiktok_shop_upload_product_image.",
+                        "properties": {
+                          "uri": {
+                            "type": "string",
+                            "description": "The image uri."
+                          }
+                        },
+                        "required": [
+                          "uri"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "price": {
+                  "type": "object",
+                  "description": "Price.",
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "description": "Local display price before discounts, as a decimal string, e.g. \"12.99\" (global sellers: the pre-tax price)."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "Currency: GBP (UK), EUR, USD and so on."
+                    },
+                    "sale_price": {
+                      "type": "string",
+                      "description": "Global sellers only: the display price shown on the product page."
+                    }
+                  },
+                  "required": [
+                    "currency"
+                  ]
+                },
+                "inventory": {
+                  "type": "array",
+                  "description": "Stock per warehouse (tiktok_shop_list_warehouses). List every warehouse the SKU is stored in.",
+                  "items": {
+                    "type": "object",
+                    "description": "Stock in one warehouse.",
+                    "properties": {
+                      "warehouse_id": {
+                        "type": "string",
+                        "description": "Warehouse id."
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Units in stock that can ship now, 1 to 99,999.",
+                        "minimum": 0,
+                        "maximum": 99999
+                      }
+                    },
+                    "required": [
+                      "warehouse_id"
+                    ]
+                  }
+                },
+                "external_sku_id": {
+                  "type": "string",
+                  "description": "Id of this SKU in another system of yours."
+                },
+                "identifier_code": {
+                  "type": "object",
+                  "description": "Product identifier.",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "The code."
+                    },
+                    "type": {
+                      "type": "string",
+                      "description": "GTIN, EAN, UPC or ISBN."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "product_attributes": {
+            "type": "array",
+            "description": "Product attributes from tiktok_shop_get_category_attributes (brand-independent facts such as material). Mandatory ones depend on the category.",
+            "items": {
+              "type": "object",
+              "description": "One attribute.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Attribute id."
+                },
+                "values": {
+                  "type": "array",
+                  "description": "Values: a built-in value id, or a custom name.",
+                  "items": {
+                    "type": "object",
+                    "description": "One value.",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Value id."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Custom value."
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "values"
+              ]
+            }
+          },
+          "package_weight": {
+            "type": "object",
+            "description": "Package weight.",
+            "properties": {
+              "value": {
+                "type": "string",
+                "description": "Weight as a decimal string, e.g. \"0.25\"."
+              },
+              "unit": {
+                "type": "string",
+                "description": "KILOGRAM or POUND.",
+                "enum": [
+                  "KILOGRAM",
+                  "POUND"
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "unit"
+            ]
+          },
+          "package_dimensions": {
+            "type": "object",
+            "description": "Package dimensions.",
+            "properties": {
+              "length": {
+                "type": "string",
+                "description": "Length as a decimal string."
+              },
+              "width": {
+                "type": "string",
+                "description": "Width as a decimal string."
+              },
+              "height": {
+                "type": "string",
+                "description": "Height as a decimal string."
+              },
+              "unit": {
+                "type": "string",
+                "description": "CENTIMETER or INCH.",
+                "enum": [
+                  "CENTIMETER",
+                  "INCH"
+                ]
+              }
+            },
+            "required": [
+              "length",
+              "width",
+              "height",
+              "unit"
+            ]
+          },
+          "is_cod_allowed": {
+            "type": "boolean",
+            "description": "Offer cash on delivery, where the market supports it."
+          },
+          "external_product_id": {
+            "type": "string",
+            "description": "Id of this product in another system of yours."
+          },
+          "save_mode": {
+            "type": "string",
+            "description": "LISTING (submit for review and list, default) or AS_DRAFT (keep as a draft).",
+            "enum": [
+              "LISTING",
+              "AS_DRAFT"
+            ]
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202509/products/{product_id}/partial_edit",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "category_id": "$category_id",
+          "brand_id": "$brand_id",
+          "main_images": "$main_images",
+          "skus": "$skus",
+          "product_attributes": "$product_attributes",
+          "package_weight": "$package_weight",
+          "package_dimensions": "$package_dimensions",
+          "is_cod_allowed": "$is_cod_allowed",
+          "external_product_id": "$external_product_id",
+          "save_mode": "$save_mode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_update_inventory",
+      "description": "Set the stock of one or more SKUs of a product, per warehouse. Overwrites the current figure and goes live at once. List every warehouse the SKU is stored in. Installed switched off. Confirm product, SKU, warehouse and new quantity with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id."
+          },
+          "skus": {
+            "type": "array",
+            "description": "SKUs of this product with their new stock.",
+            "items": {
+              "type": "object",
+              "description": "One SKU.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "SKU id."
+                },
+                "inventory": {
+                  "type": "array",
+                  "description": "Stock per warehouse (tiktok_shop_list_warehouses). List every warehouse the SKU is stored in.",
+                  "items": {
+                    "type": "object",
+                    "description": "Stock in one warehouse.",
+                    "properties": {
+                      "warehouse_id": {
+                        "type": "string",
+                        "description": "Warehouse id."
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Units in stock that can ship now, 1 to 99,999.",
+                        "minimum": 0,
+                        "maximum": 99999
+                      }
+                    },
+                    "required": [
+                      "warehouse_id"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "inventory"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "product_id",
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202309/products/{product_id}/inventory/update",
+        "bodyMapping": {
+          "skus": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_update_price",
+      "description": "Set the price of one or more SKUs of an active product. Goes live at once; it does not go through product review. Installed switched off. Confirm product, SKU and new price with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id."
+          },
+          "skus": {
+            "type": "array",
+            "description": "SKUs of this product with their new price.",
+            "items": {
+              "type": "object",
+              "description": "One SKU.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "SKU id."
+                },
+                "price": {
+                  "type": "object",
+                  "description": "Price.",
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "description": "Local display price before discounts, as a decimal string, e.g. \"12.99\" (global sellers: the pre-tax price)."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "Currency: GBP (UK), EUR, USD and so on."
+                    },
+                    "sale_price": {
+                      "type": "string",
+                      "description": "Global sellers only: the display price shown on the product page."
+                    }
+                  },
+                  "required": [
+                    "currency"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "price"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "product_id",
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202309/products/{product_id}/prices/update",
+        "bodyMapping": {
+          "skus": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_activate_products",
+      "description": "Put deactivated products back on sale (they may go through review again). Installed switched off. Confirm the products with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "description": "Product ids.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202309/products/activate",
+        "bodyMapping": {
+          "product_ids": "$product_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "tiktok_shop_deactivate_products",
+      "description": "Take products off sale: buyers can no longer see or order them until they are activated again. Installed switched off. Confirm the products with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "description": "Product ids.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/202309/products/deactivate",
+        "bodyMapping": {
+          "product_ids": "$product_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

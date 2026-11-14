@@ -16,7 +16,7 @@ import { getAdapter, listAdapters } from '../catalog';
  *      every tool's method, URL and request body through the real RestEngine,
  *      the current method versions (the paths Ozon deprecated or switched off
  *      are absent), the read-only hints on POST reads, the switched-off
- *      ship and cancel tools, and the response mappings against payloads
+ *      ship, cancel and archive tools, and the response mappings against payloads
  *      shaped like the official OpenAPI schema of the Seller API.
  *
  *   2. Live: skipped unless RUN_OZON_LIVE=1.
@@ -106,8 +106,20 @@ const runShaped = async (name: string, params: Record<string, unknown>) => {
 };
 const sent = () => mockedAxios.mock.calls[0][0];
 
-const WRITES = ['ozon_reply_to_review', 'ozon_answer_question', 'ozon_update_prices', 'ozon_update_stocks', 'ozon_ship_fbs_posting', 'ozon_cancel_fbs_posting'];
-const SWITCHED_OFF = ['ozon_ship_fbs_posting', 'ozon_cancel_fbs_posting'];
+const WRITES = [
+  'ozon_reply_to_review',
+  'ozon_answer_question',
+  'ozon_update_prices',
+  'ozon_update_stocks',
+  'ozon_update_product_characteristics',
+  'ozon_create_or_update_product_cards',
+  'ozon_replace_product_images',
+  'ozon_move_products_to_archive',
+  'ozon_ship_fbs_posting',
+  'ozon_cancel_fbs_posting',
+];
+const SWITCHED_OFF = ['ozon_move_products_to_archive', 'ozon_ship_fbs_posting', 'ozon_cancel_fbs_posting'];
+const ATTR = { id: 85, complex_id: 0, values: [{ dictionary_value_id: 971082156, value: 'Brand' }] };
 
 // [tool, minimal arguments, method, path]
 const TABLE: Array<[string, Record<string, unknown>, string, string]> = [
@@ -132,10 +144,22 @@ const TABLE: Array<[string, Record<string, unknown>, string, string]> = [
   ['ozon_list_reviews', {}, 'POST', '/v2/review/list'],
   ['ozon_list_questions', {}, 'POST', '/v1/question/list'],
   ['ozon_get_cancel_reasons', { posting_numbers: ['89491381-0072-1'] }, 'POST', '/v1/posting/fbs/cancel-reason'],
+  ['ozon_get_product_characteristics', {}, 'POST', '/v4/product/info/attributes'],
+  ['ozon_get_product_description_text', { offer_id: 'SKU-1' }, 'POST', '/v1/product/info/description'],
+  ['ozon_get_product_images', { product_ids: [1] }, 'POST', '/v2/product/pictures/info'],
+  ['ozon_get_product_content_rating', { skus: [9] }, 'POST', '/v1/product/rating-by-sku'],
+  ['ozon_get_product_import_task', { task_id: 172549793 }, 'POST', '/v1/product/import/info'],
+  ['ozon_list_category_characteristics', { description_category_id: 17028922, type_id: 91565 }, 'POST', '/v1/description-category/attribute'],
+  ['ozon_list_characteristic_values', { attribute_id: 85, description_category_id: 17028922, type_id: 91565 }, 'POST', '/v1/description-category/attribute/values'],
+  ['ozon_search_characteristic_values', { attribute_id: 85, description_category_id: 17028922, type_id: 91565, value: 'Ozon' }, 'POST', '/v1/description-category/attribute/values/search'],
   ['ozon_reply_to_review', { review_id: 'r1', text: 'Спасибо за отзыв!' }, 'POST', '/v1/review/comment/create'],
   ['ozon_answer_question', { question_id: 'q1', sku: 1, text: 'Да, подходит.' }, 'POST', '/v1/question/answer/create'],
   ['ozon_update_prices', { prices: [{ offer_id: 'SKU-1', price: '1490' }] }, 'POST', '/v1/product/import/prices'],
   ['ozon_update_stocks', { stocks: [{ product_id: 1, warehouse_id: 2, stock: 3 }] }, 'POST', '/v2/products/stocks'],
+  ['ozon_update_product_characteristics', { items: [{ offer_id: 'SKU-1', attributes: [ATTR] }] }, 'POST', '/v1/product/attributes/update'],
+  ['ozon_create_or_update_product_cards', { items: [{ offer_id: 'SKU-1', description_category_id: 17028922, type_id: 91565, price: '1490' }] }, 'POST', '/v3/product/import'],
+  ['ozon_replace_product_images', { items: [{ offer_id: 'SKU-1', images: ['https://example.com/1.jpg'] }] }, 'POST', '/v2/product/pictures/import'],
+  ['ozon_move_products_to_archive', { product_ids: [1] }, 'POST', '/v1/product/archive'],
   ['ozon_ship_fbs_posting', { posting_number: 'p', packages: [{ products: [{ product_id: 1, quantity: 1 }] }] }, 'POST', '/v4/posting/fbs/ship'],
   ['ozon_cancel_fbs_posting', { posting_number: 'p', cancel_reason_id: 352 }, 'POST', '/v2/posting/fbs/cancel'],
 ];
@@ -238,7 +262,16 @@ describe('ozon adapter: static spec conformance', () => {
       expect(`${name}:${annotationsOf(tool(name)).readOnlyHint}`).toBe(`${name}:false`);
       expect(tool(name).description).toMatch(/confirm/i);
     }
-    for (const name of ['ozon_update_prices', 'ozon_update_stocks', 'ozon_ship_fbs_posting', 'ozon_cancel_fbs_posting']) {
+    for (const name of [
+      'ozon_update_prices',
+      'ozon_update_stocks',
+      'ozon_update_product_characteristics',
+      'ozon_create_or_update_product_cards',
+      'ozon_replace_product_images',
+      'ozon_move_products_to_archive',
+      'ozon_ship_fbs_posting',
+      'ozon_cancel_fbs_posting',
+    ]) {
       expect(annotationsOf(tool(name)).destructiveHint).toBe(true);
     }
     for (const name of ['ozon_reply_to_review', 'ozon_answer_question']) {
@@ -247,7 +280,7 @@ describe('ozon adapter: static spec conformance', () => {
     }
   });
 
-  it('installs shipping and cancelling switched off', () => {
+  it('installs shipping, cancelling and archiving switched off', () => {
     for (const t of a.tools) expect(`${t.name}:${t.enabled === false}`).toBe(`${t.name}:${SWITCHED_OFF.includes(t.name)}`);
   });
 
@@ -261,6 +294,12 @@ describe('ozon adapter: static spec conformance', () => {
       ozon_get_posting_accruals: ['posting_numbers'],
       ozon_get_analytics: ['date_from', 'date_to'],
       ozon_get_cancel_reasons: ['posting_numbers'],
+      ozon_get_product_images: ['product_ids'],
+      ozon_get_product_content_rating: ['skus'],
+      ozon_get_product_import_task: ['task_id'],
+      ozon_list_category_characteristics: ['description_category_id', 'type_id'],
+      ozon_list_characteristic_values: ['attribute_id', 'description_category_id', 'type_id'],
+      ozon_search_characteristic_values: ['attribute_id', 'description_category_id', 'type_id', 'value'],
     };
     for (const [name] of READS) expect(`${name}:${JSON.stringify(tool(name).parameters.required)}`).toBe(`${name}:${JSON.stringify(minimalRequired[name])}`);
     for (const t of a.tools) {
@@ -318,6 +357,87 @@ describe('ozon adapter: static spec conformance', () => {
       cancel_reason_id: 402,
       cancel_reason_message: 'нет в наличии',
     });
+  });
+
+  it('builds the product card bodies from the documented field names', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    const body = async (name: string, params: Record<string, unknown>) => {
+      mockedAxios.mockClear();
+      await run(name, params);
+      return sent().data;
+    };
+    expect(await body('ozon_get_product_characteristics', {})).toEqual({ filter: { visibility: 'ALL' }, limit: 20 });
+    expect(await body('ozon_get_product_characteristics', { offer_ids: ['A'], sort_by: 'offer_id', sort_dir: 'asc', last_id: 'x' })).toEqual({
+      filter: { offer_id: ['A'], visibility: 'ALL' },
+      sort_by: 'offer_id',
+      sort_dir: 'asc',
+      last_id: 'x',
+      limit: 20,
+    });
+    expect(await body('ozon_get_product_description_text', { product_id: 5 })).toEqual({ product_id: 5 });
+    expect(await body('ozon_get_product_images', { product_ids: [5, 6] })).toEqual({ product_id: [5, 6] });
+    expect(await body('ozon_get_product_content_rating', { skus: [9] })).toEqual({ skus: [9] });
+    expect(await body('ozon_get_product_import_task', { task_id: 7 })).toEqual({ task_id: 7 });
+    expect(await body('ozon_list_category_characteristics', { description_category_id: 1, type_id: 2, language: 'EN' })).toEqual({ description_category_id: 1, type_id: 2, language: 'EN' });
+    expect(await body('ozon_list_characteristic_values', { attribute_id: 85, description_category_id: 1, type_id: 2, last_value_id: 40 })).toEqual({
+      attribute_id: 85,
+      description_category_id: 1,
+      type_id: 2,
+      last_value_id: 40,
+      limit: 20,
+    });
+    expect(await body('ozon_search_characteristic_values', { attribute_id: 85, description_category_id: 1, type_id: 2, value: 'Ozon' })).toEqual({
+      attribute_id: 85,
+      description_category_id: 1,
+      type_id: 2,
+      value: 'Ozon',
+      limit: 20,
+    });
+    expect(await body('ozon_update_product_characteristics', { items: [{ offer_id: 'A', attributes: [ATTR] }] })).toEqual({ items: [{ offer_id: 'A', attributes: [ATTR] }] });
+    const card = { offer_id: 'A', name: 'Кружка', description_category_id: 1, type_id: 2, price: '990', vat: '0.2', images: ['https://example.com/1.jpg'], attributes: [ATTR] };
+    expect(await body('ozon_create_or_update_product_cards', { items: [card] })).toEqual({ items: [card] });
+    expect(await body('ozon_replace_product_images', { items: [{ offer_id: 'A', images: ['https://example.com/1.jpg'], color_image: 'https://example.com/c.jpg' }] })).toEqual({
+      items: [{ offer_id: 'A', images: ['https://example.com/1.jpg'], color_image: 'https://example.com/c.jpg' }],
+    });
+    expect(await body('ozon_move_products_to_archive', { product_ids: [1, 2] })).toEqual({ product_id: [1, 2] });
+  });
+
+  it('shapes characteristics, import tasks, content rating and dictionaries', () => {
+    const attrs = shape('ozon_get_product_characteristics', {
+      result: [
+        {
+          id: 1, offer_id: 'A', sku: '9', name: 'Кружка', barcode: '460', barcodes: ['460'], description_category_id: 17028922, type_id: 91565, depth: 100, width: 80, height: 50, dimension_unit: 'mm', weight: 300, weight_unit: 'g',
+          primary_image: 'https://cdn/0.jpg', images: [{ default: true, file_name: 'https://cdn/1.jpg', index: 0 }], color_image: '', model_info: { model_id: 3, count: 1 },
+          attributes: [{ id: 85, complex_id: 0, values: [{ dictionary_value_id: 971082156, value: 'Brand' }] }], complex_attributes: [], attributes_with_defaults: [], pdf_list: [],
+        },
+      ],
+      total: 1, last_id: 'WzFd',
+    }).value as any;
+    expect(attrs.items[0]).toMatchObject({ product_id: 1, offer_id: 'A', description_category_id: 17028922, type_id: 91565, images: ['https://cdn/1.jpg'] });
+    expect(attrs.items[0].attributes).toEqual([{ id: 85, complex_id: 0, values: [{ dictionary_value_id: 971082156, value: 'Brand' }] }]);
+    expect(attrs).toMatchObject({ total: 1, last_id: 'WzFd' });
+
+    const task = shape('ozon_get_product_import_task', {
+      result: { items: [{ offer_id: 'A', product_id: 1, status: 'failed', errors: [{ code: 'E', state: 's', level: 'error', description: 'Заполните бренд', field: 'attributes', attribute_id: 85, attribute_name: 'Бренд', optional_description_elements: {}, message: 'brand is required' }] }], total: 1 },
+    }).value as any;
+    expect(task.items[0]).toEqual({ offer_id: 'A', product_id: 1, status: 'failed', errors: [{ code: 'E', level: 'error', field: 'attributes', attribute_id: 85, attribute_name: 'Бренд', description: 'Заполните бренд', message: 'brand is required' }] });
+
+    const rating = shape('ozon_get_product_content_rating', {
+      products: [{ sku: 9, rating: 72.5, groups: [{ key: 'media', name: 'Медиа', rating: 50, weight: 25, improve_at_least: 2, improve_attributes: [{ id: 4180, name: 'Видео' }], conditions: [{ key: 'c', description: 'Добавьте видео', fulfilled: false, cost: 10 }] }] }],
+    }).value as any;
+    expect(rating.products[0].groups[0]).toMatchObject({ key: 'media', improve_attributes: [{ id: 4180, name: 'Видео' }] });
+
+    const chars = shape('ozon_list_category_characteristics', {
+      result: [{ id: 85, name: 'Бренд', description: 'long text', type: 'String', is_required: true, is_collection: false, max_value_count: 1, dictionary_id: 28732849, category_dependent: false, group_id: 0, group_name: '', attribute_complex_id: 0, is_aspect: false, complex_is_collection: false }],
+    }).value as any;
+    expect(chars.characteristics[0]).toEqual({ id: 85, name: 'Бренд', type: 'String', is_required: true, is_collection: false, max_value_count: 1, dictionary_id: 28732849, category_dependent: false, group_name: '', attribute_complex_id: 0, is_aspect: false });
+
+    expect(shape('ozon_list_characteristic_values', { result: [{ id: 1, value: 'Ozon', info: '', picture: 'https://cdn/p.png' }], has_next: true }).value).toEqual({ values: [{ id: 1, value: 'Ozon', info: '' }], has_next: true });
+    expect(shape('ozon_search_characteristic_values', { result: [{ id: 1, value: 'Ozon', info: '', picture: '' }] }).value).toEqual({ values: [{ id: 1, value: 'Ozon', info: '' }] });
+    expect(shape('ozon_get_product_description_text', { result: { id: 1, offer_id: 'A', name: 'Кружка', description: 'Описание' } }).value).toEqual({ product_id: 1, offer_id: 'A', name: 'Кружка', description: 'Описание' });
+    expect(shape('ozon_create_or_update_product_cards', { result: { task_id: 172549793 } }).value).toEqual({ task_id: 172549793 });
+    expect(shape('ozon_update_product_characteristics', { task_id: 5 }).value).toEqual({ task_id: 5 });
+    expect(shape('ozon_replace_product_images', { task_id: 6 }).value).toEqual({ task_id: 6 });
   });
 
   it('every tool has a valid responseMapping that selects', () => {
@@ -539,6 +659,25 @@ liveCreds('ozon adapter: live read tools with a seller key', () => {
     if (list.items.length) {
       const details = await tryRead('ozon_get_products', { product_ids: [list.items[0].product_id] });
       expect(details.items[0].product_id).toBe(list.items[0].product_id);
+    }
+    if (list.items.length) {
+      const card = await tryRead('ozon_get_product_characteristics', { product_ids: [list.items[0].product_id] });
+      expect(card.items[0].product_id).toBe(list.items[0].product_id);
+      const text = await tryRead('ozon_get_product_description_text', { product_id: list.items[0].product_id });
+      expect(text.product_id).toBe(list.items[0].product_id);
+      const images = await tryRead('ozon_get_product_images', { product_ids: [list.items[0].product_id] });
+      expect(Array.isArray(images.items)).toBe(true);
+      const chars = await tryRead('ozon_list_category_characteristics', { description_category_id: card.items[0].description_category_id, type_id: card.items[0].type_id });
+      expect(Array.isArray(chars.characteristics)).toBe(true);
+      const dict = chars.characteristics.find((c: any) => c.dictionary_id > 0);
+      if (dict) {
+        const vals = await tryRead('ozon_list_characteristic_values', { attribute_id: dict.id, description_category_id: card.items[0].description_category_id, type_id: card.items[0].type_id });
+        expect(Array.isArray(vals.values)).toBe(true);
+      }
+      if (card.items[0].sku) {
+        const rating = await tryRead('ozon_get_product_content_rating', { skus: [Number(card.items[0].sku)] });
+        expect(Array.isArray(rating.products)).toBe(true);
+      }
     }
     if (list.items.length) {
       const stocks = await tryRead('ozon_get_fbs_warehouse_stocks', { offer_ids: [list.items[0].offer_id] });

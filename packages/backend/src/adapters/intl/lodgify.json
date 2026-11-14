@@ -1,0 +1,1194 @@
+{
+  "slug": "lodgify",
+  "name": "Lodgify",
+  "aliases": [
+    "Lodgify API",
+    "Lodgify PMS"
+  ],
+  "description": "Vacation rental management in Lodgify: properties and room types, availability, nightly rates, quotes, bookings and enquiries, guest message threads, check-in and check-out, key codes and booking status changes.",
+  "region": "intl",
+  "category": "travel",
+  "icon": "lodgify",
+  "docsUrl": "https://docs.lodgify.com/docs/getting-started-1",
+  "instructions": "## Lodgify\nThis connector works with the **Lodgify** vacation rental software through its Public API (`https://api.lodgify.com`, v2 with some v1 endpoints): properties and room types, availability calendars, nightly rates and rate settings, quotes, bookings and enquiries, message threads, check-in and check-out, key codes and booking status changes.\n\n**Setup (2 minutes)**\n1. In Lodgify (https://app.lodgify.com) open **Settings > Public API** and copy the API key. The key gives full access to the account; only the account owner can see it.\n2. Paste it into `LODGIFY_API_KEY`. It is sent in the `X-ApiKey` header.\n3. Run `lodgify_list_properties` to check the key.\n\n**Workflow**\n- Properties: `lodgify_list_properties`, `lodgify_get_property`, `lodgify_list_property_rooms` (room type ids), `lodgify_get_room`, `lodgify_list_deleted_properties`, `lodgify_list_property_addons`, `lodgify_list_property_payment_options`.\n- Free dates: `lodgify_get_availability` (whole account), `lodgify_get_property_availability`, `lodgify_get_room_type_availability`.\n- Prices: `lodgify_get_rates_calendar` (price per night, minimum stay), `lodgify_get_rate_settings`, `lodgify_get_quote` (total for a stay with fees, taxes and add-ons).\n- Bookings: `lodgify_list_bookings` (stay_filter Upcoming or Current for the next guests, ArrivalDate with stay_filter_date for today's arrivals), `lodgify_get_booking`, `lodgify_list_external_bookings`, `lodgify_get_booking_quote`, `lodgify_get_booking_payment_link`.\n- New booking: check `lodgify_get_room_type_availability` and `lodgify_get_quote`, then `lodgify_create_booking`, then `lodgify_set_booking_booked` (or `lodgify_set_booking_tentative`). Status changes: `lodgify_decline_booking`, `lodgify_reopen_booking`. Ask for money with `lodgify_request_payment`.\n- Arrival and departure: `lodgify_update_key_codes` for the door codes, `lodgify_check_in_booking`, `lodgify_check_out_booking`.\n- Inbox and messages: `lodgify_list_inbox` (bookings and enquiries), `lodgify_count_unread`, `lodgify_get_enquiry`, `lodgify_get_thread` with the thread_uid of a booking or enquiry, then answer with `lodgify_add_booking_messages` or `lodgify_add_enquiry_messages` and file it with `lodgify_mark_booking_replied` or `lodgify_mark_booking_not_replied`.\n\n**Messages to guests**: `lodgify_add_booking_messages` and `lodgify_add_enquiry_messages` with `send_notification: true`, `lodgify_request_payment` and `request_payment: true` on a status change send email to the guest. Show the text to the user and get a yes before sending. Type `Comment` stores an internal note that the guest does not see.\n\n**Reading the answers**\n- Ids: properties (houses) and room types are integers; a booking id is an integer; a message thread is a GUID (`thread_uid`).\n- Dates are `YYYY-MM-DD`; check-in and check-out times are `HH:mm:ss` in the property's time zone; change dates are ISO 8601.\n- Amounts are in the property currency (`currency_code`), in major units (120.5 = 120.50).\n- Booking status: Open (request), Tentative, Booked, Declined. `source` tells the channel (Manual, AirbnbIntegration, BookingCom, ...).\n\n**Paging**: v2 lists take `page` (from 1) and `size` (default 50); pass `include_count: true` to get the total in `count`. `lodgify_list_inbox` uses `offset` and `limit` and returns `total`.\n\n**Not covered**: rate and availability updates, payment link creation, webhooks and moving bookings to the trash.\n\n**Errors**: 401 or 403 means a missing or wrong API key, 404 an unknown id, 400 invalid dates or parameters (the body says which), 429 the rate limit: wait and retry.",
+  "prerequisites": "A Lodgify account and its Public API key (Settings > Public API).",
+  "requiredEnvVars": [
+    "LODGIFY_API_KEY"
+  ],
+  "envVarMeta": {
+    "LODGIFY_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Lodgify, Settings > Public API: the API key of the account. It is sent in the X-ApiKey header.",
+      "link": "https://app.lodgify.com",
+      "pattern": "^[A-Za-z0-9+/=_-]{20,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Lodgify refused the API key. Copy it again from Settings > Public API in Lodgify.",
+    "403": "Lodgify refused the API key. Copy it again from Settings > Public API; only the account owner sees the key."
+  },
+  "probe": {
+    "tool": "lodgify_list_properties"
+  },
+  "connector": {
+    "name": "Lodgify Public API",
+    "type": "REST",
+    "baseUrl": "https://api.lodgify.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-ApiKey",
+      "apiKey": "{{LODGIFY_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "lodgify_list_properties",
+      "description": "List the properties (rentals) of the account with id, name, address, coordinates, currency, check-in and check-out times and room types. Paged, 50 per page by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "size": {
+            "type": "integer",
+            "description": "Items per page (default 50).",
+            "minimum": 1
+          },
+          "include_count": {
+            "type": "boolean",
+            "description": "Return the total count of properties as count."
+          },
+          "include_in_out": {
+            "type": "boolean",
+            "description": "Include the check-in and check-out hours."
+          },
+          "updated_since": {
+            "type": "string",
+            "description": "Only properties changed since this date and time (ISO 8601)."
+          },
+          "wid": {
+            "type": "integer",
+            "description": "Website id, to limit to the properties of one Lodgify website."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/properties",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size",
+          "includeCount": "$include_count",
+          "includeInOut": "$include_in_out",
+          "updatedSince": "$updated_since",
+          "wid": "$wid"
+        }
+      }
+    },
+    {
+      "name": "lodgify_get_property",
+      "description": "One property with address, description, amenities, rating, currency, room types and, optionally, check-in and check-out hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "include_in_out": {
+            "type": "boolean",
+            "description": "Include the check-in and check-out hours."
+          },
+          "wid": {
+            "type": "integer",
+            "description": "Website id, for the texts of one website."
+          }
+        },
+        "required": [
+          "property_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/properties/{property_id}",
+        "queryParams": {
+          "includeInOut": "$include_in_out",
+          "wid": "$wid"
+        }
+      }
+    },
+    {
+      "name": "lodgify_list_property_rooms",
+      "description": "Room types of a property with id, name, max people, bedrooms, bathrooms and amenities. The room type id is needed for rates, availability, quotes and bookings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "wid": {
+            "type": "integer",
+            "description": "Website id, for the texts of one website."
+          }
+        },
+        "required": [
+          "property_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/properties/{property_id}/rooms",
+        "queryParams": {
+          "wid": "$wid"
+        }
+      }
+    },
+    {
+      "name": "lodgify_get_room",
+      "description": "Details of one room type of a property (Public API v1): name, description, max people, beds, images and amenities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "room_type_id": {
+            "type": "integer",
+            "description": "Room type id of the property, from lodgify_list_property_rooms (most rentals have a single room type)."
+          },
+          "wid": {
+            "type": "integer",
+            "description": "Website id, for the texts of one website."
+          }
+        },
+        "required": [
+          "property_id",
+          "room_type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/properties/{property_id}/rooms/{room_type_id}",
+        "queryParams": {
+          "wid": "$wid"
+        }
+      }
+    },
+    {
+      "name": "lodgify_list_deleted_properties",
+      "description": "Properties deleted from the account since a date, so a synced list can drop them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deleted_since": {
+            "type": "string",
+            "description": "Only properties deleted since this date and time (ISO 8601)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/deletedproperties",
+        "queryParams": {
+          "deletedSince": "$deleted_since"
+        }
+      }
+    },
+    {
+      "name": "lodgify_list_property_addons",
+      "description": "Add-ons (extras such as cleaning, pets or late check-out) that can be booked for a property, optionally only those valid for a stay and room type. Their ids go into lodgify_get_quote.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "start": {
+            "type": "string",
+            "description": "Stay start. Date, YYYY-MM-DD."
+          },
+          "end": {
+            "type": "string",
+            "description": "Stay end. Date, YYYY-MM-DD."
+          },
+          "room_type_id": {
+            "type": "integer",
+            "description": "Only add-ons valid for this room type."
+          }
+        },
+        "required": [
+          "property_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/properties/{property_id}/rates/addons",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "rid": "$room_type_id"
+        }
+      }
+    },
+    {
+      "name": "lodgify_list_property_payment_options",
+      "description": "Payment options configured for a property (for example bank transfer or card), useful when creating a booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          }
+        },
+        "required": [
+          "property_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/properties/{property_id}/payments"
+      }
+    },
+    {
+      "name": "lodgify_get_availability",
+      "description": "Availability calendar of all properties and room types of the account for a period: for each day whether units are available, and with include_details the bookings and closed periods that block them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "First day. Date, YYYY-MM-DD."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day. Date, YYYY-MM-DD."
+          },
+          "include_details": {
+            "type": "boolean",
+            "description": "Include the bookings and blocks behind each period."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/availability",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "includeDetails": "$include_details"
+        }
+      }
+    },
+    {
+      "name": "lodgify_get_property_availability",
+      "description": "Availability calendar of one property (all its room types) for a period, with the number of available units per period and, optionally, the bookings and blocks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day. Date, YYYY-MM-DD."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day. Date, YYYY-MM-DD."
+          },
+          "include_details": {
+            "type": "boolean",
+            "description": "Include the bookings and blocks behind each period."
+          }
+        },
+        "required": [
+          "property_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/availability/{property_id}",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "includeDetails": "$include_details"
+        }
+      }
+    },
+    {
+      "name": "lodgify_get_room_type_availability",
+      "description": "Availability calendar of one room type of a property for a period. Use it to check whether a stay is free before quoting or booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "room_type_id": {
+            "type": "integer",
+            "description": "Room type id of the property, from lodgify_list_property_rooms (most rentals have a single room type)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day. Date, YYYY-MM-DD."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day. Date, YYYY-MM-DD."
+          },
+          "include_details": {
+            "type": "boolean",
+            "description": "Include the bookings and blocks behind each period."
+          }
+        },
+        "required": [
+          "property_id",
+          "room_type_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/availability/{property_id}/{room_type_id}",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "includeDetails": "$include_details"
+        }
+      }
+    },
+    {
+      "name": "lodgify_get_rates_calendar",
+      "description": "Nightly rates of a room type for a period: price per night, minimum stay and rate settings per day, in the property currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "room_type_id": {
+            "type": "integer",
+            "description": "Room type id of the property, from lodgify_list_property_rooms (most rentals have a single room type)."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First night. Date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last night. Date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "property_id",
+          "room_type_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/rates/calendar",
+        "queryParams": {
+          "houseId": "$property_id",
+          "roomTypeId": "$room_type_id",
+          "startDate": "$start_date",
+          "endDate": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "lodgify_get_rate_settings",
+      "description": "Rate settings of a property: currency, taxes, fees, deposit and cancellation rules and the price per additional guest.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/rates/settings",
+        "queryParams": {
+          "houseId": "$property_id"
+        }
+      }
+    },
+    {
+      "name": "lodgify_get_quote",
+      "description": "Price quote for a possible stay in one room type: total, breakdown of room rate, fees, taxes, add-ons and promotion, per rate plan. Use it to answer \"how much would it cost\" before lodgify_create_booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "arrival": {
+            "type": "string",
+            "description": "Arrival. Date, YYYY-MM-DD."
+          },
+          "departure": {
+            "type": "string",
+            "description": "Departure. Date, YYYY-MM-DD."
+          },
+          "room_type_id": {
+            "type": "integer",
+            "description": "Room type id of the property, from lodgify_list_property_rooms (most rentals have a single room type)."
+          },
+          "people": {
+            "type": "integer",
+            "description": "Total number of guests.",
+            "minimum": 1
+          },
+          "adults": {
+            "type": "integer",
+            "description": "Number of adults.",
+            "minimum": 1
+          },
+          "children": {
+            "type": "integer",
+            "description": "Number of children.",
+            "minimum": 0
+          },
+          "infants": {
+            "type": "integer",
+            "description": "Number of infants.",
+            "minimum": 0
+          },
+          "pets": {
+            "type": "integer",
+            "description": "Number of pets.",
+            "minimum": 0
+          },
+          "addon_id": {
+            "type": "integer",
+            "description": "Optional add-on id from lodgify_list_property_addons."
+          },
+          "addon_units": {
+            "type": "integer",
+            "description": "Units of that add-on.",
+            "minimum": 1
+          },
+          "promotion_code": {
+            "type": "string",
+            "description": "Promotion code to apply."
+          }
+        },
+        "required": [
+          "property_id",
+          "arrival",
+          "departure",
+          "room_type_id",
+          "adults"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/quote/{property_id}",
+        "queryParams": {
+          "arrival": "$arrival",
+          "departure": "$departure",
+          "roomTypes[0].Id": "$room_type_id",
+          "roomTypes[0].People": "$people",
+          "roomTypes[0].guest_breakdown.adults": "$adults",
+          "roomTypes[0].guest_breakdown.children": "$children",
+          "roomTypes[0].guest_breakdown.infants": "$infants",
+          "roomTypes[0].guest_breakdown.pets": "$pets",
+          "addOns[0].Id": "$addon_id",
+          "addOns[0].Units": "$addon_units",
+          "promotionCode": "$promotion_code"
+        }
+      }
+    },
+    {
+      "name": "lodgify_list_bookings",
+      "description": "List bookings with id, property, room types, guest, arrival and departure, status (Booked, Tentative, Open, Declined), source (Manual, AirbnbIntegration, BookingCom, ...), totals, amount paid and due, and the message thread id. Filter by stay: Upcoming, Current, Historic, All, or ArrivalDate and DepartureDate with stay_filter_date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1
+          },
+          "size": {
+            "type": "integer",
+            "description": "Items per page (default 50).",
+            "minimum": 1
+          },
+          "include_count": {
+            "type": "boolean",
+            "description": "Return the total count as count."
+          },
+          "stay_filter": {
+            "type": "string",
+            "description": "Which stays: Upcoming, Current, Historic, All, ArrivalDate or DepartureDate.",
+            "enum": [
+              "Upcoming",
+              "Current",
+              "Historic",
+              "All",
+              "ArrivalDate",
+              "DepartureDate"
+            ]
+          },
+          "stay_filter_date": {
+            "type": "string",
+            "description": "Date for stay_filter ArrivalDate or DepartureDate (ISO 8601)."
+          },
+          "updated_since": {
+            "type": "string",
+            "description": "Only bookings changed since this date and time (ISO 8601)."
+          },
+          "include_transactions": {
+            "type": "boolean",
+            "description": "Include payments and refunds."
+          },
+          "include_external": {
+            "type": "boolean",
+            "description": "Include bookings imported from channels (Airbnb, Booking.com, ...)."
+          },
+          "include_quote_details": {
+            "type": "boolean",
+            "description": "Include the price breakdown."
+          },
+          "trash": {
+            "type": "string",
+            "description": "False (default) for active bookings, True for trashed ones, All for both.",
+            "enum": [
+              "False",
+              "True",
+              "All"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/reservations/bookings",
+        "queryParams": {
+          "page": "$page",
+          "size": "$size",
+          "includeCount": "$include_count",
+          "stayFilter": "$stay_filter",
+          "stayFilterDate": "$stay_filter_date",
+          "updatedSince": "$updated_since",
+          "includeTransactions": "$include_transactions",
+          "includeExternal": "$include_external",
+          "includeQuoteDetails": "$include_quote_details",
+          "trash": "$trash"
+        }
+      }
+    },
+    {
+      "name": "lodgify_get_booking",
+      "description": "One booking with guest (name, email, phone, country), rooms and guest breakdown, status, source, totals, subtotals, amount paid and due, quote, transactions, notes, key codes, check-in and check-out and thread_uid for the messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/reservations/bookings/{booking_id}"
+      }
+    },
+    {
+      "name": "lodgify_list_external_bookings",
+      "description": "Channel bookings (Airbnb, Booking.com, Vrbo, ...) linked to a Lodgify booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/reservations/bookings/{booking_id}/externalBookings"
+      }
+    },
+    {
+      "name": "lodgify_get_booking_payment_link",
+      "description": "The guest payment link of a booking's current quote, with amount and expiry, to share with the guest.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/reservations/bookings/{booking_id}/quote/paymentLink"
+      }
+    },
+    {
+      "name": "lodgify_get_booking_quote",
+      "description": "The current quote of a booking (Public API v1): room rates, fees, taxes, discounts, add-ons, total and payment schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reservation/booking/{booking_id}/quote"
+      }
+    },
+    {
+      "name": "lodgify_list_inbox",
+      "description": "List the inbox (Public API v1): bookings and enquiries together, newest first, with status, property, guest, dates, replied and read flags. Filter by status (Booked, Open, Tentative, Declined), property, stay period or change date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip (default 0).",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items to return (default 10).",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "description": "Only this status, for example Booked, Open, Tentative or Declined."
+          },
+          "trash": {
+            "type": "boolean",
+            "description": "true to list trashed items instead (default false)."
+          },
+          "property_id": {
+            "type": "integer",
+            "description": "Only this property."
+          },
+          "period_start": {
+            "type": "string",
+            "description": "Only stays from this date. Date, YYYY-MM-DD."
+          },
+          "period_end": {
+            "type": "string",
+            "description": "Only stays until this date. Date, YYYY-MM-DD."
+          },
+          "modified_since": {
+            "type": "string",
+            "description": "Only items changed since this date and time (ISO 8601)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reservation",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "status": "$status",
+          "trash": "$trash",
+          "propertyId": "$property_id",
+          "periodStart": "$period_start",
+          "periodEnd": "$period_end",
+          "modifiedSince": "$modified_since"
+        }
+      }
+    },
+    {
+      "name": "lodgify_count_unread",
+      "description": "Number of bookings and enquiries whose messages are not read yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reservation/not_read"
+      }
+    },
+    {
+      "name": "lodgify_get_enquiry",
+      "description": "One enquiry (a guest request that is not a booking yet) with guest, property, dates, people, status and messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "enquiry_id": {
+            "type": "integer",
+            "description": "Enquiry id, from lodgify_list_inbox."
+          }
+        },
+        "required": [
+          "enquiry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reservation/enquiry/{enquiry_id}"
+      }
+    },
+    {
+      "name": "lodgify_get_thread",
+      "description": "The message thread of a booking or enquiry: guest name and email, read and closed flags and every message with sender, subject, text and date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_uid": {
+            "type": "string",
+            "description": "Thread id (a GUID), the thread_uid of a booking or enquiry."
+          }
+        },
+        "required": [
+          "thread_uid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/messaging/{thread_uid}"
+      }
+    },
+    {
+      "name": "lodgify_create_booking",
+      "description": "Create a booking for a property and stay (Public API v1); returns the new booking id. Lodgify ignores status here: call lodgify_set_booking_booked or lodgify_set_booking_tentative afterwards. Pass from to turn an existing enquiry into the booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "integer",
+            "description": "Property id (the house id), from lodgify_list_properties."
+          },
+          "arrival": {
+            "type": "string",
+            "description": "Arrival. Date, YYYY-MM-DD."
+          },
+          "departure": {
+            "type": "string",
+            "description": "Departure. Date, YYYY-MM-DD."
+          },
+          "guest": {
+            "type": "object",
+            "description": "Guest: {\"guest_name\": {\"first_name\": \"Anna\", \"last_name\": \"Muster\"}, \"email\": \"anna@example.com\", \"phone\": \"+49 ...\", \"country_code\": \"DE\", \"locale\": \"de\"}. guest_name is required."
+          },
+          "rooms": {
+            "type": "array",
+            "description": "Room types booked: [{\"room_type_id\": 123, \"guest_breakdown\": {\"adults\": 2, \"children\": 0, \"infants\": 0, \"pets\": 0}, \"people\": 2}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "source_text": {
+            "type": "string",
+            "description": "Where the booking came from, free text (for example Phone)."
+          },
+          "total": {
+            "type": "number",
+            "description": "Total price to store on the booking, in currency_code."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency, ISO 4217 (EUR, USD)."
+          },
+          "payment_type": {
+            "type": "string",
+            "description": "Payment option, from lodgify_list_property_payment_options."
+          },
+          "messages": {
+            "type": "array",
+            "description": "Optional first messages: [{\"subject\": \"...\", \"message\": \"...\", \"type\": \"Owner\", \"send_notification\": false}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "from_enquiry_id": {
+            "type": "integer",
+            "description": "Enquiry id to upgrade into this booking."
+          }
+        },
+        "required": [
+          "property_id",
+          "arrival",
+          "departure",
+          "guest",
+          "rooms"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/reservation/booking",
+        "queryParams": {
+          "from": "$from_enquiry_id"
+        },
+        "bodyMapping": {
+          "property_id": "$property_id",
+          "arrival": "$arrival",
+          "departure": "$departure",
+          "guest": "$guest",
+          "rooms": "$rooms",
+          "source_text": "$source_text",
+          "total": "$total",
+          "currency_code": "$currency_code",
+          "payment_type": "$payment_type",
+          "messages": "$messages"
+        }
+      }
+    },
+    {
+      "name": "lodgify_set_booking_booked",
+      "description": "Confirm a booking: status Booked, the dates are blocked in the calendar. request_payment also emails the guest a payment request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          },
+          "request_payment": {
+            "type": "boolean",
+            "description": "Send the guest a payment request (default false)."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/reservation/booking/{booking_id}/book",
+        "queryParams": {
+          "requestPayment": "$request_payment"
+        }
+      }
+    },
+    {
+      "name": "lodgify_set_booking_tentative",
+      "description": "Set a booking to Tentative (dates held until it is confirmed or expires). request_payment also emails the guest a payment request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          },
+          "request_payment": {
+            "type": "boolean",
+            "description": "Send the guest a payment request (default false)."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/reservation/booking/{booking_id}/tentative",
+        "queryParams": {
+          "requestPayment": "$request_payment"
+        }
+      }
+    },
+    {
+      "name": "lodgify_decline_booking",
+      "description": "Decline a booking: status Declined, the dates become free again. lodgify_reopen_booking sets it back to Open.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/reservation/booking/{booking_id}/decline"
+      }
+    },
+    {
+      "name": "lodgify_reopen_booking",
+      "description": "Reopen a booking: status Open. A Booked booking frees its dates in the calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/reservation/booking/{booking_id}/reopen"
+      }
+    },
+    {
+      "name": "lodgify_check_in_booking",
+      "description": "Check a booking in: record the time the guest arrived (or will arrive) on the booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          },
+          "time": {
+            "type": "string",
+            "description": "Check-in time in the property's time zone, HH:mm:ss (for example 15:30:00)."
+          }
+        },
+        "required": [
+          "booking_id",
+          "time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/reservations/bookings/{booking_id}/checkin",
+        "bodyMapping": {
+          "time": "$time"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "lodgify_check_out_booking",
+      "description": "Check a booking out: record the time the guest left (or will leave) on the booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          },
+          "time": {
+            "type": "string",
+            "description": "Check-out time in the property's time zone, HH:mm:ss (for example 10:45:00)."
+          }
+        },
+        "required": [
+          "booking_id",
+          "time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/reservations/bookings/{booking_id}/checkout",
+        "bodyMapping": {
+          "time": "$time"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "lodgify_update_key_codes",
+      "description": "Set the access key codes (door or lockbox codes) of the rooms of a booking, shown to the guest.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          },
+          "rooms": {
+            "type": "array",
+            "description": "[{\"room_type_id\": 123, \"key_code\": \"4711\"}], one entry per booked room type.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "booking_id",
+          "rooms"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/reservations/bookings/{booking_id}/keyCodes",
+        "bodyMapping": {
+          "rooms": "$rooms"
+        }
+      }
+    },
+    {
+      "name": "lodgify_add_booking_messages",
+      "description": "Add messages to the thread of a booking, for example a reply to the guest or an internal comment. With send_notification true the guest gets the message by email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          },
+          "messages": {
+            "type": "array",
+            "description": "Messages: [{\"subject\": \"Your stay\", \"message\": \"Hello Anna, ...\", \"type\": \"Owner\", \"send_notification\": true}]. type is Owner (from you), Renter (from the guest) or Comment (internal note, not sent); send_notification true emails it.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "booking_id",
+          "messages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/reservation/booking/{booking_id}/messages",
+        "bodyMapping": {
+          "__raw": "$messages"
+        }
+      }
+    },
+    {
+      "name": "lodgify_add_enquiry_messages",
+      "description": "Add messages to the thread of an enquiry, for example an answer to a guest question. With send_notification true the guest gets the message by email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "enquiry_id": {
+            "type": "integer",
+            "description": "Enquiry id."
+          },
+          "messages": {
+            "type": "array",
+            "description": "Messages: [{\"subject\": \"Your stay\", \"message\": \"Hello Anna, ...\", \"type\": \"Owner\", \"send_notification\": true}]. type is Owner (from you), Renter (from the guest) or Comment (internal note, not sent); send_notification true emails it.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "enquiry_id",
+          "messages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/reservation/enquiry/{enquiry_id}/messages",
+        "bodyMapping": {
+          "__raw": "$messages"
+        }
+      }
+    },
+    {
+      "name": "lodgify_mark_booking_replied",
+      "description": "Mark a booking's thread as replied, so it leaves the to-answer list in the inbox.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/reservation/booking/{booking_id}/replied"
+      }
+    },
+    {
+      "name": "lodgify_mark_booking_not_replied",
+      "description": "Mark a booking's thread as not replied, so it shows again in the to-answer list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/reservation/booking/{booking_id}/not_replied"
+      }
+    },
+    {
+      "name": "lodgify_request_payment",
+      "description": "Email the guest a payment request for the next due amount of a booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "integer",
+            "description": "Booking id, from lodgify_list_bookings."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/reservation/booking/{booking_id}/request_payment"
+      }
+    }
+  ]
+}

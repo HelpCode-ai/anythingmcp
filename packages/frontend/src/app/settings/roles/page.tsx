@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { roles, connectors, tools as toolsApi, users } from '@/lib/api';
 import { AppSelect } from '@/components/ui/select';
@@ -23,6 +24,23 @@ interface ToolItem {
   connectorName: string;
 }
 
+/** Limits as typed in the form: '' means unlimited. */
+interface LimitDraft {
+  minute: string;
+  hour: string;
+}
+
+type SavedLimits = { callsPerMinute: number | null; callsPerHour: number | null };
+
+/** '' → null (unlimited); a whole number ≥ 1 → that number; anything else → undefined (invalid). */
+function parseLimit(value: string): number | null | undefined {
+  const v = value.trim();
+  if (!v) return null;
+  if (!/^\d+$/.test(v)) return undefined;
+  const n = Number(v);
+  return n >= 1 && n <= 2147483647 ? n : undefined;
+}
+
 interface UserItem {
   id: string;
   email: string;
@@ -33,6 +51,7 @@ interface UserItem {
 }
 
 export default function SettingsRolesPage() {
+  const t = useTranslations('settingsRoles');
   const { token, user: currentUser } = useAuth();
   const [roleList, setRoleList] = useState<RoleItem[]>([]);
   const [allTools, setAllTools] = useState<ToolItem[]>([]);
@@ -56,6 +75,9 @@ export default function SettingsRolesPage() {
   const [savingTools, setSavingTools] = useState(false);
   const [collapsedConnectors, setCollapsedConnectors] = useState<Set<string>>(new Set());
   const [toolSearch, setToolSearch] = useState('');
+  // Per-tool rate limits of the role being edited, keyed by tool id.
+  const [limitDrafts, setLimitDrafts] = useState<Record<string, LimitDraft>>({});
+  const [savedLimits, setSavedLimits] = useState<Record<string, SavedLimits>>({});
 
   const loadData = async () => {
     if (!token) return;
@@ -71,14 +93,14 @@ export default function SettingsRolesPage() {
       // Flatten all tools from connectors
       const allToolsList: ToolItem[] = [];
       for (const c of connectorData) {
-        const t = await toolsApi.list(c.id, token);
-        for (const tool of t) {
+        const list = await toolsApi.list(c.id, token);
+        for (const tool of list) {
           allToolsList.push({ id: tool.id, name: tool.name, connectorName: c.name });
         }
       }
       setAllTools(allToolsList);
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setLoading(false);
     }
@@ -95,10 +117,10 @@ export default function SettingsRolesPage() {
       setNewName('');
       setNewDesc('');
       setShowCreate(false);
-      setMsg('Role created');
+      setMsg(t('created'));
       loadData();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -107,21 +129,21 @@ export default function SettingsRolesPage() {
     try {
       await roles.update(id, { name: editName, description: editDesc || undefined }, token);
       setEditingId(null);
-      setMsg('Role updated');
+      setMsg(t('updated'));
       loadData();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!token || !confirm(`Delete role "${name}"? Users with this role will be unassigned.`)) return;
+    if (!token || !confirm(t('confirmDelete', { name }))) return;
     try {
       await roles.delete(id, token);
-      setMsg('Role deleted');
+      setMsg(t('deleted'));
       loadData();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -131,7 +153,7 @@ export default function SettingsRolesPage() {
     setToolSearch('');
     // Auto-collapse all connectors when there are many tools to avoid overflow
     if (allTools.length > 10) {
-      const allConnectors = new Set(allTools.map((t) => t.connectorName));
+      const allConnectors = new Set(allTools.map((x) => x.connectorName));
       setCollapsedConnectors(allConnectors);
     } else {
       setCollapsedConnectors(new Set());
@@ -139,21 +161,51 @@ export default function SettingsRolesPage() {
     try {
       const access = await roles.getToolAccess(roleId, token);
       setSelectedToolIds(access.map((a: any) => a.tool.id));
+      const saved: Record<string, SavedLimits> = {};
+      const drafts: Record<string, LimitDraft> = {};
+      for (const a of access) {
+        const minute = a.callsPerMinute ?? null;
+        const hour = a.callsPerHour ?? null;
+        saved[a.tool.id] = { callsPerMinute: minute, callsPerHour: hour };
+        drafts[a.tool.id] = { minute: minute === null ? '' : String(minute), hour: hour === null ? '' : String(hour) };
+      }
+      setSavedLimits(saved);
+      setLimitDrafts(drafts);
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
   };
 
   const handleSaveToolAccess = async () => {
     if (!token || !managingToolsForRole) return;
+    // Validate the limits first, so nothing is saved half-way.
+    const changes: Array<{ toolId: string; limits: SavedLimits }> = [];
+    for (const toolId of selectedToolIds) {
+      const draft = limitDrafts[toolId] ?? { minute: '', hour: '' };
+      const callsPerMinute = parseLimit(draft.minute);
+      const callsPerHour = parseLimit(draft.hour);
+      if (callsPerMinute === undefined || callsPerHour === undefined) {
+        const name = allTools.find((x) => x.id === toolId)?.name ?? toolId;
+        setMsg(t('access.invalidLimit', { tool: name }));
+        return;
+      }
+      const before = savedLimits[toolId] ?? { callsPerMinute: null, callsPerHour: null };
+      if (before.callsPerMinute !== callsPerMinute || before.callsPerHour !== callsPerHour) {
+        changes.push({ toolId, limits: { callsPerMinute, callsPerHour } });
+      }
+    }
     setSavingTools(true);
     try {
       await roles.setToolAccess(managingToolsForRole, selectedToolIds, token);
+      // Grants exist now (new ones start unlimited); then apply the limits.
+      for (const { toolId, limits } of changes) {
+        await roles.setToolRateLimits(managingToolsForRole, toolId, limits, token);
+      }
       setManagingToolsForRole(null);
-      setMsg('Tool access updated');
+      setMsg(t('toolAccessUpdated'));
       loadData();
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     } finally {
       setSavingTools(false);
     }
@@ -170,10 +222,26 @@ export default function SettingsRolesPage() {
             : u,
         ),
       );
-      setMsg('MCP role assigned');
+      setMsg(t('assigned'));
     } catch (err: any) {
-      setMsg(`Error: ${err.message}`);
+      setMsg(t('error', { message: err.message }));
     }
+  };
+
+  const setLimitDraft = (toolId: string, field: keyof LimitDraft, value: string) => {
+    setLimitDrafts((prev) => ({
+      ...prev,
+      [toolId]: { ...(prev[toolId] ?? { minute: '', hour: '' }), [field]: value },
+    }));
+  };
+
+  /** "10/min · 200/h" for a tool with limits, '' without. */
+  const limitSummary = (toolId: string) => {
+    const d = limitDrafts[toolId];
+    if (!d) return '';
+    return [d.minute.trim() && `${d.minute.trim()}${t('access.perMinute')}`, d.hour.trim() && `${d.hour.trim()}${t('access.perHour')}`]
+      .filter(Boolean)
+      .join(' · ');
   };
 
   const toggleToolId = (toolId: string) => {
@@ -200,31 +268,31 @@ export default function SettingsRolesPage() {
   };
 
   const selectAllForConnector = (connectorName: string) => {
-    const ids = toolsByConnector[connectorName].map((t) => t.id);
+    const ids = toolsByConnector[connectorName].map((x) => x.id);
     setSelectedToolIds((prev) => [...new Set([...prev, ...ids])]);
   };
 
   const deselectAllForConnector = (connectorName: string) => {
-    const ids = new Set(toolsByConnector[connectorName].map((t) => t.id));
+    const ids = new Set(toolsByConnector[connectorName].map((x) => x.id));
     setSelectedToolIds((prev) => prev.filter((id) => !ids.has(id)));
   };
 
   const connectorSelectedCount = (connectorName: string) =>
-    toolsByConnector[connectorName].filter((t) => selectedToolIds.includes(t.id)).length;
+    toolsByConnector[connectorName].filter((x) => selectedToolIds.includes(x.id)).length;
 
   const filteredToolsByConnector = (connectorName: string) => {
     if (!toolSearch.trim()) return toolsByConnector[connectorName];
     const q = toolSearch.toLowerCase();
-    return toolsByConnector[connectorName].filter((t) => t.name.toLowerCase().includes(q));
+    return toolsByConnector[connectorName].filter((x) => x.name.toLowerCase().includes(q));
   };
 
   if (currentUser?.role !== 'ADMIN') {
     return (
       <div className="flex items-center justify-center py-16">
         <div className="text-center">
-          <h2 className="text-xl font-bold text-[var(--text)] mb-2">Access Denied</h2>
-          <p className="text-[var(--text-2)] mb-4">Only administrators can access this page.</p>
-          <Link href="/settings" className="text-[var(--brand)] hover:underline">Back to Settings</Link>
+          <h2 className="text-xl font-bold text-[var(--text)] mb-2">{t('accessDenied.title')}</h2>
+          <p className="text-[var(--text-2)] mb-4">{t('accessDenied.body')}</p>
+          <Link href="/settings" className="text-[var(--brand)] hover:underline">{t('accessDenied.back')}</Link>
         </div>
       </div>
     );
@@ -239,26 +307,25 @@ export default function SettingsRolesPage() {
       {msg && (
         <div className="p-3 rounded-[9px] text-sm flex items-center" style={{ background: 'var(--t-info-bg)', color: 'var(--t-info-fg)' }}>
           {msg}
-          <button onClick={() => setMsg('')} className="ml-2 underline">dismiss</button>
+          <button onClick={() => setMsg('')} className="ml-2 underline">{t('dismiss')}</button>
         </div>
       )}
 
       {loading ? (
-        <p className="text-center text-[var(--text-3)] py-16">Loading...</p>
+        <p className="text-center text-[var(--text-3)] py-16">{t('loading')}</p>
       ) : (
         <>
           {/* Roles Section */}
           <Card className="p-[22px]">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-sm font-semibold text-[var(--text)]">Custom Roles</h3>
+                <h3 className="text-sm font-semibold text-[var(--text)]">{t('title')}</h3>
                 <p className="text-xs text-[var(--text-2)] mt-1">
-                  Create roles to control which MCP tools different users can access.
-                  Users without a role have full access. ADMIN always has full access.
+                  {t('intro')}
                 </p>
               </div>
               <Button size="sm" onClick={() => setShowCreate(!showCreate)}>
-                {showCreate ? 'Cancel' : 'Create Role'}
+                {showCreate ? t('cancel') : t('createRole')}
               </Button>
             </div>
 
@@ -266,27 +333,27 @@ export default function SettingsRolesPage() {
             {showCreate && (
               <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-2)] p-4 mb-4 space-y-3">
                 <div>
-                  <label className={labelClass}>Role Name</label>
+                  <label className={labelClass}>{t('form.name')}</label>
                   <input
                     type="text"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    placeholder="e.g. Read Only, Support Team"
+                    placeholder={t('form.namePlaceholder')}
                     className={inputClass}
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Description</label>
+                  <label className={labelClass}>{t('form.description')}</label>
                   <input
                     type="text"
                     value={newDesc}
                     onChange={(e) => setNewDesc(e.target.value)}
-                    placeholder="What this role is for..."
+                    placeholder={t('form.descriptionPlaceholder')}
                     className={inputClass}
                   />
                 </div>
                 <Button onClick={handleCreate} disabled={!newName.trim()}>
-                  Create
+                  {t('form.create')}
                 </Button>
               </div>
             )}
@@ -294,7 +361,7 @@ export default function SettingsRolesPage() {
             {/* Role List */}
             {roleList.length === 0 ? (
               <p className="text-sm text-[var(--text-3)] text-center py-4">
-                No custom roles yet. Create one to start restricting tool access.
+                {t('empty')}
               </p>
             ) : (
               <div className="space-y-3">
@@ -312,12 +379,12 @@ export default function SettingsRolesPage() {
                           type="text"
                           value={editDesc}
                           onChange={(e) => setEditDesc(e.target.value)}
-                          placeholder="Description"
+                          placeholder={t('form.description')}
                           className={inputClass}
                         />
                         <div className="flex gap-2">
-                          <Button size="sm" onClick={() => handleUpdate(role.id)}>Save</Button>
-                          <Button variant="secondary" size="sm" onClick={() => setEditingId(null)}>Cancel</Button>
+                          <Button size="sm" onClick={() => handleUpdate(role.id)}>{t('save')}</Button>
+                          <Button variant="secondary" size="sm" onClick={() => setEditingId(null)}>{t('cancel')}</Button>
                         </div>
                       </div>
                     ) : (
@@ -326,20 +393,20 @@ export default function SettingsRolesPage() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm text-[var(--text)]">{role.name}</span>
                             {role.isSystem && (
-                              <Badge tone="neutral">system</Badge>
+                              <Badge tone="neutral">{t('system')}</Badge>
                             )}
                           </div>
                           {role.description && (
                             <p className="text-xs text-[var(--text-2)] mt-0.5">{role.description}</p>
                           )}
                           <div className="flex gap-4 mt-1 text-xs text-[var(--text-3)]">
-                            <span>{role._count.users} user{role._count.users !== 1 ? 's' : ''}</span>
-                            <span>{role._count.toolAccess} tool{role._count.toolAccess !== 1 ? 's' : ''} assigned</span>
+                            <span>{t('userCount', { count: role._count.users })}</span>
+                            <span>{t('toolCount', { count: role._count.toolAccess })}</span>
                           </div>
                         </div>
                         <div className="flex gap-2">
                           <Button variant="outlineBrand" size="sm" onClick={() => handleManageTools(role.id)}>
-                            Manage Tools
+                            {t('manageTools')}
                           </Button>
                           {!role.isSystem && (
                             <>
@@ -348,10 +415,10 @@ export default function SettingsRolesPage() {
                                 size="sm"
                                 onClick={() => { setEditingId(role.id); setEditName(role.name); setEditDesc(role.description || ''); }}
                               >
-                                Edit
+                                {t('edit')}
                               </Button>
                               <Button variant="danger" size="sm" onClick={() => handleDelete(role.id, role.name)}>
-                                Delete
+                                {t('delete')}
                               </Button>
                             </>
                           )}
@@ -363,40 +430,44 @@ export default function SettingsRolesPage() {
                     {managingToolsForRole === role.id && (
                       <div className="mt-4 pt-4 border-t border-[var(--border)]">
                         <h4 className="text-sm font-semibold text-[var(--text)] mb-2">
-                          Select tools this role can access
+                          {t('access.title')}
                         </h4>
-                        <p className="text-xs text-[var(--text-2)] mb-3">
-                          Only checked tools will be available to users with this role.
-                          If no tools are selected, the role has no MCP tool access.
+                        <p className="text-xs text-[var(--text-2)] mb-1">
+                          {t('access.body')}
                         </p>
+                        {!role.isSystem && (
+                          <p className="text-xs text-[var(--text-2)] mb-3" data-testid="rate-limit-hint">
+                            {t('access.limitsHint')}
+                          </p>
+                        )}
                         {allTools.length === 0 ? (
-                          <p className="text-xs text-[var(--text-3)]">No tools available. Create connectors and tools first.</p>
+                          <p className="text-xs text-[var(--text-3)]">{t('access.noTools')}</p>
                         ) : (
                           <>
                             {/* Global actions and search */}
                             <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
                               <div className="flex gap-3 items-center">
                                 <button
-                                  onClick={() => setSelectedToolIds(allTools.map((t) => t.id))}
+                                  onClick={() => setSelectedToolIds(allTools.map((x) => x.id))}
                                   className="text-xs text-[var(--brand)] hover:underline font-medium"
                                 >
-                                  Select all ({allTools.length})
+                                  {t('access.selectAll', { count: allTools.length })}
                                 </button>
                                 <button
                                   onClick={() => setSelectedToolIds([])}
                                   className="text-xs text-[var(--brand)] hover:underline font-medium"
                                 >
-                                  Deselect all
+                                  {t('access.deselectAll')}
                                 </button>
                                 <span className="text-xs text-[var(--text-3)]">
-                                  {selectedToolIds.length}/{allTools.length} selected
+                                  {t('access.selected', { selected: selectedToolIds.length, total: allTools.length })}
                                 </span>
                               </div>
                               <input
                                 type="text"
                                 value={toolSearch}
                                 onChange={(e) => setToolSearch(e.target.value)}
-                                placeholder="Search tools..."
+                                placeholder={t('access.search')}
                                 className="h-8 rounded-[9px] border border-[var(--border)] px-2.5 text-xs bg-[var(--surface)] text-[var(--text)] w-48 outline-none focus:border-[var(--brand)]"
                               />
                             </div>
@@ -429,40 +500,80 @@ export default function SettingsRolesPage() {
                                         <span className="text-[10px] text-[var(--text-3)] bg-[var(--surface)] px-1.5 py-0.5 rounded-full">
                                           {selected}/{total}
                                         </span>
+                                        {(() => {
+                                          const limited = toolsByConnector[connectorName].filter(
+                                            (x) => selectedToolIds.includes(x.id) && limitSummary(x.id),
+                                          ).length;
+                                          return limited > 0 ? (
+                                            <Badge tone="neutral">{t('access.limitedCount', { count: limited })}</Badge>
+                                          ) : null;
+                                        })()}
                                       </button>
                                       <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                                         <button
                                           onClick={() => selectAllForConnector(connectorName)}
                                           className="text-[10px] text-[var(--brand)] hover:underline"
                                         >
-                                          All
+                                          {t('access.all')}
                                         </button>
                                         <button
                                           onClick={() => deselectAllForConnector(connectorName)}
                                           className="text-[10px] text-[var(--brand)] hover:underline"
                                         >
-                                          None
+                                          {t('access.none')}
                                         </button>
                                       </div>
                                     </div>
 
                                     {/* Tools list */}
                                     {!isCollapsed && (
-                                      <div className="px-3 py-2 grid grid-cols-1 sm:grid-cols-2 gap-0.5">
-                                        {tools.map((tool) => (
-                                          <label
-                                            key={tool.id}
-                                            className="flex items-center gap-2 text-sm cursor-pointer px-2 py-1.5 rounded-[9px] hover:bg-[var(--surface-2)]"
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              checked={selectedToolIds.includes(tool.id)}
-                                              onChange={() => toggleToolId(tool.id)}
-                                              className="shrink-0 accent-[var(--brand)]"
-                                            />
-                                            <span className="font-mono text-xs truncate text-[var(--text)]">{tool.name}</span>
-                                          </label>
-                                        ))}
+                                      <div className="px-3 py-2 grid grid-cols-1 lg:grid-cols-2 gap-0.5">
+                                        {tools.map((tool) => {
+                                          const checked = selectedToolIds.includes(tool.id);
+                                          const draft = limitDrafts[tool.id] ?? { minute: '', hour: '' };
+                                          const limitInput =
+                                            'h-7 w-16 rounded-[7px] border border-[var(--border)] bg-[var(--surface)] px-1.5 text-xs text-[var(--text)] outline-none focus:border-[var(--brand)] placeholder:text-[var(--text-3)]';
+                                          return (
+                                            <div
+                                              key={tool.id}
+                                              className="flex items-center gap-2 px-2 py-1 rounded-[9px] hover:bg-[var(--surface-2)]"
+                                            >
+                                              <label className="flex items-center gap-2 text-sm cursor-pointer min-w-0 flex-1 py-0.5">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={checked}
+                                                  onChange={() => toggleToolId(tool.id)}
+                                                  className="shrink-0 accent-[var(--brand)]"
+                                                />
+                                                <span className="font-mono text-xs truncate text-[var(--text)]">{tool.name}</span>
+                                              </label>
+                                              {checked && !role.isSystem && (
+                                                <div className="flex items-center gap-1 shrink-0" data-testid={`rate-limit-${tool.name}`}>
+                                                  <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={draft.minute}
+                                                    onChange={(e) => setLimitDraft(tool.id, 'minute', e.target.value)}
+                                                    placeholder="∞"
+                                                    aria-label={t('access.limitMinuteLabel', { tool: tool.name })}
+                                                    className={limitInput}
+                                                  />
+                                                  <span className="text-[10px] text-[var(--text-3)]">{t('access.perMinute')}</span>
+                                                  <input
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    value={draft.hour}
+                                                    onChange={(e) => setLimitDraft(tool.id, 'hour', e.target.value)}
+                                                    placeholder="∞"
+                                                    aria-label={t('access.limitHourLabel', { tool: tool.name })}
+                                                    className={limitInput}
+                                                  />
+                                                  <span className="text-[10px] text-[var(--text-3)]">{t('access.perHour')}</span>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     )}
                                   </div>
@@ -473,10 +584,10 @@ export default function SettingsRolesPage() {
                         )}
                         <div className="flex gap-2 mt-3">
                           <Button size="sm" onClick={handleSaveToolAccess} disabled={savingTools}>
-                            {savingTools ? 'Saving...' : `Save (${selectedToolIds.length} tools)`}
+                            {savingTools ? t('access.saving') : t('access.save', { count: selectedToolIds.length })}
                           </Button>
                           <Button variant="secondary" size="sm" onClick={() => setManagingToolsForRole(null)}>
-                            Cancel
+                            {t('cancel')}
                           </Button>
                         </div>
                       </div>
@@ -490,10 +601,9 @@ export default function SettingsRolesPage() {
           {/* User MCP Role Assignment */}
           <Card className="p-[22px]">
             <div className="mb-4">
-              <h3 className="text-sm font-semibold text-[var(--text)]">User MCP Role Assignment</h3>
+              <h3 className="text-sm font-semibold text-[var(--text)]">{t('assign.title')}</h3>
               <p className="text-xs text-[var(--text-2)] mt-1">
-                Assign MCP roles to users to control which tools they can access via MCP.
-                Users without a role have unrestricted access. ADMIN users always have full access.
+                {t('assign.intro')}
               </p>
             </div>
 
@@ -501,9 +611,9 @@ export default function SettingsRolesPage() {
               <table className="w-full min-w-[520px] text-sm">
                 <thead className="bg-[var(--surface-2)]">
                   <tr className="text-[var(--text-2)]">
-                    <th className="text-left px-4 py-3 font-semibold">User</th>
-                    <th className="text-left px-4 py-3 font-semibold">App Role</th>
-                    <th className="text-left px-4 py-3 font-semibold">MCP Tool Role</th>
+                    <th className="text-left px-4 py-3 font-semibold">{t('assign.user')}</th>
+                    <th className="text-left px-4 py-3 font-semibold">{t('assign.appRole')}</th>
+                    <th className="text-left px-4 py-3 font-semibold">{t('assign.mcpRole')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -518,14 +628,14 @@ export default function SettingsRolesPage() {
                       </td>
                       <td className="px-4 py-3">
                         {u.role === 'ADMIN' ? (
-                          <span className="text-xs text-[var(--text-3)]">Full access (admin)</span>
+                          <span className="text-xs text-[var(--text-3)]">{t('assign.fullAccess')}</span>
                         ) : (
                           <AppSelect
                             value={u.mcpRoleId || ''}
                             onValueChange={(v) => handleAssignRole(u.id, v || null)}
                             className="h-8 rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
                             options={[
-                              { value: '', label: 'No restriction (full access)' },
+                              { value: '', label: t('assign.noRestriction') },
                               ...roleList.map((r) => ({ value: r.id, label: r.name })),
                             ]}
                           />

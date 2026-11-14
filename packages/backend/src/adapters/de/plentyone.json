@@ -7,12 +7,12 @@
     "plentysystems",
     "Plenty ONE"
   ],
-  "description": "PlentyONE (plentymarkets) e-commerce ERP: orders with items and addresses, order statuses and sales channels, items and variations with prices, barcodes and texts, stock per warehouse, categories, manufacturers, sales prices and contacts. Creating items and changing variations are included, installed switched off.",
+  "description": "PlentyONE (plentymarkets) e-commerce ERP: orders with items and addresses, order statuses and sales channels, items and variations with prices, barcodes, texts, properties and market SKUs, marketplace listings with their messages and history, stock per warehouse, categories, manufacturers, sales prices and contacts. Edit items, texts, properties, market SKUs and orders; creating items and changing variations are installed switched off.",
   "region": "de",
   "category": "e-commerce",
   "icon": "plentyone",
   "docsUrl": "https://developers.plentymarkets.com/en-gb/plentymarkets-rest-api/index.html",
-  "instructions": "## PlentyONE (plentymarkets)\nThis connector uses the **plentyONE REST API** (formerly plentymarkets) of your own plentyONE system: orders, order statuses and sales channels (referrers), items and variations with prices, barcodes and texts, stock per warehouse, categories, manufacturers, units, sales prices and contacts. Creating an item and changing a variation are included, installed switched off.\n\n**Setup (about 5 minutes)**\n1. REST access needs a plentyONE plan above Lite. In plentyONE open **Setup > Account management > Roles**, create a role for the AI, switch to **Advanced** and tick the REST API rights it needs, e.g. Items (show), Stock management (show), Categories (show), Orders and Order statuses (show), CRM contacts (show). No REST right is active by default.\n2. Under **Setup > Account management > Accounts** create a user with access **Only API user**, give it that role and a password.\n3. `PLENTYONE_URL` is the address of your system without `/rest`, e.g. `https://p12345.my.plentysystems.com` (plentyONE shows it under Setup > Client > Settings, or use the address you sign in at). `PLENTYONE_USERNAME` and `PLENTYONE_PASSWORD` are that API user's sign-in.\n4. Install and run `plentyone_list_webstores` to check the sign-in.\n\nThe connector signs in at `/rest/login` and keeps the access token (valid 24 hours) until it expires. plentyONE allows only a few signed-in sessions per user at the same time (3 by default, shared with the back end), so use a dedicated API user rather than a person's account.\n\n**Workflow**\n- Products: `plentyone_search_variations` finds a SKU by exact number, part of the number, barcode, item name or category; `plentyone_get_variation` with `with=variationSalesPrices,variationBarcodes,stock` adds prices, EANs and stock. `plentyone_search_items` / `plentyone_get_item` read the item (the article) and `plentyone_get_item_texts` its names and descriptions per language.\n- Stock: `plentyone_list_warehouses`, then `plentyone_get_stock` (all warehouses, by variation) or `plentyone_get_warehouse_stock` (one warehouse). `stockNet` is what can be sold; `stockPhysical` what is on the shelf; `reservedStock` what open orders hold.\n- Orders: `plentyone_search_orders` with plentyONE's filter syntax (`statusId` `in:3,4`, `createdAt` `between:<from>,<to>` in ISO 8601 with offset), then `plentyone_get_order` with `with` [\"addresses\",\"orderItems.variation\"]. `plentyone_list_order_statuses` and `plentyone_list_referrers` explain status and channel ids.\n- Master data: `plentyone_list_categories`, `plentyone_list_manufacturers`, `plentyone_list_units`, `plentyone_list_sales_prices`, `plentyone_search_contacts`, `plentyone_list_webstores`.\n\n**Paging**: list answers carry `page`, `totalsCount`, `isLastPage` and `lastPageNumber`; ask for the next page until `isLastPage` is true.\n\n**Writes switched off**: `plentyone_create_item` creates an item with one (inactive) variation and `plentyone_update_variation` changes a variation's name, number, model, active flag, weight or dimensions. Both change the live catalogue that feeds your shop and marketplaces, so an admin turns them on deliberately and the AI shows the change and waits for a yes.\n\n**Limits and errors**: plentyONE allows about 200 reads and 80 writes per user and minute on Expand and Scale plans and answers 429 above that; wait a minute. 401 means a wrong username or password, or a user without API access. 403 lists the missing right in `missing_permissions` (e.g. `order.show`): add it to the user's role. 404 on every call means a wrong `PLENTYONE_URL`.",
+  "instructions": "## PlentyONE (plentymarkets)\nThis connector uses the **plentyONE REST API** (formerly plentymarkets) of your own plentyONE system: orders, order statuses and sales channels (referrers), items and variations with prices, barcodes and texts, stock per warehouse, categories, manufacturers, units, sales prices and contacts, item properties, marketplace SKUs and listings. Items, texts, properties, market SKUs and orders can be edited; creating an item and changing a variation are installed switched off.\n\n**Setup (about 5 minutes)**\n1. REST access needs a plentyONE plan above Lite. In plentyONE open **Setup > Account management > Roles**, create a role for the AI, switch to **Advanced** and tick the REST API rights it needs, e.g. Items (show), Stock management (show), Categories (show), Orders and Order statuses (show), CRM contacts (show); for the edit tools also the matching update rights (items, properties, listings, orders). No REST right is active by default.\n2. Under **Setup > Account management > Accounts** create a user with access **Only API user**, give it that role and a password.\n3. `PLENTYONE_URL` is the address of your system without `/rest`, e.g. `https://p12345.my.plentysystems.com` (plentyONE shows it under Setup > Client > Settings, or use the address you sign in at). `PLENTYONE_USERNAME` and `PLENTYONE_PASSWORD` are that API user's sign-in.\n4. Install and run `plentyone_list_webstores` to check the sign-in.\n\nThe connector signs in at `/rest/login` and keeps the access token (valid 24 hours) until it expires. plentyONE allows only a few signed-in sessions per user at the same time (3 by default, shared with the back end), so use a dedicated API user rather than a person's account.\n\n**Workflow**\n- Products: `plentyone_search_variations` finds a SKU by exact number, part of the number, barcode, item name or category; `plentyone_get_variation` with `with=variationSalesPrices,variationBarcodes,stock` adds prices, EANs and stock. `plentyone_search_items` / `plentyone_get_item` read the item (the article) and `plentyone_get_item_texts` its names and descriptions per language.\n- Stock: `plentyone_list_warehouses`, then `plentyone_get_stock` (all warehouses, by variation) or `plentyone_get_warehouse_stock` (one warehouse). `stockNet` is what can be sold; `stockPhysical` what is on the shelf; `reservedStock` what open orders hold.\n- Orders: `plentyone_search_orders` with plentyONE's filter syntax (`statusId` `in:3,4`, `createdAt` `between:<from>,<to>` in ISO 8601 with offset), then `plentyone_get_order` with `with` [\"addresses\",\"orderItems.variation\"]. `plentyone_list_order_statuses` and `plentyone_list_referrers` explain status and channel ids.\n- Properties: `plentyone_list_property_relations` (relationTypeIdentifier `item`, relationTargetId = variation id) shows which properties are linked; `plentyone_get_variation_property_values` reads the classic variation property values. `plentyone_link_property` links a property, `plentyone_add_property_relation_value` adds a text value per language and `plentyone_set_property_relation_values` changes several values at once.\n- Marketplaces: `plentyone_get_variation_market_skus` lists a variation's SKU per market and account (`plentyone_edit_variation_market_sku` changes one). `plentyone_search_listing_markets` finds listings (e.g. eBay offers), `plentyone_search_listing_market_messages` shows the errors and warnings a market returned, `plentyone_search_listing_market_history` the times a listing was online, and `plentyone_check_listing_market` asks the market to verify a listing without publishing it.\n- Master data: `plentyone_list_categories`, `plentyone_list_manufacturers`, `plentyone_list_units`, `plentyone_list_sales_prices`, `plentyone_search_contacts`, `plentyone_list_webstores`.\n\n**Paging**: list answers carry `page`, `totalsCount`, `isLastPage` and `lastPageNumber`; ask for the next page until `isLastPage` is true.\n\n**Edits**: `plentyone_edit_item` (item fields such as manufacturer, condition, flags), `plentyone_edit_item_texts` (names and descriptions in one language), `plentyone_edit_order` (status, owner, order items) and the property and SKU tools change live data that feeds the shop and the marketplaces. Only the fields sent are changed. Show the user the current and the new values and wait for a yes before every edit.\n\n**Writes switched off**: `plentyone_create_item` creates an item with one (inactive) variation and `plentyone_update_variation` changes a variation's name, number, model, active flag, weight or dimensions. Both change the live catalogue that feeds your shop and marketplaces, so an admin turns them on deliberately and the AI shows the change and waits for a yes.\n\n**Limits and errors**: plentyONE allows about 200 reads and 80 writes per user and minute on Expand and Scale plans and answers 429 above that; wait a minute. 401 means a wrong username or password, or a user without API access. 403 lists the missing right in `missing_permissions` (e.g. `order.show`): add it to the user's role. 404 on every call means a wrong `PLENTYONE_URL`.",
   "prerequisites": "A plentyONE system on a plan with REST access (above Lite) and a back-end user with access \"Only API user\" and a role with the REST API rights to read.",
   "requiredEnvVars": [
     "PLENTYONE_URL",
@@ -853,6 +853,907 @@
           "page": "$page",
           "itemsPerPage": "$itemsPerPage"
         }
+      }
+    },
+    {
+      "name": "plentyone_list_property_relations",
+      "description": "List the property links (property relations) of an item, variation or other target: relation id, property id, relation type, target id, group, markup and the value of number, date and file properties. Filter by relationTypeIdentifier (e.g. item) and relationTargetId (the item or variation id). Use the relation ids with plentyone_set_property_relation_values and plentyone_add_property_relation_value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "relationTypeIdentifier": {
+            "type": "string",
+            "description": "Relation type, e.g. item, contact, category, warehouse, order."
+          },
+          "relationTargetId": {
+            "type": "integer",
+            "description": "Id of the target the property is linked to, e.g. the variation or item id."
+          },
+          "sortBy": {
+            "type": "string",
+            "description": "Sort field with _asc or _desc, e.g. id_desc."
+          },
+          "paginate": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1,
+            "description": "1 to page the result (default), 0 for one unpaged list."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/properties/relations",
+        "queryParams": {
+          "relationTypeIdentifier": "$relationTypeIdentifier",
+          "relationTargetId": "$relationTargetId",
+          "sortBy": "$sortBy",
+          "paginate": "$paginate",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_get_variation_market_skus",
+      "description": "List the marketplace SKUs of a variation: per market (marketId, the referrer id) and market account its SKU, parent SKU, initial SKU, export status (ACTIVE, INACTIVE, ERROR, SENT), last export and stock update times and extra information. Use the row id with plentyone_edit_variation_market_sku.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Variation id."
+          }
+        },
+        "required": [
+          "itemId",
+          "variationId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}/variations/{variationId}/variation_skus"
+      }
+    },
+    {
+      "name": "plentyone_get_variation_property_values",
+      "description": "List the property values linked to a variation (item properties of the classic property system): link id, property id, selection id, integer, decimal or file value and surcharge.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Variation id."
+          }
+        },
+        "required": [
+          "itemId",
+          "variationId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{itemId}/variations/{variationId}/variation_properties"
+      }
+    },
+    {
+      "name": "plentyone_search_listing_markets",
+      "description": "Search marketplace listings (listing markets, e.g. eBay offers): id, listing, item and variation, referrer (market), account, status, verification result, duration and prices. Filters: itemId, variationId, listingId, referrerId, credentialsId, status (enabled, disabled, online, offline), verified (succeeded, unknown, failed), stockCondition, updatedAtFrom/To (W3C date). with adds listing, texts, properties, prices, dates or infos.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Listing market id."
+          },
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Variation id."
+          },
+          "listingId": {
+            "type": "integer",
+            "description": "Listing id."
+          },
+          "referrerId": {
+            "type": "number",
+            "description": "Referrer (market) id, e.g. 1.0 for eBay."
+          },
+          "credentialsId": {
+            "type": "integer",
+            "description": "Market account (credentials) id."
+          },
+          "directoryId": {
+            "type": "integer",
+            "description": "Listing directory id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled",
+              "online",
+              "offline"
+            ],
+            "description": "Status filter."
+          },
+          "verified": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "unknown",
+              "failed"
+            ],
+            "description": "Verification result filter."
+          },
+          "listingTypeId": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "description": "1 auction, 2 fixed price, 3 shop (Hood only)."
+          },
+          "stockCondition": {
+            "type": "string",
+            "description": "stockNetLessEqualZero, stockNetLessZero, stockNetGreaterZero and the gross variants."
+          },
+          "updatedAtFrom": {
+            "type": "string",
+            "description": "Updated from, W3C date, e.g. 2026-10-01T00:00:00+02:00."
+          },
+          "updatedAtTo": {
+            "type": "string",
+            "description": "Updated until, W3C date."
+          },
+          "with": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "listing",
+                "texts",
+                "properties",
+                "prices",
+                "dates",
+                "infos"
+              ]
+            },
+            "description": "Relations to load."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/markets",
+        "queryParams": {
+          "id": "$id",
+          "itemId": "$itemId",
+          "variationId": "$variationId",
+          "listingId": "$listingId",
+          "referrerId": "$referrerId",
+          "credentialsId": "$credentialsId",
+          "directoryId": "$directoryId",
+          "status": "$status",
+          "verified": "$verified",
+          "listingTypeId": "$listingTypeId",
+          "stockCondition": "$stockCondition",
+          "updatedAtFrom": "$updatedAtFrom",
+          "updatedAtTo": "$updatedAtTo",
+          "with[]": "$with",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_search_listing_market_messages",
+      "description": "Search the messages plentyONE stored for marketplace listings (listing market infos): errors, warnings and info returned by the market on start, update or verification, with code, type and date. Filter by listingMarketId, type (error, warning, info), code or creation date. Use it to see why a listing failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listingMarketId": {
+            "type": "integer",
+            "description": "Listing market id."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ],
+            "description": "Message type."
+          },
+          "code": {
+            "type": "integer",
+            "description": "Message code."
+          },
+          "createdAtFrom": {
+            "type": "string",
+            "description": "Created from, W3C date."
+          },
+          "createdAtTo": {
+            "type": "string",
+            "description": "Created until, W3C date."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/markets/infos",
+        "queryParams": {
+          "listingMarketId": "$listingMarketId",
+          "type": "$type",
+          "code": "$code",
+          "createdAtFrom": "$createdAtFrom",
+          "createdAtTo": "$createdAtTo",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_search_listing_market_history",
+      "description": "Search the history of marketplace listings (each time a listing went online, with its external id, dates, quantity sold and status: 1 active, 2 ended, 3 relisted). Filter by listingMarketId, itemId, variationId, referrerId, externalId, statusId, textData (title or description text) or update date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listingMarketId": {
+            "type": "integer",
+            "description": "Listing market id."
+          },
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Variation id."
+          },
+          "listingId": {
+            "type": "integer",
+            "description": "Listing id."
+          },
+          "referrerId": {
+            "type": "number",
+            "description": "Referrer (market) id."
+          },
+          "credentialsId": {
+            "type": "integer",
+            "description": "Market account id."
+          },
+          "externalId": {
+            "type": "string",
+            "description": "Id of the offer on the market."
+          },
+          "statusId": {
+            "type": "integer",
+            "description": "1 active, 2 ended, 3 relisted."
+          },
+          "textData": {
+            "type": "string",
+            "description": "Text in the listing title or description."
+          },
+          "updatedAtFrom": {
+            "type": "string",
+            "description": "Updated from, W3C date."
+          },
+          "updatedAtTo": {
+            "type": "string",
+            "description": "Updated until, W3C date."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "itemsPerPage": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/markets/histories",
+        "queryParams": {
+          "listingMarketId": "$listingMarketId",
+          "itemId": "$itemId",
+          "variationId": "$variationId",
+          "listingId": "$listingId",
+          "referrerId": "$referrerId",
+          "credentialsId": "$credentialsId",
+          "externalId": "$externalId",
+          "statusId": "$statusId",
+          "textData": "$textData",
+          "updatedAtFrom": "$updatedAtFrom",
+          "updatedAtTo": "$updatedAtTo",
+          "page": "$page",
+          "itemsPerPage": "$itemsPerPage"
+        }
+      }
+    },
+    {
+      "name": "plentyone_edit_item",
+      "description": "Change fields of one item (the article, shared by its variations): manufacturer, condition, stock type, store special, flags, age restriction, coupon restriction, owner, position and market categories. Only the fields sent are changed; other documented item fields go in fields. Show the user the item and the new values and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "manufacturerId": {
+            "type": "integer",
+            "description": "Manufacturer id from plentyone_list_manufacturers."
+          },
+          "condition": {
+            "type": "integer",
+            "description": "Condition: 0 new, 1 used, 2 boxed as new, 3 new with label, 4 factory seconds."
+          },
+          "conditionApi": {
+            "type": "integer",
+            "description": "Condition sent to markets: 0 new, 1 used but as new, 2 used but very good, 3 used but good, 4 used but acceptable, 5 factory seconds."
+          },
+          "stockType": {
+            "type": "integer",
+            "description": "0 stocked item, 1 production item, 2 colli, 3 special order item."
+          },
+          "storeSpecial": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "0 none, 1 special offer, 2 new item, 3 top item."
+          },
+          "flagOne": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 31,
+            "description": "Flag 1, 0 to 31 (0 = no flag)."
+          },
+          "flagTwo": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 31,
+            "description": "Flag 2, 0 to 31."
+          },
+          "ageRestriction": {
+            "type": "integer",
+            "description": "Minimum age: 0, 3, 6, 9, 12, 14, 16, 18, 50 (not marked) and the documented special values."
+          },
+          "couponRestriction": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 coupons allowed, 1 not allowed, 2 purchase only with coupon."
+          },
+          "isSubscribable": {
+            "type": "boolean",
+            "description": "Can be ordered as a subscription."
+          },
+          "isShippingPackage": {
+            "type": "boolean",
+            "description": "Use a shipping package for this item."
+          },
+          "ownerId": {
+            "type": "integer",
+            "description": "plentyONE user who owns the item."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Sort position."
+          },
+          "ebayCategory": {
+            "type": "integer",
+            "description": "eBay category 1 for new listings."
+          },
+          "ebayCategory2": {
+            "type": "integer",
+            "description": "eBay category 2 for new listings."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Other fields of the documented item body, e.g. {\"amazonFedas\": \"...\"}. Keys named above win."
+          }
+        },
+        "required": [
+          "itemId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{itemId}",
+        "bodyMapping": {
+          "__merge": "$fields",
+          "manufacturerId": "$manufacturerId",
+          "condition": "$condition",
+          "conditionApi": "$conditionApi",
+          "stockType": "$stockType",
+          "storeSpecial": "$storeSpecial",
+          "flagOne": "$flagOne",
+          "flagTwo": "$flagTwo",
+          "ageRestriction": "$ageRestriction",
+          "couponRestriction": "$couponRestriction",
+          "isSubscribable": "$isSubscribable",
+          "isShippingPackage": "$isShippingPackage",
+          "ownerId": "$ownerId",
+          "position": "$position",
+          "ebayCategory": "$ebayCategory",
+          "ebayCategory2": "$ebayCategory2"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "plentyone_edit_item_texts",
+      "description": "Change the texts of an item in one language: name (name, name2, name3), preview and full description, technical data, meta description and keywords, URL path. Only the fields sent are changed; the texts are shared by all variations. Read them first with plentyone_get_item_texts, show the user old and new text and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Variation id."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language code, e.g. de or en."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name 1, at most 240 characters."
+          },
+          "name2": {
+            "type": "string",
+            "description": "Name 2, at most 240 characters."
+          },
+          "name3": {
+            "type": "string",
+            "description": "Name 3, at most 240 characters."
+          },
+          "previewDescription": {
+            "type": "string",
+            "description": "Preview text."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description (HTML allowed)."
+          },
+          "technicalData": {
+            "type": "string",
+            "description": "Technical data."
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Meta description."
+          },
+          "metaKeywords": {
+            "type": "string",
+            "description": "Meta keywords, comma separated."
+          },
+          "urlPath": {
+            "type": "string",
+            "description": "URL path in the online store."
+          }
+        },
+        "required": [
+          "itemId",
+          "variationId",
+          "lang"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{itemId}/variations/{variationId}/descriptions/{lang}",
+        "bodyMapping": {
+          "name": "$name",
+          "name2": "$name2",
+          "name3": "$name3",
+          "previewDescription": "$previewDescription",
+          "description": "$description",
+          "technicalData": "$technicalData",
+          "metaDescription": "$metaDescription",
+          "metaKeywords": "$metaKeywords",
+          "urlPath": "$urlPath"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "plentyone_link_property",
+      "description": "Link a property (Eigenschaft) to a target such as a variation or item (create a property relation): give the property id, the relation type (e.g. item) and the target id; for a selection property also the selection relation id. Returns the relation with its id; add a text value with plentyone_add_property_relation_value. Show the user the link and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "propertyId": {
+            "type": "integer",
+            "description": "Property id."
+          },
+          "relationTypeIdentifier": {
+            "type": "string",
+            "description": "Relation type, e.g. item."
+          },
+          "relationTargetId": {
+            "type": "integer",
+            "description": "Target id, e.g. the variation id."
+          },
+          "selectionRelationId": {
+            "type": "integer",
+            "description": "Selection id, for selection properties."
+          },
+          "groupId": {
+            "type": "integer",
+            "description": "Property group id."
+          },
+          "markup": {
+            "type": "number",
+            "description": "Markup (surcharge)."
+          }
+        },
+        "required": [
+          "propertyId",
+          "relationTypeIdentifier",
+          "relationTargetId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/properties/relations",
+        "bodyMapping": {
+          "propertyId": "$propertyId",
+          "relationTypeIdentifier": "$relationTypeIdentifier",
+          "relationTargetId": "$relationTargetId",
+          "selectionRelationId": "$selectionRelationId",
+          "groupId": "$groupId",
+          "markup": "$markup"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "plentyone_add_property_relation_value",
+      "description": "Add the value of a linked text or HTML property in one language (create a property relation value): relation id from plentyone_link_property or plentyone_list_property_relations, language and text. Show the user the value and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "propertyRelationId": {
+            "type": "integer",
+            "description": "Property relation id."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language code, e.g. de."
+          },
+          "value": {
+            "type": "string",
+            "description": "The value text."
+          }
+        },
+        "required": [
+          "propertyRelationId",
+          "lang",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/properties/relations/values",
+        "bodyMapping": {
+          "propertyRelationId": "$propertyRelationId",
+          "lang": "$lang",
+          "value": "$value"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "plentyone_set_property_relation_values",
+      "description": "Change several property relation values at once (texts of linked properties per language). Each entry names the value id or the relation id with the language, and the new value. Show the user old and new values and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "array",
+            "minItems": 1,
+            "description": "For example [{\"id\": 55, \"relationId\": 120, \"lang\": \"de\", \"value\": \"Baumwolle\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Property relation value id."
+                },
+                "relationId": {
+                  "type": "integer",
+                  "description": "Property relation id."
+                },
+                "lang": {
+                  "type": "string",
+                  "description": "Language code."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "New value."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Optional description."
+                }
+              },
+              "required": [
+                "lang",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/properties/relations/values",
+        "bodyMapping": {
+          "__raw": "$values"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "plentyone_edit_variation_market_sku",
+      "description": "Change a marketplace SKU row of a variation: the SKU and parent SKU for one market and account, or its status. A SKU may exist only once per market and account. Read the row with plentyone_get_variation_market_skus, show the user the change and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "variationId": {
+            "type": "integer",
+            "description": "Variation id."
+          },
+          "skuId": {
+            "type": "integer",
+            "description": "Row id from plentyone_get_variation_market_skus."
+          },
+          "marketId": {
+            "type": "number",
+            "description": "Market (referrer) id of the row."
+          },
+          "accountId": {
+            "type": "integer",
+            "description": "Market account id of the row."
+          },
+          "sku": {
+            "type": "string",
+            "description": "New SKU."
+          },
+          "parentSku": {
+            "type": "string",
+            "description": "New parent SKU (the same for all variations of the item)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "ERROR",
+              "SENT"
+            ],
+            "description": "Export status."
+          }
+        },
+        "required": [
+          "itemId",
+          "variationId",
+          "skuId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/{itemId}/variations/{variationId}/variation_skus/{skuId}",
+        "bodyMapping": {
+          "marketId": "$marketId",
+          "accountId": "$accountId",
+          "sku": "$sku",
+          "parentSku": "$parentSku",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "plentyone_check_listing_market",
+      "description": "Ask the market to verify a marketplace listing (listing market) without publishing it: the result shows in the listing's verified field and in plentyone_search_listing_market_messages. Use it after changing a listing to see whether the market would accept it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listingMarketId": {
+            "type": "integer",
+            "description": "Listing market id."
+          }
+        },
+        "required": [
+          "listingMarketId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listings/markets/verify/{listingMarketId}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "plentyone_edit_order",
+      "description": "Change an order: status, owner, client (plentyId), order items (e.g. a changed price or quantity, each entry with its order item id), order properties, address links or relations. Only the fields sent are changed; locked orders refuse changes. Read the order with plentyone_get_order (with orderItems), show the user the change and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "statusId": {
+            "type": "number",
+            "description": "New status id from plentyone_list_order_statuses, e.g. 5 or 5.1."
+          },
+          "ownerId": {
+            "type": "integer",
+            "description": "User id of the new owner."
+          },
+          "plentyId": {
+            "type": "integer",
+            "description": "Client (plentyId) the order belongs to."
+          },
+          "orderItems": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Order items to change, each with id and the fields to set, e.g. [{\"id\": 345, \"quantity\": 2, \"amounts\": [{\"id\": 678, \"priceOriginalGross\": 19.9}]}]."
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Order properties, e.g. [{\"typeId\": 3, \"value\": \"1\"}]."
+          },
+          "addressRelations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Address links, e.g. [{\"typeId\": 2, \"addressId\": 12}]."
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Order relations, e.g. [{\"referenceType\": \"contact\", \"referenceId\": 5, \"relation\": \"receiver\"}]."
+          }
+        },
+        "required": [
+          "orderId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{orderId}",
+        "bodyMapping": {
+          "statusId": "$statusId",
+          "ownerId": "$ownerId",
+          "plentyId": "$plentyId",
+          "orderItems": "$orderItems",
+          "properties": "$properties",
+          "addressRelations": "$addressRelations",
+          "relations": "$relations"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
       }
     },
     {

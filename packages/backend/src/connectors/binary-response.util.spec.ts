@@ -149,4 +149,12 @@ describe('withoutBinaryData', () => {
     const other = { a: 1 };
     expect(withoutBinaryData(other)).toBe(other);
   });
+
+  it('adds extra fields, such as a download link, next to the attachment', () => {
+    const body = { [BINARY_MARKER]: 1 as const, contentType: 'image/png', bytes: PNG.length, filename: 'a.png', base64: PNG.toString('base64'), extra: { link: 'https://app.example/f/x' } };
+    const r = renderBinaryBody(body, readBinaryConfig(undefined));
+    expect(r.value).toMatchObject({ link: 'https://app.example/f/x', note: 'The image is attached to this result.' });
+    expect(r.content[0]).toMatchObject({ type: 'image' });
+  });
 });
+

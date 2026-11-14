@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useRef, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/logo-icon';
 import { cn } from '@/lib/utils';
@@ -72,6 +73,7 @@ function bestHref(pathname: string): string | null {
 
 export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
   const pathname = usePathname();
+  const t = useTranslations('nav');
   const { user, orgName, orgs, switchOrg, logout } = useAuth();
   const [wsMenu, setWsMenu] = useState(false);
   const wsRef = useRef<HTMLDivElement>(null);
@@ -108,7 +110,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
         {NAV.map((g) => (
           <div key={g.group}>
             <div className="px-2.5 pb-1 pt-2.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">
-              {g.group}
+              {t(`groups.${g.id}`)}
             </div>
             {g.items.map((item) => {
               const Icon = NAV_ICONS[item.href];
@@ -125,7 +127,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
                   )}
                 >
                   {Icon && <Icon />}
-                  {item.label}
+                  {t(`items.${item.id}`)}
                 </Link>
               );
             })}
@@ -140,7 +142,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
         {wsMenu && (
           <div className="absolute inset-x-3 bottom-[64px] z-50 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
             <div className="px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[var(--text-3)]">
-              Switch workspace
+              {t('switchWorkspace')}
             </div>
             {(Array.isArray(orgs) ? orgs : []).map((org) => {
               const isCurrent = org.id === user?.organizationId;
@@ -172,7 +174,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
                 className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] font-medium text-[var(--danger)] hover:bg-[var(--t-danger-bg)]"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
-                Log out
+                {t('logOut')}
               </button>
             </div>
           </div>
@@ -189,7 +191,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
           )}
         >
           <SettingsIcon />
-          Settings
+          {t('settings')}
         </Link>
 
         <button
@@ -200,7 +202,7 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
             {orgInitials}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[12.5px] font-semibold text-[var(--text)]">{orgName || 'Workspace'}</div>
+            <div className="truncate text-[12.5px] font-semibold text-[var(--text)]">{orgName || t('workspaceFallback')}</div>
             <div className="text-[11px] text-[var(--text-3)]">{user?.email}</div>
           </div>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m7 15 5 5 5-5M7 9l5-5 5 5" /></svg>

@@ -1,19 +1,17 @@
 name: Onboarding reminders cron
 
-# Pings the cloud backend every hour. The endpoint
-# (`/api/cron/onboarding-reminders`) is idempotent — re-running within
-# a window won't double-send because per-user counters, flags and timing
+# Calls the cloud backend's onboarding endpoint
+# (`/api/cron/onboarding-reminders`). The endpoint is idempotent: re-running
+# within a window won't double-send because per-user counters, flags and timing
 # checks are persisted.
 #
-# Hourly because the first nudge goes out an hour after sign-up, to people
-# whose workspace is still empty (how to connect an app from the chat or the
-# dashboard). The other passes (trial lifecycle, win-back, licence
-# re-verification, release of deleted workspaces' licences) are gated by their
-# own windows and flags, so running them more often sends nothing twice.
+# Cloud runs it every hour from a systemd timer on the droplet
+# (anythingmcp-onboarding-cron.timer). This workflow is only a manual fallback
+# (Actions → Run workflow), for example while the droplet timer is down. Its
+# hourly schedule was removed in Nov 2026: with the timer, every pass ran twice
+# and examined ~11k users twice for nothing.
 
 on:
-  schedule:
-    - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
       target_url:
@@ -25,7 +23,9 @@ jobs:
   trigger:
     name: Trigger onboarding drip
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # A run takes 3 to 7 minutes on Cloud (Nov 2026) and holds a 30-minute
+    # lease; 5 minutes cut runs and failed the job.
+    timeout-minutes: 30
     steps:
       - name: Call cron endpoint
         env:
@@ -39,6 +39,7 @@ jobs:
           fi
           response_file="$(mktemp)"
           http_code=$(curl -sS -o "${response_file}" -w "%{http_code}" \
+            --max-time 1500 \
             -X POST \
             -H "Authorization: Bearer ${CRON_SECRET}" \
             -H "Content-Type: application/json" \

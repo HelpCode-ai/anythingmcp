@@ -1,0 +1,50 @@
+---
+title: "How to Connect NocoDB to MCP for AI Agents"
+description: "Read NocoDB workspaces, bases, tables, and records with AI agents via MCP. NocoDB is an open-source no-code database platform."
+category: "connectors"
+keyword: "NocoDB MCP Server, NocoDB API AI, NocoDB Airtable alternative MCP, connect NocoDB to Claude, NocoDB ChatGPT"
+publishedAt: "2026-10-25"
+adapterSlug: "nocodb"
+---
+
+## NocoDB with AI Agents
+
+NocoDB is an open-source Airtable alternative that turns relational databases into smart spreadsheets. By connecting its v3 REST API to AnythingMCP, AI agents can discover workspaces, bases, and tables, inspect column schemas, and query or count records with filtering and sorting.
+
+## Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+Open `http://localhost:3000/connectors/store`, import the NocoDB adapter, and configure:
+- `NOCODB_URL`: Your NocoDB host (e.g., `https://app.nocodb.com` or `https://nocodb.example.com`).
+- `NOCODB_API_TOKEN`: Your API token created under **Team & Settings > API Tokens**.
+
+```json
+{
+  "mcpServers": {
+    "nocodb": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `nocodb_list_workspaces` | List all workspaces visible to the API token (`w_...` IDs) |
+| `nocodb_list_bases` | List bases within a workspace (`p_...` IDs) |
+| `nocodb_list_tables` | List tables within a base (`m_...` IDs) |
+| `nocodb_get_table` | Get table schema and field definitions |
+| `nocodb_list_records` | Query and paginate records with `where`, `sort`, and `fields` |
+| `nocodb_get_record` | Retrieve a single record by row ID |
+| `nocodb_count_records` | Count records matching a filter condition |
+
+## Use Cases
+
+- **"How many open tickets are in our Support base?"**
+- **"List the newest 10 customer records from the CRM base."**
+- **"What columns and types are defined in the Inventory table?"**
+- **"Find customer records where Status is Active and Country is Germany."**

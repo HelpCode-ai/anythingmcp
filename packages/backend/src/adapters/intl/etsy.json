@@ -1,8 +1,8 @@
 {
   "slug": "etsy",
   "name": "Etsy",
-  "description": "Run an Etsy shop from any AI agent: create draft listings, edit and publish them, add photos, set price and stock, add tracking to orders, and read listings, orders, receipts and reviews. OAuth2 with automatic refresh-token rotation + x-api-key dual auth.",
-  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com). You authorize it once, in AnythingMCP; from then on the short-lived access token (1 hour) is renewed automatically, and the refresh token Etsy replaces on every renewal is stored for you.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/your-apps → **Create New App**.\n2. In the app's settings, add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Etsy compares it character for character (https, upper/lower case, no trailing slash).\n3. Note the app's **Keystring** and **Shared secret**. Enter them as `ETSY_CLIENT_ID` and `ETSY_CLIENT_SECRET`, leave `ETSY_REFRESH_TOKEN` empty, and install.\n4. Open the connector and click **Authorize with Provider**. Sign in to Etsy, approve, and you land back on the connector page with the tools ready. AnythingMCP runs Etsy's OAuth2 PKCE flow (S256) for you.\n\n**Scopes**: the connector asks for `email_r shops_r listings_r listings_w transactions_r transactions_w`: read your account, shops, listings and orders, edit listings, and add tracking to orders. It cannot delete listings. **Connectors installed before October 2026** asked only for the read scopes: to use the write tools, open the connector's OAuth settings, set the scopes above and click **Authorize with Provider** again; until then Etsy answers \"Access token lacks scope\".\n\n**Already have a refresh token?** You can paste it into `ETSY_REFRESH_TOKEN` instead of step 4, if you obtained it yourself through Etsy's OAuth2 PKCE flow for the same app. Connectors set up that way keep working as they are; there is nothing to do. Clicking **Authorize with Provider** on one replaces its token with a new one, and needs the callback URL from step 2.\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**If a call says the access token could not be renewed**: an Etsy refresh token works once and expires after 90 days unused. Click **Authorize with Provider** on the connector page to get a new one.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Reading the shop**: `etsy_get_listings_by_shop` lists your own listings in any state (active, draft, inactive, sold out); `etsy_get_shop_listings_active` is the public view any visitor sees; `etsy_list_shop_sections` and `etsy_get_listings_by_shop_section` go by shop section; `etsy_get_shop_reviews` lists the reviews. `etsy_list_taxonomy_properties` gives the properties (size, colour, material) a category allows.\n\n**Orders and sales**: `etsy_get_shop_receipts` lists orders and `etsy_get_shop_receipt` reads one with its line items. `etsy_get_shop_transactions` lists the sold line items of the whole shop (listing, SKU, quantity, price, variations), the view for sales per product. `etsy_get_listings_by_ids` then reads up to 100 of the listings behind them in one call. `etsy_add_order_tracking` marks an order as shipped with its tracking code, and Etsy e-mails the buyer at once.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Creating a listing** takes a few steps, in this order: find the category with `etsy_list_seller_taxonomy`; for a physical item get a shipping profile (`etsy_list_shipping_profiles`), a processing profile (`etsy_list_processing_profiles`) and, outside the EU, a return policy (`etsy_list_return_policies`); create the draft with `etsy_create_listing_draft`; add at least one photo with `etsy_add_listing_image`; publish with `etsy_edit_listing` and `state=active`. Change price or stock with `etsy_read_listing_inventory` then `etsy_set_listing_inventory`, which replaces the whole inventory. Etsy rejects titles with more than three words in capitals and tags longer than 20 characters; a shop on vacation cannot change listings.\n\n**Out of scope here**: deleting listings, payment account, billing, taxonomy edits.",
+  "description": "Run an Etsy shop from any AI agent: create draft listings, edit and publish them, add photos, videos and digital files, set price, stock, attributes and translations, add tracking to orders, and read listings, orders, receipts and reviews. OAuth2 with automatic refresh-token rotation + x-api-key dual auth.",
+  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com). You authorize it once, in AnythingMCP; from then on the short-lived access token (1 hour) is renewed automatically, and the refresh token Etsy replaces on every renewal is stored for you.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/register (for your own shop: a personal app). Etsy lists it on https://www.etsy.com/developers/your-apps under **Personal Apps**, with the status *Pending Personal Approval*.\n2. Copy the app's **Keystring** and **Shared Secret** from that list into `ETSY_CLIENT_ID` and `ETSY_CLIENT_SECRET`, leave `ETSY_REFRESH_TOKEN` empty, and save. This works while the app is still pending.\n3. Wait for Etsy's approval (Etsy emails you; most apps are approved within a day). Until then Etsy refuses the keys with a 403 and the app's page does not open.\n4. Once the app is active, click its name to open its page and add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Etsy compares it character for character (https, upper/lower case, no trailing slash).\n5. Open the connector and click **Authorize with Provider**. Sign in to Etsy, approve, and you land back on the connector page with the tools ready. AnythingMCP runs Etsy's OAuth2 PKCE flow (S256) for you.\n\n**Scopes**: the connector asks for `email_r shops_r listings_r listings_w listings_d transactions_r transactions_w`: read your account, shops, listings and orders, edit listings, delete listings (the delete tool is installed switched off), and add tracking to orders. **Connectors authorized with an earlier scope list** (only the read scopes, or without `listings_d`) get the current list when you click **Authorize with Provider** again; until then Etsy answers \"Access token lacks scope\" to the tools that need the missing scope.\n\n**Already have a refresh token?** You can paste it into `ETSY_REFRESH_TOKEN` instead of step 5, if you obtained it yourself through Etsy's OAuth2 PKCE flow for the same app. Connectors set up that way keep working as they are; there is nothing to do. Clicking **Authorize with Provider** on one replaces its token with a new one, and needs the callback URL from step 4.\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**If a call says the access token could not be renewed**: an Etsy refresh token works once and expires after 90 days unused. Click **Authorize with Provider** on the connector page to get a new one.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Reading the shop**: `etsy_get_listings_by_shop` lists your own listings in any state (active, draft, inactive, sold out); `etsy_get_shop_listings_active` is the public view any visitor sees; `etsy_list_shop_sections` and `etsy_get_listings_by_shop_section` go by shop section; `etsy_get_shop_reviews` lists the reviews. `etsy_list_taxonomy_properties` gives the properties (size, colour, material) a category allows.\n\n**Orders and sales**: `etsy_get_shop_receipts` lists orders and `etsy_get_shop_receipt` reads one with its line items. `etsy_get_shop_transactions` lists the sold line items of the whole shop (listing, SKU, quantity, price, variations), the view for sales per product. `etsy_get_listings_by_ids` then reads up to 100 of the listings behind them in one call. `etsy_add_order_tracking` marks an order as shipped with its tracking code, and Etsy e-mails the buyer at once.\n\n**Attributes, translations and media**: `etsy_get_listing_properties` reads a listing's attributes (colour, material, size) and `etsy_set_listing_property` sets one, with ids from `etsy_list_taxonomy_properties`. `etsy_read_listing_translation`, `etsy_add_listing_translation` (new language) and `etsy_replace_listing_translation` (existing one) handle titles, descriptions and tags in de, en, es, fr, it, ja, nl, pl and pt. `etsy_list_listing_images` lists the photos; `etsy_list_listing_variation_images` and `etsy_assign_variation_images` link photos to variation values (the assign call replaces every link). `etsy_list_listing_videos` and `etsy_add_listing_video` handle the listing video (one per listing, 5 to 15 seconds); `etsy_list_listing_files` and `etsy_upload_listing_file` the files buyers download from a digital listing. Uploads take a public URL that AnythingMCP downloads, up to the server's upload limit (10 MB by default). `etsy_list_production_partners` gives the ids for production_partner_ids.\n\n**Beyond your shop**: `etsy_search_active_listings` searches every active listing on Etsy (keywords, category, price range) and `etsy_search_shops` finds shops by name.\n\n**Switched off at install**: `etsy_delete_listing_permanently` (deletes a listing for good; to hide one, set state=inactive with `etsy_edit_listing`), `etsy_delete_listing_image` and `etsy_delete_listing_property`. Turn them on under the connector's tools when you need them.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Creating a listing** takes a few steps, in this order: find the category with `etsy_list_seller_taxonomy`; for a physical item get a shipping profile (`etsy_list_shipping_profiles`), a processing profile (`etsy_list_processing_profiles`) and, outside the EU, a return policy (`etsy_list_return_policies`); create the draft with `etsy_create_listing_draft`; add at least one photo with `etsy_add_listing_image`; publish with `etsy_edit_listing` and `state=active`. Change price or stock with `etsy_read_listing_inventory` then `etsy_set_listing_inventory`, which replaces the whole inventory. Etsy rejects titles with more than three words in capitals and tags longer than 20 characters; a shop on vacation cannot change listings.\n\n**Out of scope here**: shop settings and shop sections (they need the `shops_w` scope), payment account, billing, taxonomy edits.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "etsy",
@@ -14,23 +14,26 @@
   "optionalEnvVars": [
     "ETSY_REFRESH_TOKEN"
   ],
-  "previousOAuthScopes": ["email_r shops_r listings_r transactions_r"],
+  "previousOAuthScopes": [
+    "email_r shops_r listings_r transactions_r",
+    "email_r shops_r listings_r listings_w transactions_r transactions_w"
+  ],
   "appRegistrationUrl": "https://www.etsy.com/developers/register",
   "envVarMeta": {
     "ETSY_CLIENT_ID": {
       "label": "Keystring",
       "kind": "credential",
-      "help": "Etsy developers → Your apps → your app: the Keystring.",
+      "help": "Etsy's apps page, under Personal Apps: the Keystring of your app. Shown while the app is still pending.",
       "link": "https://www.etsy.com/developers/your-apps",
       "pattern": "^[a-z0-9]{20,30}$",
       "patternMessage": "The Keystring is 24 lowercase letters and digits, nothing else (no spaces, no colon)."
     },
     "ETSY_CLIENT_SECRET": {
-      "label": "Shared secret",
-      "help": "Same page, the Shared secret next to the Keystring. Paste it on its own: not the Keystring, not \"keystring:secret\".",
+      "label": "Shared Secret",
+      "help": "Same row, under Shared Secret. Paste it on its own: not the Keystring, not \"keystring:secret\".",
       "link": "https://www.etsy.com/developers/your-apps",
       "pattern": "^[a-z0-9]{8,32}$",
-      "patternMessage": "Paste the Shared secret alone: lowercase letters and digits, without the Keystring and without a colon."
+      "patternMessage": "Paste the Shared Secret alone: lowercase letters and digits, without the Keystring and without a colon."
     },
     "ETSY_REFRESH_TOKEN": {
       "label": "Refresh token",
@@ -38,13 +41,15 @@
       "advanced": true
     }
   },
-  "prerequisites": "An Etsy app of your own ([create one on Etsy](https://www.etsy.com/developers/register)). In the app's settings, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself), character for character: without it Etsy refuses the sign-in. A new app can stay *Pending* for a while: until Etsy activates it, Etsy refuses the sign-in and the calls, and AnythingMCP tells you before sending you to Etsy. Use the **Keystring** and **Shared secret** of an active app.",
+  "prerequisites": "An Etsy app of your own ([create one on Etsy](https://www.etsy.com/developers/register)). Etsy reviews every new app before it can be used, usually within a day: until then its Status says *Pending Personal Approval*, and its page, where the callback URL goes, does not open yet. You can enter the app's **Keystring** and **Shared Secret** while you wait: they are saved, and AnythingMCP tells you when Etsy accepts them. Once the app is active, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself) on the app's page, character for character: without it Etsy refuses the sign-in.",
   "verifyHints": {
-    "403": "Etsy does not accept these app keys yet. A new Etsy app stays Pending until Etsy approves it (Etsy emails you), and signing in only works after that. If your app is already active, copy the Shared secret again from your app page: it must belong to this Keystring."
+    "403": "Etsy does not accept these app keys yet. A new Etsy app stays Pending Personal Approval until Etsy approves it (Etsy emails you, usually within a day), and signing in only works after that. If your app already says Active, copy the Shared Secret again from the same row as this Keystring."
   },
   "checkBeforeAuthorization": {
     "path": "/openapi-ping",
-    "headers": { "x-api-key": "{{ETSY_CLIENT_ID}}:{{ETSY_CLIENT_SECRET}}" }
+    "headers": {
+      "x-api-key": "{{ETSY_CLIENT_ID}}:{{ETSY_CLIENT_SECRET}}"
+    }
   },
   "setupGuide": {
     "effort": "own_app",
@@ -57,15 +62,15 @@
     ],
     "needs": [
       "Your Etsy seller account, the one that owns the shop",
-      "About 10 minutes",
-      "Etsy can take a while to activate a new app. You can stop and come back: this page reopens at the step you were on."
+      "About 10 minutes, plus Etsy's review of your new app: usually within a day",
+      "You can stop at any point: your keys are saved, and this page reopens where you left off."
     ],
-    "why": "Etsy lets other tools reach a shop only through an app registered in the shop owner's account. Creating one is free: you fill in a short form at Etsy, and AnythingMCP uses the app's two keys to ask Etsy for access to your shop.\n\nYou approve that access on Etsy's own page. AnythingMCP never sees your Etsy password, and deleting the connector removes the keys and the access it holds.",
+    "why": "Etsy lets other tools reach a shop only through an app registered in the shop owner's account. Creating one is free: you fill in a short form at Etsy, and AnythingMCP uses the app's two keys to ask Etsy for access to your shop. Etsy reviews every new app before it can be used, which is why the setup has a short wait in the middle.\n\nYou approve that access on Etsy's own page. AnythingMCP never sees your Etsy password, and deleting the connector removes the keys and the access it holds.",
     "steps": [
       {
         "id": "create-app",
         "title": "Create your Etsy app",
-        "body": "Etsy opens its **Create a New App** form. Sign in with the account that owns your shop if Etsy asks, fill in the form as below, then click **Read Terms and Create App**.",
+        "body": "Etsy opens its **Create a New App** form. Sign in with the account that owns your shop if Etsy asks, fill in the form as below, then click **Read Terms and Create App**.\n\nEtsy then lists your app under **Personal Apps** with the status *Pending Personal Approval*. That is normal: you can go on right away.",
         "action": {
           "label": "Open Etsy's app form",
           "url": "https://www.etsy.com/developers/register"
@@ -115,13 +120,69 @@
           {
             "q": "Does it matter what I write in the description?",
             "a": "Etsy reads it when it reviews the app. Describe what you will really do with it; the text above fits a shop owner connecting their own shop."
+          },
+          {
+            "q": "Etsy says I already have an app in review",
+            "a": "You created one before: use that one. It is listed under **Personal Apps** on [Etsy's apps page](https://www.etsy.com/developers/your-apps). Tick the box and continue."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Copy your two keys",
+        "body": "On Etsy's apps page your app is listed under **Personal Apps**. Copy its **Keystring** and its **Shared Secret** into the fields below. This works while the app is still pending.\n\nAnythingMCP saves them and asks Etsy whether your app is active yet.",
+        "action": {
+          "label": "Open your Etsy apps",
+          "url": "https://www.etsy.com/developers/your-apps"
+        },
+        "fields": [
+          "ETSY_CLIENT_ID",
+          "ETSY_CLIENT_SECRET"
+        ],
+        "saveAndCheck": true,
+        "problems": [
+          {
+            "q": "Where is the Shared Secret?",
+            "a": "In the same row as the Keystring, under **Shared Secret**. Paste it on its own: not the Keystring, and not `keystring:secret`."
+          },
+          {
+            "q": "I have more than one app on Etsy",
+            "a": "Use the app you created for AnythingMCP. The Keystring and the Shared Secret must come from the same row."
+          }
+        ]
+      },
+      {
+        "id": "approval",
+        "title": "Wait for Etsy's approval",
+        "body": "Etsy reviews every new app before it can be used. Until then the **Status** of your app says **Pending Personal Approval**, and clicking its name does nothing.\n\nMost apps are approved within a day, some take a few days. Etsy emails you when yours is approved. There is nothing else to do in the meantime.",
+        "action": {
+          "label": "Open your Etsy apps",
+          "url": "https://www.etsy.com/developers/your-apps"
+        },
+        "waitForProvider": true,
+        "problems": [
+          {
+            "q": "Clicking my app's name does nothing",
+            "a": "That is normal while the app is pending. Etsy opens the app's page only after the approval; you add the callback URL there in the next step."
+          },
+          {
+            "q": "The Status says Active, but this page still waits",
+            "a": "Then Etsy refused the Shared Secret: it must belong to the Keystring in the same row. Go back one step and copy both keys again."
+          },
+          {
+            "q": "Etsy rejected my app",
+            "a": "Etsy's email gives the reason. Create a new app (step 1) with the description shown there, which tells Etsy the app is only for your own shop, then copy the new app's keys in step 2."
+          },
+          {
+            "q": "It has been more than a week",
+            "a": "Etsy reviews apps on its own schedule, and nobody outside Etsy can speed it up. Check that your app is still listed under **Personal Apps**, and if Etsy has not emailed you, ask Etsy's developer support about it."
           }
         ]
       },
       {
         "id": "callback",
         "title": "Add the callback URL",
-        "body": "On Etsy's **Your apps** page, open the app you just created and add this address under **Callback URLs**, then save.\n\nPaste it exactly as shown: Etsy compares it character for character, and without it Etsy refuses the sign-in.",
+        "body": "Your app is active. On Etsy's apps page, click your app's name under **Personal Apps** to open its page, add this address under **Callback URLs**, then save.\n\nPaste it exactly as shown: Etsy compares it character for character, and without it Etsy refuses the sign-in.",
         "action": {
           "label": "Open your Etsy apps",
           "url": "https://www.etsy.com/developers/your-apps"
@@ -136,7 +197,7 @@
         "problems": [
           {
             "q": "I can't find Callback URLs",
-            "a": "On **Your apps**, click the name of your app to open its details. Callback URLs can only be added once the app exists, so finish the previous step first."
+            "a": "Click the name of your app under **Personal Apps** to open its page: the callback URLs are there. If clicking the name does nothing, the app is not approved yet; go back one step."
           },
           {
             "q": "Later Etsy says the redirect URI does not match",
@@ -145,25 +206,17 @@
         ]
       },
       {
-        "id": "keys",
-        "title": "Copy your keys and sign in",
-        "body": "On the same app page Etsy shows the **Keystring** and the **Shared secret**. Copy each one into its field below.\n\nAnythingMCP checks them with Etsy, then opens Etsy so you can approve access to your shop. You come back here on your own.",
-        "action": {
-          "label": "Open your Etsy apps",
-          "url": "https://www.etsy.com/developers/your-apps"
-        },
-        "fields": [
-          "ETSY_CLIENT_ID",
-          "ETSY_CLIENT_SECRET"
-        ],
+        "id": "sign-in",
+        "title": "Sign in with Etsy",
+        "body": "Sign in with the Etsy account that owns the shop you want to connect. AnythingMCP checks your keys once more before it opens Etsy.",
         "problems": [
           {
-            "q": "My app says Pending",
-            "a": "Etsy activates new apps after a review and emails you when it is done. You can enter the keys now: if the app is not active yet, AnythingMCP tells you before sending you to Etsy. You can close this page; it reopens at this step."
+            "q": "Etsy shows an error about the redirect URI",
+            "a": "The callback URL at Etsy differs from the one in the step before. Go back, copy it again with the button and replace the one at Etsy."
           },
           {
-            "q": "Where is the Shared secret?",
-            "a": "Next to the Keystring on your app's page. Paste it on its own: not the Keystring, and not `keystring:secret`."
+            "q": "I have more than one Etsy shop",
+            "a": "Sign in with the account that owns the shop you want to connect. For another shop, set up a second Etsy connector."
           }
         ]
       }
@@ -179,7 +232,7 @@
       "grant": "refresh_token",
       "authorizationUrl": "https://www.etsy.com/oauth/connect",
       "tokenUrl": "https://api.etsy.com/v3/public/oauth/token",
-      "scopes": "email_r shops_r listings_r listings_w transactions_r transactions_w",
+      "scopes": "email_r shops_r listings_r listings_w listings_d transactions_r transactions_w",
       "clientId": "{{ETSY_CLIENT_ID}}",
       "clientSecret": "{{ETSY_CLIENT_SECRET}}",
       "refreshToken": "{{ETSY_REFRESH_TOKEN}}",
@@ -378,7 +431,8 @@
           },
           "includes": {
             "type": "string",
-            "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice. Etsy rejects anything else: inventory (SKUs, quantities, prices per variation) is not available here, and shipping comes with the shop's shipping profiles, not with the listing."
+            "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice. Etsy answers 400 to anything else, Inventory included: for SKUs, quantities and prices per variation call etsy_read_listing_inventory. Shipping comes with the shop's shipping profiles, not with the listing.",
+            "pattern": "^(Images|Shop|User|Translations|Videos|Personalization|BuyerPrice)(,(Images|Shop|User|Translations|Videos|Personalization|BuyerPrice))*$"
           }
         },
         "required": [
@@ -405,7 +459,8 @@
           },
           "includes": {
             "type": "string",
-            "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice."
+            "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice. Etsy answers 400 to anything else, Inventory included: for SKUs, quantities and prices per variation call etsy_read_listing_inventory. Shipping comes with the shop's shipping profiles, not with the listing.",
+            "pattern": "^(Images|Shop|User|Translations|Videos|Personalization|BuyerPrice)(,(Images|Shop|User|Translations|Videos|Personalization|BuyerPrice))*$"
           },
           "currency": {
             "type": "string",
@@ -566,7 +621,7 @@
     },
     {
       "name": "etsy_get_shop_reviews",
-      "description": "List the shop's reviews (transactions with feedback): rating, review text, listing id and date, optionally since min_created. Pages with limit and offset.",
+      "description": "List the shop's reviews (transactions with feedback): rating, review text, listing id and date, optionally since min_created. Pages with limit and offset. Etsy treats this endpoint as public and refuses large offsets: to reach older reviews, narrow with min_created instead of paging far.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -576,11 +631,14 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Per page."
+            "description": "Per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100
           },
           "offset": {
             "type": "integer",
-            "description": "Offset."
+            "description": "Pagination offset (0 = first page). Keep it small: Etsy refuses large offsets on this public endpoint.",
+            "minimum": 0
           },
           "min_created": {
             "type": "integer",
@@ -603,7 +661,7 @@
     },
     {
       "name": "etsy_get_listings_by_shop_section",
-      "description": "List the shop's listings filed under one or more of its sections (section ids from etsy_list_shop_sections).",
+      "description": "List the shop's listings filed under one or more of its sections (section ids from etsy_list_shop_sections). Etsy treats this endpoint as public and refuses large offsets; to go through all of your own shop's listings, use etsy_get_listings_by_shop.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -617,11 +675,14 @@
           },
           "limit": {
             "type": "integer",
-            "description": "Per page."
+            "description": "Per page, 1 to 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100
           },
           "offset": {
             "type": "integer",
-            "description": "Offset."
+            "description": "Pagination offset (0 = first page). Keep it small: Etsy refuses large offsets on this public endpoint.",
+            "minimum": 0
           }
         },
         "required": [
@@ -798,7 +859,8 @@
           },
           "title": {
             "type": "string",
-            "description": "Listing title. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters."
+            "description": "Listing title, at most 140 characters. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters.",
+            "maxLength": 140
           },
           "description": {
             "type": "string",
@@ -873,7 +935,7 @@
           },
           "tags": {
             "type": "string",
-            "description": "Up to 13 tags, comma-separated. Each tag at most 20 characters: letters, numbers, spaces, - and ' only."
+            "description": "Up to 13 tags, comma-separated: letters, numbers, spaces, - and ' only. On English listings each tag has at most 20 characters (Etsy refuses longer ones); listings in other languages may have longer tags."
           },
           "materials": {
             "type": "string",
@@ -993,7 +1055,8 @@
           },
           "title": {
             "type": "string",
-            "description": "Listing title. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters."
+            "description": "Listing title, at most 140 characters. Letters, numbers, punctuation and spaces only; \"&\" at most once; no more than 3 words starting with two capital letters.",
+            "maxLength": 140
           },
           "description": {
             "type": "string",
@@ -1064,7 +1127,7 @@
           },
           "tags": {
             "type": "string",
-            "description": "Up to 13 tags, comma-separated. Each tag at most 20 characters: letters, numbers, spaces, - and ' only."
+            "description": "Up to 13 tags, comma-separated: letters, numbers, spaces, - and ' only. On English listings each tag has at most 20 characters (Etsy refuses longer ones); listings in other languages may have longer tags."
           },
           "materials": {
             "type": "string",
@@ -1308,6 +1371,726 @@
           "note_to_buyer": "$note_to_buyer",
           "send_bcc": "$send_bcc"
         }
+      }
+    },
+    {
+      "name": "etsy_get_listing_properties",
+      "description": "Read the attribute values set on a listing (colour, material, size, occasion, ...): one entry per property with property_id, property_name, scale_id, value_ids and values. The properties a category allows come from etsy_list_taxonomy_properties; change one with etsy_set_listing_property.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/listings/{listing_id}/properties",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_set_listing_property",
+      "description": "Set one attribute of a listing (e.g. primary colour, material, occasion), replacing its current values. property_id, the allowed value_ids and, for sized properties, scale_id come from etsy_list_taxonomy_properties for the listing's taxonomy_id; values holds the matching display names in the same order. Returns the property as stored.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "property_id": {
+            "type": "integer",
+            "description": "Property ID, e.g. 200 for primary colour (from etsy_list_taxonomy_properties)."
+          },
+          "value_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "IDs of the chosen values, e.g. [1213]."
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Display names of the chosen values, same order as value_ids, e.g. [\"Beige\"]."
+          },
+          "scale_id": {
+            "type": "integer",
+            "description": "Measurement scale, for properties such as sizes that have one."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "property_id",
+          "value_ids",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shops/{shop_id}/listings/{listing_id}/properties/{property_id}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "value_ids": "$value_ids",
+          "values": "$values",
+          "scale_id": "$scale_id"
+        }
+      }
+    },
+    {
+      "name": "etsy_delete_listing_property",
+      "description": "Remove one attribute (property) and its values from a listing. The listing stays; Etsy may then flag it as missing a required attribute for its category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "property_id": {
+            "type": "integer",
+            "description": "Property ID to remove (from etsy_get_listing_properties)."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "property_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/shops/{shop_id}/listings/{listing_id}/properties/{property_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "etsy_read_listing_translation",
+      "description": "Read a listing's translation into one language: translated title, description and tags. Etsy answers 404 when the listing has no translation in that language yet; add one with etsy_add_listing_translation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "de",
+              "en",
+              "es",
+              "fr",
+              "it",
+              "ja",
+              "nl",
+              "pl",
+              "pt"
+            ],
+            "description": "Language of the translation."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "language"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/listings/{listing_id}/translations/{language}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_add_listing_translation",
+      "description": "Add a translation of a listing for buyers browsing Etsy in another language: title, description and optional tags in that language. Use it when the language has no translation yet (otherwise Etsy answers 409); change an existing one with etsy_replace_listing_translation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "de",
+              "en",
+              "es",
+              "fr",
+              "it",
+              "ja",
+              "nl",
+              "pl",
+              "pt"
+            ],
+            "description": "Language of the translation."
+          },
+          "title": {
+            "type": "string",
+            "description": "Translated title, at most 140 characters, same title rules as the listing.",
+            "maxLength": 140
+          },
+          "description": {
+            "type": "string",
+            "description": "Translated description (plain text)."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Up to 13 translated tags, comma-separated. In English each tag has at most 20 characters; other languages may have longer tags."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "language",
+          "title",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/listings/{listing_id}/translations/{language}",
+        "encodePathParams": true,
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "etsy_replace_listing_translation",
+      "description": "Replace a listing's existing translation into one language: send the full translated title and description (and tags, which are cleared when left out). For a language without a translation use etsy_add_listing_translation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "de",
+              "en",
+              "es",
+              "fr",
+              "it",
+              "ja",
+              "nl",
+              "pl",
+              "pt"
+            ],
+            "description": "Language of the translation."
+          },
+          "title": {
+            "type": "string",
+            "description": "Translated title, at most 140 characters.",
+            "maxLength": 140
+          },
+          "description": {
+            "type": "string",
+            "description": "Translated description (plain text)."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Up to 13 translated tags, comma-separated. In English each tag has at most 20 characters; other languages may have longer tags."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "language",
+          "title",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shops/{shop_id}/listings/{listing_id}/translations/{language}",
+        "encodePathParams": true,
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "etsy_list_listing_images",
+      "description": "List the photos of a listing in display order: listing_image_id, rank, url_fullxfull and smaller sizes, dimensions, alt_text and the dominant colour. Use the ids with etsy_assign_variation_images or etsy_delete_listing_image.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/{listing_id}/images",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_delete_listing_image",
+      "description": "Remove a photo from a listing. An active listing must keep at least one photo. Cannot be undone: to bring the photo back, upload it again with etsy_add_listing_image.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "listing_image_id": {
+            "type": "integer",
+            "description": "Image ID (from etsy_list_listing_images)."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "listing_image_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/shops/{shop_id}/listings/{listing_id}/images/{listing_image_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "etsy_list_listing_variation_images",
+      "description": "List which photo is shown for which variation value of a listing (e.g. the red mug photo for Colour = Red): entries with property_id, value_id, value and image_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/listings/{listing_id}/variation-images",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_assign_variation_images",
+      "description": "Link listing photos to variation values, so buyers see the right photo when they pick an option. Replaces all existing links: send every pair you want to keep. property_id and value_id come from the listing's inventory (etsy_read_listing_inventory), image_id from etsy_list_listing_images; only one property per listing can have variation images.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "variation_images": {
+            "type": "array",
+            "description": "Pairs such as [{\"property_id\": 200, \"value_id\": 1213, \"image_id\": 4567890123}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "property_id": {
+                  "type": "integer",
+                  "description": "Variation property ID."
+                },
+                "value_id": {
+                  "type": "integer",
+                  "description": "Value ID of that property."
+                },
+                "image_id": {
+                  "type": "integer",
+                  "description": "Listing image ID."
+                }
+              },
+              "required": [
+                "property_id",
+                "value_id",
+                "image_id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "variation_images"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/listings/{listing_id}/variation-images",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "variation_images": "$variation_images"
+        }
+      }
+    },
+    {
+      "name": "etsy_list_listing_files",
+      "description": "List the downloadable files of a digital listing: listing_file_id, filename, filesize, filetype, rank and creation time. Physical listings have none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/listings/{listing_id}/files",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_upload_listing_file",
+      "description": "Attach a file buyers download after purchase to a digital listing (type download or both), from a public URL. Etsy allows up to 5 files per listing; the connector downloads the URL and uploads it, up to the server's file upload limit (10 MB by default).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID of a digital listing."
+          },
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the file (PDF, ZIP, image, ...)."
+          },
+          "name": {
+            "type": "string",
+            "description": "File name buyers see, with extension, e.g. pattern.pdf."
+          },
+          "rank": {
+            "type": "integer",
+            "description": "Position among the listing's files, 1 first."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "file_url",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/listings/{listing_id}/files",
+        "encodePathParams": true,
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          },
+          "name": "$name",
+          "rank": "$rank"
+        }
+      }
+    },
+    {
+      "name": "etsy_list_listing_videos",
+      "description": "List the videos of a listing: video_id, height, width, thumbnail_url, video_url and video_state (active or still processing). A listing has at most one video.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/{listing_id}/videos",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "etsy_add_listing_video",
+      "description": "Upload an existing video file to a listing from a public URL. Etsy takes one video per listing, 5 to 15 seconds long, and processes it after upload (video_state stays inactive for a while). The connector downloads the URL and uploads it, up to the server's file upload limit (10 MB by default).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          },
+          "video_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the video file (MP4, MOV, ...)."
+          },
+          "name": {
+            "type": "string",
+            "description": "File name of the video, with extension, e.g. mug.mp4."
+          }
+        },
+        "required": [
+          "shop_id",
+          "listing_id",
+          "video_url",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shops/{shop_id}/listings/{listing_id}/videos",
+        "encodePathParams": true,
+        "bodyEncoding": "form-data",
+        "timeoutMs": 120000,
+        "bodyMapping": {
+          "video": {
+            "__file": "$video_url"
+          },
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "etsy_delete_listing_permanently",
+      "description": "Delete a listing for good, in any state (active, inactive, draft, expired, sold out). Its photos, inventory, translations and stats are gone and it cannot be restored; to hide a listing for now use etsy_edit_listing with state=inactive instead. Needs the listings_d scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "integer",
+            "description": "Listing ID."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/listings/{listing_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "etsy_search_active_listings",
+      "description": "Search all active listings on Etsy, not only your shop's, by keywords, category, price range or shop location: e.g. to see what similar items cost. Returns listings with listing_id, title, price, shop_id, url, tags and quantity, and count for paging. sort_on and sort_order only work together with keywords.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "Search words, e.g. ceramic mug handmade."
+          },
+          "taxonomy_id": {
+            "type": "integer",
+            "description": "Only this category (etsy_list_seller_taxonomy)."
+          },
+          "min_price": {
+            "type": "number",
+            "description": "Minimum price."
+          },
+          "max_price": {
+            "type": "number",
+            "description": "Maximum price."
+          },
+          "shop_location": {
+            "type": "string",
+            "description": "Shop location, e.g. Germany or Berlin."
+          },
+          "sort_on": {
+            "type": "string",
+            "enum": [
+              "created",
+              "price",
+              "updated",
+              "score"
+            ],
+            "description": "Sort field (needs keywords)."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction (needs keywords)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 code to convert prices into, e.g. EUR."
+          },
+          "buyer_country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 code; only listings that ship there."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Results per page (default 25, max 100)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/active",
+        "queryParams": {
+          "keywords": "$keywords",
+          "taxonomy_id": "$taxonomy_id",
+          "min_price": "$min_price",
+          "max_price": "$max_price",
+          "shop_location": "$shop_location",
+          "sort_on": "$sort_on",
+          "sort_order": "$sort_order",
+          "currency": "$currency",
+          "buyer_country": "$buyer_country",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "etsy_search_shops",
+      "description": "Find Etsy shops by name. Returns matching shops with shop_id, shop_name, title, url, listing_active_count and review summary, and count for paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_name": {
+            "type": "string",
+            "description": "Shop name or part of it."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Results per page (default 25)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip."
+          }
+        },
+        "required": [
+          "shop_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops",
+        "queryParams": {
+          "shop_name": "$shop_name",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "etsy_list_production_partners",
+      "description": "List the shop's production partners (people or companies who help make the items): production_partner_id, partner_name and location. Listings made with help name them in production_partner_ids when created or edited.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_id": {
+            "type": "integer",
+            "description": "Shop ID (from etsy_get_user_shops)."
+          }
+        },
+        "required": [
+          "shop_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_id}/production-partners",
+        "encodePathParams": true
       }
     }
   ]

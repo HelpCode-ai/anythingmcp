@@ -16,6 +16,7 @@ import { RolesGuard } from './roles.guard';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { ClientCredentialsMiddleware } from './client-credentials.middleware';
 import { RefreshTokenRevocationMiddleware } from './refresh-token-revocation.middleware';
+import { CrossWorkspaceRefusalStore } from './cross-workspace-refusal.store';
 import { UsersModule } from '../users/users.module';
 import { SettingsModule } from '../settings/settings.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
@@ -30,6 +31,9 @@ import { SocialAuthService } from './social/social-auth.service';
 import { SocialAuthController } from './social/social-auth.controller';
 import { CloudOnlyGuard } from '../common/cloud-only.guard';
 
+import { RecentSignInService } from './recent-sign-in.service';
+import { EmailVerificationService } from './email-verification.service';
+import { RecentSignInController } from './recent-sign-in.controller';
 @Global()
 @Module({
   imports: [
@@ -54,7 +58,7 @@ import { CloudOnlyGuard } from '../common/cloud-only.guard';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController, LoginController, UserInfoController, SocialAuthController],
+  controllers: [AuthController, LoginController, UserInfoController, SocialAuthController, RecentSignInController],
   providers: [
     // Cloud social sign-in (Google, Microsoft, GitHub).
     { provide: OIDC_LIB, useValue: openidClient },
@@ -65,6 +69,8 @@ import { CloudOnlyGuard } from '../common/cloud-only.guard';
     AuthService,
     RecoveryCodesService,
     SsoEnforcementService,
+    RecentSignInService,
+    EmailVerificationService,
     JwtStrategy,
     McpAuthGuard,
     McpAuthMiddleware,
@@ -73,9 +79,13 @@ import { CloudOnlyGuard } from '../common/cloud-only.guard';
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
     RefreshTokenRevocationMiddleware,
+    // Shared by the MCP endpoint (writes) and the refresh middleware (reads).
+    CrossWorkspaceRefusalStore,
   ],
   exports: [
     AuthService,
+    RecentSignInService,
+    EmailVerificationService,
     RecoveryCodesService,
     SsoEnforcementService,
     McpAuthGuard,
@@ -85,6 +95,7 @@ import { CloudOnlyGuard } from '../common/cloud-only.guard';
     PrismaOAuthStore,
     ClientCredentialsMiddleware,
     RefreshTokenRevocationMiddleware,
+    CrossWorkspaceRefusalStore,
     SocialProviderRegistry,
     JwtModule,
   ],

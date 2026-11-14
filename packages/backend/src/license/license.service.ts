@@ -6,13 +6,33 @@ import { normalizeEmail } from '../common/email.util';
 import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
+import { FIRST_SUCCESS_KEY } from './card-trial-offer';
+import {
+  formatSkipReasons,
+  isSettled,
+  parseUnclaimedLicences,
+  UNCLAIMED_SWEEP_MS,
+  type UnclaimedLicence,
+  type UnclaimedSkipReason,
+} from './license-unclaimed';
 import { Prisma } from '../generated/prisma/client';
+import { maskEmail } from '../auth/mcp-email-verification';
+import { collectUsageReport, usageReportEnabled, type UsageReport } from './usage-report';
 
 // Production always talks to anythingmcp.com. The licence site decides
 // which plan an installation runs; a URL taken from the environment would let
 // any self-hosted operator point verification at a server of their own and
 // unlock paid features. LICENSE_API_URL applies outside production only (local
 // end-to-end runs against a local licence site).
+
+/** A Cloud workspace's current plan changed (null = no active licence). */
+export interface PlanChange {
+  organizationId: string;
+  from: string | null;
+  to: string | null;
+}
+export type PlanChangeListener = (change: PlanChange) => Promise<void> | void;
+
 export const LICENSE_API_URL =
   process.env.NODE_ENV === 'production'
     ? 'https://anythingmcp.com'
@@ -196,11 +216,25 @@ export interface RemoteVerifyResponse {
   billing?: unknown;
 }
 
+/**
+ * The licence site grants one trial per address. Asked again for an address
+ * whose trial has already ended, it hands that old trial back, expired.
+ */
+export class TrialAlreadyEndedError extends Error {
+  constructor() {
+    super('The free trial for this email has already ended. Choose a plan to continue.');
+    this.name = 'TrialAlreadyEndedError';
+  }
+}
+
 @Injectable()
 export class LicenseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LicenseService.name);
   private readonly apiBase = LICENSE_API_URL;
   private reverifyTimer: NodeJS.Timeout | null = null;
+  private unclaimedTimer: NodeJS.Timeout | null = null;
+  /** A binding run is in progress: the minute sweep and the hourly cron never overlap. */
+  private bindingUnclaimed = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -218,10 +252,21 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       this.reverifyTimer = setInterval(() => void this.verifyOnStartup(), 6 * 60 * 60 * 1000);
       this.reverifyTimer.unref();
     }
+    // Cloud: a paid licence whose buyer's browser did not come back to the
+    // activation page is bound within a couple of minutes, not at the next
+    // hourly cron (license-unclaimed.ts).
+    if (this.deployment.isCloud()) {
+      this.unclaimedTimer = setInterval(
+        () => void this.bindUnclaimedPaidLicences(new Date(), { quiet: true }).catch(() => undefined),
+        UNCLAIMED_SWEEP_MS,
+      );
+      this.unclaimedTimer.unref();
+    }
   }
 
   onModuleDestroy() {
     if (this.reverifyTimer) clearInterval(this.reverifyTimer);
+    if (this.unclaimedTimer) clearInterval(this.unclaimedTimer);
   }
 
   // ── Instance ID ────────────────────────────────────────────────────────────
@@ -274,12 +319,22 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       // token: a licence key alone is not a billing credential. What makes it
       // safe to hand back a URL here is that the key is the one bound to the
       // signed-in admin's own workspace.
+      // Cancelling: whether the workspace ever made a successful tool call,
+      // so the licence site can pick the retention offer (a discount means
+      // little to a card trial that never got a call through).
+      const usage = flow === 'cancel' ? await this.cancellationUsage(organizationId) : null;
       const { data } = await axios.post(
         `${this.apiBase}/api/billing/portal`,
-        { licenseKey: license.licenseKey, returnUrl, ...(flow && { flow }) },
+        { licenseKey: license.licenseKey, returnUrl, ...(flow && { flow }), ...(usage && { usage }) },
         { timeout: 15000, headers: this.serviceHeaders() },
       );
       if (!data?.url) throw new Error('No portal URL returned.');
+      // The licence page re-verifies when the admin comes back from the
+      // portal, at most once a minute (refreshLicense). An admin who opened
+      // the page, upgraded and came back inside that minute had the refresh
+      // skipped and kept the old plan until the next daily check. Opening the
+      // portal starts the window over, so the return visit always refreshes.
+      this.lastRefresh.delete(organizationId);
       return { url: data.url as string };
     } catch (err: any) {
       const msg =
@@ -287,6 +342,48 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         err?.message ||
         'Failed to open the billing portal.';
       this.logger.warn(`Billing portal request failed: ${msg}`);
+      throw new Error(msg);
+    }
+  }
+
+  // ── Data Processing Agreement (Cloud) ──────────────────────────────────────
+
+  /**
+   * A one-hour link to the self-service DPA on the licence site (Cloud only;
+   * the controller checks the deployment mode). Everything about the
+   * agreement — the text, the acceptance record, the PDF, the email — lives
+   * on the licence site; this server only vouches, with its service token,
+   * that the signed-in admin belongs to the workspace the key is bound to.
+   * Paid plans only: a trial gets no DPA.
+   */
+  async createDpaLink(organizationId: string, userId: string, locale?: string): Promise<{ url: string }> {
+    const license = await this.getCurrentLicense(organizationId);
+    if (!license?.licenseKey || license.plan === 'trial' || license.plan === 'community') {
+      throw new Error('The Data Processing Agreement comes with paid plans.');
+    }
+    const [org, admin] = await Promise.all([
+      this.prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } }),
+    ]);
+    if (!admin?.email) throw new Error('No user for this session.');
+    try {
+      const { data } = await axios.post(
+        `${this.apiBase}/api/dpa/session`,
+        {
+          licenseKey: license.licenseKey,
+          organizationId,
+          workspaceName: org?.name ?? undefined,
+          email: admin.email,
+          name: admin.name ?? undefined,
+          ...(locale && { locale }),
+        },
+        { timeout: 15000, headers: this.serviceHeaders() },
+      );
+      if (!data?.url) throw new Error('No DPA link returned.');
+      return { url: data.url as string };
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to open the DPA page.';
+      this.logger.warn(`DPA link request failed: ${msg}`);
       throw new Error(msg);
     }
   }
@@ -304,6 +401,37 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
    * is harmless (it simply expires unused). Every failure comes out as a
    * CheckoutUnavailableError; the upstream detail stays in our log.
    */
+  /**
+   * Cloud: when the workspace made its first successful tool call (null if
+   * never), read from OrgSettings or, for a workspace whose first success was
+   * not recorded there, from tool_invocations. Null as a whole on self-hosted
+   * or when the lookup fails, so the licence site treats the use as unknown
+   * and cancelling never waits on it.
+   */
+  private async cancellationUsage(
+    organizationId: string,
+  ): Promise<{ firstSuccessfulCallAt: string | null } | null> {
+    if (!this.deployment.isCloud()) return null;
+    try {
+      const stored = await this.prisma.orgSettings.findUnique({
+        where: { organizationId_key: { organizationId, key: FIRST_SUCCESS_KEY } },
+        select: { value: true },
+      });
+      if (stored?.value && Number.isFinite(Date.parse(stored.value))) {
+        return { firstSuccessfulCallAt: new Date(stored.value).toISOString() };
+      }
+      const first = await this.prisma.toolInvocation.findFirst({
+        where: { organizationId, status: 'SUCCESS' },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      });
+      return { firstSuccessfulCallAt: first?.createdAt.toISOString() ?? null };
+    } catch (err: any) {
+      this.logger.warn(`Usage lookup for the cancellation of org ${organizationId} failed: ${err?.message ?? err}`);
+      return null;
+    }
+  }
+
   async createCheckoutIntent(payload: CheckoutIntentPayload): Promise<{ url: string; trial: boolean }> {
     const headers = this.serviceHeaders();
     if (!headers['x-amcp-service-token']) {
@@ -416,7 +544,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
           headers: this.serviceHeaders(),
         });
         if (attempt > 1) {
-          this.logger.log(`Trial licence obtained for ${payload.email} on attempt ${attempt}.`);
+          this.logger.log(`Trial licence obtained for ${maskEmail(payload.email)} on attempt ${attempt}.`);
         }
         return data;
       } catch (err: any) {
@@ -427,7 +555,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         const base = trialRetryBaseMs();
         const delay = base * 2 ** (attempt - 1) + Math.floor(Math.random() * (base / 2));
         this.logger.warn(
-          `Trial licence attempt ${attempt} for ${payload.email} failed (${err?.response?.status ?? err.code ?? 'no response'}), retrying in ${delay}ms.`,
+          `Trial licence attempt ${attempt} for ${maskEmail(payload.email)} failed (${err?.response?.status ?? err.code ?? 'no response'}), retrying in ${delay}ms.`,
         );
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
@@ -456,14 +584,21 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         throw new Error('Trial licence API did not return a key');
       }
 
+      // An address that already had a trial gets that trial back, and it may
+      // have ended. Store it as expired, not active: the workspace then shows
+      // "trial ended" with the plans, and the repair cron does not ask again.
+      const expiresAt = new Date(data.expiresAt);
+      const ended = expiresAt.getTime() <= Date.now();
+      const status = ended ? 'expired' : 'active';
+
       // Auto-activate the trial key locally
       await this.prisma.license.upsert({
         where: { licenseKey: data.licenseKey },
         update: {
           plan: 'trial',
-          status: 'active',
+          status,
           features: data.features || undefined,
-          expiresAt: new Date(data.expiresAt),
+          expiresAt,
           lastVerifiedAt: new Date(),
           instanceId,
           organizationId: organizationId || undefined,
@@ -471,14 +606,19 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         create: {
           licenseKey: data.licenseKey,
           plan: 'trial',
-          status: 'active',
+          status,
           features: data.features || undefined,
-          expiresAt: new Date(data.expiresAt),
+          expiresAt,
           lastVerifiedAt: new Date(),
           instanceId,
           organizationId: organizationId || undefined,
         },
       });
+
+      if (ended) {
+        this.logger.log(`Trial for ${maskEmail(email)} had already ended; stored as expired.`);
+        throw new TrialAlreadyEndedError();
+      }
 
       // Self-hosted = single tenant, the instance-wide pointer is meaningful.
       // Cloud = multi tenant, a global pointer would let one org's verify
@@ -494,6 +634,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         trialDaysLeft: data.trialDaysLeft,
       };
     } catch (err: any) {
+      if (err instanceof TrialAlreadyEndedError) throw err;
       if (err.response?.status === 409) {
         throw new Error('A trial license already exists for this email.');
       }
@@ -546,10 +687,10 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
           user.organizationId ?? undefined,
         );
         out.repaired++;
-        this.logger.log(`Repaired missing trial for org ${user.organizationId} (${user.email}).`);
+        this.logger.log(`Repaired missing trial for org ${user.organizationId} (${maskEmail(user.email)}).`);
       } catch (err: any) {
         out.failed++;
-        this.logger.warn(`Trial repair failed for ${user.email}: ${err.message}`);
+        this.logger.warn(`Trial repair failed for ${maskEmail(user.email)}: ${err.message}`);
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
@@ -642,7 +783,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
     for (const { licenseKey, organizationId, status } of batch) {
       out.checked++;
-      const result = await this.verifyLicense(licenseKey);
+      const result = await this.verifyLicense(licenseKey, organizationId ?? undefined);
       if (status !== 'active') {
         // A payment-failed licence: still blocked, or back after a retry.
         if (result.valid) {
@@ -675,6 +816,155 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       );
     }
     return out;
+  }
+
+  /**
+   * Bind paid Cloud licences that never reached a workspace (see
+   * license-unclaimed.ts). Runs every minute on the Cloud (quiet: only a run
+   * that binds or fails a licence is logged) and from the onboarding cron
+   * (hourly, the full summary). One run at a time: a call while another is in
+   * progress returns at once with nothing done.
+   *
+   * The licence site lists them; each one is bound like a key the
+   * customer pasted (setLicenseKey) to:
+   *   - the workspace the checkout named, if it still exists; otherwise
+   *   - the workspace of the verified account with the licence's address, if
+   *     that account is the workspace's administrator.
+   *
+   * A workspace that already holds a live paid licence is left alone: that is
+   * a second subscription, which the licence site already reports to us, and
+   * a person decides which one to keep. A key bound here to the same workspace
+   * whose activation never reached the site is activated again.
+   */
+  async bindUnclaimedPaidLicences(
+    now: Date = new Date(),
+    opts: { quiet?: boolean } = {},
+  ): Promise<{ listed: number; bound: number; skipped: number; failed: number }> {
+    const out = { listed: 0, bound: 0, skipped: 0, failed: 0 };
+    if (!this.deployment.isCloud()) return out;
+    const headers = this.serviceHeaders();
+    if (!headers['x-amcp-service-token']) return out;
+    if (this.bindingUnclaimed) return out;
+    this.bindingUnclaimed = true;
+    try {
+      return await this.bindUnclaimedOnce(now, headers, !!opts.quiet, out);
+    } finally {
+      this.bindingUnclaimed = false;
+    }
+  }
+
+  private async bindUnclaimedOnce(
+    now: Date,
+    headers: Record<string, string>,
+    quiet: boolean,
+    out: { listed: number; bound: number; skipped: number; failed: number },
+  ): Promise<{ listed: number; bound: number; skipped: number; failed: number }> {
+    // The minute sweep keeps its warnings for the hourly run: the same
+    // site outage or the same second subscription would otherwise be logged
+    // sixty times an hour.
+    const warn = (msg: string) => (quiet ? this.logger.debug(msg) : this.logger.warn(msg));
+
+    let licences: UnclaimedLicence[] | null;
+    try {
+      const { data } = await axios.post(`${this.apiBase}/api/license/unclaimed`, {}, { timeout: 15000, headers });
+      licences = parseUnclaimedLicences(data);
+    } catch (err: any) {
+      warn(`Unclaimed licence check failed (${err?.response?.status ?? 'no response'}): ${err?.message ?? err}`);
+      return out;
+    }
+    if (!licences) {
+      warn('Unclaimed licence check: the licence site sent no list.');
+      return out;
+    }
+
+    // Skips per reason, for the summary line: the per-licence lines are debug
+    // for the reasons that only wait for the customer, so without this the
+    // hourly line says how many were skipped but not why.
+    const skipReasons = new Map<UnclaimedSkipReason, number>();
+    for (const licence of licences) {
+      // Too fresh: the buyer's browser may still be on its way back.
+      if (!isSettled(licence, now)) continue;
+      out.listed++;
+      const tail = licence.key.slice(-4);
+      try {
+        const target = await this.unclaimedLicenceTarget(licence, now);
+        if ('skip' in target) {
+          out.skipped++;
+          skipReasons.set(target.skip, (skipReasons.get(target.skip) ?? 0) + 1);
+          const log = `Unclaimed licence …${tail} (${maskEmail(licence.email)}) left unbound: ${target.skip}.`;
+          if (target.skip === 'already_paid' || target.skip === 'bound_elsewhere') warn(log);
+          else this.logger.debug(log);
+          continue;
+        }
+        if (target.retryActivation) {
+          if (!(await this.activateLicense(licence.key, target.organizationId))) {
+            out.failed++;
+            continue;
+          }
+        } else {
+          await this.setLicenseKey(licence.key, target.organizationId);
+        }
+        out.bound++;
+        this.logger.log(
+          `Bound paid licence …${tail} (${licence.plan}, ${maskEmail(licence.email)}) to workspace ${target.organizationId}.`,
+        );
+      } catch (err: any) {
+        out.failed++;
+        this.logger.warn(`Could not bind unclaimed licence …${tail}: ${err?.message ?? err}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    if (out.listed > 0 && (!quiet || out.bound > 0 || out.failed > 0)) {
+      this.logger.log(
+        `Unclaimed licences: listed=${out.listed} bound=${out.bound} skipped=${out.skipped}` +
+          formatSkipReasons(skipReasons) +
+          ` failed=${out.failed}`,
+      );
+    }
+    return out;
+  }
+
+  /** Where an unclaimed licence goes, or why it stays where it is. */
+  private async unclaimedLicenceTarget(
+    licence: UnclaimedLicence,
+    now: Date,
+  ): Promise<{ organizationId: string; retryActivation: boolean } | { skip: UnclaimedSkipReason }> {
+    let organizationId: string | null = null;
+    if (licence.organizationId) {
+      const org = await this.prisma.organization.findUnique({
+        where: { id: licence.organizationId },
+        select: { id: true },
+      });
+      if (!org) return { skip: 'no_workspace' };
+      organizationId = org.id;
+    } else {
+      const user = await this.prisma.user.findFirst({
+        where: {
+          email: { equals: licence.email, mode: 'insensitive' },
+          emailVerified: true,
+          organizationId: { not: null },
+        },
+        select: { role: true, organizationId: true },
+      });
+      if (!user?.organizationId) return { skip: 'no_account' };
+      if (user.role !== 'ADMIN') return { skip: 'not_admin' };
+      organizationId = user.organizationId;
+    }
+
+    const local = await this.prisma.license.findUnique({
+      where: { licenseKey: licence.key },
+      select: { organizationId: true },
+    });
+    if (local?.organizationId && local.organizationId !== organizationId) return { skip: 'bound_elsewhere' };
+    if (local?.organizationId === organizationId) return { organizationId, retryActivation: true };
+
+    const paid = await this.prisma.license.findMany({
+      where: { organizationId, plan: { not: 'trial' } },
+      select: { plan: true, status: true, expiresAt: true, billing: true },
+    });
+    if (paid.some((l) => isLivePaidLicence(l, now))) return { skip: 'already_paid' };
+    return { organizationId, retryActivation: false };
   }
 
   // ── License Activation ─────────────────────────────────────────────────────
@@ -734,13 +1024,24 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       return { valid: false, error: 'No license key configured' };
     }
 
+    // Self-hosted adds its usage counts (see usage-report.ts); Cloud never.
+    const usage = await this.usageReport();
+    const planBefore = await this.cloudPlanOf(organizationId);
+
     try {
       const { data } = await axios.get<RemoteVerifyResponse>(
         `${this.apiBase}/api/license/verify`,
         {
           // Cloud also asks for the subscription's state (trial end, set to
-          // cancel, renewal date) so the app can tell the customer.
-          params: { key: licenseKey, ...(this.deployment.isCloud() && { billing: '1' }) },
+          // cancel, renewal date) so the app can tell the customer, and names
+          // the workspace: the site refuses a self-hosted licence on a Cloud
+          // workspace it is not bound to. Self-hosted never sends it.
+          params: {
+            key: licenseKey,
+            ...(this.deployment.isCloud() && { billing: '1' }),
+            ...(this.deployment.isCloud() && organizationId && { organizationId }),
+            ...usage,
+          },
           timeout: 10000,
           headers: this.serviceHeaders(),
         },
@@ -778,11 +1079,27 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         .catch(() => {
           // License may not exist locally yet
         });
+      await this.announcePlanChange(organizationId, planBefore);
 
       return data;
     } catch (err: any) {
       this.logger.warn(`License verification failed: ${err.message}`);
       return { valid: false, error: 'Verification service unreachable' };
+    }
+  }
+
+  /**
+   * Usage counts for the verify call: self-hosted only, unless the operator
+   * set LICENSE_USAGE_REPORT=false. A failing count never fails the
+   * verification; the call then goes out without them.
+   */
+  private async usageReport(): Promise<UsageReport | Record<string, never>> {
+    if (this.deployment.isCloud() || !usageReportEnabled()) return {};
+    try {
+      return await collectUsageReport(this.prisma);
+    } catch (err: any) {
+      this.logger.warn(`Usage counts for licence verification unavailable: ${err?.message ?? err}`);
+      return {};
     }
   }
 
@@ -844,14 +1161,24 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Verify remotely first
-    const verification = await this.verifyLicense(licenseKey);
+    const planBefore = await this.cloudPlanOf(organizationId);
+
+    // Verify remotely first. On Cloud the workspace goes along, so the site
+    // can refuse a self-hosted licence and say why.
+    const verification = await this.verifyLicense(licenseKey, organizationId);
 
     if (!verification.valid) {
       throw new Error(verification.error || 'Invalid license key');
     }
 
     const instanceId = await this.getInstanceId();
+
+    // verifyLicense() stores the billing snapshot only on an existing row, so a
+    // key bound for the first time (checkout handoff, unclaimed-licence
+    // binder) got its billing only at the next re-verification, up to a day
+    // later. Keep the snapshot from this same answer.
+    const billing = parseLicenseBilling(verification.billing);
+    const billingData = billing ? { billing: billing as unknown as Prisma.InputJsonValue } : {};
 
     // Upsert local license
     const license = await this.prisma.license.upsert({
@@ -866,6 +1193,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         lastVerifiedAt: new Date(),
         instanceId,
         organizationId: organizationId || undefined,
+        ...billingData,
       },
       create: {
         licenseKey,
@@ -878,6 +1206,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         lastVerifiedAt: new Date(),
         instanceId,
         organizationId: organizationId || undefined,
+        ...billingData,
       },
     });
 
@@ -887,6 +1216,8 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     if (!this.deployment.isCloud()) {
       await this.siteSettings.set('license_key', licenseKey);
     }
+
+    await this.announcePlanChange(organizationId, planBefore);
 
     // Activate in background
     this.activateLicense(licenseKey, organizationId).catch((err) =>
@@ -1062,6 +1393,39 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     return isPaymentFailedBilling(info.billing) ? info : null;
   }
 
+  // ── Plan changes (Cloud) ──────────────────────────────────────────────────
+
+  private readonly planChangeListeners: PlanChangeListener[] = [];
+
+  /**
+   * Called when a Cloud workspace's current plan changes (checkout, a
+   * card-trial conversion, a change in the billing portal reported by the
+   * licence site, a key entered by hand). PlanCapsService listens to pause or
+   * restore connectors; LicenseService itself knows nothing about them.
+   */
+  onPlanChange(listener: PlanChangeListener): void {
+    this.planChangeListeners.push(listener);
+  }
+
+  /** The plan of the workspace's current licence (Cloud only; undefined elsewhere). */
+  private async cloudPlanOf(organizationId?: string): Promise<string | null | undefined> {
+    if (!this.deployment.isCloud() || !organizationId || this.planChangeListeners.length === 0) return undefined;
+    return (await this.getCurrentLicense(organizationId).catch(() => null))?.plan ?? null;
+  }
+
+  /** Tell the listeners when the current plan is not the one read before a write. */
+  private async announcePlanChange(organizationId: string | undefined, before: string | null | undefined): Promise<void> {
+    if (before === undefined || !organizationId || this.planChangeListeners.length === 0) return;
+    const after = await this.cloudPlanOf(organizationId);
+    if (after === undefined || after === before) return;
+    for (const listener of this.planChangeListeners) {
+      // Never let a listener fail or slow down the licence write.
+      Promise.resolve()
+        .then(() => listener({ organizationId, from: before, to: after }))
+        .catch((err) => this.logger.warn(`Plan change listener failed for ${organizationId}: ${err?.message ?? err}`));
+    }
+  }
+
   async getCurrentLicense(organizationId?: string): Promise<LicenseInfo | null> {
     // 1. Per-org: find license directly assigned to this organization
     if (organizationId) {
@@ -1172,7 +1536,40 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         select: { licenseKey: true },
       })) ?? (await this.getPaymentFailedLicense(organizationId));
     if (!license) return false;
-    await this.verifyLicense(license.licenseKey);
+    await this.verifyLicense(license.licenseKey, organizationId);
     return true;
+  }
+
+  /** Syncs in progress per licence key, so a burst of Stripe events verifies once. */
+  private readonly syncing = new Map<string, Promise<boolean>>();
+
+  /**
+   * The licence site reports that a licence changed in Stripe (plan change in
+   * the billing portal, cancellation, renewal paid or failed): re-verify it
+   * now. Before this, a change made outside a checkout reached the workspace
+   * only at the next daily re-verification or when an admin happened to
+   * reload the licence page, so a customer who upgraded paid for limits they
+   * could not use for up to a day.
+   *
+   * The call carries no licence data: the outcome is whatever the licence
+   * site answers to our own verification, so a forged call can at worst cause
+   * one extra check. Only a key bound to a workspace here is verified.
+   * Returns whether a verification ran.
+   */
+  async syncFromSite(licenseKey: string): Promise<boolean> {
+    if (!this.deployment.isCloud()) return false;
+    const pending = this.syncing.get(licenseKey);
+    if (pending) return pending;
+    const run = (async () => {
+      const license = await this.prisma.license.findUnique({
+        where: { licenseKey },
+        select: { licenseKey: true, organizationId: true },
+      });
+      if (!license?.organizationId) return false;
+      await this.verifyLicense(license.licenseKey, license.organizationId);
+      return true;
+    })().finally(() => this.syncing.delete(licenseKey));
+    this.syncing.set(licenseKey, run);
+    return run;
   }
 }

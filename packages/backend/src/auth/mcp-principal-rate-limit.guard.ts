@@ -55,6 +55,11 @@ export class McpPrincipalRateLimitGuard implements CanActivate {
     const user = req?.user ?? {};
     // No key material in the bucket name: the auth guard already resolved
     // which user and which of their keys this is.
+    // A support key gets its own bucket: an operator's reproduction must not
+    // use up the budget of the user's own keys.
+    if (user.authMethod === 'mcp_api_key' && user.supportKeyId) {
+      return `support:${String(user.supportKeyId).slice(0, 40)}`;
+    }
     if (user.authMethod === 'mcp_api_key' && user.sub) {
       return `key:${user.sub}:${String(user.apiKeyName ?? 'key').slice(0, 80)}`;
     }

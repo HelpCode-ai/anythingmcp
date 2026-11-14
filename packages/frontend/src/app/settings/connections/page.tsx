@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { mcpConnections } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ type Target = Awaited<ReturnType<typeof mcpConnections.targets>>[number];
  */
 export default function ConnectionsPage() {
   const { token } = useAuth();
+  const t = useTranslations('settingsConnections');
   const [connections, setConnections] = useState<Connection[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,11 +42,11 @@ export default function ConnectionsPage() {
       setConnections(list);
       setTargets(tg);
     } catch (err: any) {
-      setMsg(err.message || 'Could not load connections');
+      setMsg(err.message || t('loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, t]);
 
   useEffect(() => {
     load();
@@ -66,35 +68,34 @@ export default function ConnectionsPage() {
     if (!res.ok) {
       setMsg(
         res.reason === 'empty-selection'
-          ? 'Choose at least one MCP server, or the whole workspace.'
-          : 'That selection is not available to you.',
+          ? t('emptySelection')
+          : t('notAvailable'),
       );
       return;
     }
     setEditing(null);
-    setMsg('Updated. It applies to this connection’s next request.');
+    setMsg(t('updated'));
     load();
   };
 
   const revoke = async (c: Connection) => {
     if (!token) return;
     await mcpConnections.revoke(c.clientId, token);
-    setMsg(`${c.clientName} can no longer reach anything.`);
+    setMsg(t('revokedMsg', { client: c.clientName }));
     load();
   };
 
   if (loading) {
-    return <p className="text-[13px] text-[var(--text-3)]">Loading…</p>;
+    return <p className="text-[13px] text-[var(--text-3)]">{t('loading')}</p>;
   }
 
   return (
     <div>
       <h2 className="mb-[3px] text-[15px] font-semibold text-[var(--text)]">
-        Connected AI clients
+        {t('title')}
       </h2>
       <p className="mb-4 text-[13px] text-[var(--text-3)]">
-        What each client can reach through your shared MCP endpoint. Changes
-        apply on its next request — no need to reconnect.
+        {t('intro')}
       </p>
 
       {msg && (
@@ -106,8 +107,7 @@ export default function ConnectionsPage() {
       {connections.length === 0 ? (
         <Card className="p-[22px]">
           <p className="text-[13px] text-[var(--text-3)]">
-            Nothing is connected yet. Add your MCP endpoint in Claude, ChatGPT,
-            Meta Muse or Cursor, and it will appear here once you authorize it.
+            {t('empty')}
           </p>
         </Card>
       ) : (
@@ -120,26 +120,26 @@ export default function ConnectionsPage() {
                     <span className="text-[14px] font-semibold text-[var(--text)]">
                       {c.clientName}
                     </span>
-                    {c.revoked && <Badge tone="danger">Revoked</Badge>}
+                    {c.revoked && <Badge tone="danger">{t('revoked')}</Badge>}
                   </div>
                   <p className="mt-[3px] text-[12px] text-[var(--text-3)]">
                     {c.revoked
-                      ? 'Reaches nothing. Choose below to allow it again.'
+                      ? t('reachesNothing')
                       : c.wholeWorkspace
-                        ? `Everything in ${c.wholeWorkspace.name}`
+                        ? t('everythingIn', { workspace: c.wholeWorkspace.name })
                         : c.servers.length > 0
                           ? c.servers.map((s) => s.name).join(', ')
-                          : 'Nothing selected'}
+                          : t('nothingSelected')}
                   </p>
                 </div>
                 {editing !== c.clientId && (
                   <div className="flex shrink-0 gap-2">
                     <Button variant="secondary" onClick={() => startEditing(c)}>
-                      Change
+                      {t('change')}
                     </Button>
                     {!c.revoked && (
                       <Button variant="danger" onClick={() => revoke(c)}>
-                        Revoke
+                        {t('revoke')}
                       </Button>
                     )}
                   </div>
@@ -148,12 +148,12 @@ export default function ConnectionsPage() {
 
               {editing === c.clientId && (
                 <div className="mt-4 border-t border-[var(--border)] pt-4">
-                  {targets.map((t) => (
-                    <fieldset key={t.organizationId} className="mb-3">
+                  {targets.map((target) => (
+                    <fieldset key={target.organizationId} className="mb-3">
                       <legend className="mb-1 text-[11px] uppercase tracking-wide text-[var(--text-3)]">
-                        {t.organizationName}
+                        {target.organizationName}
                       </legend>
-                      {t.servers.map((srv) => (
+                      {target.servers.map((srv) => (
                         <label
                           key={srv.id}
                           className="flex cursor-pointer items-center gap-[10px] rounded-[7px] px-1 py-[6px] hover:bg-[var(--surface-2)]"
@@ -176,37 +176,36 @@ export default function ConnectionsPage() {
                             {srv.name}
                           </span>
                           <span className="text-[12px] text-[var(--text-3)]">
-                            {srv.connectorCount} connector
-                            {srv.connectorCount === 1 ? '' : 's'}
+                            {t('connectorCount', { count: srv.connectorCount })}
                           </span>
                         </label>
                       ))}
                       <label className="mt-[6px] flex cursor-pointer items-center gap-[10px] rounded-[7px] border-t border-[var(--border)] px-1 pt-[10px] hover:bg-[var(--surface-2)]">
                         <input
                           type="checkbox"
-                          checked={draftWorkspace === t.organizationId}
+                          checked={draftWorkspace === target.organizationId}
                           onChange={(e) =>
                             setDraftWorkspace(
-                              e.target.checked ? t.organizationId : null,
+                              e.target.checked ? target.organizationId : null,
                             )
                           }
                         />
                         <span className="flex-1 text-[13px] text-[var(--text)]">
-                          Everything in this workspace
+                          {t('wholeWorkspace')}
                         </span>
                         <span className="text-[12px] text-[var(--text-3)]">
-                          including connectors not on a server
+                          {t('wholeWorkspaceHint')}
                         </span>
                       </label>
                     </fieldset>
                   ))}
                   <div className="mt-2 flex gap-2">
-                    <Button onClick={() => save(c.clientId)}>Save</Button>
+                    <Button onClick={() => save(c.clientId)}>{t('save')}</Button>
                     <Button
                       variant="secondary"
                       onClick={() => setEditing(null)}
                     >
-                      Cancel
+                      {t('cancel')}
                     </Button>
                   </div>
                 </div>

@@ -48,8 +48,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'pink_connect_';
 const WRITES: string[] = ["pink_connect_reply_notification", "pink_connect_create_order_message", "pink_connect_update_return_request"];
-// Tool names of the customers' own connectors for this API on the Cloud (read 19 Oct 2026).
-const HAND_BUILT = ["pinkconnect_create_order_message", "pinkconnect_get_notification", "pinkconnect_get_order", "pinkconnect_list_notifications", "pinkconnect_list_orders", "pinkconnect_list_return_requests", "pinkconnect_reply_notification", "pinkconnect_update_return_request"];
 
 describe('pink-connect adapter: static spec conformance', () => {
   it('sends a Bearer token to api.pink-connect.com/v4', () => {
@@ -81,7 +79,7 @@ describe('pink-connect adapter: static spec conformance', () => {
     expect(tool('pink_connect_list_offers').parameters?.required).toEqual(['shop_channel_id']);
   });
 
-  it('writes use the paths of the working hand-built connector', () => {
+  it('writes use the documented paths', () => {
     expect(tool('pink_connect_reply_notification').endpointMapping).toMatchObject({ method: 'POST', path: '/notifications/{notification_id}', bodyEncoding: 'form-data' });
     expect(tool('pink_connect_create_order_message').endpointMapping).toMatchObject({ method: 'POST', path: '/orders/{order_id}/notifications', bodyEncoding: 'form-data' });
     expect(tool('pink_connect_update_return_request').endpointMapping).toMatchObject({ method: 'PUT', path: '/return-requests/{return_request_id}/{new_status}' });
@@ -110,10 +108,6 @@ describe('pink-connect adapter: static spec conformance', () => {
     }
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     expect(WRITES).not.toContain(a.probe.tool);

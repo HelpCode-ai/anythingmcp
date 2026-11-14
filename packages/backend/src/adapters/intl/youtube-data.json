@@ -8,6 +8,25 @@
   "icon": "youtube",
   "docsUrl": "https://developers.google.com/youtube/v3/docs",
   "requiredEnvVars": ["YOUTUBE_API_KEY"],
+  "envVarMeta": {
+    "YOUTUBE_API_KEY": {
+      "label": "YouTube API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Google Cloud console, APIs & Services, Credentials, Create credentials, API key, in a project where the YouTube Data API v3 is enabled. The key starts with AIza and is 39 characters long. Not the OAuth client ID (ending in .apps.googleusercontent.com) or its client secret (GOCSPX-…).",
+      "link": "https://console.cloud.google.com/apis/credentials",
+      "pattern": "^(?!GOCSPX-)(?!ya29\\.)(?!.*\\.apps\\.googleusercontent\\.com$)[A-Za-z0-9._-]{30,}$",
+      "patternMessage": "This is not a Google API key: paste the key from Credentials, API keys (it starts with AIza), not the OAuth client ID or client secret, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Google refused the API key (\"API key not valid\"): it is wrong, was deleted, or has extra characters. Copy it again from the Google Cloud console (APIs & Services → Credentials → API keys → Show key): it starts with AIza and is 39 characters long. The OAuth client ID and client secret are not API keys.",
+    "403": "Google refused the request for this key: the YouTube Data API v3 is not enabled in the key's project (APIs & Services → Library → YouTube Data API v3 → Enable), or the key is restricted to other APIs or apps."
+  },
+  "probe": {
+    "tool": "youtube_list_categories",
+    "params": { "part": "snippet", "regionCode": "US" }
+  },
   "connector": {
     "name": "YouTube Data v3",
     "type": "REST",

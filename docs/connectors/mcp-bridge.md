@@ -79,7 +79,9 @@ most servers listen.
 3. Tools are registered in the local ToolRegistry
 4. When an AI client calls a bridged tool, AnythingMCP:
    - Forwards the tool call to the remote MCP server
-   - Passes parameters through
+   - Passes parameters through, and fills in from the connector's environment variables only
+     the parameters the remote tool's schema names (a variable called `owner` fills `owner`;
+     the connector's own key or token is never sent as a tool argument)
    - Returns the response
 
 ### Endpoint Mapping
@@ -149,6 +151,11 @@ The MCP Bridge supports automatic token refresh for OAuth2-protected remote serv
 The redirect URI to register with a provider is `<SERVER_URL>/api/mcp-oauth/callback`
 (`GET /api/connectors/oauth/redirect-uri` returns it).
 
+With **AnythingMCP Enterprise**, an OAuth2 connector can require every user to
+sign in with their own account instead of sharing one authorization, so the
+remote server answers each user with their own permissions. See
+[Per-user sign-in](per-user-sign-in.md).
+
 ### Connector settings (`connector.config`)
 
 A catalog adapter sets these under `connector.config`; they are copied into the connector at
@@ -186,6 +193,8 @@ install. Through the API they can be set on any MCP connector.
 These catalog adapters bridge a vendor's official remote MCP server. At install AnythingMCP lists
 the tools of the server (the catalog keeps a snapshot for the store and as the fallback when the
 server cannot be reached). Click **Discover tools** on the connector after the vendor adds tools.
+The setup check runs the adapter's `probe` tool, or lists the server's tools when the adapter
+declares none, so a refused token is reported on the setup form before anything is saved.
 
 | Adapter | Endpoint | Auth |
 |---------|----------|------|

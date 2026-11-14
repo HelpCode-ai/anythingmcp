@@ -27,6 +27,23 @@ export interface RestEndpointMapping {
   bodyTemplate?: string;
   bodyEncoding?: 'json' | 'form-urlencoded' | 'form-data' | 'xml' | string;
   headers?: Record<string, string>;
+  /**
+   * Timeout of one call in ms, for slow endpoints such as image generation.
+   * Clamped to 1 000 – 180 000; absent: 30 000. See request-limits.util.ts.
+   */
+  timeoutMs?: number;
+  /**
+   * Upstream body limit in bytes, for bodies whose bulk `responseMapping`
+   * takes out (base64 images). At most 50 MB; absent: TOOL_MAX_RESPONSE_BYTES.
+   */
+  maxResponseBytes?: number;
+  /**
+   * The response carries a link to the data instead of the data: fetch it on
+   * the server (https, `allowedHosts` only, SSRF-guarded, no credentials),
+   * gunzip, parse TSV/CSV/JSON and return one page of rows. See
+   * download-follow.util.ts.
+   */
+  download?: import('./download-follow.util').DownloadFollowConfig;
 }
 
 export interface GraphqlEndpointMapping {

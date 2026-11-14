@@ -533,7 +533,7 @@
       "responseMapping": {
         "transform": {
           "mode": "jmespath",
-          "expression": "reverse(sort_by([@][], &to_number(quoteVolume)))[*].{symbol: symbol, lastPrice: lastPrice, priceChange: priceChange, priceChangePercent: priceChangePercent, openPrice: openPrice, highPrice: highPrice, lowPrice: lowPrice, weightedAvgPrice: weightedAvgPrice, volume: volume, quoteVolume: quoteVolume, count: count, openTime: openTime, closeTime: closeTime}",
+          "expression": "reverse(sort_by([@][], &to_number(quoteVolume || '0')))[*].{symbol: symbol, lastPrice: lastPrice, priceChange: priceChange, priceChangePercent: priceChangePercent, openPrice: openPrice, highPrice: highPrice, lowPrice: lowPrice, weightedAvgPrice: weightedAvgPrice, volume: volume, quoteVolume: quoteVolume, count: count, openTime: openTime, closeTime: closeTime}",
           "maxBytes": 40000
         }
       }

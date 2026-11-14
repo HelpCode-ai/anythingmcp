@@ -734,7 +734,7 @@
     },
     {
       "name": "pipedrive_create_activity",
-      "description": "Log an activity (call, meeting, task, email, etc.). Link to a deal/person/org for context. Setting `due_date` + `due_time` schedules it; omitting both creates an untimed task.",
+      "description": "Log an activity (call, meeting, task, email, etc.). Link to a deal, an organization or people (`participants`) for context. Setting `due_date` + `due_time` schedules it; omitting both creates an untimed task.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -762,17 +762,25 @@
             "type": "integer",
             "description": "Link to a deal."
           },
-          "person_id": {
-            "type": "integer",
-            "description": "Link to a person."
+          "participants": {
+            "type": "array",
+            "description": "People linked to the activity. The one with primary: true becomes the activity's person, e.g. [{\"person_id\": 42, \"primary\": true}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "person_id": { "type": "integer", "description": "Person id." },
+                "primary": { "type": "boolean", "description": "True for the main person." }
+              },
+              "required": ["person_id"]
+            }
           },
           "org_id": {
             "type": "integer",
             "description": "Link to an organization."
           },
-          "user_id": {
+          "owner_id": {
             "type": "integer",
-            "description": "Assigned user. Defaults to the API token's user."
+            "description": "User who owns the activity. Defaults to the API token's user."
           },
           "note": {
             "type": "string",
@@ -795,9 +803,9 @@
           "due_time": "$due_time",
           "duration": "$duration",
           "deal_id": "$deal_id",
-          "person_id": "$person_id",
+          "participants": "$participants",
           "org_id": "$org_id",
-          "user_id": "$user_id",
+          "owner_id": "$owner_id",
           "note": "$note",
           "done": "$done"
         }

@@ -11,6 +11,16 @@ export const MAX_TOOL_NAME_LENGTH = 64;
 const HASH_LENGTH = 6;
 
 /**
+ * Drops whitespace around a tool name typed or pasted by a user. A name like
+ * "\tlist_droplets" is stored as is otherwise, the MCP SDK warns on every
+ * tools/list and clients that check the name format may refuse the tool.
+ * Non-strings pass through so the DTO validators still report them.
+ */
+export function trimToolName(value: unknown): unknown {
+  return typeof value === 'string' ? value.trim() : value;
+}
+
+/**
  * Fits a generated tool name into MAX_TOOL_NAME_LENGTH without letting two
  * long names collapse into one.
  *

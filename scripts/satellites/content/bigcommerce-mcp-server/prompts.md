@@ -1,0 +1,15 @@
+- Which orders are in Awaiting Fulfillment, oldest first?
+- Show order 1042 with its line items and shipping address.
+- Which orders over 500 USD came in since Monday?
+- List the orders placed by jane@example.com.
+- Which orders were refunded or partially refunded this month?
+- Which products have the lowest inventory level right now?
+- What are my ten best-selling products by total sold?
+- Show the variants of product 123 with the stock of each SKU.
+- Find the product with SKU TS-001-BLK and show its price, cost price and stock.
+- Which visible products are in the category "Summer Sale"?
+- Which customers belong to the company "Acme Ltd"?
+- Set the stock of variant 456 on product 123 to 40. (write)
+- Change the price of product 123 to 24.90 and the sale price to 19.90. (write)
+- Mark order 1042 as Shipped. (write)
+- Hide product 123 from the storefront. (write)

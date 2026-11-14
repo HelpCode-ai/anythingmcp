@@ -49,6 +49,8 @@ jobs:
       - name: Probe
         env:
           PROBE_MOTIS_URL: http://localhost:8080
+          # The same trust store as the Cloud backend (docker-compose.cloud.yml).
+          NODE_EXTRA_CA_CERTS: deploy/cloud/certs/extra-ca.pem
         run: node scripts/probe-keyless.mjs --check --all
 
       - name: MOTIS logs

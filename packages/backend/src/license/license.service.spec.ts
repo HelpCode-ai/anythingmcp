@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { LicenseService, isLivePaidLicence, periodEndCheckDue } from './license.service';
 
 type MockLicense = {
@@ -193,6 +194,33 @@ describe('LicenseService — a licence key stays with its workspace', () => {
     expect(licenses[0].organizationId).toBe('org-new');
   });
 
+  it('stores the billing snapshot when a key is bound for the first time (cloud)', async () => {
+    const licenses: MockLicense[] = [];
+    const ctx = makeService({ isCloud: true, licenses });
+    const upsert = withUpsert(ctx, licenses);
+    (ctx.svc.verifyLicense as jest.Mock).mockResolvedValue({
+      valid: true,
+      plan: 'starter',
+      billing: { status: 'trialing', interval: 'month', trialEnd: '2026-11-16T00:00:00.000Z', cancelling: false },
+    });
+
+    await ctx.svc.setLicenseKey(KEY, 'org-new');
+    const arg = upsert.mock.calls[0][0];
+    expect(arg.create.billing).toMatchObject({ status: 'trialing', interval: 'month' });
+    expect(arg.update.billing).toMatchObject({ status: 'trialing' });
+  });
+
+  it('leaves billing alone when the site sends none', async () => {
+    const licenses: MockLicense[] = [];
+    const ctx = makeService({ isCloud: true, licenses });
+    const upsert = withUpsert(ctx, licenses);
+
+    await ctx.svc.setLicenseKey(KEY, 'org-new');
+    const arg = upsert.mock.calls[0][0];
+    expect(arg.create).not.toHaveProperty('billing');
+    expect(arg.update).not.toHaveProperty('billing');
+  });
+
   it('does not apply to self-hosted, where one admin owns every workspace', async () => {
     const licenses = [mkLicense({ licenseKey: KEY, organizationId: 'org-a' })];
     const ctx = makeService({ isCloud: false, licenses });
@@ -331,6 +359,91 @@ describe('LicenseService — billing portal', () => {
       licenseKey: 'AMCP-DECL-INED-0000-0001',
       billing: { status: 'past_due' },
     });
+  });
+});
+
+describe('LicenseService — cancellation carries the workspace\'s use', () => {
+  const axios = require('axios');
+  const cloudLicence = () => [mkLicense({ licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1' })];
+  let post: jest.SpyInstance;
+  beforeEach(() => {
+    post = jest.spyOn(axios, 'post').mockResolvedValue({ data: { url: 'https://billing.stripe.com/p/session/c' } });
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  function withUsage(
+    made: ReturnType<typeof makeService>,
+    { stored, firstCall }: { stored?: string | null; firstCall?: Date | null },
+  ) {
+    const prisma = made.prisma as any;
+    prisma.orgSettings = {
+      findUnique: jest.fn(async () => (stored ? { value: stored } : null)),
+    };
+    prisma.toolInvocation = {
+      findFirst: jest.fn(async () => (firstCall ? { createdAt: firstCall } : null)),
+    };
+    return prisma;
+  }
+  const sentBody = () => post.mock.calls[0][1];
+
+  it('sends the recorded first successful call', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    const prisma = withUsage(made, { stored: '2026-10-01T10:00:00.000Z' });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody()).toEqual({
+      licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD',
+      flow: 'cancel',
+      usage: { firstSuccessfulCallAt: '2026-10-01T10:00:00.000Z' },
+    });
+    expect(prisma.orgSettings.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { organizationId_key: { organizationId: 'org-1', key: 'first_successful_call_at' } } }),
+    );
+    expect(prisma.toolInvocation.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the earliest successful invocation of the workspace', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    const prisma = withUsage(made, { firstCall: new Date('2026-09-20T08:00:00Z') });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody().usage).toEqual({ firstSuccessfulCallAt: '2026-09-20T08:00:00.000Z' });
+    expect(prisma.toolInvocation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { organizationId: 'org-1', status: 'SUCCESS' } }),
+    );
+  });
+
+  it('says so when the workspace never made a successful call', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    withUsage(made, {});
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody().usage).toEqual({ firstSuccessfulCallAt: null });
+  });
+
+  it('still opens the cancellation when the lookup fails, without usage', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    const prisma = withUsage(made, {});
+    prisma.orgSettings.findUnique.mockRejectedValue(new Error('db down'));
+    await expect(made.svc.createBillingPortalSession('org-1', undefined, 'cancel')).resolves.toEqual({
+      url: 'https://billing.stripe.com/p/session/c',
+    });
+    expect(sentBody()).not.toHaveProperty('usage');
+  });
+
+  it('sends no usage for the other portal flows, nor on self-hosted', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    const prisma = withUsage(made, { stored: '2026-10-01T10:00:00.000Z' });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'payment_method_update');
+    await made.svc.createBillingPortalSession('org-1');
+    expect(post.mock.calls.map((c) => c[1])).toEqual([
+      expect.not.objectContaining({ usage: expect.anything() }),
+      expect.not.objectContaining({ usage: expect.anything() }),
+    ]);
+    expect(prisma.orgSettings.findUnique).not.toHaveBeenCalled();
+
+    const selfHosted = makeService({ isCloud: false, licenses: cloudLicence() });
+    const shPrisma = withUsage(selfHosted, { stored: '2026-10-01T10:00:00.000Z' });
+    await selfHosted.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(post.mock.calls[2][1]).not.toHaveProperty('usage');
+    expect(shPrisma.orgSettings.findUnique).not.toHaveBeenCalled();
   });
 });
 
@@ -671,6 +784,63 @@ describe('LicenseService — the subscription state reaches the app', () => {
     await expect(svc.refreshLicense('org-2')).resolves.toBe(true);
     expect(get).toHaveBeenCalledTimes(2);
   });
+
+  // 6 Nov 2026: an admin opened the licence page (refresh), upgraded in the
+  // portal and was back within the minute; the refresh was skipped and the
+  // workspace kept the old plan.
+  it('refreshes on the return from the billing portal even inside the minute', async () => {
+    const { svc } = make();
+    get.mockResolvedValue({ data: { valid: true, plan: 'team', billing: BILLING } });
+    jest.spyOn(axios, 'post').mockResolvedValueOnce({ data: { url: 'https://billing.stripe.com/p/session/z' } });
+    (svc as any).getCurrentLicense = jest.fn(async () => ({ licenseKey: 'AMCP-EEEE-0000-0000-0005', plan: 'starter' }));
+    await expect(svc.refreshLicense('org-1')).resolves.toBe(true);
+    await svc.createBillingPortalSession('org-1');
+    await expect(svc.refreshLicense('org-1')).resolves.toBe(true);
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('LicenseService — the licence site reports a change', () => {
+  const axios = require('axios');
+  let get: jest.SpyInstance;
+  beforeEach(() => {
+    get = jest.spyOn(axios, 'get');
+  });
+  afterEach(() => get.mockRestore());
+
+  it('re-verifies a licence bound to a workspace, naming that workspace', async () => {
+    const licenses = [mkLicense({ licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1', plan: 'starter' })];
+    const { svc, prisma } = makeService({ isCloud: true, licenses });
+    get.mockResolvedValue({ data: { valid: true, plan: 'team', features: { maxMcpServers: 10 } } });
+    await expect(svc.syncFromSite('AMCP-AAAA-BBBB-CCCC-DDDD')).resolves.toBe(true);
+    expect(get.mock.calls[0][1].params).toMatchObject({ key: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1' });
+    expect(prisma.license.update).toHaveBeenCalledWith({
+      where: { licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD' },
+      data: expect.objectContaining({ plan: 'team', features: { maxMcpServers: 10 }, status: 'active' }),
+    });
+  });
+
+  it('does nothing for a key that is unknown or not bound here, or on self-hosted', async () => {
+    const unbound = makeService({ isCloud: true, licenses: [mkLicense({ licenseKey: 'AMCP-1111-1111-1111-1111' })] });
+    await expect(unbound.svc.syncFromSite('AMCP-1111-1111-1111-1111')).resolves.toBe(false);
+    await expect(unbound.svc.syncFromSite('AMCP-9999-9999-9999-9999')).resolves.toBe(false);
+    const selfHosted = makeService({
+      isCloud: false,
+      licenses: [mkLicense({ licenseKey: 'AMCP-2222-2222-2222-2222', organizationId: 'org-1' })],
+    });
+    await expect(selfHosted.svc.syncFromSite('AMCP-2222-2222-2222-2222')).resolves.toBe(false);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('verifies once for a burst of events about the same licence', async () => {
+    const licenses = [mkLicense({ licenseKey: 'AMCP-AAAA-BBBB-CCCC-DDDD', organizationId: 'org-1' })];
+    const { svc } = makeService({ isCloud: true, licenses });
+    get.mockResolvedValue({ data: { valid: true, plan: 'team' } });
+    await Promise.all([svc.syncFromSite('AMCP-AAAA-BBBB-CCCC-DDDD'), svc.syncFromSite('AMCP-AAAA-BBBB-CCCC-DDDD')]);
+    expect(get).toHaveBeenCalledTimes(1);
+    await svc.syncFromSite('AMCP-AAAA-BBBB-CCCC-DDDD');
+    expect(get).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('parseLicenseBilling', () => {
@@ -890,5 +1060,130 @@ describe('LicenseService — workspaces that already pay (trial emails)', () => 
     await expect(svc.workspacesWithPaidPlan([], NOW)).resolves.toEqual({ paid: new Set(), unknown: new Set() });
     expect(post).not.toHaveBeenCalled();
     expect(prisma.license.findMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LicenseService — DPA link', () => {
+  const OLD = process.env.LICENSE_SERVICE_TOKEN;
+  afterEach(() => {
+    process.env.LICENSE_SERVICE_TOKEN = OLD;
+    jest.restoreAllMocks();
+  });
+
+  function withPeople(made: ReturnType<typeof makeService>) {
+    (made.prisma as any).organization = {
+      findUnique: jest.fn(async () => ({ name: 'Default (JVD)' })),
+    };
+    (made.prisma as any).user = {
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.id === 'user-1' ? { email: 'admin@example.be', name: 'Ada Admin' } : null,
+      ),
+    };
+    return made;
+  }
+
+  it('asks the licence site with the service token, for the workspace key and the signed-in admin', async () => {
+    process.env.LICENSE_SERVICE_TOKEN = 'svc-token-0123456789abcdef';
+    const licenses = [mkLicense({ licenseKey: 'AMCP-TEAM-0000-0000-0001', organizationId: 'org-1', plan: 'team' })];
+    const { svc } = withPeople(makeService({ isCloud: true, licenses }));
+    const axios = require('axios');
+    const post = jest
+      .spyOn(axios, 'post')
+      .mockResolvedValue({ data: { url: 'https://anythingmcp.com/dpa#session=x' } });
+
+    await expect(svc.createDpaLink('org-1', 'user-1', 'de')).resolves.toEqual({
+      url: 'https://anythingmcp.com/dpa#session=x',
+    });
+    expect(post).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/dpa\/session$/),
+      {
+        licenseKey: 'AMCP-TEAM-0000-0000-0001',
+        organizationId: 'org-1',
+        workspaceName: 'Default (JVD)',
+        email: 'admin@example.be',
+        name: 'Ada Admin',
+        locale: 'de',
+      },
+      expect.objectContaining({ headers: { 'x-amcp-service-token': 'svc-token-0123456789abcdef' } }),
+    );
+  });
+
+  it('refuses a trial without calling the licence site', async () => {
+    const licenses = [mkLicense({ organizationId: 'org-1', plan: 'trial' })];
+    const { svc } = withPeople(makeService({ isCloud: true, licenses }));
+    const axios = require('axios');
+    const post = jest.spyOn(axios, 'post');
+
+    await expect(svc.createDpaLink('org-1', 'user-1')).rejects.toThrow(/paid plans/);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("passes on the licence site's reason when it says no", async () => {
+    const licenses = [mkLicense({ organizationId: 'org-1', plan: 'starter' })];
+    const { svc } = withPeople(makeService({ isCloud: true, licenses }));
+    const axios = require('axios');
+    jest.spyOn(axios, 'post').mockRejectedValue({ response: { status: 404, data: { error: 'no paid plan' } } });
+
+    await expect(svc.createDpaLink('org-1', 'user-1')).rejects.toThrow('no paid plan');
+  });
+});
+
+describe('LicenseService — plan changes are announced (Cloud)', () => {
+  let get: jest.SpyInstance;
+  beforeEach(() => {
+    get = jest.spyOn(axios, 'get');
+  });
+  afterEach(() => get.mockRestore());
+
+  function make(cloud = true) {
+    const row: any = { licenseKey: 'AMCP-T', organizationId: 'org-1', plan: 'trial', status: 'active', createdAt: new Date() };
+    const prisma = {
+      license: {
+        findFirst: jest.fn(async ({ where }: any) =>
+          where?.organizationId === 'org-1' && (!where.status || row.status === where.status) ? { ...row } : null,
+        ),
+        update: jest.fn(async ({ data }: any) => Object.assign(row, data)),
+      },
+    };
+    const svc = new LicenseService(prisma as any, {} as any, { isCloud: () => cloud } as any);
+    return { svc, row };
+  }
+  const flush = () => new Promise((r) => setImmediate(r));
+
+  it('tells listeners when a verification changes the plan', async () => {
+    const { svc } = make();
+    const seen: any[] = [];
+    svc.onPlanChange((c) => {
+      seen.push(c);
+    });
+    get.mockResolvedValue({ data: { valid: true, plan: 'starter', features: {} } });
+    await svc.verifyLicense('AMCP-T', 'org-1');
+    await flush();
+    expect(seen).toEqual([{ organizationId: 'org-1', from: 'trial', to: 'starter' }]);
+  });
+
+  it('stays quiet when the plan is the same, and a failing listener never fails the write', async () => {
+    const { svc } = make();
+    const listener = jest.fn().mockRejectedValue(new Error('boom'));
+    svc.onPlanChange(listener);
+    get.mockResolvedValue({ data: { valid: true, plan: 'trial', features: {} } });
+    await expect(svc.verifyLicense('AMCP-T', 'org-1')).resolves.toMatchObject({ valid: true });
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
+
+    get.mockResolvedValue({ data: { valid: true, plan: 'team', features: {} } });
+    await expect(svc.verifyLicense('AMCP-T', 'org-1')).resolves.toMatchObject({ valid: true });
+    await flush();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces nothing on self-hosted', async () => {
+    const { svc } = make(false);
+    const listener = jest.fn();
+    svc.onPlanChange(listener);
+    get.mockResolvedValue({ data: { valid: true, plan: 'starter', features: {} } });
+    await svc.verifyLicense('AMCP-T', 'org-1');
+    await flush();
+    expect(listener).not.toHaveBeenCalled();
   });
 });

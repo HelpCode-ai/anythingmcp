@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { LogoIcon } from '@/components/logo-icon';
 import { Card } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
@@ -30,11 +31,11 @@ function VerifyEmailContent() {
   const token = searchParams.get('token');
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const t = useTranslations('verifyEmail');
 
   useEffect(() => {
     if (!token) {
       setStatus('error');
-      setErrorMessage('No verification token provided');
       return;
     }
 
@@ -54,7 +55,7 @@ function VerifyEmailContent() {
         } else {
           return res.json().then((data) => {
             setStatus('error');
-            setErrorMessage(data.message || 'Verification failed');
+            setErrorMessage(data.message || '');
           });
         }
       })
@@ -71,12 +72,12 @@ function VerifyEmailContent() {
           <div className="flex justify-center mb-4">
             <BrandMark />
           </div>
-          <h1 className="text-xl font-semibold text-[var(--text)]">Email Verification</h1>
+          <h1 className="text-xl font-semibold text-[var(--text)]">{t('title')}</h1>
         </div>
 
         {status === 'loading' && (
           <p className="text-center text-[var(--text-2)]">
-            Verifying your email...
+            {t('verifying')}
           </p>
         )}
 
@@ -85,12 +86,12 @@ function VerifyEmailContent() {
             <div className="inline-flex items-center justify-center w-12 h-12 mx-auto rounded-full bg-[var(--t-success-bg)] text-[var(--t-success-fg)] text-2xl">
               &#10003;
             </div>
-            <p className="text-sm font-medium text-[var(--text)]">Your email has been verified successfully!</p>
+            <p className="text-sm font-medium text-[var(--text)]">{t('success')}</p>
             <Link
               href="/login?emailVerified=true"
               className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
             >
-              Go to Sign In
+              {t('goToSignIn')}
             </Link>
           </div>
         )}
@@ -98,13 +99,15 @@ function VerifyEmailContent() {
         {status === 'error' && (
           <div className="text-center space-y-4">
             <div className="rounded-[9px] px-3 py-2.5 text-sm bg-[var(--t-danger-bg)] text-[var(--t-danger-fg)]">
-              {errorMessage}
+              {/* Fallbacks are read here, not stored by the effect, so a
+                  language change never re-runs the single-use token check. */}
+              {errorMessage || (token ? t('errors.failed') : t('errors.noToken'))}
             </div>
             <Link
               href="/login"
               className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
             >
-              Back to Sign In
+              {t('backToSignIn')}
             </Link>
           </div>
         )}

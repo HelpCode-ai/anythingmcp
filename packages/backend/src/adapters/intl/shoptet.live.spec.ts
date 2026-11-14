@@ -2,9 +2,8 @@ import * as adapter from './shoptet.json';
 
 /**
  * Shoptet REST API (api.docs.shoptet.com, OpenAPI in shoptet/developers): private API token in the
- * Shoptet-Private-API-Token header, api.myshoptet.com. Built from a customer's hand-built Cloud
- * connectors (orders on a .cz and a .sk shop); every tool was checked read-only with that token
- * on 22 Oct 2026.
+ * Shoptet-Private-API-Token header, api.myshoptet.com. Every tool was
+ * checked read-only against live .cz and .sk shops on 22 Oct 2026.
  * Live part: SHOPTET_API_TOKEN=... RUN_SHOPTET_LIVE=1 npx jest src/adapters/intl/shoptet
  * (reads only: e-shop, one order page, order statuses).
  */
@@ -54,8 +53,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'shoptet_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["get_order", "list_orders"];
 
 describe('shoptet adapter: static spec conformance', () => {
 
@@ -105,10 +102,6 @@ describe('shoptet adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);

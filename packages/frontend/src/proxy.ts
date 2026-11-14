@@ -50,6 +50,18 @@ export function proxy(request: NextRequest) {
     // rewrite — without these an unauthenticated sign-in would be bounced to
     // /login, which is the page the user is trying to reach through.
     pathname.startsWith('/sso') ||
+    // File Share links (#1387): public links open for anyone with the token;
+    // the page itself asks internal-link visitors to sign in.
+    pathname.startsWith('/f/') ||
+    // Setup links from an AI client: the page opens a session from the
+    // sign-in just made to connect that client, or sends to /login itself.
+    pathname.startsWith('/s/') ||
+    // Reactivation links an AI client shows once the trial ended: the token
+    // names the workspace and the page sells its plans without a sign-in.
+    pathname.startsWith('/reactivate/') ||
+    // The File Search plugin's hand-off from its authorization page: it opens
+    // a session from the sign-in just made there, or shows how to go on.
+    pathname === '/setup/file-search' ||
     pathname.startsWith('/auth') ||
     pathname.startsWith('/.well-known') ||
     pathname === '/authorize' ||
@@ -65,6 +77,12 @@ export function proxy(request: NextRequest) {
     // the key in sessionStorage, and it holds no data — the API it calls is
     // authenticated.
     pathname === '/settings/license/activate' ||
+    // Where a provider authorization completes. A TikTok Shop App Store
+    // install arrives here from TikTok, often before the seller has an
+    // account, and the page offers both sign-in and sign-up; every other
+    // flow is sent to /login by the page itself, as before. It holds no
+    // data, and the APIs it calls are authenticated.
+    pathname === '/connectors/oauth/complete' ||
     // Sentry tunnel (tunnelRoute in next.config.ts). Errors on /login and
     // /register come from signed-out visitors; redirecting them to /login
     // would drop exactly those reports.

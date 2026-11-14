@@ -1,0 +1,382 @@
+{
+  "slug": "ares",
+  "name": "ARES Czech Company Register",
+  "aliases": [
+    "Registr ekonomických subjektů",
+    "Czech business register",
+    "Obchodní rejstřík",
+    "Veřejný rejstřík",
+    "IČO lookup"
+  ],
+  "description": "Czech company data from ARES, the Ministry of Finance register of economic subjects, no API key: search companies by name or IČO, read the basic record, the commercial register extract with owners and statutory body, the statistical register, trade licences, bankruptcy records and code lists.",
+  "instructions": "## ARES, Czech register of economic subjects\nThis connector reads **ARES** (Administrativní registr ekonomických subjektů), the public information system of the Czech Ministry of Finance that joins the data of the Czech source registers: the Public (commercial) Register (VR), the Statistical Office register (RES), the Trade Licensing Register (RŽP), the Basic Register of Persons (ROS), the VAT register, the Central Register of Bankrupts (CEU) and others. No account or API key; everything is read-only.\n\n**Setup**: nothing to configure. Try `ares_get_subject` with 27074358.\n\n**Identifiers**: the IČO (identifikační číslo osoby) has 8 digits; keep leading zeros (00006947). The Czech VAT number (DIČ) is usually CZ plus the IČO, e.g. CZ27074358. The registry court file number (spisová značka) is court + section + insert, e.g. C 209831 vedená u Městského soudu v Praze (MSPH).\n\n**Workflow**\n1. Find the company: `ares_search_subjects` by business name (and municipality or legal form), or by a list of IČO numbers.\n2. `ares_get_subject` for the summary and `seznamRegistraci`, which says in which registers the subject is AKTIVNI (active), HISTORICKY (historic) or NEEXISTUJICI (not present).\n3. Go deeper where it is present: `ares_get_commercial_register` (owners, statutory body, capital, history; batch with `ares_search_commercial_register`), `ares_get_statistical_register` (size, sector), `ares_get_trade_licences` (trades), `ares_get_basic_register` (data box, legal state), `ares_get_bankruptcy_records`, `ares_get_other_register_record`.\n4. `ares_search_codelists` decodes codes (legal forms, tax offices, NACE).\n\n**Reading the Czech field names**\n- General: `ico` company ID, `obchodniJmeno` business name, `sidlo` registered office (`textovaAdresa` full address, `nazevObce` town, `psc` postcode, `kodObce` municipality code), `adresaDorucovaci` delivery address, `pravniForma` legal form code (112 s.r.o. limited liability company, 121 a.s. joint-stock company, 101 sole trader), `financniUrad` tax office code, `dic` VAT number, `datumVzniku` date of establishment, `datumZaniku` date of dissolution, `datumAktualizace` last update, `czNace` activity codes, `primarniZdroj` primary source register, `pocetCelkem` total results.\n- Registers (`seznamRegistraci`): `stavZdrojeVr` commercial register, `stavZdrojeRes` statistical, `stavZdrojeRzp` trade licences, `stavZdrojeDph` VAT, `stavZdrojeCeu` bankrupts, `stavZdrojeIr` insolvency register, `stavZdrojeRos` basic register.\n- Commercial register (`zaznamy`): `spisovaZnacka` file number (soud court, oddil section, vlozka insert), `statutarniOrgany` statutory bodies with `clenoveOrganu` members (`fyzickaOsoba` natural person: jmeno first name, prijmeni surname, datumNarozeni birth date; `pravnickaOsoba` legal person; `nazevAngazma` role, e.g. jednatel managing director, předseda představenstva board chair), `zpusobJednani` how the body signs, `ostatniOrgany` other bodies (dozorčí rada supervisory board, prokura procuration), `spolecnici` partners with `spolecnik[].podil` share (`vklad` contribution, `velikostPodilu` size, `splaceni` paid up), `akcionari` shareholders, `akcie` shares, `zakladniKapital` registered capital, `cinnosti.predmetPodnikani` business activities, `ostatniSkutecnosti` other facts, `insolvence`/`konkursy` insolvency and bankruptcy entries. `datumZapisu` entered, `datumVymazu` deleted (an item with a deletion date is history, not current). Amounts like \"10;00\" use a semicolon as decimal separator (10.00).\n- Trade licences: `zivnosti` licences, `predmetPodnikani` subject of the trade, `druhZivnosti` type (code), `datumVzniku`/`datumZaniku` validity, `odpovedniZastupci` responsible representatives, `provozovny` establishments.\n- Statistical register: `statistickeUdaje.kategoriePoctuPracovniku` employee size band and `institucionalniSektor2010` sector (decode with ares_search_codelists), `czNacePrevazujici` main activity.\n- Errors: `kod` NENALEZENO (not found, HTTP 404), CHYBA_VSTUPU (bad or empty input, 400), OBECNA_CHYBA (general error), with a Czech `popis` and a `subKod`. A search needs at least one filter.\n\n**Limits**: ARES is free for any use but asks for reasonable volumes and may block an address that floods it; search results are capped (use `start` and `count` to page and narrow the filters). For mass processing, use the ARES open data dumps rather than the API. Data come from the source registers; the legally binding extract is the one from the register itself (e.g. the Public Register at or.justice.cz).\n\n**Personal data**: commercial register extracts name natural persons with birth dates; use them for legitimate business purposes only.",
+  "region": "cz",
+  "category": "government",
+  "icon": "ares",
+  "docsUrl": "https://ares.gov.cz/swagger-ui/",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "ares_get_subject",
+    "params": {
+      "ico": "27074358"
+    }
+  },
+  "connector": {
+    "name": "ARES REST API",
+    "type": "REST",
+    "baseUrl": "https://ares.gov.cz/ekonomicke-subjekty-v-be/rest",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "ares_search_subjects",
+      "description": "Search ARES, the Czech register of economic subjects, across all source registers: by business name (obchodniJmeno), a list of IČO numbers, registered office (municipality code or free-text address), legal form codes, CZ-NACE codes or tax office. Returns pocetCelkem (total) and ekonomickeSubjekty with IČO, name, address (sidlo), legal form, dates, VAT number (dic) and the list of registers the subject appears in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_name": {
+            "type": "string",
+            "description": "Business name or part of it (obchodniJmeno), e.g. \"Seznam.cz\"."
+          },
+          "ico": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{8}$"
+            },
+            "description": "One or more 8-digit IČO numbers to look up in one call."
+          },
+          "municipality_code": {
+            "type": "integer",
+            "description": "RÚIAN municipality code of the registered office (sidlo.kodObce), e.g. 554782 for Praha."
+          },
+          "address_text": {
+            "type": "string",
+            "description": "Free-text address of the registered office (sidlo.textovaAdresa), e.g. \"Radlická 3294/10, Praha\"."
+          },
+          "legal_forms": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{3}$"
+            },
+            "description": "3-digit legal form codes (pravniForma), e.g. 112 s.r.o. (limited liability company), 121 a.s. (joint-stock company), 101 sole trader. ares_search_codelists with PravniForma decodes them."
+          },
+          "nace_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "CZ-NACE activity codes (1 to 5 characters), e.g. [\"62\"] or [\"62010\"]."
+          },
+          "tax_offices": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{3}$"
+            },
+            "description": "3-digit codes of the competent tax office (financniUrad)."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first result (default 0).",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of results to return (pocet). Keep it modest, e.g. 10 to 100.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort keys, e.g. [\"obchodniJmeno\"] or [\"-ico\"] (minus for descending)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ekonomicke-subjekty/vyhledat",
+        "bodyMapping": {
+          "obchodniJmeno": "$business_name",
+          "ico": "$ico",
+          "sidlo": {
+            "kodObce": "$municipality_code",
+            "textovaAdresa": "$address_text"
+          },
+          "pravniForma": "$legal_forms",
+          "czNace": "$nace_codes",
+          "financniUrad": "$tax_offices",
+          "start": "$start",
+          "pocet": "$count",
+          "razeni": "$sort"
+        }
+      }
+    },
+    {
+      "name": "ares_get_subject",
+      "description": "Get the basic ARES record of an economic subject by IČO: business name, registered office (sidlo with textovaAdresa), delivery address, legal form, tax office, VAT number (dic), date of establishment and dissolution, CZ-NACE activity codes, and seznamRegistraci: the status of the subject in each source register (VR, RES, RŽP, DPH...). Answers 404 (kod NENALEZENO) when no subject has that IČO.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ico": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "8-digit Czech company identification number (IČO) with leading zeros, e.g. 27074358."
+          }
+        },
+        "required": [
+          "ico"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ekonomicke-subjekty/{ico}"
+      }
+    },
+    {
+      "name": "ares_get_commercial_register",
+      "description": "Get the Public (commercial) Register extract (Veřejný rejstřík, VR) of a company by IČO, with full history: file number at the registry court (spisovaZnacka), names, registered office, legal form, business activities, registered capital, shares, statutory bodies and their members (statutarniOrgany), other bodies such as the supervisory board (ostatniOrgany), shareholders or partners (spolecnici, akcionari), branches, liquidation, insolvency and bankruptcy entries. Each item has datumZapisu (entered) and, once no longer valid, datumVymazu (deleted).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ico": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "8-digit Czech company identification number (IČO) with leading zeros, e.g. 27074358."
+          }
+        },
+        "required": [
+          "ico"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ekonomicke-subjekty-vr/{ico}"
+      }
+    },
+    {
+      "name": "ares_search_commercial_register",
+      "description": "Get the Public Register (VR) extracts of several companies in one call by a list of IČO numbers. Returns pocetCelkem and ekonomickeSubjekty, each with icoId and zaznamy like ares_get_commercial_register.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ico": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{8}$"
+            },
+            "description": "8-digit IČO numbers.",
+            "minItems": 1
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first result (default 0).",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of results to return (pocet). Keep it modest, e.g. 10 to 100.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort keys, e.g. [\"obchodniJmeno\"] or [\"-ico\"] (minus for descending)."
+          }
+        },
+        "required": [
+          "ico"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ekonomicke-subjekty-vr/vyhledat",
+        "bodyMapping": {
+          "ico": "$ico",
+          "start": "$start",
+          "pocet": "$count",
+          "razeni": "$sort"
+        }
+      }
+    },
+    {
+      "name": "ares_get_statistical_register",
+      "description": "Get the Register of Economic Subjects of the Czech Statistical Office (RES) record by IČO: legal form, dates of establishment and dissolution, CZ-NACE activities including the main one (czNacePrevazujici), and statistickeUdaje with the institutional sector (institucionalniSektor2010) and the employee size category (kategoriePoctuPracovniku).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ico": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "8-digit Czech company identification number (IČO) with leading zeros, e.g. 27074358."
+          }
+        },
+        "required": [
+          "ico"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ekonomicke-subjekty-res/{ico}"
+      }
+    },
+    {
+      "name": "ares_get_trade_licences",
+      "description": "Get the Trade Licensing Register (RŽP) record by IČO: trade licences (zivnosti) with subject of business (predmetPodnikani), type (druhZivnosti), fields of activity, validity, suspensions and interruptions, responsible representatives and establishments (provozovny), plus persons involved (angazovaneOsoby).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ico": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "8-digit Czech company identification number (IČO) with leading zeros, e.g. 27074358."
+          }
+        },
+        "required": [
+          "ico"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ekonomicke-subjekty-rzp/{ico}"
+      }
+    },
+    {
+      "name": "ares_get_basic_register",
+      "description": "Get the Basic Register of Persons (ROS, Registr osob) record by IČO: the reference data the state keeps for every legal person and entrepreneur: legal form, legal state (pravniStavRos), data boxes (datoveSchranky), contact data, statutory bodies, liquidators, insolvency administrators and establishments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ico": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "8-digit Czech company identification number (IČO) with leading zeros, e.g. 27074358."
+          }
+        },
+        "required": [
+          "ico"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ekonomicke-subjekty-ros/{ico}"
+      }
+    },
+    {
+      "name": "ares_get_bankruptcy_records",
+      "description": "Get the Central Register of Bankrupts (CEU, Centrální evidence úpadců) record by IČO: bankruptcy declarations of the subject with court file number and dates. Answers 404 when the subject is not in that register, which is the normal case.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ico": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "8-digit Czech company identification number (IČO) with leading zeros, e.g. 27074358."
+          }
+        },
+        "required": [
+          "ico"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ekonomicke-subjekty-ceu/{ico}"
+      }
+    },
+    {
+      "name": "ares_get_other_register_record",
+      "description": "Get the record of a subject from one of the specialised source registers by IČO: nrpzs (National Register of Healthcare Providers), rpsh (Register of Political Parties and Movements), rcns (Register of Churches and Religious Societies), szr (Common Farmers Register), rs (Register of Schools and School Facilities). Check seznamRegistraci in ares_get_subject first: 404 means the subject is not in that register.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "register": {
+            "type": "string",
+            "description": "Source register code.",
+            "enum": [
+              "nrpzs",
+              "rpsh",
+              "rcns",
+              "szr",
+              "rs"
+            ]
+          },
+          "ico": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "8-digit Czech company identification number (IČO) with leading zeros, e.g. 27074358."
+          }
+        },
+        "required": [
+          "register",
+          "ico"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ekonomicke-subjekty-{register}/{ico}"
+      }
+    },
+    {
+      "name": "ares_search_codelists",
+      "description": "Look up ARES code lists (číselníky) to decode codes in the records, e.g. PravniForma (legal forms, source res), FinancniUrad (tax offices, source ufo), CzNace (activities, source res), TypZdrojeAres (source registers, com). Returns ciselniky with polozkyCiselniku: kod, nazev (Czech text, sometimes English) and validity dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "codelist": {
+            "type": "string",
+            "description": "Code list code (kodCiselniku), e.g. PravniForma, FinancniUrad, CzNace, KategoriePoctuPracovniku, FceVladnichInstituci."
+          },
+          "source": {
+            "type": "string",
+            "description": "Source/area of the code list (zdrojCiselniku): res (statistical register), ros, vr, rzp, ufo (tax offices), com (common)."
+          },
+          "start": {
+            "type": "integer",
+            "description": "Offset of the first result (default 0).",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of results to return (pocet). Keep it modest, e.g. 10 to 100.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Sort keys, e.g. [\"obchodniJmeno\"] or [\"-ico\"] (minus for descending)."
+          }
+        },
+        "required": [
+          "codelist",
+          "source"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ciselniky-nazevniky/vyhledat",
+        "bodyMapping": {
+          "kodCiselniku": "$codelist",
+          "zdrojCiselniku": "$source",
+          "start": "$start",
+          "pocet": "$count",
+          "razeni": "$sort"
+        }
+      }
+    }
+  ]
+}

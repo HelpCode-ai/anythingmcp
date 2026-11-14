@@ -1,0 +1,144 @@
+{
+  "slug": "anaf",
+  "name": "ANAF Romania Company Check",
+  "aliases": [
+    "Registrul contribuabililor",
+    "ANAF VAT check",
+    "Verificare CUI",
+    "PlatitorTvaRest",
+    "Romanian VAT register",
+    "Bilant ANAF"
+  ],
+  "description": "Romanian company check with the free ANAF public web services, no API key: identity, VAT registration, VAT on cash basis, inactive status, split VAT and RO e-Factura status of up to 100 fiscal codes (CUI) on a given date, and the published annual financial statement indicators.",
+  "instructions": "## ANAF, Romanian tax administration public web services\nThis connector uses the free public web services of ANAF (Agenția Națională de Administrare Fiscală): the **taxpayer and VAT status check** (PlatitorTvaRest, version 9, the current one) and the **published financial statements** (bilanț). No account or API key; everything is read-only.\n\n**Setup**: nothing to configure. Try `anaf_get_company_vat_status` with cui 14399840 and today's date.\n\n**Identifiers**: the fiscal code (CUI or CIF, cod unic de înregistrare) is a number of up to 10 digits. VAT-registered companies quote it with the RO prefix (RO14399840); always send it without RO, as a number. `nrRegCom` is the Trade Register number (e.g. J40/372/2002 or the new form J2002000372404).\n\n**Workflow**\n- Is a supplier real, active and VAT-registered on the invoice date? `anaf_get_company_vat_status` (one company) or `anaf_get_companies_vat_status` (up to 100). Use the invoice or check date as `date`.\n- How big is the company? `anaf_get_financial_statement` for a year (try the previous year first; the current year's statements appear only after filing).\n\n**Reading the Romanian field names (VAT check)**\n- `date_generale` general data: `cui`, `denumire` name, `adresa` fiscal address, `nrRegCom` trade register number, `telefon`, `codPostal`, `stare_inregistrare` registration status (e.g. INREGISTRAT din data ... registered since), `data_inregistrare` registration date, `cod_CAEN` activity code, `iban`, `statusRO_e_Factura` true when in the RO e-Factura registry, `organFiscalCompetent` competent tax office, `forma_de_proprietate` ownership form, `forma_organizare` organisation form, `forma_juridica` legal form (e.g. SOCIETATE COMERCIALĂ CU RĂSPUNDERE LIMITATĂ = SRL limited liability company, SOCIETATE COMERCIALĂ PE ACŢIUNI = SA joint-stock company).\n- `inregistrare_scop_Tva`: `scpTVA` true = registered for VAT on that date; `perioade_TVA` periods with `data_inceput_ScpTVA` start, `data_sfarsit_ScpTVA` end, `data_anul_imp_ScpTVA` date the cancellation was recorded, `mesaj_ScpTVA` legal ground of the cancellation.\n- `inregistrare_RTVAI`: VAT on cash basis (TVA la încasare), `statusTvaIncasare` true when applied, with start and end dates.\n- `stare_inactiv`: `statusInactivi` true = declared inactive by ANAF (invoices from an inactive taxpayer are a tax risk), `dataInactivare`, `dataReactivare`, `dataRadiere` deregistration date.\n- `inregistrare_SplitTVA`: split VAT payment (`statusSplitTVA`).\n- `adresa_sediu_social` registered office (fields prefixed s: sdenumire_Strada street, snumar_Strada number, sdenumire_Localitate town, sdenumire_Judet county, scod_Postal postcode) and `adresa_domiciliu_fiscal` fiscal domicile (same fields prefixed d).\n- `notFound`: codes ANAF does not know (an empty `found` with the code in `notFound`).\n\n**Reading the financial statement**: `an` year, `deni` name, `caen`/`den_caen` activity, and `i`: list of `indicator` (I1, I2...), `val_indicator` value in lei (RON), `val_den_indicator` Romanian label. Common labels: ACTIVE IMOBILIZATE fixed assets, ACTIVE CIRCULANTE current assets, Stocuri inventories, Creante receivables, Casa şi conturi la bănci cash and bank, DATORII liabilities, CAPITALURI equity, Capital subscris vărsat paid-in capital, Cifra de afaceri netă net turnover, VENITURI TOTALE total revenue, CHELTUIELI TOTALE total expenses, Profit/Pierdere brut(ă) gross profit/loss, Profit/Pierdere net(ă) net profit/loss, Număr mediu de salariaţi average number of employees. Indicator numbers mean different things for different statement types, so read the label, not only the code.\n\n**Limits (ANAF terms)**: at most 100 fiscal codes per VAT request and at most 1 request per second per client; ANAF states that overloading the service is sanctioned. Space out calls when checking many companies. The data are ANAF's public registers; for legal certainty keep the date of the check.",
+  "region": "ro",
+  "category": "government",
+  "icon": "anaf",
+  "docsUrl": "https://static.anaf.ro/static/10/Anaf/Informatii_R/Servicii_web/doc_WS_V9.txt",
+  "requiredEnvVars": [],
+  "probe": {
+    "tool": "anaf_get_financial_statement",
+    "params": {
+      "cui": 14399840,
+      "year": 2024
+    }
+  },
+  "connector": {
+    "name": "ANAF public web services",
+    "type": "REST",
+    "baseUrl": "https://webservicesp.anaf.ro",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "anaf_get_company_vat_status",
+      "description": "Check one Romanian company or taxpayer at ANAF (PlatitorTvaRest v9) on a given date: general data (name, fiscal address, trade register number, CAEN code, registration status, legal form, competent tax office), VAT registration (scpTVA true/false with periods), VAT on cash basis (TVA la încasare), inactive or reactivated taxpayer status, split VAT, RO e-Factura registry status, and the registered office and fiscal domicile addresses. Unknown codes come back in notFound.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cui": {
+            "type": "integer",
+            "description": "Romanian fiscal code (CUI/CIF) as a number, without the RO prefix, e.g. 14399840 for RO14399840.",
+            "minimum": 1
+          },
+          "date": {
+            "type": "string",
+            "description": "Date the status is checked for, YYYY-MM-DD (usually today; past dates show the status on that day).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        },
+        "required": [
+          "cui",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/PlatitorTvaRest/v9/tva",
+        "bodyMapping": [
+          {
+            "cui": "$cui",
+            "data": "$date"
+          }
+        ]
+      }
+    },
+    {
+      "name": "anaf_get_companies_vat_status",
+      "description": "Check up to 100 Romanian fiscal codes in one call at ANAF (PlatitorTvaRest v9), each with its own date. Returns found (one record per company, same fields as anaf_get_company_vat_status) and notFound (codes ANAF does not know). ANAF allows at most 1 request per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "companies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cui": {
+                  "type": "integer",
+                  "description": "Fiscal code without RO."
+                },
+                "data": {
+                  "type": "string",
+                  "description": "Date YYYY-MM-DD."
+                }
+              },
+              "required": [
+                "cui",
+                "data"
+              ]
+            },
+            "description": "List of {cui, data} objects: cui is the fiscal code as a number without RO, data the date YYYY-MM-DD.",
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "companies"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/PlatitorTvaRest/v9/tva",
+        "bodyMapping": {
+          "__raw": "$companies"
+        }
+      }
+    },
+    {
+      "name": "anaf_get_financial_statement",
+      "description": "Get the public indicators of the annual financial statement (bilanț) a Romanian company filed with ANAF for one year: name, CAEN activity code and description, and a list of indicators (I1, I2, ...) with value and Romanian label, e.g. fixed assets, current assets, debts, equity, net turnover, total revenue and expenses, gross and net profit or loss, average number of employees. The indicator set depends on the type of statement (companies, banks, insurers, non-profits). An empty list means nothing was published for that year.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cui": {
+            "type": "integer",
+            "description": "Romanian fiscal code (CUI/CIF) as a number, without the RO prefix, e.g. 14399840 for RO14399840.",
+            "minimum": 1
+          },
+          "year": {
+            "type": "integer",
+            "description": "Financial year, e.g. 2024. Statements for a year are published during the following year.",
+            "minimum": 2014
+          }
+        },
+        "required": [
+          "cui",
+          "year"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bilant",
+        "queryParams": {
+          "an": "$year",
+          "cui": "$cui"
+        }
+      }
+    }
+  ]
+}

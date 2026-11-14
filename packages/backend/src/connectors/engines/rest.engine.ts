@@ -10,21 +10,35 @@ import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { decodeResponseBody } from '../binary-response.util';
 import { buildOAuth1Header } from './oauth1-signer';
+import { hmacJwtHeader, isHmacJwtSignature } from './hmac-jwt.util';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { BearerTokenRenewalService } from './bearer-token-renewal.service';
 import { ShopeeTokenService, isShopeeAccessTokenRejected, isShopeeAuth } from './shopee-token.service';
+import {
+  TikTokShopTokenService,
+  isTikTokShopAccessTokenRejected,
+  isTikTokShopAuth,
+  resolveTikTokShopAuthConfig,
+  shopCipherApplies,
+} from './tiktok-shop-token.service';
 import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
   LoginTokenAuthConfig,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { followDownload, type DownloadFollowConfig } from './download-follow.util';
 import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http-header-name.util';
 import { XMLParser } from 'fast-xml-parser';
 import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
+import {
+  DEFAULT_TOOL_TIMEOUT_MS,
+  toolResponseLimitBytes,
+  toolTimeoutMs,
+} from './request-limits.util';
 import { assertNoResponseBodyError } from './response-error.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
@@ -63,6 +77,18 @@ const NOT_SENT_CODES = ['EAI_AGAIN', 'ECONNREFUSED', 'EPROTO'];
  * exchange after the API received it. The API may have run the request.
  */
 const MAYBE_SENT_CODES = ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED'];
+
+/** The codes axios raises when the request ran past its timeout. */
+const TIMEOUT_CODES = ['ETIMEDOUT', 'ECONNABORTED'];
+
+/**
+ * The request deadline ran out: axios and outbound-http both raise
+ * ECONNABORTED with "timeout of <n>ms exceeded". Other ECONNABORTED errors
+ * (a socket aborted early) are not this.
+ */
+function isDeadlineError(error: AxiosError): boolean {
+  return error.code === 'ECONNABORTED' && /^timeout of \d+ms exceeded/.test(error.message);
+}
 
 /**
  * Retry-After as milliseconds: delay-seconds or an HTTP date (RFC 9110
@@ -119,6 +145,7 @@ export class RestEngine {
     private readonly loginTokenService: LoginTokenService,
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
     @Optional() private readonly shopeeTokens?: ShopeeTokenService,
+    @Optional() private readonly tiktokShopTokens?: TikTokShopTokenService,
   ) {}
 
   /**
@@ -186,9 +213,27 @@ export class RestEngine {
       // Hand back an XML body as the text it arrived as instead of parsing
       // it into an object. The OData engine needs `$metadata` verbatim.
       rawBody?: boolean;
+      // Per-tool limits for slow or large calls (image generation): the
+      // timeout in ms (1 s to 180 s, default 30 s) and the upstream body
+      // limit in bytes (at most 50 MB, default TOOL_MAX_RESPONSE_BYTES).
+      // Clamped, never off; see request-limits.util.ts.
+      timeoutMs?: unknown;
+      maxResponseBytes?: unknown;
+      // The API answers with a link to the data (Amazon report documents):
+      // fetch it on the server, decompress and page it. See
+      // download-follow.util.ts.
+      download?: unknown;
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
+    if (endpointMapping.download) {
+      const { download, ...apiCall } = endpointMapping;
+      const res = await this.executeWithMeta(config, apiCall, params);
+      return {
+        body: await followDownload(res.body, download as DownloadFollowConfig, params),
+        headers: res.headers,
+      };
+    }
     const withMeta = (response: AxiosResponse) => {
       const body = endpointMapping.rawBody ? response.data : parseXmlBody(response);
       assertNotJsonRpcError(body);
@@ -286,12 +331,16 @@ export class RestEngine {
         ...config.headers,
         ...resolvedEndpointHeaders,
       },
-      timeout: 30000,
+      timeout: toolTimeoutMs(endpointMapping.timeoutMs),
       // The bytes as they arrived: a text body is decoded and parsed as axios
       // always did, a file (image, PDF, …) becomes a BinaryBody instead of a
       // string of replacement characters. See binary-response.util.ts.
       responseType: 'arraybuffer',
       transformResponse: [(data: unknown, headers?: unknown) => decodeResponseBody(data, headers)],
+      // Stop reading a body over the tool response limit instead of parsing
+      // tens of MB on the event loop. See response-size-limit.ts. A tool may
+      // raise it for a body whose bulk responseMapping.images takes out.
+      maxContentLength: toolResponseLimitBytes(endpointMapping.maxResponseBytes),
     };
     // A form-data body is a one-shot stream: every send (a retry, a redirect
     // that keeps the body) needs a fresh one, built by this.
@@ -507,11 +556,22 @@ export class RestEngine {
     // HMAC signing is here for the same reason: the canonical string most
     // of these APIs sign folds in the request body, which does not exist
     // until the block above has run. A Shopee connector also signs the
-    // shop's access token and id (undefined for every other connector).
+    // shop's access token and id, a TikTok Shop connector its shop cipher
+    // (its access token goes in a header, unsigned); undefined for every
+    // other connector.
+    const tiktokShop = isTikTokShopAuth(config.authType, config.authConfig);
+    // A TikTok Shop connector without an App key of its own signs, renews and
+    // reads its shops with the server's app: filled in here, in memory, for
+    // this call (and its retry) only.
+    const tiktokShopConfig = tiktokShop
+      ? { ...config, authConfig: resolveTikTokShopAuthConfig(config.authType, config.authConfig) }
+      : config;
     const hmacCredentials = isShopeeAuth(config.authType, config.authConfig)
       ? await this.shopeeShopParams(config)
-      : undefined;
-    this.applyHmacSignature(axiosConfig, config, hmacCredentials);
+      : tiktokShop
+        ? await this.tiktokShopCredentials(tiktokShopConfig, axiosConfig)
+        : undefined;
+    this.applyHmacSignature(axiosConfig, tiktokShopConfig, hmacCredentials);
     for (const h of headerNames(axiosConfig.headers)) {
       if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
     }
@@ -597,10 +657,21 @@ export class RestEngine {
       }
       // Shopee refused the shop's access token (expired early, or replaced
       // by another process's renewal): renew once, sign again, resend.
-      if (hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
+      if (!tiktokShop && hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
         const renewed = await this.shopeeTokens.renewAfterRejection(config, sentAt);
         if (renewed) {
           this.applyHmacSignature(axiosConfig, config, renewed);
+          rebuildBody(axiosConfig, buildBody);
+          return withMeta(await outboundRequest(axiosConfig, outbound));
+        }
+      }
+      // TikTok Shop refused the access token (105002 expired, or the header
+      // named invalid): renew once, sign again with a new timestamp, resend.
+      if (tiktokShop && this.tiktokShopTokens && isTikTokShopAccessTokenRejected(error)) {
+        const renewed = await this.tiktokShopTokens.renewAfterRejection(tiktokShopConfig, sentAt);
+        if (renewed) {
+          const params = this.applyTikTokShopCredentials(axiosConfig, renewed);
+          this.applyHmacSignature(axiosConfig, tiktokShopConfig, params);
           rebuildBody(axiosConfig, buildBody);
           return withMeta(await outboundRequest(axiosConfig, outbound));
         }
@@ -757,7 +828,18 @@ export class RestEngine {
         if (attempt > 0) rebuildBody(axiosConfig, outbound.data);
         return await outboundRequest(axiosConfig, outbound);
       } catch (error) {
-        const transient = this.isTransientError(error, method);
+        // A tool that raised its timeout (endpointMapping.timeoutMs) is slow
+        // on purpose. Running it again after a timeout would wait that long
+        // up to four times, so even an idempotent one is not retried then.
+        // The same holds for any call that used up its whole deadline: a GET
+        // cut at the default 30 s took 124 s over four attempts in prod.
+        const slowTimeout =
+          error instanceof AxiosError &&
+          !error.response &&
+          (((axiosConfig.timeout ?? 0) > DEFAULT_TOOL_TIMEOUT_MS &&
+            TIMEOUT_CODES.includes(error.code ?? '')) ||
+            isDeadlineError(error));
+        const transient = !slowTimeout && this.isTransientError(error, method);
         const delay = transient ? this.retryDelayMs(error, attempt, delaysMs) : null;
         if (delay === null) {
           // Warn, not debug: production runs at info, so a call that burned
@@ -765,9 +847,11 @@ export class RestEngine {
           // there was no way to tell a flaky upstream from a broken connector.
           if (transient) {
             this.logger.warn(
+              // The status first: axios also sets a code on HTTP errors
+              // (ERR_BAD_REQUEST for a 429), which hid the status here.
               `Gave up after ${attempt + 1} attempts on a transient upstream failure: ${
-                (error as AxiosError).code ??
-                (error as AxiosError).response?.status
+                (error as AxiosError).response?.status ??
+                (error as AxiosError).code
               } ${method} ${logUrl}`,
             );
           }
@@ -932,23 +1016,59 @@ export class RestEngine {
    *                             parameter as sent, '' when absent)
    * `credentialParams` are query parameters a token provider adds (Shopee's
    * access_token and shop_id); they win over a tool's own parameters.
+   *
+   * Sorted-parameter signing, opt-in (the Alibaba IOP gateways: AliExpress,
+   * Alibaba.com, Lazada). Also on the query-signing path only:
+   *   template variables        `${sortedParams}`: every parameter sent, as
+   *                             key + value with no separators, sorted by
+   *                             key. The query as sent (statics, credential
+   *                             parameters and the timestamp included) and,
+   *                             for an application/x-www-form-urlencoded body,
+   *                             its fields. Arrays and objects contribute the
+   *                             pairs the serializer sends for them; the
+   *                             signature parameter itself and empty values
+   *                             are left out (the IOP SDKs skip them too).
+   *                             `${apiPath}`: the request path below the
+   *                             connector's baseUrl, without the query
+   *                             (`/auth/token/create` under `.../rest`).
+   *   signature.encoding        'hex-upper': hex in capitals
+   *   signature.timestampFormat 's' (default, Unix seconds) | 'ms'
+   *                             (milliseconds) | 'iso' (ISO 8601 in UTC,
+   *                             `2026-11-06T07:00:00+00:00`; Falabella)
+   *                             (milliseconds), for `${timestamp}`,
+   *                             timestampParam and timestampHeader alike
+   *
+   * TikTok Shop (`authConfig.tokenProvider: "tiktok-shop"`) uses the same
+   * query signing: its shop cipher arrives as a credential parameter, and
+   *   signature.excludeMultipartBody  true: `${body}` is empty for a
+   *                             multipart/form-data body (image uploads),
+   *                             as TikTok signs those
    */
   private applyHmacSignature(
     axiosConfig: AxiosRequestConfig,
-    config: { authType: string; authConfig?: Record<string, unknown> },
+    config: { authType: string; authConfig?: Record<string, unknown>; baseUrl?: string },
     credentialParams?: Record<string, string>,
   ): void {
     if (config.authType !== 'HMAC' || !config.authConfig) return;
     const sig = config.authConfig.signature as Record<string, unknown> | undefined;
     if (!sig) return;
+    // A JWT signed with the shared secret instead of a digest over the
+    // request (Ghost Admin API): see hmac-jwt.util.ts. Signed per request,
+    // so a retry gets a fresh token too.
+    if (isHmacJwtSignature(sig)) {
+      const { name, value } = hmacJwtHeader(sig);
+      const extra = (sig.extraHeaders as Record<string, string> | undefined) ?? {};
+      axiosConfig.headers = { ...axiosConfig.headers, ...extra, [name]: value };
+      return;
+    }
 
     const algorithm = String(sig.algorithm ?? 'sha256');
     const encoding = String(sig.encoding ?? 'hex') === 'base64' ? 'base64' : 'hex';
     const secret = String(sig.secret ?? '');
     const headerName = String(sig.headerName ?? 'Signature');
-    const timestamp = String(Math.floor(Date.now() / 1000));
 
     const extended = usesExtendedHmac(sig, credentialParams);
+    const timestamp = extended ? hmacTimestamp(sig.timestampFormat) : String(Math.floor(Date.now() / 1000));
     if (extended) {
       // Static and credential parameters first, so the query below (and the
       // signature over it) includes them. A tool's own parameter of the same
@@ -972,13 +1092,18 @@ export class RestEngine {
     // way axios will serialize it, so the bytes signed are the bytes sent —
     // signing a different rendering is the classic way an HMAC integration
     // fails with a message about the key.
+    // A multipart body is left out of the string when the signature says so
+    // (TikTok Shop signs uploads without their body): its bytes, with their
+    // boundary, are not known here, and JSON of a FormData is never right.
     const data = axiosConfig.data;
     const body =
       data === undefined || data === null
         ? ''
-        : typeof data === 'string'
-          ? data
-          : JSON.stringify(data);
+        : extended && sig.excludeMultipartBody === true && data instanceof FormData
+          ? ''
+          : typeof data === 'string'
+            ? data
+            : JSON.stringify(data);
 
     // Query params are set separately on axiosConfig and appended later, so
     // fold them in here or they are absent from a signature that covers them.
@@ -1000,15 +1125,25 @@ export class RestEngine {
 
     // Kaufland's documented string: the four parts joined by newlines, with
     // no newline after the timestamp.
+    const signParam = String(sig.paramName ?? 'sign');
     const canonical = extended
       ? renderExtendedHmacTemplate(String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}'), {
           method: String(axiosConfig.method ?? 'GET').toUpperCase(),
           url,
           path,
           pathname: pathnameOf(url),
+          apiPath: apiPathOf(url, config.baseUrl),
           body,
           timestamp,
           query: params,
+          sortedParams: () =>
+            sortedParamsString(
+              params,
+              formBodyOf(axiosConfig),
+              String(sig.placement ?? 'header') === 'query' ? signParam : undefined,
+            ),
+          sortedQuery: () =>
+            sortedQueryString(params, String(sig.placement ?? 'header') === 'query' ? signParam : undefined),
         })
       : String(sig.template ?? '${method}\n${url}\n${body}\n${timestamp}')
           .replace(/\\n/g, '\n')
@@ -1018,13 +1153,14 @@ export class RestEngine {
           .replace(/\$\{body\}/g, body)
           .replace(/\$\{timestamp\}/g, timestamp);
 
-    const digest = createHmac(algorithm, secret)
+    const rawDigest = createHmac(algorithm, secret)
       .update(canonical, 'utf8')
       .digest(encoding as 'hex' | 'base64');
+    const digest = extended && String(sig.encoding) === 'hex-upper' ? rawDigest.toUpperCase() : rawDigest;
 
     const extra = (sig.extraHeaders as Record<string, string> | undefined) ?? {};
     if (extended && String(sig.placement ?? 'header') === 'query') {
-      axiosConfig.params = { ...params, [String(sig.paramName ?? 'sign')]: digest };
+      axiosConfig.params = { ...params, [signParam]: digest };
       axiosConfig.paramsSerializer = serializeRepeatedParams;
       axiosConfig.headers = { ...axiosConfig.headers, ...extra };
       if (sig.timestampHeader) {
@@ -1061,6 +1197,36 @@ export class RestEngine {
       throw new Error('Shopee connectors need the Shopee token service, which is not available here.');
     }
     return this.shopeeTokens.getShopParams(config);
+  }
+
+  /**
+   * A TikTok Shop call's credentials, renewed first when the token is about
+   * to expire: the access token goes into the `x-tts-access-token` header
+   * (TikTok does not sign it), and the shop cipher is returned as the
+   * credential query parameter the signature covers, except on the paths
+   * where TikTok refuses one. Only for `authType: HMAC` with
+   * `authConfig.tokenProvider: "tiktok-shop"`.
+   */
+  private async tiktokShopCredentials(
+    config: { baseUrl: string; authType: string; authConfig?: Record<string, unknown>; connectorId?: string },
+    axiosConfig: AxiosRequestConfig,
+  ): Promise<Record<string, string>> {
+    if (!this.tiktokShopTokens) {
+      throw new Error('TikTok Shop connectors need the TikTok Shop token service, which is not available here.');
+    }
+    return this.applyTikTokShopCredentials(axiosConfig, await this.tiktokShopTokens.getShopCredentials(config));
+  }
+
+  /** Sets the access token header; returns the credential query parameters for this path. */
+  private applyTikTokShopCredentials(
+    axiosConfig: AxiosRequestConfig,
+    creds: { accessToken: string; shopCipher?: string },
+  ): Record<string, string> {
+    axiosConfig.headers = { ...axiosConfig.headers, 'x-tts-access-token': creds.accessToken };
+    const pathname = pathnameOf(String(axiosConfig.url ?? ''));
+    return creds.shopCipher && shopCipherApplies(pathname, String(axiosConfig.method ?? 'GET'))
+      ? { shop_cipher: creds.shopCipher }
+      : {};
   }
 
   private applyOAuth1Signature(
@@ -1255,8 +1421,94 @@ export function usesExtendedHmac(
     sig.paramName !== undefined ||
     sig.timestampParam !== undefined ||
     sig.queryParams !== undefined ||
+    sig.timestampFormat !== undefined ||
+    sig.encoding === 'hex-upper' ||
+    /\$\{(sortedParams|sortedQuery|apiPath)\}/.test(String(sig.template ?? '')) ||
     credentialParams !== undefined
   );
+}
+
+/**
+ * The request path below the connector's base URL, without the query:
+ * `/auth/token/create` for `https://api-sg.aliexpress.com/rest/auth/token/create`
+ * under the base URL `https://api-sg.aliexpress.com/rest`. The whole path
+ * when the URL is not below the base URL.
+ */
+function apiPathOf(url: string, baseUrl: string | undefined): string {
+  const pathname = pathnameOf(url);
+  if (!baseUrl) return pathname;
+  const basePath = pathnameOf(baseUrl).replace(/\/+$/, '');
+  if (!basePath) return pathname;
+  if (pathname === basePath) return '';
+  return pathname.startsWith(`${basePath}/`) ? pathname.slice(basePath.length) : pathname;
+}
+
+/**
+ * The fields of an application/x-www-form-urlencoded body, in the order
+ * sent; empty for any other body.
+ */
+function formBodyOf(axiosConfig: AxiosRequestConfig): Array<[string, string]> {
+  const headers = (axiosConfig.headers ?? {}) as Record<string, unknown>;
+  const contentType = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1];
+  if (!String(contentType ?? '').toLowerCase().includes('application/x-www-form-urlencoded')) return [];
+  const data = axiosConfig.data;
+  if (typeof data === 'string') return [...new URLSearchParams(data).entries()];
+  if (data instanceof URLSearchParams) return [...data.entries()];
+  return [];
+}
+
+/**
+ * `${sortedParams}`: every query parameter and form field as sent, sorted by
+ * key (code unit order, i.e. ASCII order for ASCII names) and concatenated as
+ * key + value with no separators. The signature parameter and empty values
+ * are left out, as the Alibaba IOP SDKs do. Keys that repeat keep the order
+ * they are sent in.
+ */
+export function sortedParamsString(
+  query: Record<string, unknown>,
+  formFields: Array<[string, string]> = [],
+  excludeKey?: string,
+): string {
+  return [...flattenParams(query), ...formFields]
+    .filter(([k, v]) => k !== excludeKey && v !== '')
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${k}${v}`)
+    .join('');
+}
+
+/**
+ * `${sortedQuery}`: the query parameters as sent, sorted by name (code unit
+ * order) and written as `name=value` pairs joined with `&`, each name and
+ * value percent-encoded per RFC 3986 (only `A-Z a-z 0-9 - . _ ~` stay as they
+ * are). The signature parameter is left out; empty values are kept, since
+ * they are sent. No body is included. This is the Rocket SellerCenter
+ * signature string (Falabella Seller Center: PHP `rawurlencode`, `ksort`,
+ * `implode('&')`). An array or object contributes the pairs the query
+ * serializer sends for it.
+ */
+export function sortedQueryString(query: Record<string, unknown>, excludeKey?: string): string {
+  return flattenParams(query)
+    .filter(([k]) => k !== excludeKey)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${rfc3986(k)}=${rfc3986(v)}`)
+    .join('&');
+}
+
+/** RFC 3986 percent-encoding: encodeURIComponent plus `! ' ( ) *`. */
+function rfc3986(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
+ * The timestamp an extended HMAC signature uses: Unix seconds (default),
+ * milliseconds (`ms`) or ISO 8601 in UTC without fractions (`iso`,
+ * `2026-11-06T07:00:00+00:00`).
+ */
+export function hmacTimestamp(format: unknown, now: number = Date.now()): string {
+  const f = String(format ?? 's');
+  if (f === 'ms') return String(now);
+  if (f === 'iso') return new Date(now).toISOString().replace(/\.\d{3}Z$/, '+00:00');
+  return String(Math.floor(now / 1000));
 }
 
 /** The path of a URL without its query; the input as given when it is relative. */
@@ -1281,21 +1533,32 @@ export function renderExtendedHmacTemplate(
     url: string;
     path: string;
     pathname: string;
+    apiPath?: string;
     body: string;
     timestamp: string;
     query: Record<string, unknown>;
+    /** Computed only when the template asks for it. */
+    sortedParams?: () => string;
+    /** Computed only when the template asks for it. */
+    sortedQuery?: () => string;
   },
 ): string {
   return template
     .replace(/\\n/g, '\n')
-    .replace(/\$\{(method|url|path|pathname|body|timestamp|query\.([^{}]+))\}/g, (_m, name: string, q?: string) => {
-      if (q !== undefined) {
-        const v = vars.query[q];
-        if (v === undefined || v === null) return '';
-        return Array.isArray(v) ? v.map(String).join(',') : String(v);
-      }
-      return String(vars[name as Exclude<keyof typeof vars, 'query'>]);
-    });
+    .replace(
+      /\$\{(method|url|path|pathname|apiPath|body|timestamp|sortedParams|sortedQuery|query\.([^{}]+))\}/g,
+      (_m, name: string, q?: string) => {
+        if (q !== undefined) {
+          const v = vars.query[q];
+          if (v === undefined || v === null) return '';
+          return Array.isArray(v) ? v.map(String).join(',') : String(v);
+        }
+        if (name === 'sortedParams') return vars.sortedParams ? vars.sortedParams() : '';
+        if (name === 'sortedQuery') return vars.sortedQuery ? vars.sortedQuery() : '';
+        if (name === 'apiPath') return vars.apiPath ?? vars.pathname;
+        return String(vars[name as 'method' | 'url' | 'path' | 'pathname' | 'body' | 'timestamp']);
+      },
+    );
 }
 
 /**
@@ -1337,12 +1600,20 @@ function serializeParams(
   params: Record<string, unknown>,
   spaces: '+' | '%20',
 ): string {
-  const parts: string[] = [];
+  return flattenParams(params)
+    .map(([k, v]) => `${encodeQueryComponent(k, spaces)}=${encodeQueryComponent(v, spaces)}`)
+    .join('&');
+}
+
+/**
+ * The key/value pairs serializeParams writes, in order and before
+ * percent-encoding (see serializeRepeatedParams for the shapes).
+ */
+function flattenParams(params: Record<string, unknown>): Array<[string, string]> {
+  const parts: Array<[string, string]> = [];
   const push = (key: string, value: unknown) => {
     if (value === undefined || value === null) return;
-    parts.push(
-      `${encodeQueryComponent(key, spaces)}=${encodeQueryComponent(String(value), spaces)}`,
-    );
+    parts.push([key, String(value)]);
   };
   // Every level below the top one is indexed: `k[0]`, `k[name]`.
   const pushNested = (key: string, value: unknown) => {
@@ -1368,7 +1639,7 @@ function serializeParams(
       push(key, value);
     }
   }
-  return parts.join('&');
+  return parts;
 }
 
 /**

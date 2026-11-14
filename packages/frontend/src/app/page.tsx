@@ -10,6 +10,7 @@ import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { getApiOrigin } from '@/lib/origin';
 import { FirstSuccessOffer } from '@/components/first-success-offer';
+import { TrialExtensionBanner } from '@/components/trial-extension-banner';
 
 type HealthResult = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -107,6 +108,9 @@ export default function DashboardPage() {
       }
     >
       <div className="flex flex-col gap-[18px]">
+        {/* Cloud: the outcome of the one-click trial extension from the email. */}
+        <TrialExtensionBanner />
+
         {/* Cloud admins, right after the workspace's first successful call. */}
         <FirstSuccessOffer via="dashboard" />
 

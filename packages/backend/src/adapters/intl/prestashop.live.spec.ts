@@ -1,7 +1,17 @@
+import axios from 'axios';
 import * as adapter from './prestashop.json';
 import { RestEngine } from '../../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { applySchemaDefaults } from '../../common/schema-defaults.util';
+import { interpolateConnectorConfig, interpolateDeep } from '../../common/env-interpolation.util';
+
+jest.mock('axios', () => {
+  const actual = jest.requireActual('axios');
+  const mocked = jest.fn();
+  return { __esModule: true, default: Object.assign(mocked, actual.default, { __actual: actual.default }), AxiosError: actual.AxiosError };
+});
+const mockedAxios = axios as unknown as jest.Mock & { __actual: typeof axios };
 
 /**
  * Two layers of verification for the PrestaShop adapter:
@@ -27,7 +37,8 @@ type Tool = {
     path: string;
     queryParams?: Record<string, string>;
     headers?: Record<string, string>;
-    bodyMapping?: Record<string, string>;
+    bodyMapping?: Record<string, unknown>;
+    bodyEncoding?: string;
   };
 };
 const a = adapter as unknown as {
@@ -45,6 +56,19 @@ const tool = (name: string) => {
   const t = a.tools.find((x) => x.name === name);
   if (!t) throw new Error(`missing tool ${name}`);
   return t;
+};
+
+const ENV = { PRESTASHOP_URL: 'https://shop.example.org', PRESTASHOP_WEBSERVICE_KEY: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456' };
+const send = async (name: string, params: Record<string, unknown>) => {
+  mockedAxios.mockReset();
+  mockedAxios.mockResolvedValue({ data: {}, headers: { 'content-type': 'application/json' } });
+  const { config: cfg, endpointMapping } = interpolateConnectorConfig({ baseUrl: a.connector.baseUrl, headers: a.connector.headers }, tool(name).endpointMapping as never, ENV);
+  await new RestEngine({} as OAuth2TokenService, {} as LoginTokenService).execute(
+    { baseUrl: cfg.baseUrl, authType: a.connector.authType, authConfig: interpolateDeep(a.connector.authConfig, ENV), headers: cfg.headers } as never,
+    endpointMapping,
+    applySchemaDefaults(tool(name).parameters as never, params),
+  );
+  return mockedAxios.mock.calls[mockedAxios.mock.calls.length - 1][0];
 };
 
 describe('prestashop adapter: static spec conformance', () => {
@@ -69,10 +93,20 @@ describe('prestashop adapter: static spec conformance', () => {
   });
 
   it('writes are partial XML bodies (the Webservice reads no JSON input)', () => {
-    for (const n of ['prestashop_update_product_price', 'prestashop_update_stock_quantity', 'prestashop_change_order_state']) {
+    for (const n of [
+      'prestashop_update_product_price',
+      'prestashop_update_stock_quantity',
+      'prestashop_change_order_state',
+      'prestashop_update_product',
+      'prestashop_add_product',
+      'prestashop_update_product_feature_value',
+      'prestashop_add_combination',
+      'prestashop_set_order_tracking_number',
+    ]) {
       const m = tool(n).endpointMapping;
       expect(m.headers?.['Content-Type']).toBe('application/xml');
       expect(m.bodyMapping?.__raw).toMatch(/^<prestashop><\w+>.*<\/prestashop>$/);
+      expect(m.bodyEncoding).toBeUndefined();
     }
     expect(tool('prestashop_update_product_price').endpointMapping.method).toBe('PATCH');
     expect(tool('prestashop_update_stock_quantity').endpointMapping.method).toBe('PATCH');
@@ -101,13 +135,66 @@ describe('prestashop adapter: static spec conformance', () => {
       const m = t.endpointMapping;
       const used = new Set<string>();
       for (const [, p] of m.path.matchAll(/\{(\w+)\}/g)) used.add(p);
-      for (const v of Object.values({ ...(m.queryParams ?? {}), ...(m.bodyMapping ?? {}) })) {
+      const walk = (v: unknown) => {
+        if (v && typeof v === 'object') return Object.values(v).forEach(walk);
         const s = String(v);
         if (/^\$\w+$/.test(s)) used.add(s.slice(1));
         for (const [, p] of s.matchAll(/\$\{(\w+)\}/g)) used.add(p);
-      }
+      };
+      walk(m.queryParams ?? {});
+      walk(m.bodyMapping ?? {});
       for (const p of Object.keys(t.parameters?.properties ?? {})) expect(`${t.name}:${used.has(p)}`).toBe(`${t.name}:true`);
     }
+  });
+
+  // Resources and fields from devdocs.prestashop-project.org/8/webservice/resources (checked 5 Nov 2026).
+  it('maps the feature, attribute, brand, shipping and product write routes', async () => {
+    const R = 'https://shop.example.org/api';
+    const cases: Array<[string, Record<string, unknown>, string, string]> = [
+      ['prestashop_list_product_features', {}, 'GET', '/product_features'],
+      ['prestashop_list_product_feature_values', { feature_id: 7 }, 'GET', '/product_feature_values'],
+      ['prestashop_get_product_feature_value', { feature_value_id: 23 }, 'GET', '/product_feature_values/23'],
+      ['prestashop_list_attribute_groups', {}, 'GET', '/product_options'],
+      ['prestashop_list_attribute_values', { attribute_group_id: 1 }, 'GET', '/product_option_values'],
+      ['prestashop_list_brands', {}, 'GET', '/manufacturers'],
+      ['prestashop_list_order_shipping', { order_id: 12 }, 'GET', '/order_carriers'],
+      ['prestashop_update_product', { product_id: 5, fields_xml: '<active>1</active>' }, 'PATCH', '/products/5'],
+      ['prestashop_add_product', { fields_xml: '<price>10</price>' }, 'POST', '/products'],
+      ['prestashop_update_product_feature_value', { feature_value_id: 23, language_id: 1, value: 'Cotton' }, 'PATCH', '/product_feature_values/23'],
+      ['prestashop_add_combination', { product_id: 5, fields_xml: '<minimal_quantity>1</minimal_quantity>' }, 'POST', '/combinations'],
+      ['prestashop_set_order_tracking_number', { order_carrier_id: 9, tracking_number: '00340434' }, 'PATCH', '/order_carriers/9'],
+    ];
+    for (const [name, params, method, path] of cases) {
+      const req = await send(name, params);
+      expect(`${name}:${String(req.method).toUpperCase()} ${req.url}`).toBe(`${name}:${method} ${R}${path}`);
+      expect(req.params.output_format).toBe('JSON');
+    }
+  });
+
+  it('builds the list filters and the XML documents', async () => {
+    expect((await send('prestashop_list_product_feature_values', { feature_id: 7, language: 1 })).params).toEqual({ output_format: 'JSON', display: 'full', 'filter[id_feature]': '[7]', limit: '50', language: 1 });
+    expect((await send('prestashop_list_attribute_values', { attribute_group_id: 2 })).params).toEqual({ output_format: 'JSON', display: 'full', 'filter[id_attribute_group]': '[2]', limit: '50' });
+    expect((await send('prestashop_list_order_shipping', { order_id: 12 })).params).toEqual({ output_format: 'JSON', display: 'full', 'filter[id_order]': '[12]', limit: '50' });
+    const features = '<associations><product_features><product_feature><id>7</id><id_feature_value>23</id_feature_value></product_feature></product_features></associations>';
+    expect((await send('prestashop_update_product', { product_id: 5, fields_xml: features })).data).toBe(`<prestashop><product><id>5</id>${features}</product></prestashop>`);
+    expect((await send('prestashop_add_product', { fields_xml: '<price>10</price><name><language id="1"><![CDATA[Mug & Co]]></language></name>' })).data).toBe(
+      '<prestashop><product><price>10</price><name><language id="1"><![CDATA[Mug & Co]]></language></name></product></prestashop>',
+    );
+    expect((await send('prestashop_update_product_feature_value', { feature_value_id: 23, language_id: 2, value: 'Baumwolle & Leinen' })).data).toBe(
+      '<prestashop><product_feature_value><id>23</id><value><language id="2"><![CDATA[Baumwolle & Leinen]]></language></value></product_feature_value></prestashop>',
+    );
+    expect((await send('prestashop_add_combination', { product_id: 5, fields_xml: '<minimal_quantity>1</minimal_quantity>' })).data).toBe(
+      '<prestashop><combination><id_product>5</id_product><minimal_quantity>1</minimal_quantity></combination></prestashop>',
+    );
+    expect((await send('prestashop_set_order_tracking_number', { order_carrier_id: 9, tracking_number: '00340434' })).data).toBe(
+      '<prestashop><order_carrier><id>9</id><tracking_number><![CDATA[00340434]]></tracking_number></order_carrier></prestashop>',
+    );
+  });
+
+  it('uploads a product image as the multipart field image, fetched from the URL', () => {
+    const m = tool('prestashop_upload_product_image').endpointMapping;
+    expect(m).toMatchObject({ method: 'POST', path: '/images/products/{product_id}', bodyEncoding: 'form-data', bodyMapping: { image: { __file: '$image_url' } } });
+    expect(tool('prestashop_upload_product_image').parameters?.properties?.image_url).toMatchObject({ type: 'string', format: 'uri' });
   });
 
   it('probes with a one-row product list', () => {
@@ -121,6 +208,7 @@ const live = SHOP_URL && KEY ? describe : describe.skip;
 const liveWrite = SHOP_URL && KEY && process.env.PRESTASHOP_LIVE_WRITE === '1' ? it : it.skip;
 
 live('prestashop adapter: live against a shop', () => {
+  beforeAll(() => mockedAxios.mockImplementation((cfg: unknown) => (mockedAxios.__actual as any).request(cfg)));
   const engine = new RestEngine({} as unknown as OAuth2TokenService, {} as unknown as LoginTokenService);
   const cfg = {
     baseUrl: `${(SHOP_URL ?? '').replace(/\/+$/, '')}/api`,

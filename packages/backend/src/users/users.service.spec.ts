@@ -1,3 +1,4 @@
+import { CASCADE_DELETE_TRANSACTION } from '../common/cascade-delete-transaction';
 import { UsersService } from './users.service';
 
 describe('UsersService', () => {
@@ -233,6 +234,20 @@ describe('UsersService', () => {
 
       expect(mockPrisma.organization.delete).toHaveBeenCalledWith({ where: { id: 'org-1' } });
       expect(licenseRelease.releaseInBackground).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives the cascading delete more than the default 5 s transaction timeout', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([
+        {
+          organizationId: 'org-1',
+          organization: { id: 'org-1', name: 'Solo', _count: { members: 1 } },
+        },
+      ]);
+
+      await service.deleteSelf('user-1');
+
+      expect(mockPrisma.$transaction).toHaveBeenCalledWith(expect.any(Array), CASCADE_DELETE_TRANSACTION);
+      expect(CASCADE_DELETE_TRANSACTION.timeout).toBeGreaterThan(5_000);
     });
 
     it('leaves licences alone when no workspace goes with the account', async () => {

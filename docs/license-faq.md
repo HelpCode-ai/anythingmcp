@@ -18,7 +18,7 @@ The only exception is code under `ee/` directories (e.g. `packages/backend/src/e
 
 | Use Case | Allowed? |
 |----------|----------|
-| Use AnythingMCP internally at my company | **Yes** |
+| Use AnythingMCP internally at my company, including for commercial work | **Yes** |
 | Use it for personal projects | **Yes** |
 | Use it for development and testing | **Yes** |
 | Use it for academic research or teaching | **Yes** |
@@ -59,9 +59,13 @@ This split (AGPL core + commercial `ee/`) is the same model used by Cal.com and 
 
 ---
 
-## Community, Starter, Team and Enterprise
+## Community and Enterprise
 
-A self-hosted instance runs **Community** unless a licence key is activated. Community is meant for personal use, education and evaluation, and includes up to 3 active users. **Starter** and **Team** license an instance for small teams at work. **Enterprise** adds more users, single sign-on (Entra ID, Google, Okta, OIDC) and SCIM provisioning; it is quoted rather than bought online ([contact us](https://anythingmcp.com/contact?plan=enterprise)), and administrators can try it for 30 days under **Settings → License**. See [anythingmcp.com/pricing](https://anythingmcp.com/pricing).
+A self-hosted instance runs **Community** unless a licence key is activated. Community is free under the AGPL-3.0 for any use, including commercial use. It includes up to 3 active users and unlimited connectors and MCP servers.
+
+**Enterprise** adds more users, single sign-on (Entra ID, Google, Okta, OIDC), SCIM provisioning, [per-user sign-in for OAuth2 connectors](connectors/per-user-sign-in.md), [File Search](connectors/file-search.md) after the 30-day trial, and support with a service level agreement. It is quoted on request, not bought online: [contact us](https://anythingmcp.com/contact?plan=enterprise). Administrators can try single sign-on and SCIM for 30 days under **Settings → License**.
+
+Self-hosted Starter and Team are no longer sold to new customers. Existing Starter and Team licence keys keep activating and working as before.
 
 ---
 
@@ -90,7 +94,7 @@ The [Contributor License Agreement](../CLA.md) lets helpcode.ai GmbH re-license 
 
 ## How do I get a commercial license?
 
-Contact [info@helpcode.ai](mailto:info@helpcode.ai) or visit [anythingmcp.com/pricing](https://anythingmcp.com/pricing) for commercial licensing options.
+You do not need one to use AnythingMCP at work: Community is free for commercial use. For Enterprise or a licence without copyleft obligations, [contact us](https://anythingmcp.com/contact?plan=enterprise) or write to [info@helpcode.ai](mailto:info@helpcode.ai).
 
 ---
 

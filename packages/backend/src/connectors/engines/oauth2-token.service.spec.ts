@@ -784,6 +784,8 @@ describe('OAuth2TokenService', () => {
         'Basic ' + Buffer.from('cid:sec').toString('base64'),
       );
       expect(body).not.toContain('client_secret=');
+      // Okta (Constant Contact) refuses a body client_id next to the header.
+      expect(body).not.toContain('client_id=');
     });
   });
 
@@ -1085,6 +1087,30 @@ describe('OAuth2TokenService', () => {
 
     it('still returns an empty token for a connector without an authorization URL', async () => {
       await expect(service.getAccessToken({ clientId: 'id' }, 'conn-x')).resolves.toBe('');
+    });
+
+    it('refuses to send an empty bearer when the pasted refresh token is missing (eBay Sell)', async () => {
+      const call = service.getAccessToken(
+        {
+          clientId: 'id',
+          clientSecret: 'secret',
+          refreshToken: '',
+          tokenUrl: 'https://api.ebay.com/identity/v1/oauth2/token',
+          tokenAuthMethod: 'basic',
+        },
+        'conn-ebay',
+      );
+      await expect(call).rejects.toMatchObject({
+        status: 401,
+        message: expect.stringContaining('no access token and no refresh token yet'),
+      });
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
+
+    it('still sends a stored access token when the refresh token is empty', async () => {
+      await expect(
+        service.getAccessToken({ accessToken: 'pasted-token', refreshToken: '' }, 'conn-pasted'),
+      ).resolves.toBe('pasted-token');
     });
   });
 

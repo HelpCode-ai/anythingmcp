@@ -1,8 +1,8 @@
 {
   "slug": "ozon",
   "name": "Ozon Seller",
-  "description": "Run an Ozon seller account from an AI agent: products, stock and prices, FBS and FBO postings, returns, finance accruals and the balance report, sales analytics, warehouses, promotions, reviews and buyer questions, with price and stock updates. One Client ID and API key.",
-  "instructions": "## Ozon Seller\nThis connector calls the **Ozon Seller API** (`https://api-seller.ozon.ru`) with the seller's own Client ID and API key: products, stock, prices, FBS and FBO postings (отправления), returns, finance accruals and balance, sales analytics, warehouses, promotions, reviews and questions. Almost every method is a `POST` with a JSON body, also for reads; the read tools are marked read-only.\n\n**Setup (about 3 minutes)**\n1. In the seller portal open **Settings > Seller API** (Настройки > Seller API, https://seller.ozon.ru/app/settings/api-keys) and click **Generate key** (Сгенерировать ключ).\n2. Name the key, choose its access level (роль): **Admin** covers every tool; a narrower role works for the tools it covers. Choose \"for an external service\" and name AnythingMCP as the service if asked.\n3. Copy the key, which is shown only once, into `OZON_API_KEY`, and the **Client ID** shown on the same page into `OZON_CLIENT_ID`.\n4. Keys expire after **3 months**: `ozon_get_api_key_info` shows the expiry date and the roles. Create a new key before it runs out.\n\n**Authentication**: every request carries the `Client-Id` and `Api-Key` headers. `401 Invalid Api-Key` means the key is wrong, expired or does not belong to this Client ID; `403 Api-Key is missing a required role for a method` means the key works but its role does not cover that tool; `403 Api-Key is restricted to specific IP addresses` means the key only allows certain networks.\n\n**Where to start**: `ozon_get_api_key_info` and `ozon_get_seller_info` take no arguments. `ozon_list_products` lists products (20 by default) and `ozon_get_products` gives details for their ids. `ozon_get_stocks`, `ozon_get_prices`, `ozon_list_returns` and `ozon_list_warehouses` work without arguments as well. `ozon_get_fbs_warehouse_stocks` needs `offer_ids` or `skus` (at least one; Ozon refuses the call otherwise). Both posting lists need a period (`since` and `to`); for today's work on FBS orders call `ozon_list_fbs_postings` with `statuses` = [\"awaiting_packaging\"].\n\n**Answer size**: the list tools return the fields sellers usually ask about (ids, names, status, dates, quantities, amounts). For the full record of one posting use `ozon_get_fbs_posting`, for one product `ozon_get_products`.\n\n**Ids**: `offer_id` is the seller's own article (артикул), `product_id` the Ozon product id, `sku` the Ozon SKU shown on the site. A posting number (номер отправления) looks like `89491381-0072-1`; an order number has one part fewer. `warehouse_id` comes from `ozon_list_warehouses`.\n\n**Pagination**: product lists use `last_id`; stocks, prices, postings and warehouses use `cursor` together with `has_next`; returns use the id of the last return as `last_id`. Pass the value from the previous answer and keep the other arguments the same. Defaults are small (20 rows); raise `limit` only when the user needs more.\n\n**Dates**: posting, review and question filters take ISO 8601 date-times in UTC (`2026-10-01T00:00:00Z`); finance and analytics take days (`2026-10-01`). The FBS posting period may not exceed one year, the balance report 30 days.\n\n**Finance**: `ozon_get_finance_balance` gives the totals of a period (as Finance > Balance in the portal). `ozon_list_accruals_by_day` lists every accrual (начисление) of one day and `ozon_get_posting_accruals` explains up to 200 postings; `ozon_list_accrual_types` names the `type_id` values. Ozon switched off the old transaction list (`/v3/finance/transaction/list`) in September 2026; these methods replace it.\n\n**Subscriptions**: reviews need the Review management (Управление отзывами) or Premium Pro subscription, questions need Premium Plus. Without Premium Plus, analytics returns only `revenue` and `ordered_units`, grouped by sku, spu, day, week or month, for the last 3 months and at most 50 calls a day; analytics allows 1 call a minute in any case.\n\n**Rate limits**: at most 50 requests a second per Client ID across all methods, and per-method limits on top (prices: 10 changes per product an hour; stock: one change per product and warehouse every 30 seconds, 80 requests a minute). A `429` carries `Retry-After`; wait that long instead of retrying at once. Ozon may block keys that send many identical or failing requests.\n\n**Writes**: `ozon_update_prices` and `ozon_update_stocks` change the live shop; both answer 200 with per-item `updated` and `errors`, so check them and read the values back. Replies to reviews and answers to questions are public on the product page. Show the user exactly what will change and wait for confirmation before every write. `ozon_ship_fbs_posting` and `ozon_cancel_fbs_posting` are installed switched off; an admin can enable them.\n\n**Out of scope**: creating or editing product cards, FBO supply requests, labels and acts, chats with buyers, promotions management, the Performance (advertising) API and Ozon Delivery methods that need an OAuth token.",
+  "description": "Run an Ozon seller account from an AI agent: products and their characteristics, content rating and images, stock and prices, FBS and FBO postings, returns, finance accruals and the balance report, sales analytics, warehouses, promotions, reviews and buyer questions, with price, stock and product card updates. One Client ID and API key.",
+  "instructions": "## Ozon Seller\nThis connector calls the **Ozon Seller API** (`https://api-seller.ozon.ru`) with the seller's own Client ID and API key: products, stock, prices, FBS and FBO postings (отправления), returns, finance accruals and balance, sales analytics, warehouses, promotions, reviews and questions. Almost every method is a `POST` with a JSON body, also for reads; the read tools are marked read-only.\n\n**Setup (about 3 minutes)**\n1. In the seller portal open **Settings > Seller API** (Настройки > Seller API, https://seller.ozon.ru/app/settings/api-keys) and click **Generate key** (Сгенерировать ключ).\n2. Name the key, choose its access level (роль): **Admin** covers every tool; a narrower role works for the tools it covers. Choose \"for an external service\" and name AnythingMCP as the service if asked.\n3. Copy the key, which is shown only once, into `OZON_API_KEY`, and the **Client ID** shown on the same page into `OZON_CLIENT_ID`.\n4. Keys expire after **3 months**: `ozon_get_api_key_info` shows the expiry date and the roles. Create a new key before it runs out.\n\n**Authentication**: every request carries the `Client-Id` and `Api-Key` headers. `401 Invalid Api-Key` means the key is wrong, expired or does not belong to this Client ID; `403 Api-Key is missing a required role for a method` means the key works but its role does not cover that tool; `403 Api-Key is restricted to specific IP addresses` means the key only allows certain networks.\n\n**Where to start**: `ozon_get_api_key_info` and `ozon_get_seller_info` take no arguments. `ozon_list_products` lists products (20 by default) and `ozon_get_products` gives details for their ids. `ozon_get_stocks`, `ozon_get_prices`, `ozon_list_returns` and `ozon_list_warehouses` work without arguments as well. `ozon_get_fbs_warehouse_stocks` needs `offer_ids` or `skus` (at least one; Ozon refuses the call otherwise). Both posting lists need a period (`since` and `to`); for today's work on FBS orders call `ozon_list_fbs_postings` with `statuses` = [\"awaiting_packaging\"].\n\n**Answer size**: the list tools return the fields sellers usually ask about (ids, names, status, dates, quantities, amounts). For the full record of one posting use `ozon_get_fbs_posting`, for one product `ozon_get_products`.\n\n**Product cards**: `ozon_get_product_characteristics` shows a product's category (`description_category_id`), type (`type_id`) and filled characteristics; `ozon_get_product_description_text` its description and `ozon_get_product_images` its images. `ozon_list_category_characteristics` lists what the category can hold; a characteristic with a `dictionary_id` other than 0 takes values from `ozon_list_characteristic_values` or `ozon_search_characteristic_values` (pass both `dictionary_value_id` and the text). `ozon_get_product_content_rating` shows which characteristics would raise the content rating. Changes run as tasks: `ozon_update_product_characteristics`, `ozon_create_or_update_product_cards` and `ozon_replace_product_images` answer with a `task_id`, and `ozon_get_product_import_task` gives the result per product (call again while it is `pending`). `ozon_create_or_update_product_cards` replaces the whole card on update and `ozon_replace_product_images` the whole image list, so read the current card first. Product changes have per-minute and daily limits (`429` with `Item-Retry-After`).\n\n**Ids**: `offer_id` is the seller's own article (артикул), `product_id` the Ozon product id, `sku` the Ozon SKU shown on the site. A posting number (номер отправления) looks like `89491381-0072-1`; an order number has one part fewer. `warehouse_id` comes from `ozon_list_warehouses`.\n\n**Pagination**: product lists use `last_id`; stocks, prices, postings and warehouses use `cursor` together with `has_next`; returns use the id of the last return as `last_id`. Pass the value from the previous answer and keep the other arguments the same. Defaults are small (20 rows); raise `limit` only when the user needs more.\n\n**Dates**: posting, review and question filters take ISO 8601 date-times in UTC (`2026-10-01T00:00:00Z`); finance and analytics take days (`2026-10-01`). The FBS posting period may not exceed one year, the balance report 30 days.\n\n**Finance**: `ozon_get_finance_balance` gives the totals of a period (as Finance > Balance in the portal). `ozon_list_accruals_by_day` lists every accrual (начисление) of one day and `ozon_get_posting_accruals` explains up to 200 postings; `ozon_list_accrual_types` names the `type_id` values. Ozon switched off the old transaction list (`/v3/finance/transaction/list`) in September 2026; these methods replace it.\n\n**Subscriptions**: reviews need the Review management (Управление отзывами) or Premium Pro subscription, questions need Premium Plus. Without Premium Plus, analytics returns only `revenue` and `ordered_units`, grouped by sku, spu, day, week or month, for the last 3 months and at most 50 calls a day; analytics allows 1 call a minute in any case.\n\n**Rate limits**: at most 50 requests a second per Client ID across all methods, and per-method limits on top (prices: 10 changes per product an hour; stock: one change per product and warehouse every 30 seconds, 80 requests a minute). A `429` carries `Retry-After`; wait that long instead of retrying at once. Ozon may block keys that send many identical or failing requests.\n\n**Writes**: `ozon_update_prices` and `ozon_update_stocks` change the live shop; both answer 200 with per-item `updated` and `errors`, so check them and read the values back. Replies to reviews and answers to questions are public on the product page. Show the user exactly what will change and wait for confirmation before every write. `ozon_ship_fbs_posting`, `ozon_cancel_fbs_posting` and `ozon_move_products_to_archive` are installed switched off; an admin can enable them.\n\n**Out of scope**: copying cards by SKU, taking products out of the archive, FBO supply requests, labels and acts, chats with buyers, promotions management, the Performance (advertising) API and Ozon Delivery methods that need an OAuth token.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "ozon",
@@ -1602,6 +1602,576 @@
       }
     },
     {
+      "name": "ozon_get_product_characteristics",
+      "description": "Get the characteristics (атрибуты, характеристики) of products: category and type ids, barcodes, dimensions and weight, image file names, model, and every filled characteristic with its id, complex_id and values (dictionary_value_id plus text). Filter by offer_ids, product_ids or skus (one kind), or page through all products by visibility with last_id. Use it before ozon_update_product_characteristics or ozon_create_or_update_product_cards to see the current values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "description": "Seller articles (offer_id), for example [\"SKU-123\"]."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Ozon product ids, for example [123456789]."
+          },
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Ozon SKUs, for example [987654321]."
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "VISIBLE",
+              "INVISIBLE",
+              "EMPTY_STOCK",
+              "NOT_MODERATED",
+              "MODERATED",
+              "DISABLED",
+              "STATE_FAILED",
+              "READY_TO_SUPPLY",
+              "VALIDATION_STATE_PENDING",
+              "VALIDATION_STATE_FAIL",
+              "VALIDATION_STATE_SUCCESS",
+              "TO_SUPPLY",
+              "IN_SALE",
+              "REMOVED_FROM_SALE",
+              "OVERPRICED",
+              "CRITICALLY_OVERPRICED",
+              "EMPTY_BARCODE",
+              "BARCODE_EXISTS",
+              "QUARANTINE",
+              "ARCHIVED",
+              "OVERPRICED_WITH_STOCK",
+              "PARTIAL_APPROVED"
+            ],
+            "default": "ALL",
+            "description": "Visibility filter when no ids are given. ALL (default) = every product except archived ones."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "sku",
+              "offer_id",
+              "id",
+              "title"
+            ],
+            "description": "Optional sort field."
+          },
+          "sort_dir": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "last_id": {
+            "type": "string",
+            "description": "Pagination. Leave empty for the first page, then pass last_id from the previous answer."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Products per page, 1 to 1000. Default 20; each product can carry dozens of characteristics."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v4/product/info/attributes",
+        "bodyMapping": {
+          "filter": {
+            "offer_id": "$offer_ids",
+            "product_id": "$product_ids",
+            "sku": "$skus",
+            "visibility": "$visibility"
+          },
+          "sort_by": "$sort_by",
+          "sort_dir": "$sort_dir",
+          "last_id": "$last_id",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.result[*]",
+              "$select": {
+                "product_id": "id",
+                "offer_id": "offer_id",
+                "sku": "sku",
+                "name": "name",
+                "barcodes": "barcodes",
+                "description_category_id": "description_category_id",
+                "type_id": "type_id",
+                "depth": "depth",
+                "width": "width",
+                "height": "height",
+                "dimension_unit": "dimension_unit",
+                "weight": "weight",
+                "weight_unit": "weight_unit",
+                "primary_image": "primary_image",
+                "images": "images[*].file_name",
+                "color_image": "color_image",
+                "model_info": "model_info",
+                "attributes": {
+                  "$from": "attributes[*]",
+                  "$select": {
+                    "id": "id",
+                    "complex_id": "complex_id",
+                    "values": "values"
+                  }
+                },
+                "complex_attributes": {
+                  "$from": "complex_attributes[*]",
+                  "$select": {
+                    "id": "id",
+                    "complex_id": "complex_id",
+                    "values": "values"
+                  }
+                }
+              }
+            },
+            "total": "$.total",
+            "last_id": "$.last_id"
+          },
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_product_description_text",
+      "description": "Get the description text (описание) of one product shown on its page, with its name and ids. Pass offer_id or product_id. The description is a characteristic of the card: change it with ozon_update_product_characteristics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Seller article (offer_id)."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Ozon product id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/product/info/description",
+        "bodyMapping": {
+          "offer_id": "$offer_id",
+          "product_id": "$product_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "product_id": "$.result.id",
+            "offer_id": "$.result.offer_id",
+            "name": "$.result.name",
+            "description": "$.result.description"
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_product_images",
+      "description": "Get the image links of up to 1000 products by product_id: main image, other photos, color sample, and image errors from processing. Read them before ozon_replace_product_images, which replaces the whole set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Ozon product ids, for example [123456789].",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/product/pictures/info",
+        "bodyMapping": {
+          "product_id": "$product_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.items[*]",
+              "$select": {
+                "product_id": "product_id",
+                "primary_photo": "primary_photo",
+                "photo": "photo",
+                "color_photo": "color_photo",
+                "errors": "errors"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_product_content_rating",
+      "description": "Get the content rating (контент-рейтинг, 0 to 100) of up to 1000 products by SKU, with each characteristic group, its weight and score, the conditions that raise it and the characteristics still worth filling. Use it to decide which characteristics to add.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "description": "Ozon SKUs, for example [987654321].",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/product/rating-by-sku",
+        "bodyMapping": {
+          "skus": "$skus"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "products": {
+              "$from": "$.products[*]",
+              "$select": {
+                "sku": "sku",
+                "rating": "rating",
+                "groups": {
+                  "$from": "groups[*]",
+                  "$select": {
+                    "key": "key",
+                    "name": "name",
+                    "rating": "rating",
+                    "weight": "weight",
+                    "improve_at_least": "improve_at_least",
+                    "improve_attributes": "improve_attributes",
+                    "open_conditions": "conditions"
+                  }
+                }
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_get_product_import_task",
+      "description": "Get the result of a product create, update, characteristics or image task by its task_id (from ozon_create_or_update_product_cards, ozon_update_product_characteristics or ozon_replace_product_images): per product offer_id, product_id, status (pending, imported, failed, skipped) and the errors with the characteristic they concern. Tasks are processed in a queue: call again after a few seconds while the status is pending.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "description": "Task id returned by the write tool."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/product/import/info",
+        "bodyMapping": {
+          "task_id": "$task_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "items": {
+              "$from": "$.result.items[*]",
+              "$select": {
+                "offer_id": "offer_id",
+                "product_id": "product_id",
+                "status": "status",
+                "errors": {
+                  "$from": "errors[*]",
+                  "$select": {
+                    "code": "code",
+                    "level": "level",
+                    "field": "field",
+                    "attribute_id": "attribute_id",
+                    "attribute_name": "attribute_name",
+                    "description": "description",
+                    "message": "message"
+                  }
+                }
+              }
+            },
+            "total": "$.result.total"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_category_characteristics",
+      "description": "List the characteristics a category and product type can have: id, name, type, whether it is required or a collection, its dictionary_id (0 = free text, otherwise pick values with ozon_list_characteristic_values), group and complex attribute id. Take description_category_id and type_id from a product of that category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description_category_id": {
+            "type": "integer",
+            "description": "Category id (description_category_id), as returned by ozon_get_products or ozon_get_product_characteristics for a product of that category."
+          },
+          "type_id": {
+            "type": "integer",
+            "description": "Product type id (type_id) of the same product."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "RU",
+              "EN",
+              "TR",
+              "ZH_HANS"
+            ],
+            "description": "Language of the names; Russian by default."
+          }
+        },
+        "required": [
+          "description_category_id",
+          "type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/description-category/attribute",
+        "bodyMapping": {
+          "description_category_id": "$description_category_id",
+          "type_id": "$type_id",
+          "language": "$language"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "characteristics": {
+              "$from": "$.result[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "type": "type",
+                "is_required": "is_required",
+                "is_collection": "is_collection",
+                "max_value_count": "max_value_count",
+                "dictionary_id": "dictionary_id",
+                "category_dependent": "category_dependent",
+                "group_name": "group_name",
+                "attribute_complex_id": "attribute_complex_id",
+                "is_aspect": "is_aspect"
+              }
+            }
+          },
+          "maxBytes": 80000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_list_characteristic_values",
+      "description": "List the dictionary values (справочник) of one characteristic in a category and product type: value id, text and extra info. Page with last_value_id (the id of the last value received) while has_next is true. For a large dictionary such as brands, search with ozon_search_characteristic_values instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_id": {
+            "type": "integer",
+            "description": "Characteristic id from ozon_list_category_characteristics."
+          },
+          "description_category_id": {
+            "type": "integer",
+            "description": "Category id (description_category_id), as returned by ozon_get_products or ozon_get_product_characteristics for a product of that category."
+          },
+          "type_id": {
+            "type": "integer",
+            "description": "Product type id (type_id) of the same product."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "RU",
+              "EN",
+              "TR",
+              "ZH_HANS"
+            ],
+            "description": "Language of the values; Russian by default."
+          },
+          "last_value_id": {
+            "type": "integer",
+            "description": "Pagination: id of the last value of the previous page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 20,
+            "description": "Values per page, 1 to 2000. Default 20."
+          }
+        },
+        "required": [
+          "attribute_id",
+          "description_category_id",
+          "type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/description-category/attribute/values",
+        "bodyMapping": {
+          "attribute_id": "$attribute_id",
+          "description_category_id": "$description_category_id",
+          "type_id": "$type_id",
+          "language": "$language",
+          "last_value_id": "$last_value_id",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "values": {
+              "$from": "$.result[*]",
+              "$select": {
+                "id": "id",
+                "value": "value",
+                "info": "info"
+              }
+            },
+            "has_next": "$.has_next"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_search_characteristic_values",
+      "description": "Search the dictionary values of one characteristic by text (at least 2 characters), for example a brand or a color name, and get their ids for ozon_update_product_characteristics. Returns value id, text and extra info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_id": {
+            "type": "integer",
+            "description": "Characteristic id from ozon_list_category_characteristics."
+          },
+          "description_category_id": {
+            "type": "integer",
+            "description": "Category id (description_category_id), as returned by ozon_get_products or ozon_get_product_characteristics for a product of that category."
+          },
+          "type_id": {
+            "type": "integer",
+            "description": "Product type id (type_id) of the same product."
+          },
+          "value": {
+            "type": "string",
+            "minLength": 2,
+            "description": "Text to search for, at least 2 characters."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Values to return, 1 to 100. Default 20."
+          }
+        },
+        "required": [
+          "attribute_id",
+          "description_category_id",
+          "type_id",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/description-category/attribute/values/search",
+        "bodyMapping": {
+          "attribute_id": "$attribute_id",
+          "description_category_id": "$description_category_id",
+          "type_id": "$type_id",
+          "value": "$value",
+          "limit": "$limit"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "values": {
+              "$from": "$.result[*]",
+              "$select": {
+                "id": "id",
+                "value": "value",
+                "info": "info"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
       "name": "ozon_reply_to_review",
       "description": "Publish the seller's comment under a product review. The comment is public on the product page. Show the user the exact text and ask for confirmation before calling. Needs the Review management or Premium Pro subscription.",
       "parameters": {
@@ -1854,6 +2424,447 @@
         "destructiveHint": true,
         "idempotentHint": true
       }
+    },
+    {
+      "name": "ozon_update_product_characteristics",
+      "description": "Add or change characteristics of up to 100 existing products by offer_id. Only the characteristics in the request change; filled ones cannot be removed this way. Answers with a task_id: check the result with ozon_get_product_import_task. Show the user each product with the old and new values and ask for confirmation before calling. Ozon limits product changes per minute and per day (429 with Item-Retry-After).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "For example [{\"offer_id\": \"SKU-123\", \"attributes\": [{\"id\": 85, \"complex_id\": 0, \"values\": [{\"dictionary_value_id\": 971082156, \"value\": \"Brand\"}]}]}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offer_id": {
+                  "type": "string",
+                  "description": "Seller article of the product."
+                },
+                "attributes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "description": "Characteristic id (attribute_id) from ozon_list_category_characteristics."
+                      },
+                      "complex_id": {
+                        "type": "integer",
+                        "description": "Id of the complex characteristic this one belongs to; 0 or left out for ordinary characteristics."
+                      },
+                      "values": {
+                        "type": "array",
+                        "description": "Values of the characteristic. A dictionary characteristic takes dictionary_value_id (from ozon_list_characteristic_values or ozon_search_characteristic_values) and its text in value; a free-text one takes only value. Several entries only where the characteristic is a collection.",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "dictionary_value_id": {
+                              "type": "integer",
+                              "description": "Dictionary value id; leave out for free-text characteristics."
+                            },
+                            "value": {
+                              "type": "string",
+                              "description": "The value as text."
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "values"
+                    ]
+                  },
+                  "description": "Characteristics to set."
+                }
+              },
+              "required": [
+                "offer_id",
+                "attributes"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/product/attributes/update",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "task_id": "$.task_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "ozon_create_or_update_product_cards",
+      "description": "Create new product cards or update existing ones, up to 100 per call. An update replaces the whole card, so pass every detail: read the current card with ozon_get_product_characteristics first. Each item needs offer_id, name, description_category_id, type_id, price, vat, dimensions, weight, images and the required characteristics (ozon_list_category_characteristics). Answers with a task_id: check the result with ozon_get_product_import_task. Show the user the full card and ask for confirmation before calling. Ozon limits creations and updates per day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Product cards. For example [{\"offer_id\": \"SKU-123\", \"name\": \"...\", \"description_category_id\": 17028922, \"type_id\": 91565, \"price\": \"1490\", \"old_price\": \"1990\", \"currency_code\": \"RUB\", \"vat\": \"0.2\", \"barcode\": \"4600000000000\", \"depth\": 100, \"width\": 80, \"height\": 50, \"dimension_unit\": \"mm\", \"weight\": 300, \"weight_unit\": \"g\", \"images\": [\"https://example.com/1.jpg\"], \"attributes\": [{\"id\": 85, \"values\": [{\"value\": \"Brand\"}]}]}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offer_id": {
+                  "type": "string",
+                  "maxLength": 50,
+                  "description": "Seller article, up to 50 characters."
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 500,
+                  "description": "Product name, up to 500 characters."
+                },
+                "description_category_id": {
+                  "type": "integer",
+                  "description": "Category id."
+                },
+                "new_description_category_id": {
+                  "type": "integer",
+                  "description": "Only to move an existing product to another category."
+                },
+                "type_id": {
+                  "type": "integer",
+                  "description": "Product type id."
+                },
+                "price": {
+                  "type": "string",
+                  "description": "Price as a string in the account currency."
+                },
+                "old_price": {
+                  "type": "string",
+                  "description": "Strikethrough price, higher than price."
+                },
+                "currency_code": {
+                  "type": "string",
+                  "description": "Currency of the account, RUB by default."
+                },
+                "vat": {
+                  "type": "string",
+                  "description": "VAT rate: \"0\", \"0.05\", \"0.07\", \"0.1\", \"0.2\" or \"0.22\"."
+                },
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode."
+                },
+                "depth": {
+                  "type": "integer",
+                  "description": "Package depth."
+                },
+                "width": {
+                  "type": "integer",
+                  "description": "Package width."
+                },
+                "height": {
+                  "type": "integer",
+                  "description": "Package height."
+                },
+                "dimension_unit": {
+                  "type": "string",
+                  "enum": [
+                    "mm",
+                    "cm",
+                    "in"
+                  ],
+                  "description": "Unit of the dimensions."
+                },
+                "weight": {
+                  "type": "integer",
+                  "description": "Weight with the package."
+                },
+                "weight_unit": {
+                  "type": "string",
+                  "enum": [
+                    "g",
+                    "kg",
+                    "lb"
+                  ],
+                  "description": "Unit of the weight."
+                },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 30,
+                  "description": "Public JPG or PNG links, up to 30, in display order."
+                },
+                "primary_image": {
+                  "type": "string",
+                  "description": "Main image link."
+                },
+                "color_image": {
+                  "type": "string",
+                  "description": "Marketing color image link."
+                },
+                "attributes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "description": "Characteristic id (attribute_id) from ozon_list_category_characteristics."
+                      },
+                      "complex_id": {
+                        "type": "integer",
+                        "description": "Id of the complex characteristic this one belongs to; 0 or left out for ordinary characteristics."
+                      },
+                      "values": {
+                        "type": "array",
+                        "description": "Values of the characteristic. A dictionary characteristic takes dictionary_value_id (from ozon_list_characteristic_values or ozon_search_characteristic_values) and its text in value; a free-text one takes only value. Several entries only where the characteristic is a collection.",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "dictionary_value_id": {
+                              "type": "integer",
+                              "description": "Dictionary value id; leave out for free-text characteristics."
+                            },
+                            "value": {
+                              "type": "string",
+                              "description": "The value as text."
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "values"
+                    ]
+                  },
+                  "description": "Characteristics."
+                },
+                "complex_attributes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "attributes": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "description": "Characteristic id (attribute_id) from ozon_list_category_characteristics."
+                            },
+                            "complex_id": {
+                              "type": "integer",
+                              "description": "Id of the complex characteristic this one belongs to; 0 or left out for ordinary characteristics."
+                            },
+                            "values": {
+                              "type": "array",
+                              "description": "Values of the characteristic. A dictionary characteristic takes dictionary_value_id (from ozon_list_characteristic_values or ozon_search_characteristic_values) and its text in value; a free-text one takes only value. Several entries only where the characteristic is a collection.",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "dictionary_value_id": {
+                                    "type": "integer",
+                                    "description": "Dictionary value id; leave out for free-text characteristics."
+                                  },
+                                  "value": {
+                                    "type": "string",
+                                    "description": "The value as text."
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "values"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "description": "Groups of nested characteristics, for example videos."
+                },
+                "pdf_list": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "index": {
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "src_url": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "description": "PDF files: index, name and src_url."
+                },
+                "service_type": {
+                  "type": "string",
+                  "enum": [
+                    "IS_CODE_SERVICE",
+                    "IS_NO_CODE_SERVICE"
+                  ],
+                  "description": "Service type."
+                }
+              },
+              "required": [
+                "offer_id",
+                "description_category_id",
+                "type_id",
+                "price"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/product/import",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "task_id": "$.result.task_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "ozon_replace_product_images",
+      "description": "Replace the images of up to 100 products by offer_id. Each call sets the complete image list: images left out are deleted, so read the current links with ozon_get_product_images and pass the full new list. Links must be public JPG or PNG files, up to 30 per product, first one shown as main unless primary_image is set. Answers with a task_id for ozon_get_product_import_task. Show the user the new image list and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "For example [{\"offer_id\": \"SKU-123\", \"images\": [\"https://example.com/1.jpg\", \"https://example.com/2.jpg\"]}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offer_id": {
+                  "type": "string",
+                  "description": "Seller article."
+                },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 30,
+                  "description": "All image links in display order."
+                },
+                "primary_image": {
+                  "type": "string",
+                  "description": "Main image link."
+                },
+                "color_image": {
+                  "type": "string",
+                  "description": "Marketing color image link."
+                }
+              },
+              "required": [
+                "offer_id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/product/pictures/import",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "task_id": "$.task_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "ozon_move_products_to_archive",
+      "description": "Move up to 100 products to the archive (архив): they leave the storefront and the product lists. Installed switched off. Show the user the products and ask for confirmation before calling; check the result with ozon_get_products (is_archived). Ozon only lets sellers from some countries take products out of the archive through the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Ozon product ids, up to 100."
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/product/archive",
+        "bodyMapping": {
+          "product_id": "$product_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "result": "$.result"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
     },
     {
       "name": "ozon_ship_fbs_posting",

@@ -58,6 +58,22 @@ describe('mergeDiscoveredMcpTools', () => {
     expect(merged.find((t) => t.name === 'a_gone')).toBeUndefined();
   });
 
+  it("drops the parameters the catalog omits from the server's schema, and only from that tool", () => {
+    const schema = {
+      type: 'object',
+      properties: { q: { type: 'string' }, via: { type: 'string' }, ref: { type: 'string' } },
+      required: ['q', 'via'],
+    };
+    const out = mergeDiscoveredMcpTools(
+      [{ name: 'b_pub', description: '', parameters: {}, endpointMapping: { method: 'b_pub', path: '/mcp' }, omitParameters: ['via', 'ref'] }],
+      [remote('b_pub', { parameters: schema }), remote('b_other', { parameters: schema })],
+    );
+    expect(out[0].parameters).toEqual({ type: 'object', properties: { q: { type: 'string' } }, required: ['q'] });
+    expect(out[1].parameters).toEqual(schema);
+    // The server's own object is not changed.
+    expect(Object.keys(schema.properties)).toEqual(['q', 'via', 'ref']);
+  });
+
   it('names the tools with the prefix, matches the policy by local or remote name, and calls the remote name', () => {
     const prefixed = mergeDiscoveredMcpTools(
       [
@@ -265,7 +281,7 @@ describe('importAdapter for an MCP adapter (splunk)', () => {
     const { service, prisma, created } = build(discover);
     // Unlisted until verified with a real account; the install path is what is tested here.
     jest.spyOn(service as any, 'isInstallableHere').mockReturnValue(true);
-    await service.importAdapter('linear', 'u1', 'o1', { LINEAR_API_KEY: 'lin_api_x' });
+    await service.importAdapter('linear', 'u1', 'o1', { LINEAR_API_KEY: 'lin_api_0123456789abcdefghijKLMN' });
 
     expect(prisma.connector.create.mock.calls[0][0].data.config).toMatchObject({ mcpToolPrefix: 'linear_' });
     expect(created.map((t) => [t.name, t.endpointMapping.method, t.isEnabled])).toEqual([

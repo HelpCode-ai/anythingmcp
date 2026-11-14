@@ -20,13 +20,15 @@ startTracing();
 import { NestFactory } from '@nestjs/core';
 import { APP_VERSION, APP_COMMIT, APP_BUILD_DATE } from './common/app-version';
 import { Logger, ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
+import { buildOpenApiConfig } from './common/openapi';
 import { ConfigService } from '@nestjs/config';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { WOOCOMMERCE_CALLBACK_PATH, wooCommerceCallbackBodyParser } from './connectors/woocommerce-auth.controller';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
 import { McpEmailVerificationFilter } from './auth/mcp-email-verification';
@@ -48,6 +50,11 @@ async function bootstrap() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', true);
 
+  // The WooCommerce key callback is unauthenticated and receives five short
+  // fields: its own parser caps the body at 4 KB before the global one runs
+  // (woocommerce-auth.controller.ts).
+  app.use(WOOCOMMERCE_CALLBACK_PATH, wooCommerceCallbackBodyParser());
+
   // Increase body size limit for large API spec imports (Postman, OpenAPI, etc.)
   // `application/scim+json` is what Entra ID sends to the SCIM endpoint.
   // body-parser's default `type` matches only application/json, so without
@@ -60,7 +67,9 @@ async function bootstrap() {
       limit: '10mb',
       type: ['application/json', 'application/scim+json'],
       verify: (req: any, _res, buf) => {
-        if (req.url?.startsWith('/api/support/webhook')) req.rawBody = buf;
+        if (req.url?.startsWith('/api/support/webhook') || req.url?.startsWith('/api/webhooks/')) {
+          req.rawBody = buf;
+        }
       },
     }),
   );
@@ -130,26 +139,8 @@ async function bootstrap() {
     exposedHeaders: ['Content-Disposition', 'X-Secrets-Included'],
   });
 
-  // Swagger documentation
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('AnythingMCP API')
-    .setDescription(
-      'Backend API for AnythingMCP — convert any API into an MCP server. ' +
-        'Manage connectors, configure MCP tools, and monitor usage.',
-    )
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .addApiKey(
-      { type: 'apiKey', name: 'X-API-Key', in: 'header' },
-      'api-key',
-    )
-    .addTag('Auth', 'Authentication and user management')
-    .addTag('Connectors', 'Manage API connectors')
-    .addTag('Tools', 'MCP tool configuration')
-    .addTag('AI', 'AI-assisted configuration')
-    .addTag('MCP', 'MCP server management')
-    .addTag('Health', 'Health checks')
-    .build();
+  // Swagger documentation (metadata, tags and auth schemes: common/openapi.ts)
+  const swaggerConfig = buildOpenApiConfig(APP_VERSION);
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document, {

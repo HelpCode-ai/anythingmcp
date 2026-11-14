@@ -31,6 +31,16 @@ import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { SsoService, SsoError } from './sso.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
+import {
+  CONNECT_PAGE_PATH,
+  CONNECT_SSO_COOKIE,
+  CONNECT_USER_COOKIE,
+  CONNECT_USER_TTL_MS,
+  connectCookieOptions,
+  readSignedJsonCookie,
+  type ConnectSsoCookie,
+  type ConnectUserCookie,
+} from '../common/connect-page.util';
 
 class SsoExchangeDto {
   @ApiProperty({ description: 'One-time code from the sign-in redirect.' })
@@ -152,9 +162,23 @@ export class SsoController {
         // Read from the cookie the browser is presenting NOW, so the service
         // can assert it against the one recorded when the flow started.
         oauthSessionId: (req as any).cookies?.oauth_session,
+        connectBinding: readSignedJsonCookie<ConnectSsoCookie>(req, CONNECT_SSO_COOKIE)?.b,
       });
 
       res.setHeader('Referrer-Policy', 'no-referrer');
+
+      if (result.kind === 'CONNECT') {
+        // Signed in for the connect page only: a short, signed cookie scoped
+        // to /auth/connect, not a dashboard session.
+        const value: ConnectUserCookie = { uid: result.userId, iat: Date.now() };
+        res.clearCookie(CONNECT_SSO_COOKIE, { path: '/auth' });
+        res.cookie(
+          CONNECT_USER_COOKIE,
+          JSON.stringify(value),
+          connectCookieOptions(req, CONNECT_PAGE_PATH, CONNECT_USER_TTL_MS),
+        );
+        return res.redirect(303, `${frontend}${result.returnTo}`);
+      }
 
       if (result.kind === 'MCP') {
         // Hand the OAuth strategy exactly what the password path hands it: a
@@ -200,6 +224,19 @@ export class SsoController {
     } catch (error) {
       const reason = error instanceof SsoError ? error.reason : 'unexpected';
       await this.logFailure(error, req, {});
+      // A sign-in started on a connect page goes back to it: on a server
+      // whose dashboard is not public, /login would not even load.
+      const connect = readSignedJsonCookie<ConnectSsoCookie>(req, CONNECT_SSO_COOKIE);
+      if (connect?.c && !LINK_FAILURE_REASONS.has(reason)) {
+        res.clearCookie(CONNECT_SSO_COOKIE, { path: '/auth' });
+        const message =
+          INSTANCE_FAILURE_REASONS.get(reason) ??
+          'Sign-in failed. Please try again or contact your administrator.';
+        return res.redirect(
+          303,
+          `${frontend}${CONNECT_PAGE_PATH}/${encodeURIComponent(connect.c)}?error=${encodeURIComponent(message)}`,
+        );
+      }
       // A link failure must land back on the settings page, not the sign-in
       // page: bouncing an already-authenticated user to /login looks like
       // being signed out and invites them to re-enter their password.

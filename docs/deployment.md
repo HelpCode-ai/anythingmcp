@@ -20,6 +20,23 @@ The fastest way to get AnythingMCP running — no local setup required:
 
 In both cases, the first user to register becomes **Admin**.
 
+### Coolify
+
+[`docker-compose.coolify.yml`](../docker-compose.coolify.yml) runs AnythingMCP on a [Coolify](https://coolify.io) v4 server. It pulls the published image and starts PostgreSQL next to it.
+
+1. In Coolify, create a **Docker Compose** resource. Either point it at this repository with `docker-compose.coolify.yml` as the compose file, or paste the file into an empty compose resource.
+2. Under **Domains**, give the `app` service your domain with the `:3000` suffix, for example `https://mcp.example.com:3000`. The suffix tells Coolify's proxy which container port to use; visitors still connect on 443.
+3. Fill in the required SMTP variables, then deploy: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` and `SMTP_FROM`. Coolify blocks the deploy until they are set.
+
+   The app's public URL is filled in from the domain automatically, without the port: the file uses Coolify's `SERVICE_URL_APP`, not `SERVICE_URL_APP_3000`, which keeps the `:3000` suffix and breaks the OAuth sign-in redirect. Set `PUBLIC_URL` (for example `https://mcp.example.com`) only to override it. Redeploy after you change the domain.
+
+   Coolify generates `JWT_SECRET`, `COOKIE_SECRET`, `ENCRYPTION_KEY` and the database credentials, and keeps them across redeploys.
+4. Open the domain and register the first account, which becomes **Admin**.
+
+The UI, API, MCP endpoint (`/mcp`) and OAuth endpoints are all served from that one domain, because the frontend proxies backend routes. Coolify's proxy handles HTTPS. `MCP_AUTH_MODE` defaults to `both`: AI clients sign in with OAuth2 or use a per-user API key created in the UI. Leave `MCP_API_KEY` and `MCP_BEARER_TOKEN` empty unless you need them. They are instance-wide master credentials that reach every MCP server in every workspace.
+
+> **Back up `ENCRYPTION_KEY`.** It decrypts every stored connector credential. When you move an existing instance to Coolify, set `JWT_SECRET`, `ENCRYPTION_KEY` and the database to the old values before the first deploy.
+
 ---
 
 ## Quick Start (Docker)
@@ -366,6 +383,21 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `MCP_API_KEY` | No | API key for legacy MCP auth |
 | `SERVER_URL` | No | Server URL for OAuth2 metadata (default: `http://localhost:4000`) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | No | Rate limit per client (default: 60) |
+| `TOOL_MAX_RESPONSE_BYTES` | No | Largest upstream response body, in bytes after decompression, that one tool call reads from a REST, JSON-RPC, OData, GraphQL or SOAP API (default: `10485760`, 10 MB, on Cloud and self-hosted). A bigger response fails the call with code `TOOL_RESPONSE_TOO_LARGE` and a message that asks the model to narrow the request. The same limit applies to the text sent to the MCP client, for every connector type (database and MCP connectors too): a result over it is sent as compact JSON, and if that is still too big the call fails with the same code |
+| `SMTP_HOST` | No | SMTP server for instance emails; used when no SMTP is configured in the admin Settings page |
+| `SMTP_PORT` | No | SMTP port (default: 587) |
+| `SMTP_SECURE` | No | `true` for implicit TLS (default: `false`; always on for port 465) |
+| `SMTP_USER` | No | SMTP username |
+| `SMTP_PASS` | No | SMTP password |
+| `SMTP_FROM` | No | Sender address (default: `AnythingMCP <SMTP_USER>`) |
+| `SMTP_REPLY_TO` | No | Reply-To address, for when `SMTP_FROM` is a noreply address |
+| `PLAN_CAPS_ENFORCE` | No | Cloud only: how hard the plans' caps on connectors, MCP servers and users are (see [Cloud plan limits](cloud-plans.md)). `dry-run` (default) logs what would be refused or paused, `on` enforces them, `off` does neither. The trial's cap on creating connectors and MCP servers is enforced in every mode. Ignored on self-hosted, which has none of these caps |
+| `RETENTION_SMTP_HOST` | No | Cloud only: a second SMTP server for the trial lifecycle, win-back and blocked-call emails. Without it they go through the SMTP above, with `RETENTION_SMTP_REPLY_TO` as Reply-To when set. Self-hosted sends none of these emails |
+| `RETENTION_SMTP_PORT` | No | Its port (default: 587). 465 or 2465 use implicit TLS, any other port STARTTLS |
+| `RETENTION_SMTP_USER` | No | Its username |
+| `RETENTION_SMTP_PASS` | No | Its password |
+| `RETENTION_SMTP_FROM` | No | Its sender, e.g. `Your Name <support@example.com>` (default: the `SMTP_FROM` sender) |
+| `RETENTION_SMTP_REPLY_TO` | No | Reply-To of those emails, with either sender |
 | `COMPOSE_PROFILES` | No | Set to `proxy` to enable Caddy reverse proxy |
 | `DOMAIN` | No | Domain for Caddy SSL certificate (e.g., `example.com`) |
 | `ACME_EMAIL` | No | Email for Let's Encrypt certificate notifications |
@@ -377,7 +409,12 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `SOCIAL_GOOGLE_CLIENT_ID` / `SOCIAL_GOOGLE_CLIENT_SECRET` | No | Cloud only (ignored on self-hosted): enables "Continue with Google". Redirect URI `<FRONTEND_URL>/auth/social/google/callback` |
 | `SOCIAL_MICROSOFT_CLIENT_ID` / `SOCIAL_MICROSOFT_CLIENT_SECRET` | No | Cloud only: enables "Continue with Microsoft" (personal and work accounts). Redirect URI `<FRONTEND_URL>/auth/social/microsoft/callback`; add the `email` and `xms_edov` optional ID-token claims |
 | `SOCIAL_GITHUB_CLIENT_ID` / `SOCIAL_GITHUB_CLIENT_SECRET` | No | Cloud only: enables "Continue with GitHub". Callback URL `<FRONTEND_URL>/auth/social/github/callback` |
+| `TIKTOK_SHOP_PLATFORM_APP_KEY` / `TIKTOK_SHOP_PLATFORM_APP_SECRET` / `TIKTOK_SHOP_PLATFORM_SERVICE_ID` | No | A public TikTok Shop app (TikTok Shop App Store) for the TikTok Shop connector, on Cloud and self-hosted alike. Set all three: a TikTok Shop connector whose App key is empty then signs, authorizes and renews with this app, the setup page stops asking for app keys, and an install from the App Store adds the connector to the seller's workspace after they sign in or sign up. A connector with its own App key keeps using it. Redirect URL `<SERVER_URL>/api/tiktok-shop/callback`. The secret is never stored on a connector or shown. Unset = every TikTok Shop connector needs the seller's own app |
+| `WOOCOMMERCE_ONE_CLICK` | No | `true` adds "Connect with one click" to the WooCommerce setup page, on Cloud and self-hosted alike: the merchant approves a REST API key on their shop (`/wc-auth/v1/authorize`) and WooCommerce posts it to `<SERVER_URL>/api/woocommerce/callback`, where it is checked on the shop before it is stored. Offered only when `SERVER_URL` is a public https address the shop can reach; otherwise the setup page keeps the paste flow. Default: off |
+| `META_PLATFORM_APP_ID` / `META_PLATFORM_APP_SECRET` / `META_PLATFORM_CONFIG_ID` | No | A Meta app for **Authorize with Provider** on the Instagram connector (`instagram`), on Cloud and self-hosted alike. With `META_PLATFORM_CONFIG_ID` (the Facebook Login for Business configuration id under *API setup with Unified login*, required for every Meta app created since autumn 2026) the sign-in uses Unified Login: users sign in with Instagram or Facebook, no Facebook Page needed, and the token (a Business Integration System User token) does not expire. Without it the app uses the classic Facebook Login. A connector without `META_APP_ID` / `META_APP_SECRET` of its own uses this app, and the setup page stops asking for one. Register `<SERVER_URL>/api/meta/callback` as the configuration's redirect URL (or Facebook Login's valid OAuth redirect URI). Accounts without a role on the app need Meta App Review (Advanced Access) and Live mode. The secret is never stored on a connector or shown. Unset = users enter an app of their own or paste a token. The Instagram Login connector (`instagram-login`) has no server app: new Meta apps cannot get Instagram Login |
+| `META_PLATFORM_ORG_IDS` | No | Comma-separated organization ids the server's Meta app is offered to. Empty (default): every organization. Set it while the app is in Development mode or in App Review, when only its testers can finish the sign-in: every other organization then sees the Instagram connector as on a server without an app (an app of its own, or a pasted token). Same on Cloud and self-hosted. |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
+| `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](#license-verification); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
 ---
 
@@ -396,10 +433,22 @@ AnythingMCP is fully self-hosted, but makes **optional** network calls to `anyth
 
 **Data sent:**
 - License key
-- Instance ID (a random UUID generated on first startup, used to identify the installation)
+- Instance ID (a random UUID generated on first startup, used to identify the installation; sent on activation and registration)
 - Email and name (only during community license registration)
+- Usage counts, with each verification (`/api/license/verify`), as query parameters:
 
-**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any operational data.
+  | Parameter | Value |
+  |-----------|-------|
+  | `activeUsers` | Users with at least one active workspace membership, across the instance: the same count as the Community user limit |
+  | `connectors` | Number of connectors on the instance |
+  | `mcpServers` | Number of MCP servers on the instance |
+  | `version` | The AnythingMCP version, e.g. `0.52.0` |
+
+  Only numbers and the version: no names, emails, connector names or URLs. They tell us which Community instances are growing past the Community edition. Set `LICENSE_USAGE_REPORT=false` to send only the license key. If counting fails, the key is verified without the counts. AnythingMCP Cloud never sends them.
+
+**Data NOT sent:** No API credentials, connector configurations, tool definitions, user data, audit logs, or any other operational data.
+
+**File Search trial:** on Community, the 30-day File Search trial starts only with a registered license key. The free Community key counts: register it under **Settings → License**, and it arrives by email. A trial that was already running before this rule keeps File Search until it ends.
 
 **If the service is unreachable:** The application continues to work normally. License verification failures are logged as warnings and do not block functionality.
 

@@ -82,6 +82,7 @@ function buildConnectors(stored: Record<string, any> = {}, overrides: { harParse
     { checkCanCreateConnector: jest.fn() } as any,
     { attachToDefaultServer: jest.fn().mockResolvedValue(null) } as any,
     { isCloud: () => true } as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any,
   );
   return { controller, connectorsService, prisma, connector };
 }
@@ -382,6 +383,9 @@ describe('tool editor', () => {
       prisma as any,
       { reloadConnectorTools: jest.fn() } as any,
       connectorsService as any,
+      { assertEnterprise: jest.fn().mockResolvedValue(undefined) } as any,
+      { checkCanCreateCodeTool: jest.fn().mockResolvedValue(undefined) } as any,
+      { runSavedCodeTool: jest.fn() } as any,
     );
     return { controller, prisma, connectorsService };
   }
@@ -584,6 +588,7 @@ describe('logs', () => {
       {} as any,
       {} as any,
       { scheduleObservationalIngest: jest.fn() } as any,
+      { recentEvents: jest.fn().mockResolvedValue([]) } as any,
     );
     return { executor, audit };
   }

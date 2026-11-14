@@ -1,0 +1,1273 @@
+{
+  "slug": "google-merchant-center",
+  "name": "Google Merchant Center",
+  "aliases": [
+    "Merchant API",
+    "Google Shopping",
+    "Content API for Shopping",
+    "GMC"
+  ],
+  "description": "Google Merchant Center for AI agents through the Merchant API v1: products and product inputs, feeds (data sources), product statuses and issues, performance and price reports in Merchant Center Query Language, local and regional inventory, promotions and notifications. OAuth2.",
+  "instructions": "## Google Merchant Center\nThis connector works with **Google Merchant Center** through the **Merchant API v1** (`https://merchantapi.googleapis.com`): products and product inputs, data sources (feeds), product statuses and issues, reports in Merchant Center Query Language, local and regional inventory, promotions, notification subscriptions, account settings and quotas. The Merchant API replaced the **Content API for Shopping v2.1**, which Google sunset on **18 August 2026**: since 1 September 2026 Content API calls fail more and more often with HTTP 410, and it shuts down completely in early 2027. Merchant API v1beta was retired on 28 February 2026; this connector uses v1.\n\n**Setup (one-time, about 15 minutes)**\n1. Open https://console.cloud.google.com, pick or create a project, then **APIs & Services → Library** → enable **Merchant API**.\n2. **APIs & Services → OAuth consent screen**: choose **Internal** if you are on Google Workspace (simplest), otherwise **External**. For External, set the publishing status to **In production**: while an app is in *Testing*, Google revokes its refresh tokens after 7 days and the connector stops working every week. For your own use, the \"unverified app\" warning can be clicked through.\n3. **APIs & Services → Credentials → Create credentials → OAuth client ID** → application type **Web application** → add the authorized redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n4. Paste the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Put the **Merchant Center account id** into `GOOGLE_MERCHANT_ACCOUNT_ID`: the number shown at the top of Merchant Center next to the store name, or after `a=` in its address (`merchants.google.com/mc/overview?a=123456789`). On an advanced (multi-client) account, use the advanced account's id to manage the account itself, or a sub-account's id for that shop.\n5. On the connector page, click **Authorize with Provider** and sign in with a Google account that is a user of the Merchant Center account (**Admin** access for setup and writes, **Standard** for products and feeds, **Read only** for reads; **Performance reporting** only covers the performance reports).\n6. **Register the Cloud project once**: call `google_merchant_center_register_gcp_project` (optionally with `developer_email`). Until then every other call answers 401 `GCP project with id ... is not registered with the merchant account`. The signed-in user must have **Admin** access, and the registration is done on the main (advanced or standalone) account, not on each sub-account. `google_merchant_center_get_developer_registration` shows the registered project numbers.\n\n**One Google client for all Google connectors**: the same Cloud project and OAuth client can serve every Google connector (Gmail, Google Calendar, Google Drive, Google Sheets, Search Console, Analytics, Ads, Merchant Center). Enable each API in that project, reuse the same `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and authorize each connector once: each one asks only for its own scopes.\n\n**Scope**: `https://www.googleapis.com/auth/content`, the only Merchant API scope (read and write). What the agent can do is bounded by the Merchant Center access of the signing-in user; for a read-only agent, sign in with a **Read only** user and disable every insert, update, create, fetch and register tool.\n\n**Account**: one connector works on one Merchant Center account, the one in `GOOGLE_MERCHANT_ACCOUNT_ID`. `google_merchant_center_get_account` checks it; `google_merchant_center_list_accounts` lists every account the user can open and `google_merchant_center_list_subaccounts` the sub-accounts of an advanced account. To work on another account, install the connector again with that id.\n\n**Switched off at install**: `google_merchant_center_delete_product_input`, `google_merchant_center_delete_local_inventory`, `google_merchant_center_delete_regional_inventory` and `google_merchant_center_delete_notification_subscription`; they cannot be undone (a deleted product loses its history and status), so an admin switches them on when the team needs them.\n\n**Health check of a store**\n1. `google_merchant_center_list_account_issues`: account-level problems (unclaimed website, misrepresentation, missing shipping or return policy, suspension).\n2. `google_merchant_center_list_aggregate_product_statuses`: approved, pending and disapproved counts per destination and country, with the top issues.\n3. Products with problems: `google_merchant_center_search_reports` with `SELECT id, offer_id, title, aggregated_reporting_context_status, item_issues FROM product_view WHERE aggregated_reporting_context_status = 'NOT_ELIGIBLE_OR_DISAPPROVED'`; then `google_merchant_center_get_product` for the full `productStatus.itemLevelIssues` (code, attribute, description, resolution).\n4. Settings behind the issues: `google_merchant_center_get_business_info`, `google_merchant_center_get_homepage`, `google_merchant_center_get_shipping_settings`, `google_merchant_center_list_programs`, `google_merchant_center_list_users`.\n\n**Products**\n- Read: `google_merchant_center_list_products` (keep `page_size` small, default 25, max 1000) and `google_merchant_center_get_product`. A product id is `contentLanguage~feedLabel~offerId`, e.g. `en~US~sku123`; the full name is `accounts/<id>/products/en~US~sku123`. Offer ids containing `/`, `%` or `~` must be passed as the unpadded base64url encoding of the whole id string.\n- What you read is the **processed product**, merged from every data source. Writes go to a **product input** in one **API** data source: find or create one with `google_merchant_center_list_data_sources` / `google_merchant_center_create_data_source` (`primary_product_data_source`), then `google_merchant_center_insert_product_input` (creates or fully replaces), `google_merchant_center_update_product_input` (change some fields, `update_mask` like `product_attributes.price,product_attributes.availability`), `google_merchant_center_delete_product_input`. File feeds and products added in the Merchant Center UI cannot be edited here; override their attributes with a supplemental API data source instead.\n- Changes show in `google_merchant_center_get_product` after a few minutes; approval for ads and free listings can take up to a few days.\n- Attribute names are the Merchant API ones in camelCase (`title`, `link`, `imageLink`, `availability` IN_STOCK/OUT_OF_STOCK/PREORDER/BACKORDER, `condition` NEW/USED/REFURBISHED, `gtins`, `brand`, `mpn`, `googleProductCategory`, `salePrice`, `shipping`).\n\n**Data sources (feeds)**: `google_merchant_center_list_data_sources`, `google_merchant_center_get_data_source`, `google_merchant_center_create_data_source`, `google_merchant_center_update_data_source` (`update_mask` required), `google_merchant_center_fetch_data_source` to fetch a file feed now and `google_merchant_center_get_latest_file_upload` for the result of the last upload (items created, updated, issues).\n\n**Reports** (`google_merchant_center_search_reports`): Merchant Center Query Language, `SELECT fields FROM table WHERE ... ORDER BY ... LIMIT n`. Field names are snake_case; conditions combine with `AND` only (no `OR`; use `IN`); `ORDER BY` only on selected fields. Performance tables (`product_performance_view`, `non_product_performance_view`) need a date condition, `date BETWEEN '2026-10-01' AND '2026-10-29'` or `date DURING LAST_30_DAYS`, and at least one metric (`clicks`, `impressions`, `click_through_rate`, `conversions`, `conversion_value`). Segments: `offer_id`, `title`, `brand`, `category_l1`, `product_type_l1`, `customer_country_code`, `marketing_method` (ADS, ORGANIC), `date`, `week`. Other tables: `product_view` (status and issues per product), `price_competitiveness_product_view` (your price vs `benchmark_price`), `price_insights_product_view` (`suggested_price`, predicted impact), `best_sellers_product_cluster_view` and `best_sellers_brand_view` (select `report_date`, `report_granularity`, `report_country_code` and `report_category_id`, and filter on `report_granularity` and `report_country_code`, e.g. `WHERE report_granularity = 'WEEKLY' AND report_country_code = 'US'`), `competitive_visibility_*_view`. Rows come back as `results[]`, each holding one object named after the table (`productPerformanceView`, ...). Page with `nextPageToken`.\n\n**Inventory**: in-store with `google_merchant_center_list_local_inventories`, `google_merchant_center_insert_local_inventory` and `google_merchant_center_delete_local_inventory` (store codes from the linked Business Profile); by region with `google_merchant_center_list_regional_inventories`, `google_merchant_center_insert_regional_inventory` and `google_merchant_center_delete_regional_inventory` (region ids from `google_merchant_center_list_regions`). An insert replaces the entry for that store or region.\n\n**Promotions**: `google_merchant_center_list_promotions`, `google_merchant_center_get_promotion` (id like `en~US~SPRING10`), `google_merchant_center_insert_promotion` into a promotion data source. The Promotions program must be enabled for the country; Google reviews each promotion.\n\n**Notifications**: `google_merchant_center_list_notification_subscriptions`, `google_merchant_center_get_notification_subscription`, `google_merchant_center_create_notification_subscription` (an HTTPS callback for `PRODUCT_STATUS_CHANGE` or `ACCOUNT_SERVICE_CHANGE`), `google_merchant_center_update_notification_subscription`, `google_merchant_center_delete_notification_subscription`.\n\n**Quota**: `google_merchant_center_list_quotas` shows daily and per-minute limits and today's usage per method group. Product writes are limited per day relative to the catalog size; spread bulk updates out and prefer one supplemental feed over thousands of single updates.\n\n**Reading the answers**\n- Money is in **micros**: `{\"amountMicros\": \"19990000\", \"currencyCode\": \"EUR\"}` = 19.99 EUR. Large numbers (micros, quantities, ids) arrive as JSON strings.\n- Times are RFC 3339 in UTC; report `date` values are in the account's time zone.\n- Names are resource paths: `accounts/123/products/en~US~sku1`, `accounts/123/dataSources/456`; tools take the last part as the id.\n- Paging: list tools return `nextPageToken`; call again with `page_token` until it is missing.\n\n**Common errors**\n- 401 `GCP project with id ... is not registered`: run `google_merchant_center_register_gcp_project` (setup step 6). 401 otherwise: authorization expired or was revoked (always after 7 days while the consent screen is in *Testing*); click **Authorize with Provider** again.\n- 403 `The caller does not have access to the accounts`: the signed-in user is not a user of that Merchant Center account, or `GOOGLE_MERCHANT_ACCOUNT_ID` is wrong. 403 \"Merchant API has not been used in project\": enable the API (step 1).\n- 400 on a product input: a required attribute is missing or misspelled, or the data source is not an API source. 404: unknown product, data source or promotion id (check the `contentLanguage~feedLabel~offerId` parts).\n- 429 `RESOURCE_EXHAUSTED`: quota reached; check `google_merchant_center_list_quotas` and retry later.\n\n**Out of scope here**: orders and returns, changes to shipping and return policies, account creation and user management, product reviews, and Google Ads campaigns (use the Google Ads connector).",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "google-merchant-center",
+  "docsUrl": "https://developers.google.com/merchant/api/reference/rest",
+  "requiredEnvVars": [
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GOOGLE_MERCHANT_ACCOUNT_ID"
+  ],
+  "appRegistrationUrl": "https://console.cloud.google.com/auth/clients",
+  "envVarMeta": {
+    "GOOGLE_CLIENT_ID": {
+      "label": "OAuth client ID",
+      "kind": "credential",
+      "help": "Google Cloud console → APIs & Services → Credentials → your OAuth client of type Web application. The same client can serve every Google connector.",
+      "example": "1234567890-abc.apps.googleusercontent.com",
+      "pattern": "\\.apps\\.googleusercontent\\.com$",
+      "patternMessage": "A Google OAuth client ID ends in .apps.googleusercontent.com.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "label": "OAuth client secret",
+      "kind": "credential",
+      "help": "The client secret of the same OAuth client.",
+      "link": "https://console.cloud.google.com/apis/credentials"
+    },
+    "GOOGLE_MERCHANT_ACCOUNT_ID": {
+      "label": "Merchant Center account ID",
+      "kind": "setting",
+      "help": "The number at the top of Merchant Center next to the store name, or after a= in its address. On an advanced account, the id of the account or sub-account to manage.",
+      "example": "123456789",
+      "pattern": "^[0-9]{3,20}$",
+      "patternMessage": "Only the digits of the account id, e.g. 123456789.",
+      "link": "https://merchants.google.com/"
+    }
+  },
+  "verifyHints": {
+    "401": "Google refused the call. If the message says the GCP project is not registered with the merchant account, run google_merchant_center_register_gcp_project once (as an Admin of the account). Otherwise click Authorize with Provider again; with the OAuth consent screen still in Testing, authorization expires after 7 days.",
+    "403": "The Merchant API is not enabled in the Google Cloud project, or the Google account that authorized the connector has no access to the Merchant Center account in GOOGLE_MERCHANT_ACCOUNT_ID. Enable the API and check the account id and the user list in Merchant Center.",
+    "404": "No Merchant Center account with that id. Check GOOGLE_MERCHANT_ACCOUNT_ID: only the digits shown at the top of Merchant Center.",
+    "rate_limited": "The Merchant API quota is used up for now. Wait a minute and retry, and check google_merchant_center_list_quotas."
+  },
+  "probe": {
+    "tool": "google_merchant_center_get_account"
+  },
+  "prerequisites": "A Google Merchant Center account and a Google user with access to it (**Admin** for the one-time project registration), a Google Cloud project with the **Merchant API** enabled, an OAuth consent screen (**Internal** on Google Workspace, or External set to *In production*) and a Web OAuth client with the redirect URI below. About 15 minutes.",
+  "connector": {
+    "name": "Google Merchant Center",
+    "type": "REST",
+    "baseUrl": "https://merchantapi.googleapis.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{GOOGLE_CLIENT_ID}}",
+      "clientSecret": "{{GOOGLE_CLIENT_SECRET}}",
+      "authorizationUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": "https://www.googleapis.com/auth/content"
+    },
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}"
+  },
+  "tools": [
+    {
+      "name": "google_merchant_center_get_account",
+      "description": "Read the configured Merchant Center account: accountId, accountName, time zone, language, adult content flag and whether it is a test account. Cheap; use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}"
+      }
+    },
+    {
+      "name": "google_merchant_center_list_accounts",
+      "description": "List every Merchant Center account the signed-in Google user can open (up to 500 per page): standalone accounts, advanced accounts and their sub-accounts, each with accountId and accountName. Use it to find the right id for GOOGLE_MERCHANT_ACCOUNT_ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Optional filter, e.g. \"accountName = \\\"*shoes*\\\"\" or \"relationship(service(type = \\\"ACCOUNT_AGGREGATION\\\"))\" for sub-accounts."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Accounts per page, 1-500. Default 250.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts",
+        "queryParams": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_list_subaccounts",
+      "description": "List the sub-accounts of the configured account when it is an advanced (multi-client) account, with accountId and accountName. A standalone account returns an empty list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Accounts per page, 1-500. Default 250.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}:listSubaccounts",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_get_business_info",
+      "description": "Read the business details of the account: legal address, phone and its verification state, and customer service contact (URI, email, phone).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/businessInfo"
+      }
+    },
+    {
+      "name": "google_merchant_center_get_homepage",
+      "description": "Read the store's homepage URI and whether it is verified and claimed. An unclaimed homepage blocks products from serving.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/homepage"
+      }
+    },
+    {
+      "name": "google_merchant_center_list_account_issues",
+      "description": "List the account-level issues Merchant Center shows (policy violations, unclaimed website, missing shipping or tax, suspensions): title, severity (CRITICAL, ERROR, SUGGESTION), detail, documentationUri and the affected destinations and countries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language_code": {
+            "type": "string",
+            "description": "Language of titles and details, BCP-47 such as \"en-US\" (default), \"de-DE\" or \"it-IT\"."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "IANA time zone for times in the text, e.g. \"Europe/Berlin\". Default America/Los_Angeles."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Issues per page, 1-100. Default 50.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/issues",
+        "queryParams": {
+          "languageCode": "$language_code",
+          "timeZone": "$time_zone",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_list_programs",
+      "description": "List the Merchant Center programs (free-listings, shopping-ads, local listings, checkout...) and, for each, whether it is ENABLED, ELIGIBLE or NOT_ELIGIBLE with the unmet requirements per region.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Programs per page, 1-1000.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/programs",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_get_shipping_settings",
+      "description": "Read the shipping settings of the account: shipping services per country with delivery times, rates and rate tables, warehouses and the etag needed to change them in Merchant Center.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/shippingSettings"
+      }
+    },
+    {
+      "name": "google_merchant_center_list_regions",
+      "description": "List the regions defined in the account (groups of postal codes or geo targets) used for regional inventory, pricing and shipping: regionId, displayName and its areas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Regions per page, 1-1000. Default 50.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/regions",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_list_users",
+      "description": "List the people with access to the account: email, state (PENDING or VERIFIED) and access rights (STANDARD, ADMIN, PERFORMANCE_REPORTING, API_DEVELOPER, READ_ONLY).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Users per page, 1-100. Default 50.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/users",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_get_developer_registration",
+      "description": "Show which Google Cloud project numbers are registered with this Merchant Center account. Every Merchant API call is refused with 401 until the project of the OAuth client is registered.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/developerRegistration"
+      }
+    },
+    {
+      "name": "google_merchant_center_register_gcp_project",
+      "description": "One-time setup: register the Google Cloud project of this connector's OAuth client with the Merchant Center account, so the Merchant API accepts its calls. Needs an ADMIN user of the account. Optional developer_email becomes the technical contact and gets the API developer role.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "developer_email": {
+            "type": "string",
+            "description": "Optional email of a Google account that receives Merchant API announcements (not a service account). If it is not yet a user of the account, it gets an invitation to accept within 14 days."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/accounts/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/developerRegistration:registerGcp",
+        "bodyMapping": {
+          "developerEmail": "$developer_email"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "google_merchant_center_list_products",
+      "description": "List the final, processed products of the account (merged from every data source, up to 1000 per page; default 25): name, offerId, contentLanguage, feedLabel, dataSource, productAttributes (title, link, price, availability, gtins, brand...) and productStatus with destination statuses and item-level issues. Page with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, 1-1000. Default 25; keep it small, products are large.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/products",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_get_product",
+      "description": "Read one processed product with its attributes and productStatus: per destination and country whether it is approved, pending or disapproved, and every item-level issue (code, severity, attribute, description, resolution). Changes take a few minutes to show here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/products/{product_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_merchant_center_insert_product_input",
+      "description": "Create a product, or replace the input of an existing one with the same contentLanguage, feedLabel and offerId, in an API data source. The processed product appears after a few minutes (check with google_merchant_center_get_product). Prices are in micros: {\"amountMicros\": \"19990000\", \"currencyCode\": \"EUR\"} = 19.99 EUR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data_source_id": {
+            "type": "string",
+            "description": "Numeric id of an **API** data source (input \"API\") that owns the product input, from google_merchant_center_list_data_sources. File and UI data sources are refused."
+          },
+          "offer_id": {
+            "type": "string",
+            "description": "Your own product id (SKU), up to 50 characters; it is the last part of the product id."
+          },
+          "content_language": {
+            "type": "string",
+            "description": "Two-letter ISO 639-1 language of the product texts, e.g. \"en\", \"de\", \"it\"."
+          },
+          "feed_label": {
+            "type": "string",
+            "description": "Feed label, usually the target country in upper case, e.g. \"US\", \"DE\"; up to 20 characters A-Z, 0-9, \"-\" and \"_\"."
+          },
+          "product_attributes": {
+            "type": "object",
+            "description": "Product data in Merchant API field names, e.g. {\"title\": \"Running shoe\", \"description\": \"...\", \"link\": \"https://shop.example/p/1\", \"imageLink\": \"https://shop.example/p/1.jpg\", \"availability\": \"IN_STOCK\", \"condition\": \"NEW\", \"price\": {\"amountMicros\": \"59990000\", \"currencyCode\": \"EUR\"}, \"brand\": \"Acme\", \"gtins\": [\"4006381333931\"], \"googleProductCategory\": \"Apparel & Accessories > Shoes\"}."
+          },
+          "custom_attributes": {
+            "type": "array",
+            "description": "Extra attributes in generic form: [{\"name\": \"color_family\", \"value\": \"blue\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "data_source_id",
+          "offer_id",
+          "content_language",
+          "feed_label",
+          "product_attributes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/productInputs:insert",
+        "queryParams": {
+          "dataSource": "accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources/${data_source_id}"
+        },
+        "bodyMapping": {
+          "offerId": "$offer_id",
+          "contentLanguage": "$content_language",
+          "feedLabel": "$feed_label",
+          "productAttributes": "$product_attributes",
+          "customAttributes": "$custom_attributes"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_update_product_input",
+      "description": "Change some attributes of a product input in its API data source (primary or supplemental), e.g. price or availability. update_mask lists the fields to change; a field in the mask but missing from product_attributes is removed from the product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          },
+          "data_source_id": {
+            "type": "string",
+            "description": "Numeric id of an **API** data source (input \"API\") that owns the product input, from google_merchant_center_list_data_sources. File and UI data sources are refused."
+          },
+          "update_mask": {
+            "type": "string",
+            "description": "Comma-separated fields to change, e.g. \"product_attributes.price,product_attributes.availability\" or \"custom_attributes.color_family\". Only top-level attributes. Leave empty to change every field you send."
+          },
+          "product_attributes": {
+            "type": "object",
+            "description": "New values, e.g. {\"price\": {\"amountMicros\": \"49990000\", \"currencyCode\": \"EUR\"}, \"availability\": \"OUT_OF_STOCK\"}."
+          },
+          "custom_attributes": {
+            "type": "array",
+            "description": "New custom attributes: [{\"name\": \"color_family\", \"value\": \"red\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "product_id",
+          "data_source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/productInputs/{product_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "dataSource": "accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources/${data_source_id}",
+          "updateMask": "$update_mask"
+        },
+        "bodyMapping": {
+          "productAttributes": "$product_attributes",
+          "customAttributes": "$custom_attributes"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_delete_product_input",
+      "description": "Delete a product input from one API data source. When it was the primary input the product disappears from Google within minutes and its history and status go with it. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          },
+          "data_source_id": {
+            "type": "string",
+            "description": "Numeric id of an **API** data source (input \"API\") that owns the product input, from google_merchant_center_list_data_sources. File and UI data sources are refused."
+          }
+        },
+        "required": [
+          "product_id",
+          "data_source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/productInputs/{product_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "dataSource": "accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources/${data_source_id}"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_merchant_center_list_data_sources",
+      "description": "List the data sources of the account (feeds): name with the numeric id, displayName, input (API, FILE, UI, AUTOFEED) and type (primaryProductDataSource, supplementalProductDataSource, localInventoryDataSource, regionalInventoryDataSource, promotionDataSource...) with language, feed label and countries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Data sources per page, 1-1000. Default all.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasources/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_get_data_source",
+      "description": "Read one data source with its type settings and, for file feeds, the fetch schedule and file URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data_source_id": {
+            "type": "string",
+            "description": "Numeric id of the data source (the part after \"/dataSources/\" in its name), from google_merchant_center_list_data_sources."
+          }
+        },
+        "required": [
+          "data_source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasources/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources/{data_source_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_merchant_center_get_latest_file_upload",
+      "description": "Read the result of the latest file upload or fetch of a data source: processingState (SUCCEEDED, FAILED, IN_PROGRESS), uploadTime, itemsTotal, itemsCreated, itemsUpdated and the issues found in the file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data_source_id": {
+            "type": "string",
+            "description": "Numeric id of the data source (the part after \"/dataSources/\" in its name), from google_merchant_center_list_data_sources."
+          }
+        },
+        "required": [
+          "data_source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasources/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources/{data_source_id}/fileUploads/latest",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_merchant_center_create_data_source",
+      "description": "Create a data source. Set display_name and exactly one type object. An API product source needs no file: {\"contentLanguage\": \"en\", \"feedLabel\": \"US\", \"countries\": [\"US\"]} as primary_product_data_source, then add products with google_merchant_center_insert_product_input. For a scheduled file feed also pass file_input.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Name shown in Merchant Center, e.g. \"API products US\"."
+          },
+          "primary_product_data_source": {
+            "type": "object",
+            "description": "Primary product source: {\"contentLanguage\": \"en\", \"feedLabel\": \"US\", \"countries\": [\"US\"]}; leave contentLanguage and feedLabel out for a multi-language source."
+          },
+          "supplemental_product_data_source": {
+            "type": "object",
+            "description": "Supplemental source that overrides attributes of existing products: {\"contentLanguage\": \"en\", \"feedLabel\": \"US\"} or {}."
+          },
+          "local_inventory_data_source": {
+            "type": "object",
+            "description": "Local inventory source: {\"feedLabel\": \"US\", \"contentLanguage\": \"en\"}."
+          },
+          "regional_inventory_data_source": {
+            "type": "object",
+            "description": "Regional inventory source: {\"feedLabel\": \"US\", \"contentLanguage\": \"en\"}."
+          },
+          "promotion_data_source": {
+            "type": "object",
+            "description": "Promotion source: {\"targetCountry\": \"US\", \"contentLanguage\": \"en\"}."
+          },
+          "file_input": {
+            "type": "object",
+            "description": "For a file feed fetched from a URL: {\"fetchSettings\": {\"enabled\": true, \"fetchUri\": \"https://shop.example/feed.xml\", \"frequency\": \"FREQUENCY_DAILY\", \"timeOfDay\": {\"hours\": 6}, \"timeZone\": \"Europe/Berlin\"}}."
+          }
+        },
+        "required": [
+          "display_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/datasources/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources",
+        "bodyMapping": {
+          "displayName": "$display_name",
+          "primaryProductDataSource": "$primary_product_data_source",
+          "supplementalProductDataSource": "$supplemental_product_data_source",
+          "localInventoryDataSource": "$local_inventory_data_source",
+          "regionalInventoryDataSource": "$regional_inventory_data_source",
+          "promotionDataSource": "$promotion_data_source",
+          "fileInput": "$file_input"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_update_data_source",
+      "description": "Change a data source's display name, countries or fetch schedule. update_mask lists the fields to change, e.g. \"displayName\" or \"fileInput.fetchSettings\"; a field in the mask but missing from the body is cleared.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data_source_id": {
+            "type": "string",
+            "description": "Numeric id of the data source (the part after \"/dataSources/\" in its name), from google_merchant_center_list_data_sources."
+          },
+          "update_mask": {
+            "type": "string",
+            "description": "Comma-separated fields to change, e.g. \"displayName\", \"primaryProductDataSource.countries\", \"fileInput.fetchSettings\"."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "New display name."
+          },
+          "primary_product_data_source": {
+            "type": "object",
+            "description": "New primary product settings, e.g. {\"countries\": [\"US\", \"CA\"]}."
+          },
+          "file_input": {
+            "type": "object",
+            "description": "New fetch settings, e.g. {\"fetchSettings\": {\"enabled\": true, \"fetchUri\": \"https://shop.example/feed.xml\", \"frequency\": \"FREQUENCY_DAILY\"}}."
+          }
+        },
+        "required": [
+          "data_source_id",
+          "update_mask"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/datasources/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources/{data_source_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "updateMask": "$update_mask"
+        },
+        "bodyMapping": {
+          "displayName": "$display_name",
+          "primaryProductDataSource": "$primary_product_data_source",
+          "fileInput": "$file_input"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_fetch_data_source",
+      "description": "Fetch a file data source from its URL now, outside its schedule. Check the outcome a few minutes later with google_merchant_center_get_latest_file_upload.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data_source_id": {
+            "type": "string",
+            "description": "Numeric id of the data source (the part after \"/dataSources/\" in its name), from google_merchant_center_list_data_sources."
+          }
+        },
+        "required": [
+          "data_source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/datasources/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources/{data_source_id}:fetch",
+        "encodePathParams": true,
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "google_merchant_center_list_aggregate_product_statuses",
+      "description": "Count products by status per reporting context (SHOPPING_ADS, FREE_LISTINGS, ...) and country: approved, pending and disapproved counts and the most frequent item-level issues with how many products each affects. The fastest health overview of a catalog.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Only some contexts or countries, e.g. \"reporting_context = \\\"SHOPPING_ADS\\\" AND country = \\\"US\\\"\"."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 1-250. Default 25.",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issueresolution/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/aggregateProductStatuses",
+        "queryParams": {
+          "filter": "$filter",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_search_reports",
+      "description": "Run a Merchant Center Query Language (MCQL) report: product performance (clicks, impressions, CTR, conversions), product status and issues per product, price competitiveness and price insights, best sellers, competitive visibility. Example: \"SELECT offer_id, title, clicks, impressions FROM product_performance_view WHERE date BETWEEN '2026-10-01' AND '2026-10-29' ORDER BY clicks DESC LIMIT 50\". Page with page_token = nextPageToken.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "MCQL query. Tables: product_performance_view, non_product_performance_view, product_view, price_competitiveness_product_view, price_insights_product_view, best_sellers_product_cluster_view, best_sellers_brand_view, competitive_visibility_competitor_view, competitive_visibility_top_merchant_view, competitive_visibility_benchmark_view. Fields in snake_case; only AND (no OR); performance views need a date condition and a metric."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, up to 100000. Default 1000.",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reports/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/reports:search",
+        "bodyMapping": {
+          "query": "$query",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "google_merchant_center_list_local_inventories",
+      "description": "List the in-store inventory of one product: per storeCode the price, sale price, availability, quantity and pickup settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Stores per page, 1-25000.",
+            "minimum": 1,
+            "maximum": 25000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventories/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/products/{product_id}/localInventories",
+        "encodePathParams": true,
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_insert_local_inventory",
+      "description": "Set the in-store availability and price of a product at one store (creates or replaces that store entry). The store code must exist in the linked Business Profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          },
+          "store_code": {
+            "type": "string",
+            "description": "Store code of the physical store as in Google Business Profile."
+          },
+          "local_inventory_attributes": {
+            "type": "object",
+            "description": "E.g. {\"availability\": \"IN_STOCK\", \"quantity\": \"12\", \"price\": {\"amountMicros\": \"59990000\", \"currencyCode\": \"EUR\"}, \"pickupMethod\": \"BUY\", \"pickupSla\": \"SAME_DAY\"}. availability: IN_STOCK, LIMITED_AVAILABILITY, ON_DISPLAY_TO_ORDER, OUT_OF_STOCK."
+          }
+        },
+        "required": [
+          "product_id",
+          "store_code",
+          "local_inventory_attributes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventories/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/products/{product_id}/localInventories:insert",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "storeCode": "$store_code",
+          "localInventoryAttributes": "$local_inventory_attributes"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_delete_local_inventory",
+      "description": "Remove the inventory entry of a product at one store; the product then no longer shows as available there. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          },
+          "store_code": {
+            "type": "string",
+            "description": "Store code of the entry to remove."
+          }
+        },
+        "required": [
+          "product_id",
+          "store_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/inventories/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/products/{product_id}/localInventories/{store_code}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_merchant_center_list_regional_inventories",
+      "description": "List the regional prices and availability of one product: per region id the price, sale price and availability.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Regions per page, 1-100000.",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventories/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/products/{product_id}/regionalInventories",
+        "encodePathParams": true,
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_insert_regional_inventory",
+      "description": "Set the price and availability of a product in one region (creates or replaces that region entry). The region must exist (google_merchant_center_list_regions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region id from google_merchant_center_list_regions."
+          },
+          "regional_inventory_attributes": {
+            "type": "object",
+            "description": "E.g. {\"availability\": \"IN_STOCK\", \"price\": {\"amountMicros\": \"54990000\", \"currencyCode\": \"EUR\"}}."
+          }
+        },
+        "required": [
+          "product_id",
+          "region",
+          "regional_inventory_attributes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventories/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/products/{product_id}/regionalInventories:insert",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "region": "$region",
+          "regionalInventoryAttributes": "$regional_inventory_attributes"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_delete_regional_inventory",
+      "description": "Remove the regional price and availability of a product in one region. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id `contentLanguage~feedLabel~offerId`, e.g. \"en~US~sku123\": the part after \"/products/\" in the `name` returned by google_merchant_center_list_products. If the offer id contains \"/\", \"%\" or \"~\", pass the unpadded base64url encoding of the whole \"en~US~sku/1\" string instead."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region id of the entry to remove."
+          }
+        },
+        "required": [
+          "product_id",
+          "region"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/inventories/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/products/{product_id}/regionalInventories/{region}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_merchant_center_list_promotions",
+      "description": "List the promotions of the account (up to 250 per page): promotionId, targetCountry, contentLanguage, redemptionChannel, attributes (long title, offer and coupon type, dates, destinations) and promotionStatus with approval per destination and issues.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Promotions per page, 1-250.",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/promotions/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/promotions",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_get_promotion",
+      "description": "Read one promotion with its status per destination (pending, approved, rejected) and item-level issues. The id combines language, country and promotionId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "promotion_id": {
+            "type": "string",
+            "description": "Promotion resource id: the part after \"/promotions/\" in the name from google_merchant_center_list_promotions, e.g. \"en~US~SPRING10\"."
+          }
+        },
+        "required": [
+          "promotion_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/promotions/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/promotions/{promotion_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_merchant_center_insert_promotion",
+      "description": "Create a promotion, or replace one with the same promotionId, country and language, in a promotion data source. Google reviews it before it shows (usually within a day).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data_source_id": {
+            "type": "string",
+            "description": "Numeric id of a promotion data source (create one with google_merchant_center_create_data_source and promotion_data_source)."
+          },
+          "promotion_id": {
+            "type": "string",
+            "description": "Your own id for the promotion, e.g. \"SPRING10\"; up to 50 characters, no spaces."
+          },
+          "content_language": {
+            "type": "string",
+            "description": "Two-letter language, e.g. \"en\"."
+          },
+          "target_country": {
+            "type": "string",
+            "description": "Two-letter country, e.g. \"US\"."
+          },
+          "redemption_channel": {
+            "type": "array",
+            "description": "Where it can be redeemed: [\"ONLINE\"], [\"IN_STORE\"] or both.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ONLINE",
+                "IN_STORE"
+              ]
+            }
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Promotion details, e.g. {\"longTitle\": \"10% off running shoes\", \"productApplicability\": \"ALL_PRODUCTS\", \"offerType\": \"GENERIC_CODE\", \"genericRedemptionCode\": \"SPRING10\", \"couponValueType\": \"PERCENT_OFF\", \"percentOff\": \"10\", \"promotionDestinations\": [\"FREE_LISTINGS\", \"SHOPPING_ADS\"], \"promotionEffectiveTimePeriod\": {\"startTime\": \"2026-11-01T00:00:00Z\", \"endTime\": \"2026-11-30T23:59:59Z\"}}."
+          }
+        },
+        "required": [
+          "data_source_id",
+          "promotion_id",
+          "content_language",
+          "target_country",
+          "redemption_channel",
+          "attributes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/promotions/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/promotions:insert",
+        "bodyMapping": {
+          "dataSource": "accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/dataSources/${data_source_id}",
+          "promotion": {
+            "promotionId": "$promotion_id",
+            "contentLanguage": "$content_language",
+            "targetCountry": "$target_country",
+            "redemptionChannel": "$redemption_channel",
+            "attributes": "$attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_list_notification_subscriptions",
+      "description": "List the push notification subscriptions of the account: event (PRODUCT_STATUS_CHANGE, ACCOUNT_SERVICE_CHANGE), callback URL and which accounts they cover.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Subscriptions per page, 1-200. Default 100.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/notificationsubscriptions",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_get_notification_subscription",
+      "description": "Read one notification subscription by its id: event type, callback URL and covered accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "The part after \"/notificationsubscriptions/\" in the name from google_merchant_center_list_notification_subscriptions."
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/notificationsubscriptions/{subscription_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "google_merchant_center_create_notification_subscription",
+      "description": "Subscribe an HTTPS callback URL to push notifications, e.g. when a product becomes disapproved. Set either all_managed_accounts (advanced accounts) or target_account_id. Google posts a JSON message to the URL for each change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "registered_event": {
+            "type": "string",
+            "description": "\"PRODUCT_STATUS_CHANGE\" or \"ACCOUNT_SERVICE_CHANGE\".",
+            "enum": [
+              "PRODUCT_STATUS_CHANGE",
+              "ACCOUNT_SERVICE_CHANGE"
+            ]
+          },
+          "call_back_uri": {
+            "type": "string",
+            "description": "Public HTTPS URL that receives the notifications."
+          },
+          "target_account_id": {
+            "type": "string",
+            "description": "Account whose events you want: usually the configured account id itself, or one sub-account."
+          },
+          "all_managed_accounts": {
+            "type": "boolean",
+            "description": "true on an advanced account: notify for every sub-account, including new ones."
+          }
+        },
+        "required": [
+          "registered_event",
+          "call_back_uri"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notifications/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/notificationsubscriptions",
+        "bodyMapping": {
+          "registeredEvent": "$registered_event",
+          "callBackUri": "$call_back_uri",
+          "targetAccount": "accounts/${target_account_id}",
+          "allManagedAccounts": "$all_managed_accounts"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_update_notification_subscription",
+      "description": "Change the HTTPS callback URL that a notification subscription posts its messages to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id from google_merchant_center_list_notification_subscriptions."
+          },
+          "call_back_uri": {
+            "type": "string",
+            "description": "New public HTTPS URL."
+          }
+        },
+        "required": [
+          "subscription_id",
+          "call_back_uri"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/notifications/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/notificationsubscriptions/{subscription_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "updateMask": "callBackUri"
+        },
+        "bodyMapping": {
+          "callBackUri": "$call_back_uri"
+        }
+      }
+    },
+    {
+      "name": "google_merchant_center_delete_notification_subscription",
+      "description": "Delete a notification subscription; the callback URL stops receiving messages. Switched off at install.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id from google_merchant_center_list_notification_subscriptions."
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/notifications/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/notificationsubscriptions/{subscription_id}",
+        "encodePathParams": true
+      },
+      "enabled": false,
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "google_merchant_center_list_quotas",
+      "description": "Show the Merchant API call quotas of the account per method group: daily limit, per-minute limit and today's usage. Check it before bulk product updates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Quota groups per page, 1-1000. Default 500.",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "nextPageToken from the previous response, to fetch the next page. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/quota/v1/accounts/{{GOOGLE_MERCHANT_ACCOUNT_ID}}/quotas",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    }
+  ]
+}

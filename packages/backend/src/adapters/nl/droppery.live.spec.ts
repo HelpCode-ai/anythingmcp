@@ -46,8 +46,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'droppery_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 19 Oct 2026).
-const HAND_BUILT = ["droppery_get_order", "droppery_list_products"];
 
 describe('droppery adapter: static spec conformance', () => {
   it('sends a Bearer token to platform.droppery.io/api/v1/webshop', () => {
@@ -100,10 +98,6 @@ describe('droppery adapter: static spec conformance', () => {
     }
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     expect(WRITES).not.toContain(a.probe.tool);

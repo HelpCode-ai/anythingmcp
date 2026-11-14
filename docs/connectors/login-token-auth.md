@@ -65,6 +65,11 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   "loginUrl": "https://api.example.com/graphql",
   "loginMethod": "POST",                     // GET | POST (default POST)
   "loginHeaders": { "X-App": "anythingmcp" }, // static headers for the login call
+  "loginBasicAuth": true,                    // optional: send Authorization: Basic base64(username:password)
+                                             // on the login call only (Wazuh). The password is then not
+                                             // offered to templates, no body is sent without loginBody, and
+                                             // an Authorization in loginHeaders is refused, as are signedJwt
+                                             // and bcrypt passwordHashing.
 
   // ─── Body: prefer structured `loginBody` (recursive ${name} substitution) ─
   "loginBody": {
@@ -108,7 +113,7 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   },
 
   // ─── Where to find the token & expiry in the login response ────
-  "tokenJsonPath":  "data.signIn.jwtToken.token",
+  "tokenJsonPath":  "data.signIn.jwtToken.token",   // or a list, see below
   "expiryJsonPath": "data.signIn.jwtToken.expiredAt",
   "audJsonPath":    "data.signIn.jwtToken.aud",      // optional — overrides authConfig.aud
   "expiryFormat":   "iso8601",                       // iso8601 | unix | ttl_seconds
@@ -130,6 +135,19 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
     "JWT-AUD": "${aud}"
   }
 }
+```
+
+### Several candidate token paths
+
+When the vendor does not document the login answer, `tokenJsonPath` can be a
+list of paths, tried in order; the first that holds a non-empty string is the
+token. `"."` takes the whole body, for a login that answers with a bare
+string. A login that finds none fails with every path named (or with the
+service's own refusal message, when the body carries one). A single string
+works as before.
+
+```json
+"tokenJsonPath": ["AuthenticationResult.IdToken", "IdToken", "idToken", "data.idToken", "token", "."]
 ```
 
 ### Placeholders available in templates

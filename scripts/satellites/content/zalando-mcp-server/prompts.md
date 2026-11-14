@@ -1,0 +1,14 @@
+- Which Zalando orders came in since Monday?
+- Which orders are still Approved but not Fulfilled?
+- Show the latest 20 orders, newest first, with order number, date, status and total.
+- Find the order with order number 10105123456789 and show its items.
+- Show order 3f2b8c1e-5d4a-4b7e-9c1a-2e6f8a9b0c1d in full, with the delivery address.
+- Which items of order 3f2b8c1e-5d4a-4b7e-9c1a-2e6f8a9b0c1d are cancelled, and which are fulfilled?
+- Which EANs and article numbers are in order 3f2b8c1e-5d4a-4b7e-9c1a-2e6f8a9b0c1d, and at what price?
+- Which carrier and tracking number did order 3f2b8c1e-5d4a-4b7e-9c1a-2e6f8a9b0c1d ship with?
+- Which orders were modified in the last 24 hours?
+- Which orders have not been exported yet?
+- Which returns were announced this week, and with what reasons?
+- Which items are in the returns announced since 1 October?
+- Which orders created in September are Fulfilled?
+- Give me the shipments for every Approved order from this week.

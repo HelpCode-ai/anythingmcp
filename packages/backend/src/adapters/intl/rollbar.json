@@ -1,0 +1,1507 @@
+{
+  "slug": "rollbar",
+  "name": "Rollbar",
+  "description": "Rollbar error monitoring: items with their history and occurrences, top active items and occurrence reports, the Metrics API, deploys, environments and code versions, RQL queries, and the account's projects, users and teams. Resolve, mute, assign and snooze items, comment, and report deploys.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "rollbar",
+  "docsUrl": "https://docs.rollbar.com/reference/getting-started-1",
+  "instructions": "## Rollbar\nThis connector works with **Rollbar** error monitoring through the REST API (`https://api.rollbar.com/api/1`): items (grouped errors and messages) with their history and occurrences, dashboard reports and the Metrics API, deploys, environments and code versions, RQL queries, and the account's projects, users and teams. It can resolve, mute, reassign, snooze and retitle items, comment on them, report deploys and run RQL queries.\n\n**Setup (3 minutes)**\nRollbar has two kinds of access token, and which one you paste decides what the connector can reach:\n- A **project access token** (project, Settings, Project Access Tokens) reaches one project. Give it the `read` scope for the reads, `write` to change items, and `post_server_item` to report deploys. It cannot list projects, users or teams.\n- An **account access token** reaches the whole account: a **service token** (account Settings, API Access Tokens, Service tab) for every project, or a **personal access token** (User Settings, Personal access tokens) that can do only what its user can do. Scopes are `read` and `write`. On project tools pass `project_id` (from `rollbar_list_projects`); `rollbar_list_items` searches all projects unless you pass `project_ids`. Only a personal access token can comment on items.\nPaste the token into `ROLLBAR_ACCESS_TOKEN` and run `rollbar_list_items` to check it.\n\n**Workflow**\n- What is broken: `rollbar_get_top_active_items` (last 24 hours), `rollbar_list_items` with `status: [\"active\"]` and `level: [\"error\", \"critical\"]`, then `rollbar_get_item`. A number from a Rollbar URL (#123) is a counter: resolve it with `rollbar_get_item_by_counter`.\n- Investigate: `rollbar_list_item_occurrences`, then `rollbar_get_occurrence` for the full stack trace; `rollbar_list_occurrences` for the latest events of the whole project; `rollbar_list_item_events` for who changed what.\n- Triage: `rollbar_update_item` (resolve with `resolved_in_version`, mute, change level or title, assign with ids from `rollbar_list_users` or `rollbar_list_teams`, snooze), `rollbar_add_item_comment`.\n- Trends: `rollbar_get_occurrence_counts`, `rollbar_get_activated_item_counts`, `rollbar_get_item_metrics`, and on the Advanced plan `rollbar_query_occurrence_metrics` (filters, group_by, aggregates) and `rollbar_get_resolution_time_metrics`.\n- Releases: `rollbar_list_deploys`, `rollbar_get_deploy`, `rollbar_report_deploy` and `rollbar_update_deploy`; `rollbar_list_environments`; what a release broke: `rollbar_get_version` and `rollbar_list_version_items` with `event: new`.\n- Ad hoc analysis with RQL: `rollbar_create_rql_job`, poll `rollbar_get_rql_job` until `status` is success, then `rollbar_get_rql_job_result`. `rollbar_list_rql_jobs` and `rollbar_cancel_rql_job` manage them.\n- Account: `rollbar_list_projects`, `rollbar_get_project`, `rollbar_list_users`, `rollbar_get_user`, `rollbar_list_teams`.\n- Privacy requests: `rollbar_request_person_deletion` (switched off by default; erases a tracked person everywhere) and `rollbar_get_person_deletion_status`.\n\n**Reading the answers**: every answer is `{\"err\": 0, \"result\": ...}`; `err: 1` comes with a `message`. `rollbar_report_deploy` answers `{\"data\": {\"deploy_id\": ...}}`. All timestamps are Unix seconds in GMT. An item has a system-wide `id` (used by these tools) and a per-project `counter` (shown in URLs). Item `status` is active, resolved, muted or archived; `level` is debug, info, warning, error or critical. Occurrence lists leave out request headers, cookies and notifier details; `rollbar_get_occurrence` returns the full payload, which may contain personal data of your end users.\n\n**Paging**: items come 100 per page; occurrences, deploys, environments and events 20 per page by default (`limit` up to 5000 where offered); pass `page` from 1. Occurrence lists also page with `last_id`. `total_count` is null on projects with more than 100,000 items.\n\n**Errors**: 401 means a missing or malformed token; 403 a token that is disabled, lacks the scope, is a project token on an account endpoint, or (`Requires project access`) an account token without a usable `project_id`; 404 an unknown id or another account's; 422 invalid parameters; 429 the token's rate limit (see `X-Rate-Limit-Remaining`).",
+  "prerequisites": "A Rollbar account and an access token: a project access token for one project, or an account access token (service or personal) for the whole account.",
+  "requiredEnvVars": [
+    "ROLLBAR_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "ROLLBAR_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "A project access token (project Settings, Project Access Tokens; scopes read, write, post_server_item) for one project, or an account access token (account Settings, API Access Tokens, or User Settings, Personal access tokens) for the whole account.",
+      "link": "https://docs.rollbar.com/reference/getting-started-1",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the token, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Rollbar did not recognise the token. Paste a project or account access token exactly as Rollbar shows it.",
+    "403": "Rollbar refused the token for this request: it is disabled, lacks the read scope, or is a project token on an account endpoint. With an account token, pass project_id on project tools.",
+    "429": "The token is over its Rollbar rate limit. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "rollbar_list_items"
+  },
+  "connector": {
+    "name": "Rollbar API",
+    "type": "REST",
+    "baseUrl": "https://api.rollbar.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Rollbar-Access-Token",
+      "apiKey": "{{ROLLBAR_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/api/1/items"
+  },
+  "tools": [
+    {
+      "name": "rollbar_list_items",
+      "description": "List or search items (grouped errors and messages), 100 per page: id, counter, title, level, status, environment, framework, total occurrences, first and last occurrence time, assignee and resolved version. Filter by status, level, environment, assignee or the same search text as the Items page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "active",
+                "resolved",
+                "muted",
+                "archived"
+              ]
+            },
+            "description": "Only items with these statuses."
+          },
+          "level": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "debug",
+                "info",
+                "warning",
+                "error",
+                "critical"
+              ]
+            },
+            "description": "Only items with these levels."
+          },
+          "environment": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only items in these environments, e.g. [\"production\"]. Names from `rollbar_list_environments`."
+          },
+          "framework": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only items of these frameworks, e.g. [\"rails\", \"browser-js\"]."
+          },
+          "assigned_user": {
+            "type": "string",
+            "description": "Only items assigned to this Rollbar username, or `assigned` / `unassigned`."
+          },
+          "assigned_team": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only items assigned to these team names. Not together with assigned_user."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Return only these item ids."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search text, in the syntax of the Items page search box (e.g. `title:timeout` or plain words)."
+          },
+          "is_snoozed": {
+            "type": "boolean",
+            "description": "true for only snoozed items, false to leave snoozed items out."
+          },
+          "project_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only with an account access token: the projects to search (default every project the token can read)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/items",
+        "queryParams": {
+          "status": "$status",
+          "level": "$level",
+          "environment": "$environment",
+          "framework": "$framework",
+          "assigned_user": "$assigned_user",
+          "assigned_team": "$assigned_team",
+          "ids": "$ids",
+          "query": "$query",
+          "is_snoozed": "$is_snoozed",
+          "project_ids": "$project_ids",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result.items[*].integrations_data"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_item",
+      "description": "Get one item by its id: title, level, status, environment, platform, framework, counter, total occurrences, first and last occurrence (with ids), assignee, resolved version and snooze state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Item id (the system-wide `id` from `rollbar_list_items`, not the project counter shown in the Rollbar URL; use `rollbar_get_item_by_counter` for that)."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/item/{item_id}",
+        "queryParams": {
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_item_by_counter",
+      "description": "Find an item by the project counter shown in Rollbar URLs and the UI (#123), or by the UUID of one of its occurrences. Returns the item with its system-wide id for the other tools. Give exactly one of counter or uuid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counter": {
+            "type": "integer",
+            "description": "Project counter of the item, the number in https://rollbar.com/<account>/<project>/items/<counter>/."
+          },
+          "uuid": {
+            "type": "string",
+            "description": "UUID of an occurrence of the item (sent back by the SDK when it reports an error)."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/item/",
+        "queryParams": {
+          "counter": "$counter",
+          "uuid": "$uuid",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_update_item",
+      "description": "Change an item: resolve it (optionally with the version it was fixed in), mute it or reactivate it, change its level or title, assign it to a user or team, or snooze it for a number of seconds. Needs a token with write scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Item id (the system-wide `id` from `rollbar_list_items`, not the project counter shown in the Rollbar URL; use `rollbar_get_item_by_counter` for that)."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "active",
+              "resolved",
+              "muted"
+            ]
+          },
+          "resolved_in_version": {
+            "type": "string",
+            "description": "With status resolved: the code version that fixes it, up to 40 characters (e.g. a git SHA)."
+          },
+          "level": {
+            "type": "string",
+            "description": "New level.",
+            "enum": [
+              "debug",
+              "info",
+              "warning",
+              "error",
+              "critical"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "New title, 1 to 255 characters."
+          },
+          "assigned_user_id": {
+            "type": "integer",
+            "description": "Id of the user to assign the item to, from `rollbar_list_users`."
+          },
+          "assigned_team_id": {
+            "type": "integer",
+            "description": "Id of the team to assign the item to, from `rollbar_list_teams`."
+          },
+          "snooze_enabled": {
+            "type": "boolean",
+            "description": "true to snooze the item (paid plans), false to unsnooze it."
+          },
+          "snooze_expiration_in_seconds": {
+            "type": "integer",
+            "description": "With snooze_enabled true: how long to snooze, in seconds (3600 = one hour)."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/1/item/{item_id}",
+        "bodyMapping": {
+          "status": "$status",
+          "resolved_in_version": "$resolved_in_version",
+          "level": "$level",
+          "title": "$title",
+          "assigned_user_id": "$assigned_user_id",
+          "assigned_team_id": "$assigned_team_id",
+          "snooze_enabled": "$snooze_enabled",
+          "snooze_expiration_in_seconds": "$snooze_expiration_in_seconds",
+          "project_id": "$project_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rollbar_list_item_events",
+      "description": "List the history of an item, oldest first: comments, status, level, title and assignment changes, snoozes and merges, each with user and Unix timestamp. Filter by event type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Item id (the system-wide `id` from `rollbar_list_items`, not the project counter shown in the Rollbar URL; use `rollbar_get_item_by_counter` for that)."
+          },
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "item_comment",
+                "item_level_history",
+                "item_status_history",
+                "item_snooze_history",
+                "item_assigned_user_history",
+                "item_assigned_team_history",
+                "item_title_history",
+                "item_group_history",
+                "item_merge_history"
+              ]
+            },
+            "description": "Only these event types."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, at most 5000).",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/item/{item_id}/events",
+        "queryParams": {
+          "type": "$type",
+          "page": "$page",
+          "limit": "$limit",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_add_item_comment",
+      "description": "Add a comment to an item's timeline, attributed to the token's user. Works only with a personal access token with write scope (not a project token or service token).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Item id (the system-wide `id` from `rollbar_list_items`, not the project counter shown in the Rollbar URL; use `rollbar_get_item_by_counter` for that)."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment text (Markdown as in the Rollbar UI)."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Id of the project that contains the item, from `rollbar_list_projects` or the item's `project_id`."
+          }
+        },
+        "required": [
+          "item_id",
+          "comment",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/item/{item_id}/comments",
+        "queryParams": {
+          "project_id": "$project_id"
+        },
+        "bodyMapping": {
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "rollbar_list_occurrences",
+      "description": "List the project's latest occurrences (single error events), newest first: occurrence id, item id, timestamp, code version and the payload (exception, stack trace, request, person, server). Request headers, cookies and notifier details are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_id": {
+            "type": "integer",
+            "description": "Id of the last occurrence of the previous page: returns the next 20 after it (instead of page)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, at most 5000).",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/instances",
+        "queryParams": {
+          "last_id": "$last_id",
+          "page": "$page",
+          "limit": "$limit",
+          "project_id": "$project_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result.instances[*].data.request.headers",
+            "result.instances[*].data.request.cookies",
+            "result.instances[*].data.notifier"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rollbar_list_item_occurrences",
+      "description": "List the occurrences of one item, newest first, with timestamp, code version and payload (exception, stack trace, request, person). Request headers, cookies and notifier details are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "description": "Item id (the system-wide `id` from `rollbar_list_items`, not the project counter shown in the Rollbar URL; use `rollbar_get_item_by_counter` for that)."
+          },
+          "last_id": {
+            "type": "integer",
+            "description": "Id of the last occurrence of the previous page: returns the next 20 after it (instead of page)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, at most 5000).",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/item/{item_id}/instances",
+        "queryParams": {
+          "last_id": "$last_id",
+          "page": "$page",
+          "limit": "$limit",
+          "project_id": "$project_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result.instances[*].data.request.headers",
+            "result.instances[*].data.request.cookies",
+            "result.instances[*].data.notifier"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_occurrence",
+      "description": "Get one occurrence with its full payload, as the Raw JSON view in Rollbar: exception class and message, stack trace frames, request, person, server, client, custom data and telemetry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "occurrence_id": {
+            "type": "integer",
+            "description": "Occurrence id, from `rollbar_list_occurrences`, `rollbar_list_item_occurrences` or an item's `last_occurrence_id`."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "occurrence_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/instance/{occurrence_id}",
+        "queryParams": {
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_top_active_items",
+      "description": "Get the items with the most occurrences in the last hours (like the Top 10 on the project dashboard), each with its hourly occurrence counts. By default sorted by level, then occurrences.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hours": {
+            "type": "integer",
+            "description": "Number of recent hours to look at, 1 to 168 (default 24).",
+            "minimum": 1,
+            "maximum": 168
+          },
+          "environments": {
+            "type": "string",
+            "description": "Comma-separated environments to include, e.g. `production,staging`. Empty means every environment."
+          },
+          "sort": {
+            "type": "string",
+            "description": "`occurrences` sorts by occurrence count only instead of level first.",
+            "enum": [
+              "occurrences"
+            ]
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/reports/top_active_items",
+        "queryParams": {
+          "hours": "$hours",
+          "environments": "$environments",
+          "sort": "$sort",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_occurrence_counts",
+      "description": "Get the recent number of occurrences per minute, hour or day as [timestamp, count] pairs (the Hourly and Daily Error/Critical Occurrences graphs), filtered by environments, level range or one item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bucket_size": {
+            "type": "integer",
+            "description": "Bucket size in seconds: 60, 3600 or 86400 (default 86400). Buckets are in GMT.",
+            "enum": [
+              60,
+              3600,
+              86400
+            ]
+          },
+          "environments": {
+            "type": "string",
+            "description": "Comma-separated environments to include, e.g. `production,staging`. Empty means every environment."
+          },
+          "min_level": {
+            "type": "string",
+            "description": "Lowest level to count.",
+            "enum": [
+              "debug",
+              "info",
+              "warning",
+              "error",
+              "critical"
+            ]
+          },
+          "max_level": {
+            "type": "string",
+            "description": "Highest level to count.",
+            "enum": [
+              "debug",
+              "info",
+              "warning",
+              "error",
+              "critical"
+            ]
+          },
+          "item_id": {
+            "type": "integer",
+            "description": "Count only the occurrences of this item."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/reports/occurrence_counts",
+        "queryParams": {
+          "bucket_size": "$bucket_size",
+          "environments": "$environments",
+          "min_level": "$min_level",
+          "max_level": "$max_level",
+          "item_id": "$item_id",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_activated_item_counts",
+      "description": "Get the number of new and reactivated items per day as [timestamp, count] pairs (the Daily New/Reactivated Items graph), in the project time zone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "buckets": {
+            "type": "integer",
+            "description": "Number of days to return, 2 to 366.",
+            "minimum": 2,
+            "maximum": 366
+          },
+          "bucket_size": {
+            "type": "integer",
+            "description": "Bucket size in seconds; only 86400 (a day) is accepted.",
+            "enum": [
+              86400
+            ]
+          },
+          "environments": {
+            "type": "string",
+            "description": "Comma-separated environments to include, e.g. `production,staging`. Empty means every environment."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/reports/activated_counts",
+        "queryParams": {
+          "buckets": "$buckets",
+          "bucket_size": "$bucket_size",
+          "environments": "$environments",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_item_metrics",
+      "description": "Get metrics for a list of items of one project: occurrence counts and the time of the first and last occurrence of each. Runs as a query (POST) and changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_counters": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Item counters of the project (the `counter` field of an item, shown as #277 in Rollbar, not its id), e.g. [277, 278]."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "item_counters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/metrics/items",
+        "queryParams": {
+          "project_id": "$project_id"
+        },
+        "bodyMapping": {
+          "item_counters": "$item_counters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "rollbar_query_occurrence_metrics",
+      "description": "Query occurrence metrics over time with filters, grouping and aggregates (count_all, count_distinct, topk and more), e.g. occurrences per environment per day or the top browsers of an item. Needs the Metrics API of the Advanced plan. Runs as a query and changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the window, Unix seconds. Default: the start of the data retention."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the window (inclusive), Unix seconds. Default: open-ended."
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Filters that must all match, each {\"field\": \"environment\", \"operator\": \"eq\", \"values\": [\"production\"]}. Operators: eq, ne (several values), gt, gte, lt, lte (one value), like, ilike (one SQL pattern), is_null, not_null. Fields include project_id, item_id, item_counter, environment, item_level, item_status, code_version, browser_family, os_family, platform, framework, exception_class, request_url, person_id, server_host."
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Columns to group by, e.g. [\"environment\"] or [\"item_id\"]."
+          },
+          "aggregates": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Aggregates per group, each {\"field\": \"occurrence_id\", \"function\": \"count_all\", \"alias\": \"occurrences\"}. Functions: count_all, count_distinct, max, min, sum, topk (parameters [\"5\"]), quantiles, array, json_array_length."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort order, e.g. {\"field\": \"occurrences\", \"order\": \"desc\"}. Default timestamp ascending."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Bucket results per period; without it everything is one timepoint.",
+            "enum": [
+              "second",
+              "minute",
+              "hour",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for the buckets, e.g. Europe/Berlin (default UTC)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum rows or groups to return.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows or groups to skip (for paging).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/metrics/occurrences",
+        "bodyMapping": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "filters": "$filters",
+          "group_by": "$group_by",
+          "aggregates": "$aggregates",
+          "sort": "$sort",
+          "granularity": "$granularity",
+          "timezone": "$timezone",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "rollbar_get_resolution_time_metrics",
+      "description": "Get the time to resolve items over a window (median by default, or mean, min, max), per period, filtered by environments, levels and frameworks. With an account token, for a list of projects. Runs as a query and changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the window, Unix seconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the window (inclusive), Unix seconds. Default now."
+          },
+          "granularity": {
+            "type": "string",
+            "description": "Period of each value.",
+            "enum": [
+              "second",
+              "minute",
+              "hour",
+              "day",
+              "week",
+              "month",
+              "year"
+            ]
+          },
+          "function": {
+            "type": "string",
+            "description": "Aggregate of the resolution times (default median).",
+            "enum": [
+              "mean",
+              "median",
+              "min",
+              "max"
+            ]
+          },
+          "project_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only with an account access token: the projects to include."
+          },
+          "environments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these environments."
+          },
+          "levels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "debug",
+                "info",
+                "warning",
+                "error",
+                "critical"
+              ]
+            },
+            "description": "Only these levels."
+          },
+          "frameworks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these frameworks."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for the periods (default US/Pacific), e.g. Europe/London."
+          }
+        },
+        "required": [
+          "start_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/metrics/ttr",
+        "bodyMapping": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "granularity": "$granularity",
+          "function": "$function",
+          "project_ids": "$project_ids",
+          "environments": "$environments",
+          "levels": "$levels",
+          "frameworks": "$frameworks",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "rollbar_list_deploys",
+      "description": "List the project's deploys, most recent first: id, environment, revision, status, user, comment and start and finish times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, at most 5000).",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/deploys",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_deploy",
+      "description": "Get one deploy: environment, revision, status, user, comment and start and finish times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deploy_id": {
+            "type": "integer",
+            "description": "Deploy id, from `rollbar_list_deploys`."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "deploy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/deploy/{deploy_id}",
+        "queryParams": {
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_report_deploy",
+      "description": "Record a deploy of a revision to an environment, so new errors can be linked to it. Needs a project access token with the post_server_item scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string",
+            "description": "Environment deployed to, e.g. production."
+          },
+          "revision": {
+            "type": "string",
+            "description": "Revision deployed, usually the git SHA."
+          },
+          "status": {
+            "type": "string",
+            "description": "Deploy status (default succeeded); report started first and finish with `rollbar_update_deploy`.",
+            "enum": [
+              "started",
+              "succeeded",
+              "failed",
+              "timed_out"
+            ]
+          },
+          "rollbar_username": {
+            "type": "string",
+            "description": "Rollbar username of the person who deployed."
+          },
+          "local_username": {
+            "type": "string",
+            "description": "Local user name of the deployer, shown when no rollbar_username is given."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Text to store with the deploy, e.g. the release notes."
+          }
+        },
+        "required": [
+          "environment",
+          "revision"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deploy",
+        "bodyMapping": {
+          "environment": "$environment",
+          "revision": "$revision",
+          "status": "$status",
+          "rollbar_username": "$rollbar_username",
+          "local_username": "$local_username",
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "rollbar_update_deploy",
+      "description": "Finish a deploy reported as started: set its status to succeeded, failed or timed_out, with an optional comment. Needs a project access token with post_server_item scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deploy_id": {
+            "type": "integer",
+            "description": "Deploy id, from `rollbar_list_deploys`."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status; only a deploy that is still started can change.",
+            "enum": [
+              "started",
+              "succeeded",
+              "failed",
+              "timed_out"
+            ]
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment describing the deploy."
+          }
+        },
+        "required": [
+          "deploy_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/1/deploy/{deploy_id}",
+        "bodyMapping": {
+          "status": "$status",
+          "comment": "$comment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rollbar_list_environments",
+      "description": "List the environments of the project (production, staging and so on) with their ids, 20 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, at most 5000).",
+            "minimum": 1,
+            "maximum": 5000
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/environments",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_version",
+      "description": "Get what happened in one code version in one environment: when it was first and last seen, and the number of new, reactivated, repeated and resolved items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Code version as sent in the occurrence payload (`code_version`), e.g. a git SHA or 1.4.2."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment the version runs in, e.g. production."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "version",
+          "environment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/versions/{version}",
+        "queryParams": {
+          "environment": "$environment",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_list_version_items",
+      "description": "List the items of one code version in one environment by what happened in it: new (first seen in this version), repeated, reactivated or resolved. Useful to check a release.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "description": "Code version as sent in the occurrence payload (`code_version`), e.g. a git SHA or 1.4.2."
+          },
+          "environment": {
+            "type": "string",
+            "description": "Environment the version runs in, e.g. production."
+          },
+          "event": {
+            "type": "string",
+            "description": "Which items: new, repeated, reactivated or resolved in this version.",
+            "enum": [
+              "new",
+              "repeated",
+              "reactivated",
+              "resolved"
+            ]
+          },
+          "level": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "debug",
+                "info",
+                "warning",
+                "error",
+                "critical"
+              ]
+            },
+            "description": "Only items of these levels."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "version",
+          "environment",
+          "event"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/versions/{version}/items",
+        "queryParams": {
+          "environment": "$environment",
+          "event": "$event",
+          "level": "$level",
+          "page": "$page",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_create_rql_job",
+      "description": "Start an RQL query (Rollbar's SQL-like query language over items and occurrences), e.g. `SELECT item.counter, count(*) FROM item_occurrence WHERE timestamp > unix_timestamp() - 86400 GROUP BY 1 ORDER BY 2 DESC LIMIT 10`. Returns a job id; then poll `rollbar_get_rql_job`. Changes no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query_string": {
+            "type": "string",
+            "description": "The RQL query. Tables: item_occurrence and deploy; `show tables` and `describe item_occurrence` list them."
+          },
+          "force_refresh": {
+            "type": "boolean",
+            "description": "Run again even when the same query was run recently (default reuses the earlier result)."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "query_string"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/rql/jobs/",
+        "bodyMapping": {
+          "query_string": "$query_string",
+          "force_refresh": "$force_refresh",
+          "project_id": "$project_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "rollbar_get_rql_job",
+      "description": "Check an RQL job: status (new, running, success, failed, cancelled, timed_out), query and times. With expand `result` it also returns the rows once it has succeeded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "RQL job id, from `rollbar_create_rql_job` or `rollbar_list_rql_jobs`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "`result` to include the result rows.",
+            "enum": [
+              "result"
+            ]
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/rql/job/{job_id}",
+        "queryParams": {
+          "expand": "$expand",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_rql_job_result",
+      "description": "Get the result of a finished RQL job: column names (`selectionColumns`) and `rows`, plus any errors and warnings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "RQL job id, from `rollbar_create_rql_job` or `rollbar_list_rql_jobs`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "`job` to include the job itself.",
+            "enum": [
+              "job"
+            ]
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/rql/job/{job_id}/result",
+        "queryParams": {
+          "expand": "$expand",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_list_rql_jobs",
+      "description": "List earlier RQL jobs with their query, status and times, newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project to act on, from `rollbar_list_projects`. Leave empty with a project access token (it always uses its own project)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/rql/jobs/",
+        "queryParams": {
+          "page": "$page",
+          "project_id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "rollbar_cancel_rql_job",
+      "description": "Cancel an RQL job that is still new or running, e.g. a slow query that was started by mistake.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "RQL job id, from `rollbar_create_rql_job` or `rollbar_list_rql_jobs`."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only with an account access token: the project the job ran against."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/rql/job/{job_id}/cancel",
+        "bodyMapping": {
+          "project_id": "$project_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "rollbar_list_projects",
+      "description": "List the projects of the account: id, name, status and creation date. Needs an account access token (a project token is refused). A personal access token lists only the projects its user can see.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/projects"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result[*].settings_data.integrations"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_project",
+      "description": "Get one project: id, name, account, status, time zone and grouping settings, and creation date (integration settings are left out). Needs an account access token (a project token is refused).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Project id, from `rollbar_list_projects`."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/project/{project_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result.settings_data.integrations"
+          ]
+        }
+      }
+    },
+    {
+      "name": "rollbar_list_users",
+      "description": "List the users of the account (id, username, email), optionally only the one with an email address. Needs an account access token (a project token is refused).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only the user with this email address."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/users",
+        "queryParams": {
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "rollbar_get_user",
+      "description": "Get one user of the account: id, username, email and whether email notifications are on. Needs an account access token (a project token is refused).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "User id, from `rollbar_list_users`."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/user/{user_id}"
+      }
+    },
+    {
+      "name": "rollbar_list_teams",
+      "description": "List the teams of the account with id, name and access level (owner, standard, light, view). Team ids are used to assign items. Needs an account access token (a project token is refused).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/teams"
+      }
+    },
+    {
+      "name": "rollbar_request_person_deletion",
+      "description": "Erase a tracked person (the end user attached to occurrences) from every project of the account, by exactly one of email, username or id, e.g. for a GDPR request. Runs as a job; check it with `rollbar_get_person_deletion_status`. Cannot be undone. Needs an account token with write scope. Switched off by default.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email of the person to delete, as sent in the occurrence payload."
+          },
+          "username": {
+            "type": "string",
+            "description": "Username of the person to delete, as sent in the payload."
+          },
+          "id": {
+            "type": "string",
+            "description": "Id of the person to delete, as sent in the payload (`person.id`)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/people/delete_jobs/",
+        "queryParams": {
+          "email": "$email",
+          "username": "$username",
+          "id": "$id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "rollbar_get_person_deletion_status",
+      "description": "Check a person deletion job: state (new, running, paused, success, cancelled or failed). Needs an account access token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "description": "Deletion job id, from `rollbar_request_person_deletion`."
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/1/people/delete_jobs/{job_id}"
+      }
+    }
+  ]
+}

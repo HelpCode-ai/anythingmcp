@@ -1,0 +1,949 @@
+{
+  "slug": "semantic-scholar",
+  "name": "Semantic Scholar",
+  "aliases": [
+    "S2",
+    "Semantic Scholar Academic Graph",
+    "Allen Institute for AI",
+    "AI2"
+  ],
+  "description": "Search and read scholarly literature in Semantic Scholar: more than 200 million papers with abstracts and AI summaries, authors with h-index, citations and references with their citing sentences, paper recommendations and full-text snippet search. Read-only; works without a key, a free key adds its own quota.",
+  "instructions": "## Semantic Scholar\nThis connector reads the **Semantic Scholar Academic Graph API** of the Allen Institute for AI (`https://api.semanticscholar.org`): more than 200 million scholarly papers from all fields with abstracts, AI summaries (tldr), authors, venues, citations and references with their citing sentences, author profiles with h-index, paper recommendations, full-text snippet search and the list of bulk dataset releases. Everything is read-only.\n\n**Setup**\n- Nothing is required: the API answers without a key, from a pool shared by all keyless callers, so busy hours often bring 429 (Too Many Requests).\n- Recommended: request a free key at https://www.semanticscholar.org/product/api#api-key-form (reviewed by Semantic Scholar, usually within days) and paste it into `SEMANTIC_SCHOLAR_API_KEY`. It is sent as the `x-api-key` header and gives the connector its own quota, starting at 1 request per second.\n\n**Paper ids**: every paper tool accepts the 40-character Semantic Scholar id or a prefixed external id: `DOI:10.18653/v1/N18-3011`, `ARXIV:2106.15928`, `PMID:19872477`, `PMCID:2323736`, `CorpusId:215416146`, `MAG:112218234`, `ACL:W12-3903`, `URL:https://arxiv.org/abs/2106.15928`. Author ids are numbers such as `1741101`.\n\n**Workflow**\n- Find papers by topic: `semantic_scholar_search_papers` (relevance ranking, plain words, up to 100 per page). For many results, boolean syntax or sorting by citations or date, use `semantic_scholar_bulk_search_papers` and pass the returned `token` to continue.\n- Resolve a title or a reference to a paper: `semantic_scholar_match_paper_title` (one best match with `matchScore`), or `semantic_scholar_autocomplete_papers` for a partial title.\n- Read a paper: `semantic_scholar_get_paper` (abstract, tldr, authors, counts, open access PDF). Many at once: `semantic_scholar_get_papers_batch` (up to 500 ids).\n- Citation graph: `semantic_scholar_get_paper_citations` (who cites it, in `citingPaper`) and `semantic_scholar_get_paper_references` (what it cites, in `citedPaper`); `contexts` holds the citing sentences, `intents` the reason (background, methodology, result), `isInfluential` marks citations that build on the work. `semantic_scholar_get_paper_authors` lists the authors with affiliations.\n- Authors: `semantic_scholar_search_authors` by name, then `semantic_scholar_get_author` and `semantic_scholar_get_author_papers`; `semantic_scholar_get_authors_batch` for up to 1,000 ids.\n- Related reading: `semantic_scholar_recommend_for_paper` for one seed paper, `semantic_scholar_recommend_papers` for a set of liked (and optionally disliked) papers.\n- Evidence in full texts: `semantic_scholar_search_snippets` returns passages of about 500 words with section and score, for open access papers whose text Semantic Scholar holds.\n- Bulk datasets: `semantic_scholar_list_dataset_releases` and `semantic_scholar_get_dataset_release` show which datasets a release contains.\n\n**Fields**: the `fields` parameter chooses what comes back (comma-separated, no spaces); each tool has a compact default. Ask for `abstract`, `tldr`, `citationStyles` (BibTeX) or `embedding.specter_v2` only when needed: they make answers large. Nested fields use a dot, e.g. `authors.affiliations` or `citations.title`.\n\n**Reading the answers**: `year` is the publication year and `publicationDate` YYYY-MM-DD when known. `citationCount` counts all citing papers, `influentialCitationCount` the influential ones. `openAccessPdf.url` is a free PDF when present. `externalIds` holds DOI, ArXiv, PubMed and other ids. Cite Semantic Scholar and the paper's DOI or URL.\n\n**Paging**: list answers carry `offset` and `next`; call again with `offset` = `next` until `next` is missing. Relevance search can page through at most 1,000 results; bulk search pages with `token` through up to 10 million.\n\n**Limits and errors**: without a key the shared pool answers 429 when busy: wait a few seconds and retry, or add a key. With a key the default quota is 1 request per second. 400 names a wrong field or parameter, 404 means an unknown paper or author id (or no title match), 403 means the key is wrong or disabled.\n\n**Out of scope**: dataset file downloads (need a key and are many gigabytes) and the per-paper embedding vectors are not part of this connector.",
+  "region": "intl",
+  "category": "data",
+  "icon": "semantic-scholar",
+  "docsUrl": "https://api.semanticscholar.org/api-docs/",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "SEMANTIC_SCHOLAR_API_KEY"
+  ],
+  "envVarMeta": {
+    "SEMANTIC_SCHOLAR_API_KEY": {
+      "label": "API key (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Leave empty to use the shared keyless pool, which often answers 429 at busy times. Request a free key with the form at semanticscholar.org/product/api; it is sent as the x-api-key header.",
+      "link": "https://www.semanticscholar.org/product/api#api-key-form",
+      "pattern": "^[A-Za-z0-9]{20,64}$",
+      "patternMessage": "Paste only the key from the Semantic Scholar e-mail, without spaces."
+    }
+  },
+  "verifyHints": {
+    "403": "Semantic Scholar refused the API key. Copy it again from the e-mail Semantic Scholar sent, or leave SEMANTIC_SCHOLAR_API_KEY empty to use the keyless pool.",
+    "429": "Semantic Scholar is rate limiting: the keyless pool is shared by everyone and often busy. Wait a few seconds and verify again, or add a free API key."
+  },
+  "probe": {
+    "tool": "semantic_scholar_list_dataset_releases"
+  },
+  "connector": {
+    "name": "Semantic Scholar",
+    "type": "REST",
+    "baseUrl": "https://api.semanticscholar.org",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "semantic_scholar_search_papers",
+      "description": "Search Semantic Scholar papers by relevance with plain words (no query syntax), optionally filtered by year or date, venue, field of study, publication type, open access PDF and minimum citations. Returns total, offset, next and up to 100 papers per call; at most 1,000 results can be paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Plain-text search words. Hyphenated terms find nothing: write them with a space."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,authors,venue,citationCount,isOpenAccess,openAccessPdf,externalIds,publicationDate",
+            "description": "Comma-separated fields to return. Paper fields: paperId, corpusId, externalIds, url, title, abstract, venue, publicationVenue, year, referenceCount, citationCount, influentialCitationCount, isOpenAccess, openAccessPdf, fieldsOfStudy, s2FieldsOfStudy, publicationTypes, publicationDate, journal, citationStyles, authors (authorId and name; authors.affiliations etc. for more), tldr (an AI summary)."
+          },
+          "publicationTypes": {
+            "type": "string",
+            "description": "Comma-separated publication types, any of: Review, JournalArticle, CaseReport, ClinicalTrial, Conference, Dataset, Editorial, LettersAndComments, MetaAnalysis, News, Study, Book, BookSection."
+          },
+          "openAccessPdf": {
+            "type": "boolean",
+            "description": "true keeps only papers with a free public PDF."
+          },
+          "minCitationCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only papers with at least this many citations."
+          },
+          "publicationDateOrYear": {
+            "type": "string",
+            "description": "Publication date range start:end with YYYY, YYYY-MM or YYYY-MM-DD, open ends allowed: 2019-03-05, 2019-03, 2016-03-05:2020-06-06, 1981-08-25:, :2015-01."
+          },
+          "year": {
+            "type": "string",
+            "description": "Publication year or range: 2019, 2016-2020, 2010- (2010 or later), -2015 (2015 or earlier)."
+          },
+          "venue": {
+            "type": "string",
+            "description": "Comma-separated venues (full names or ISO4 abbreviations), e.g. Nature,Radiology,N. Engl. J. Med."
+          },
+          "fieldsOfStudy": {
+            "type": "string",
+            "description": "Comma-separated fields of study: Computer Science, Medicine, Chemistry, Biology, Materials Science, Physics, Geology, Psychology, Art, History, Geography, Sociology, Business, Political Science, Economics, Philosophy, Mathematics, Engineering, Environmental Science, Agricultural and Food Sciences, Education, Law, Linguistics."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Position of the first result, for paging (the previous answer gives the next offset in \"next\")."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Number of papers, 1 to 100."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/paper/search",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "publicationTypes": "$publicationTypes",
+          "openAccessPdf": "$openAccessPdf",
+          "minCitationCount": "$minCitationCount",
+          "publicationDateOrYear": "$publicationDateOrYear",
+          "year": "$year",
+          "venue": "$venue",
+          "fieldsOfStudy": "$fieldsOfStudy",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_bulk_search_papers",
+      "description": "Bulk search of Semantic Scholar papers with boolean syntax over titles and abstracts, sorted by paperId, publication date or citation count instead of relevance. Returns up to 1,000 papers per call and a continuation token; nested data such as citations is not available here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Boolean query on title and abstract: + AND, | OR, - NOT, \"phrase\", prefix*, ( ) precedence, word~N fuzzy, \"phrase\"~N proximity. Example: \"large language model\" + (evaluation | benchmark) -survey."
+          },
+          "token": {
+            "type": "string",
+            "description": "Continuation token from the previous answer, to get the next batch of the same query."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,venue,citationCount,externalIds,publicationDate",
+            "description": "Comma-separated fields to return. Paper fields: paperId, corpusId, externalIds, url, title, abstract, venue, publicationVenue, year, referenceCount, citationCount, influentialCitationCount, isOpenAccess, openAccessPdf, fieldsOfStudy, s2FieldsOfStudy, publicationTypes, publicationDate, journal, citationStyles, authors (authorId and name; authors.affiliations etc. for more), tldr (an AI summary)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "field:order with field paperId, publicationDate or citationCount and order asc or desc, e.g. citationCount:desc (most cited first). Default paperId:asc."
+          },
+          "publicationTypes": {
+            "type": "string",
+            "description": "Comma-separated publication types, any of: Review, JournalArticle, CaseReport, ClinicalTrial, Conference, Dataset, Editorial, LettersAndComments, MetaAnalysis, News, Study, Book, BookSection."
+          },
+          "openAccessPdf": {
+            "type": "boolean",
+            "description": "true keeps only papers with a free public PDF."
+          },
+          "minCitationCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only papers with at least this many citations."
+          },
+          "publicationDateOrYear": {
+            "type": "string",
+            "description": "Publication date range start:end with YYYY, YYYY-MM or YYYY-MM-DD, open ends allowed: 2019-03-05, 2019-03, 2016-03-05:2020-06-06, 1981-08-25:, :2015-01."
+          },
+          "year": {
+            "type": "string",
+            "description": "Publication year or range: 2019, 2016-2020, 2010- (2010 or later), -2015 (2015 or earlier)."
+          },
+          "venue": {
+            "type": "string",
+            "description": "Comma-separated venues (full names or ISO4 abbreviations), e.g. Nature,Radiology,N. Engl. J. Med."
+          },
+          "fieldsOfStudy": {
+            "type": "string",
+            "description": "Comma-separated fields of study: Computer Science, Medicine, Chemistry, Biology, Materials Science, Physics, Geology, Psychology, Art, History, Geography, Sociology, Business, Political Science, Economics, Philosophy, Mathematics, Engineering, Environmental Science, Agricultural and Food Sciences, Education, Law, Linguistics."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/paper/search/bulk",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "query": "$query",
+          "token": "$token",
+          "fields": "$fields",
+          "sort": "$sort",
+          "publicationTypes": "$publicationTypes",
+          "openAccessPdf": "$openAccessPdf",
+          "minCitationCount": "$minCitationCount",
+          "publicationDateOrYear": "$publicationDateOrYear",
+          "year": "$year",
+          "venue": "$venue",
+          "fieldsOfStudy": "$fieldsOfStudy"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_match_paper_title",
+      "description": "Find the single Semantic Scholar paper whose title best matches a given title, with its matchScore. Use it to resolve a citation or a title to a paperId. Answers 404 \"Title match not found\" when nothing is close.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The paper title, as complete as possible."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,authors,venue,citationCount,isOpenAccess,openAccessPdf,externalIds,publicationDate",
+            "description": "Comma-separated fields to return. Paper fields: paperId, corpusId, externalIds, url, title, abstract, venue, publicationVenue, year, referenceCount, citationCount, influentialCitationCount, isOpenAccess, openAccessPdf, fieldsOfStudy, s2FieldsOfStudy, publicationTypes, publicationDate, journal, citationStyles, authors (authorId and name; authors.affiliations etc. for more), tldr (an AI summary)."
+          },
+          "year": {
+            "type": "string",
+            "description": "Publication year or range: 2019, 2016-2020, 2010- (2010 or later), -2015 (2015 or earlier)."
+          },
+          "venue": {
+            "type": "string",
+            "description": "Comma-separated venues (full names or ISO4 abbreviations), e.g. Nature,Radiology,N. Engl. J. Med."
+          },
+          "publicationDateOrYear": {
+            "type": "string",
+            "description": "Publication date range start:end with YYYY, YYYY-MM or YYYY-MM-DD, open ends allowed: 2019-03-05, 2019-03, 2016-03-05:2020-06-06, 1981-08-25:, :2015-01."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/paper/search/match",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "year": "$year",
+          "venue": "$venue",
+          "publicationDateOrYear": "$publicationDateOrYear"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_autocomplete_papers",
+      "description": "Suggest Semantic Scholar papers for a partial title as you type: id, title and a short authors-and-year hint for each match.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Partial title text; only the first 100 characters are used."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/paper/autocomplete",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "query": "$query"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_paper",
+      "description": "Get one paper from Semantic Scholar by its Semantic Scholar id, DOI, arXiv, PubMed, PMC, MAG, ACL or corpus id or URL: title, abstract, AI summary (tldr), authors, venue, year, citation and reference counts, open access PDF and external ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "description": "Paper id in any supported form: the 40-character Semantic Scholar id, CorpusId:215416146, DOI:10.18653/v1/N18-3011, ARXIV:2106.15928, PMID:19872477, PMCID:2323736, MAG:112218234, ACL:W12-3903 or URL:https://arxiv.org/abs/2106.15928."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,abstract,tldr,year,publicationDate,venue,journal,authors,citationCount,referenceCount,influentialCitationCount,isOpenAccess,openAccessPdf,fieldsOfStudy,publicationTypes,externalIds,url",
+            "description": "Comma-separated fields to return. Paper fields: paperId, corpusId, externalIds, url, title, abstract, venue, publicationVenue, year, referenceCount, citationCount, influentialCitationCount, isOpenAccess, openAccessPdf, fieldsOfStudy, s2FieldsOfStudy, publicationTypes, publicationDate, journal, citationStyles, authors (authorId and name; authors.affiliations etc. for more), tldr (an AI summary)."
+          }
+        },
+        "required": [
+          "paper_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/paper/{paper_id}",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_papers_batch",
+      "description": "Get up to 500 Semantic Scholar papers in one call by their ids (any supported id form), in the order given; unknown ids come back as null. A read sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "description": "Paper ids, e.g. [\"649def34f8be52c8b66281af98ae884c09aef38b\", \"ARXIV:2106.15928\", \"DOI:10.18653/v1/N18-3011\"]."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,authors,venue,citationCount,isOpenAccess,openAccessPdf,externalIds",
+            "description": "Comma-separated fields to return. Paper fields: paperId, corpusId, externalIds, url, title, abstract, venue, publicationVenue, year, referenceCount, citationCount, influentialCitationCount, isOpenAccess, openAccessPdf, fieldsOfStudy, s2FieldsOfStudy, publicationTypes, publicationDate, journal, citationStyles, authors (authorId and name; authors.affiliations etc. for more), tldr (an AI summary)."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graph/v1/paper/batch",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "bodyMapping": {
+          "ids": "$ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_paper_authors",
+      "description": "List the authors of a Semantic Scholar paper with their ids and, on request, affiliations, h-index and paper counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "description": "Paper id in any supported form: the 40-character Semantic Scholar id, CorpusId:215416146, DOI:10.18653/v1/N18-3011, ARXIV:2106.15928, PMID:19872477, PMCID:2323736, MAG:112218234, ACL:W12-3903 or URL:https://arxiv.org/abs/2106.15928."
+          },
+          "fields": {
+            "type": "string",
+            "default": "name,affiliations,hIndex,paperCount,citationCount,url",
+            "description": "Comma-separated author fields: authorId, externalIds, url, name, affiliations, homepage, paperCount, citationCount, hIndex, papers (papers.title, papers.year for subfields)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Position of the first result, for paging (the previous answer gives the next offset in \"next\")."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Number of authors, 1 to 1000."
+          }
+        },
+        "required": [
+          "paper_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/paper/{paper_id}/authors",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_paper_citations",
+      "description": "List the papers that cite a given paper (citingPaper), with the citing sentences, citation intents and whether the citation is influential.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "description": "Paper id in any supported form: the 40-character Semantic Scholar id, CorpusId:215416146, DOI:10.18653/v1/N18-3011, ARXIV:2106.15928, PMID:19872477, PMCID:2323736, MAG:112218234, ACL:W12-3903 or URL:https://arxiv.org/abs/2106.15928."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,authors,venue,citationCount,isInfluential,intents",
+            "description": "Comma-separated fields: contexts (the citing sentences), intents (background, methodology, result), isInfluential, plus fields of the other paper such as title, year, authors, venue, citationCount, externalIds, openAccessPdf."
+          },
+          "publicationDateOrYear": {
+            "type": "string",
+            "description": "Publication date range start:end with YYYY, YYYY-MM or YYYY-MM-DD, open ends allowed: 2019-03-05, 2019-03, 2016-03-05:2020-06-06, 1981-08-25:, :2015-01."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Position of the first result, for paging (the previous answer gives the next offset in \"next\")."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Number of citations, 1 to 1000."
+          }
+        },
+        "required": [
+          "paper_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/paper/{paper_id}/citations",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields",
+          "publicationDateOrYear": "$publicationDateOrYear",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_paper_references",
+      "description": "List the papers a given paper cites (citedPaper), with the citing sentences, citation intents and whether the reference is influential.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "description": "Paper id in any supported form: the 40-character Semantic Scholar id, CorpusId:215416146, DOI:10.18653/v1/N18-3011, ARXIV:2106.15928, PMID:19872477, PMCID:2323736, MAG:112218234, ACL:W12-3903 or URL:https://arxiv.org/abs/2106.15928."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,authors,venue,citationCount,isInfluential,intents",
+            "description": "Comma-separated fields: contexts (the citing sentences), intents (background, methodology, result), isInfluential, plus fields of the other paper such as title, year, authors, venue, citationCount, externalIds, openAccessPdf."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Position of the first result, for paging (the previous answer gives the next offset in \"next\")."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Number of references, 1 to 1000."
+          }
+        },
+        "required": [
+          "paper_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/paper/{paper_id}/references",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_search_authors",
+      "description": "Search Semantic Scholar authors by name: author id, name, affiliations, paper count, citation count and h-index. Several profiles can share a name; compare affiliations and paper counts before choosing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Author name in plain text, e.g. Oren Etzioni. Hyphenated names find nothing: write them with a space."
+          },
+          "fields": {
+            "type": "string",
+            "default": "name,affiliations,paperCount,citationCount,hIndex,url",
+            "description": "Comma-separated author fields: authorId, externalIds (ORCID, DBLP), url, name, affiliations, homepage, paperCount, citationCount, hIndex, papers (and papers.title, papers.year)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Position of the first result, for paging (the previous answer gives the next offset in \"next\")."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 10,
+            "description": "Number of authors, 1 to 1000."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/author/search",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_author",
+      "description": "Get one Semantic Scholar author profile: name, affiliations, homepage, external ids, paper count, citation count and h-index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "author_id": {
+            "type": "string",
+            "description": "Semantic Scholar author id, a number such as 1741101. Find it with semantic_scholar_search_authors or in the authors of a paper."
+          },
+          "fields": {
+            "type": "string",
+            "default": "name,affiliations,homepage,externalIds,paperCount,citationCount,hIndex,url",
+            "description": "Comma-separated author fields: authorId, externalIds (ORCID, DBLP), url, name, affiliations, homepage, paperCount, citationCount, hIndex, papers (and papers.title, papers.year)."
+          }
+        },
+        "required": [
+          "author_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/author/{author_id}",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_authors_batch",
+      "description": "Get up to 1,000 Semantic Scholar authors in one call by their ids, in the order given. A read sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "Author ids, e.g. [\"1741101\", \"1780531\"]."
+          },
+          "fields": {
+            "type": "string",
+            "default": "name,affiliations,paperCount,citationCount,hIndex,url",
+            "description": "Comma-separated author fields: authorId, externalIds (ORCID, DBLP), url, name, affiliations, homepage, paperCount, citationCount, hIndex, papers (and papers.title, papers.year)."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/graph/v1/author/batch",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields"
+        },
+        "bodyMapping": {
+          "ids": "$ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_author_papers",
+      "description": "List the papers of a Semantic Scholar author, optionally limited to a publication date range, with title, year, venue and citation counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "author_id": {
+            "type": "string",
+            "description": "Semantic Scholar author id, a number such as 1741101. Find it with semantic_scholar_search_authors or in the authors of a paper."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,venue,citationCount,externalIds,publicationDate",
+            "description": "Comma-separated fields to return. Paper fields: paperId, corpusId, externalIds, url, title, abstract, venue, publicationVenue, year, referenceCount, citationCount, influentialCitationCount, isOpenAccess, openAccessPdf, fieldsOfStudy, s2FieldsOfStudy, publicationTypes, publicationDate, journal, citationStyles, authors (authorId and name; authors.affiliations etc. for more), tldr (an AI summary)."
+          },
+          "publicationDateOrYear": {
+            "type": "string",
+            "description": "Publication date range start:end with YYYY, YYYY-MM or YYYY-MM-DD, open ends allowed: 2019-03-05, 2019-03, 2016-03-05:2020-06-06, 1981-08-25:, :2015-01."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Position of the first result, for paging (the previous answer gives the next offset in \"next\")."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Number of papers, 1 to 1000."
+          }
+        },
+        "required": [
+          "author_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/author/{author_id}/papers",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields",
+          "publicationDateOrYear": "$publicationDateOrYear",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_recommend_for_paper",
+      "description": "Recommend papers similar to one paper (Semantic Scholar Recommendations API), from recent papers or from all computer science papers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "description": "Paper id in any supported form: the 40-character Semantic Scholar id, CorpusId:215416146, DOI:10.18653/v1/N18-3011, ARXIV:2106.15928, PMID:19872477, PMCID:2323736, MAG:112218234, ACL:W12-3903 or URL:https://arxiv.org/abs/2106.15928."
+          },
+          "from": {
+            "type": "string",
+            "enum": [
+              "recent",
+              "all-cs"
+            ],
+            "description": "Pool to recommend from: recent (default, papers of the last months) or all-cs (all computer science papers)."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,authors,venue,citationCount,externalIds,openAccessPdf",
+            "description": "Comma-separated fields to return. Paper fields: paperId, corpusId, externalIds, url, title, abstract, venue, publicationVenue, year, referenceCount, citationCount, influentialCitationCount, isOpenAccess, openAccessPdf, fieldsOfStudy, s2FieldsOfStudy, publicationTypes, publicationDate, journal, citationStyles, authors (authorId and name; authors.affiliations etc. for more), tldr (an AI summary)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20,
+            "description": "Number of recommendations, 1 to 500."
+          }
+        },
+        "required": [
+          "paper_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recommendations/v1/papers/forpaper/{paper_id}",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "from": "$from",
+          "fields": "$fields",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_recommend_papers",
+      "description": "Recommend papers from a list of papers the reader liked (positive examples) and, optionally, papers to steer away from (negative examples). A read sent as POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "positivePaperIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Ids of example papers to find more like, e.g. [\"649def34f8be52c8b66281af98ae884c09aef38b\"]. Same id forms as semantic_scholar_get_paper."
+          },
+          "negativePaperIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of papers whose topics should be avoided, e.g. [\"ARXIV:1805.02262\"]."
+          },
+          "fields": {
+            "type": "string",
+            "default": "title,year,authors,venue,citationCount,externalIds,openAccessPdf",
+            "description": "Comma-separated fields to return. Paper fields: paperId, corpusId, externalIds, url, title, abstract, venue, publicationVenue, year, referenceCount, citationCount, influentialCitationCount, isOpenAccess, openAccessPdf, fieldsOfStudy, s2FieldsOfStudy, publicationTypes, publicationDate, journal, citationStyles, authors (authorId and name; authors.affiliations etc. for more), tldr (an AI summary)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20,
+            "description": "Number of recommendations, 1 to 500."
+          }
+        },
+        "required": [
+          "positivePaperIds"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/recommendations/v1/papers/",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "fields": "$fields",
+          "limit": "$limit"
+        },
+        "bodyMapping": {
+          "positivePaperIds": "$positivePaperIds",
+          "negativePaperIds": "$negativePaperIds"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_search_snippets",
+      "description": "Search the full text of papers for passages of about 500 words (title, abstract and body, without captions and bibliography) that best match a query. Returns each snippet with its section, score and the paper it comes from. Use it to find where a claim or method is discussed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Plain-text query, e.g. a claim or a sentence to find evidence for."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated snippet fields, e.g. snippet.text,snippet.section,snippet.snippetKind. Leave empty for the default set (text, kind, section, offsets, annotations); paper and score are always returned."
+          },
+          "paperIds": {
+            "type": "string",
+            "description": "Comma-separated paper ids to search in only (about 100 at most)."
+          },
+          "authors": {
+            "type": "string",
+            "description": "Comma-separated author names; fuzzy match, combined with AND (all must be authors), at most 10."
+          },
+          "minCitationCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only papers with at least this many citations."
+          },
+          "insertedBefore": {
+            "type": "string",
+            "description": "Only papers added to the index before this date: YYYY-MM-DD, YYYY-MM or YYYY."
+          },
+          "publicationDateOrYear": {
+            "type": "string",
+            "description": "Publication date range start:end with YYYY, YYYY-MM or YYYY-MM-DD, open ends allowed: 2019-03-05, 2019-03, 2016-03-05:2020-06-06, 1981-08-25:, :2015-01."
+          },
+          "year": {
+            "type": "string",
+            "description": "Publication year or range: 2019, 2016-2020, 2010- (2010 or later), -2015 (2015 or earlier)."
+          },
+          "venue": {
+            "type": "string",
+            "description": "Comma-separated venues (full names or ISO4 abbreviations), e.g. Nature,Radiology,N. Engl. J. Med."
+          },
+          "fieldsOfStudy": {
+            "type": "string",
+            "description": "Comma-separated fields of study: Computer Science, Medicine, Chemistry, Biology, Materials Science, Physics, Geology, Psychology, Art, History, Geography, Sociology, Business, Political Science, Economics, Philosophy, Mathematics, Engineering, Environmental Science, Agricultural and Food Sciences, Education, Law, Linguistics."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 10,
+            "description": "Number of snippets, 1 to 1000."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/graph/v1/snippet/search",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        },
+        "queryParams": {
+          "query": "$query",
+          "fields": "$fields",
+          "paperIds": "$paperIds",
+          "authors": "$authors",
+          "minCitationCount": "$minCitationCount",
+          "insertedBefore": "$insertedBefore",
+          "publicationDateOrYear": "$publicationDateOrYear",
+          "year": "$year",
+          "venue": "$venue",
+          "fieldsOfStudy": "$fieldsOfStudy",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_list_dataset_releases",
+      "description": "List the release dates of the Semantic Scholar Academic Graph bulk datasets (e.g. 2026-10-27), oldest first. No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasets/v1/release/",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "semantic_scholar_get_dataset_release",
+      "description": "List the bulk datasets in one Semantic Scholar release (papers, abstracts, authors, citations, embeddings, s2orc and others) with a short description of each. Downloading the files needs an API key and is not part of this connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "release_id": {
+            "type": "string",
+            "default": "latest",
+            "description": "Release date from semantic_scholar_list_dataset_releases, e.g. 2026-10-27, or latest."
+          }
+        },
+        "required": [
+          "release_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasets/v1/release/{release_id}",
+        "headers": {
+          "x-api-key": "${SEMANTIC_SCHOLAR_API_KEY}"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "release_id": "$.release_id",
+            "datasets": {
+              "$from": "$.datasets[*]",
+              "$select": {
+                "name": "name",
+                "description": "description"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

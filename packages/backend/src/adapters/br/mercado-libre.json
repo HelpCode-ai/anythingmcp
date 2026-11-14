@@ -2,8 +2,8 @@
   "slug": "mercado-libre",
   "name": "Mercado Libre",
   "aliases": ["Mercado Livre", "MercadoLivre", "MELI"],
-  "description": "LATAM's largest marketplace: read items, products and sellers, list orders, and manage the seller's own listings (create, validate, change price, stock and description, pause or close) on Brasil (MLB), Argentina (MLA), Mexico (MLM), Chile (MLC), Colombia (MCO), Peru (MPE) and Uruguay (MLU). Sign in with the seller's Mercado Libre account.",
-  "instructions": "This connector uses the Mercado Libre REST API (api.mercadolibre.com), one API for every country site. Every endpoint needs the seller's OAuth2 sign-in; unauthenticated calls get 401 or 403.\n\n**Setup**: in the developer center of your country (https://developers.mercadolibre.com/devcenter) create an application, register the redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`) and copy the App ID and the Secret Key into `MERCADO_LIBRE_CLIENT_ID` and `MERCADO_LIBRE_CLIENT_SECRET`. `MERCADO_LIBRE_SITE_DOMAIN` picks the sign-in page of the seller's country (mercadolivre.com.br, mercadolibre.com.ar, mercadolibre.com.mx, mercadolibre.cl, mercadolibre.com.co, mercadolibre.com.pe, mercadolibre.com.uy). Leave the application's notifications callback URL empty and select no topics: Mercado Libre posts notifications there, and the redirect URI above does not accept them. Then authorize the connector with the seller account. Keep the scopes `offline_access read write`: the listing tools need write.\n\n**Site ids**: MLB = Brasil, MLA = Argentina, MLM = Mexico, MLC = Chile, MCO = Colombia, MPE = Peru, MLU = Uruguay. Item ids carry the site prefix (`MLB1234567890`), and so do category ids (`MLB1055`).\n\n**Your seller id**: `mercado_libre_get_user` with user_id `me` returns the signed-in account; its `id` is the seller id for `mercado_libre_list_seller_items` and `mercado_libre_list_orders`. Seller endpoints only answer for the signed-in seller.\n\n**No marketplace search**: Mercado Libre refuses its public listing search (`/sites/{site_id}/search`) to third-party applications with 403, so this connector has none. `mercado_libre_list_seller_items` lists the signed-in seller's own listings (by status or SKU), and `mercado_libre_get_item` reads any listing by id.\n\n**Creating a listing** (there is no sandbox, so whatever is created is live):\n1. `mercado_libre_predict_category` with the product title gives the category_id.\n2. `mercado_libre_get_category_attributes` lists the attributes; send every one tagged required (often BRAND, MODEL, GTIN). `mercado_libre_get_category_sale_terms` gives the warranty fields and `mercado_libre_list_listing_types` the listing types (gold_special = classic, gold_pro = premium). `mercado_libre_get_category` has the limits: max_title_length, max_pictures_per_item, minimum_price.\n3. `mercado_libre_validate_listing` with the full listing; an empty answer means it would be accepted. A 400 whose causes are all `type: warning` also means it would be accepted; only causes of `type: error` block it.\n4. `mercado_libre_create_listing`, then `mercado_libre_add_listing_description` with the text.\n\n**Title or family_name**: sellers on the User Products model (most sellers since 2025) send `family_name`, a generic product name such as 'Apple iPhone 15 128GB', and no `title`: Mercado Libre writes the title itself. Sellers still on the old model send `title`. The error 'The fields [title] are invalid' means: send family_name instead. A listing that has a family_name does not accept title changes.\n\n**Changing listings**: `mercado_libre_update_listing` changes price, stock, pictures, attributes and sale terms (send only what changes; pictures and attributes replace the whole list). Stock 0 pauses the listing until stock comes back. `mercado_libre_set_listing_status` pauses or reactivates, `mercado_libre_update_listing_description` replaces the text. Title, condition and buying mode are locked once a listing has sales. `mercado_libre_close_listing` ends a listing for good and is installed switched off. Every write acts on the live shop: confirm each one with the user.\n\n**Rate limits**: Mercado Libre answers 429 when an application sends too many requests. Wait before retrying and do not fire many listing changes in parallel.",
+  "description": "LATAM's largest marketplace: read items, catalog products and their competing listings, orders, shipping costs, fees, visits, trends and buyer questions, manage the seller's own listings (create, validate, change price, stock and description, pause or close) and promotions, and read Product Ads campaigns and metrics on Brasil (MLB), Argentina (MLA), Mexico (MLM), Chile (MLC), Colombia (MCO), Peru (MPE) and Uruguay (MLU). Sign in with the seller's Mercado Libre account.",
+  "instructions": "This connector uses the Mercado Libre REST API (api.mercadolibre.com), one API for every country site. Every endpoint needs the seller's OAuth2 sign-in; unauthenticated calls get 401 or 403.\n\n**Setup**: in the developer center of your country (https://developers.mercadolibre.com/devcenter) create an application, register the redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`) and copy the App ID and the Secret Key into `MERCADO_LIBRE_CLIENT_ID` and `MERCADO_LIBRE_CLIENT_SECRET`. `MERCADO_LIBRE_SITE_DOMAIN` picks the sign-in page of the seller's country (mercadolivre.com.br, mercadolibre.com.ar, mercadolibre.com.mx, mercadolibre.cl, mercadolibre.com.co, mercadolibre.com.pe, mercadolibre.com.uy). Leave the application's notifications callback URL empty and select no topics. If the developer center requires one, enter the redirect URI above: AnythingMCP answers Mercado Libre's notifications and ignores them. Then authorize the connector with the seller account. Keep the scopes `offline_access read write`: the listing tools need write.\n\n**Site ids**: MLB = Brasil, MLA = Argentina, MLM = Mexico, MLC = Chile, MCO = Colombia, MPE = Peru, MLU = Uruguay. Item ids carry the site prefix (`MLB1234567890`), and so do category ids (`MLB1055`).\n\n**Your seller id**: `mercado_libre_get_user` with user_id `me` returns the signed-in account; its `id` is the seller id for `mercado_libre_list_seller_items` and `mercado_libre_list_orders`. Seller endpoints only answer for the signed-in seller.\n\n**No marketplace search**: Mercado Libre refuses its public listing search (`/sites/{site_id}/search`) to third-party applications with 403, so this connector has none. `mercado_libre_list_seller_items` lists the signed-in seller's own listings (by status or SKU), and `mercado_libre_get_item` reads any listing by id.\n\n**Creating a listing** (there is no sandbox, so whatever is created is live):\n1. `mercado_libre_predict_category` with the product title gives the category_id.\n2. `mercado_libre_get_category_attributes` lists the attributes; send every one tagged required (often BRAND, MODEL, GTIN). `mercado_libre_get_category_sale_terms` gives the warranty fields and `mercado_libre_list_listing_types` the listing types (gold_special = classic, gold_pro = premium). `mercado_libre_get_category` has the limits: max_title_length, max_pictures_per_item, minimum_price.\n3. `mercado_libre_validate_listing` with the full listing; an empty answer means it would be accepted. A 400 whose causes are all `type: warning` also means it would be accepted; only causes of `type: error` block it.\n4. `mercado_libre_create_listing`, then `mercado_libre_add_listing_description` with the text.\n\n**Title or family_name**: sellers on the User Products model (most sellers since 2025) send `family_name`, a generic product name such as 'Apple iPhone 15 128GB', and no `title`: Mercado Libre writes the title itself. Sellers still on the old model send `title`. The error 'The fields [title] are invalid' means: send family_name instead. A listing that has a family_name does not accept title changes.\n\n**Changing listings**: `mercado_libre_update_listing` changes price, stock, pictures, attributes and sale terms (send only what changes; pictures and attributes replace the whole list). Stock 0 pauses the listing until stock comes back. `mercado_libre_set_listing_status` pauses or reactivates, `mercado_libre_update_listing_description` replaces the text. Title, condition and buying mode are locked once a listing has sales. `mercado_libre_close_listing` ends a listing for good and is installed switched off. Every write acts on the live shop: confirm each one with the user.\n\n**Orders and costs**: `mercado_libre_get_order` reads one order, `mercado_libre_get_shipment_costs` the shipping cost of its shipment, `mercado_libre_get_listing_prices` the selling fee for a price and `mercado_libre_get_free_shipping_cost` what free shipping would cost the seller. `mercado_libre_get_items` reads up to 20 listings at once.\n\n**Performance and competition**: `mercado_libre_get_item_visits` (totals between two dates) and `mercado_libre_get_item_visits_by_day` (daily series, up to 150 days). For catalog listings `mercado_libre_list_product_items` shows the other sellers on the same product page, `mercado_libre_get_product` the product and its current winner, and `mercado_libre_get_item_price_to_win` the price that would win. `mercado_libre_get_category_trends` lists the most searched keywords of a category.\n\n**Questions**: `mercado_libre_search_questions` with the seller id and status UNANSWERED lists open questions; `mercado_libre_post_answer` publishes an answer and is installed switched off, because an answer is public and cannot be edited.\n\n**Promotions** (seller-promotions API, `app_version=v2` is sent for you): `mercado_libre_list_seller_promotions` lists the invitations and campaigns, `mercado_libre_get_promotion` and `mercado_libre_list_promotion_items` read one, `mercado_libre_get_item_promotions` shows the promotions of one listing. `mercado_libre_add_item_to_promotion` joins a promotion; for DEAL, SELLER_CAMPAIGN, DOD and LIGHTNING you set deal_price, for co-funded ones (MARKETPLACE_CAMPAIGN, SMART, PRICE_MATCHING) the price comes with the invitation. Every call needs the promotion type as well as the id. `mercado_libre_remove_item_from_promotion` is installed switched off.\n\n**Product Ads**: `mercado_libre_list_advertisers` gives the advertiser_id and site_id; then `mercado_libre_search_ad_campaigns`, `mercado_libre_get_ad_campaign`, `mercado_libre_search_product_ads` and `mercado_libre_search_ad_groups` read campaigns, ads and their metrics (pass date_from, date_to and metrics; at most 90 days back, refreshed daily). These tools only read; the seller needs Product Ads enabled in Mercado Ads, otherwise the advertiser list is empty.\n\n**Rate limits**: Mercado Libre answers 429 when an application sends too many requests. Wait before retrying and do not fire many listing changes in parallel.",
   "region": "br",
   "category": "e-commerce",
   "icon": "mercado-libre",
@@ -13,7 +13,7 @@
     "MERCADO_LIBRE_CLIENT_SECRET",
     "MERCADO_LIBRE_SITE_DOMAIN"
   ],
-  "prerequisites": "An application in the Mercado Libre developer center of **your country**, with the redirect URI shown below registered exactly. Leave its notifications callback URL empty: it is not the redirect URI.",
+  "prerequisites": "An application in the Mercado Libre developer center of **your country**, with the redirect URI shown below registered exactly. Leave its notifications callback URL empty, or enter the redirect URI there too if the developer center requires one.",
   "envVarMeta": {
     "MERCADO_LIBRE_CLIENT_ID": {
       "label": "App ID",
@@ -914,6 +914,1021 @@
         },
         "bodyMapping": {
           "plain_text": "$plain_text"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_items",
+      "description": "Read up to 20 listings in one call (items multiget). Returns one entry per id with a code (200, 404, ...) and a body holding the listing. Pass attributes to get only the fields you need, e.g. id,title,price,available_quantity,sold_quantity,status. Use instead of many mercado_libre_get_item calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated listing ids with site prefix, at most 20, e.g. 'MLB1234567890,MLB2345678901'."
+          },
+          "attributes": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. 'id,title,price,available_quantity,sold_quantity,status'. Leave out for the whole listing."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items",
+        "queryParams": {
+          "ids": "$ids",
+          "attributes": "$attributes"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_order",
+      "description": "Get one order by id: status, date, buyer nickname, order_items (listing, variation, quantity, unit price), payments, total_amount, shipping id, tags and the pack it belongs to. Order ids come from mercado_libre_list_orders. Only orders of the signed-in seller.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Numeric order id, e.g. '2000001234567890'."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_get_shipment_costs",
+      "description": "Get the cost breakdown of a shipment: what the buyer paid (receiver) and what the seller pays (senders), with discounts and the gross amount. The shipment id is shipping.id of an order from mercado_libre_get_order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "Numeric shipment id."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}/costs",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_get_free_shipping_cost",
+      "description": "Quote what the seller pays to offer free shipping (Mercado Envios) for a listing or for a package size: returns the coverage cost the seller pays and, with verbose, the breakdown and discounts. Pass item_id for an existing listing, or dimensions with item_price, listing_type_id, mode, condition and logistic_type for a product not yet listed; leaving them out gives inconsistent quotes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Seller id (numeric), the signed-in account."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Listing id, e.g. 'MLB1234567890'. Either this or dimensions."
+          },
+          "dimensions": {
+            "type": "string",
+            "description": "Package height x width x length in cm and weight in grams, e.g. '10x20x30,500'."
+          },
+          "item_price": {
+            "type": "number",
+            "description": "Selling price, with dimensions."
+          },
+          "listing_type_id": {
+            "type": "string",
+            "description": "gold_special (classic) or gold_pro (premium), with dimensions."
+          },
+          "mode": {
+            "type": "string",
+            "description": "Shipping mode, usually me2."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "new",
+              "used"
+            ],
+            "description": "Item condition."
+          },
+          "logistic_type": {
+            "type": "string",
+            "description": "drop_off, cross_docking, xd_drop_off or fulfillment."
+          },
+          "free_shipping": {
+            "type": "boolean",
+            "description": "Whether the listing offers free shipping."
+          },
+          "verbose": {
+            "type": "boolean",
+            "description": "true adds the cost breakdown."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/shipping_options/free",
+        "encodePathParams": true,
+        "queryParams": {
+          "item_id": "$item_id",
+          "dimensions": "$dimensions",
+          "item_price": "$item_price",
+          "listing_type_id": "$listing_type_id",
+          "mode": "$mode",
+          "condition": "$condition",
+          "logistic_type": "$logistic_type",
+          "free_shipping": "$free_shipping",
+          "verbose": "$verbose"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_listing_prices",
+      "description": "Work out the selling fees for a price on a site: per listing type, the sale_fee_amount Mercado Libre keeps on each sale (with sale_fee_details: percentage, fixed fee, installments add-on), the listing_fee_amount and the currency. Add category_id and listing_type_id for an exact figure, e.g. to check a margin before setting a price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id, e.g. 'MLB', 'MLA', 'MLM'."
+          },
+          "price": {
+            "type": "number",
+            "description": "Selling price."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id, e.g. 'MLB1055'."
+          },
+          "listing_type_id": {
+            "type": "string",
+            "description": "gold_special (classic) or gold_pro (premium). Leave out for all types."
+          },
+          "currency_id": {
+            "type": "string",
+            "description": "Currency, e.g. BRL, ARS, MXN."
+          },
+          "logistic_type": {
+            "type": "string",
+            "description": "drop_off, cross_docking or fulfillment, where the fee depends on it."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Quantity, for fees that depend on stock."
+          }
+        },
+        "required": [
+          "site_id",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/listing_prices",
+        "encodePathParams": true,
+        "queryParams": {
+          "price": "$price",
+          "category_id": "$category_id",
+          "listing_type_id": "$listing_type_id",
+          "currency_id": "$currency_id",
+          "logistic_type": "$logistic_type",
+          "quantity": "$quantity"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_item_visits",
+      "description": "Get the total visits of one listing between two dates. Mercado Libre accepts one listing id per call: for several listings, call once per id. Returns total_visits and the date range. For a day-by-day series of one listing use mercado_libre_get_item_visits_by_day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "One listing id, e.g. 'MLB1234567890'. Mercado Libre refuses more than one id here (\"maximum amount of items to query is 1\")."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start date, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End date, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "ids",
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/visits",
+        "queryParams": {
+          "ids": "$ids",
+          "date_from": "$date_from",
+          "date_to": "$date_to"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_item_visits_by_day",
+      "description": "Get the daily visits of one listing over the last N days (time window up to 150 days). Returns total_visits and a results array with the visits per day, to spot a drop or a peak.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with site prefix, e.g. 'MLB1234567890'."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 150,
+            "description": "Number of days to cover."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "day"
+            ],
+            "default": "day",
+            "description": "Interval unit; only day."
+          },
+          "ending": {
+            "type": "string",
+            "description": "Last day of the window, YYYY-MM-DD (default today)."
+          }
+        },
+        "required": [
+          "item_id",
+          "last"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{item_id}/visits/time_window",
+        "encodePathParams": true,
+        "queryParams": {
+          "last": "$last",
+          "unit": "$unit",
+          "ending": "$ending"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_product",
+      "description": "Get a catalog product by id: name, family, attributes, pictures, main features, the domain and buy_box_winner (the listing currently winning the product page, with its price and seller). Catalog product ids look like 'MLB12345678' and appear as catalog_product_id on a listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Catalog product id, e.g. 'MLB12345678'."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_list_product_items",
+      "description": "List the listings that compete on a catalog product page: item_id, seller_id, price, currency, condition, listing type, shipping (free shipping, logistic type) and official store. Use it to compare your price with the other sellers of the same product; mercado_libre_get_item_price_to_win says what your listing needs to win.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Catalog product id, e.g. 'MLB12345678'."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Results per page."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip, for paging."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_item_price_to_win",
+      "description": "Check how a catalog listing competes for the product page: status (winning, sharing_first_place, competing, listed), price_to_win (the price that would make it win), the current winner and the boosts that count (free shipping, installments, Full). Only for catalog listings of the signed-in seller.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Catalog listing id, e.g. 'MLB1234567890'."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items/{item_id}/price_to_win",
+        "encodePathParams": true,
+        "queryParams": {
+          "version": "v2"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_category_trends",
+      "description": "Get the most searched keywords of a category on a site, by recent growth and volume. Each entry has the keyword and a url to the search. Useful to pick words for titles and attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Site id, e.g. 'MLB', 'MLA'."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id, e.g. 'MLB1055'."
+          }
+        },
+        "required": [
+          "site_id",
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/trends/{site_id}/{category_id}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mercado_libre_search_questions",
+      "description": "Search buyers' questions on the seller's listings: by seller (all listings) or by one listing, optionally only UNANSWERED ones. Returns each question's id, text, status, date, item_id and the answer if there is one, plus total for paging. Answer with mercado_libre_post_answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Seller id (numeric), the signed-in account. Either this or item."
+          },
+          "item": {
+            "type": "string",
+            "description": "Listing id, for the questions of one listing."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "UNANSWERED",
+              "ANSWERED",
+              "CLOSED_UNANSWERED",
+              "UNDER_REVIEW",
+              "BANNED",
+              "DELETED",
+              "DISABLED"
+            ],
+            "description": "Only questions in this status."
+          },
+          "sort_fields": {
+            "type": "string",
+            "description": "Sort fields, e.g. 'date_created' or 'item_id,date_created'."
+          },
+          "sort_types": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/questions/search",
+        "queryParams": {
+          "seller_id": "$seller_id",
+          "item": "$item",
+          "status": "$status",
+          "sort_fields": "$sort_fields",
+          "sort_types": "$sort_types",
+          "limit": "$limit",
+          "offset": "$offset",
+          "api_version": "4"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_post_answer",
+      "description": "Publish the seller's answer to a buyer's question on a listing. The answer is public on the listing at once and cannot be edited afterwards. Write it in the site's language (Portuguese on MLB, Spanish elsewhere). Confirm the text with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "integer",
+            "description": "Question id, from mercado_libre_search_questions."
+          },
+          "text": {
+            "type": "string",
+            "description": "Answer text, up to 2000 characters, no links or contact details."
+          }
+        },
+        "required": [
+          "question_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/answers",
+        "bodyMapping": {
+          "question_id": "$question_id",
+          "text": "$text"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "mercado_libre_list_seller_promotions",
+      "description": "List the promotions the seller is invited to or runs (seller-promotions API): id, type (DEAL, MARKETPLACE_CAMPAIGN, PRICE_DISCOUNT, LIGHTNING, DOD, VOLUME, SELLER_CAMPAIGN, SMART, PRICE_MATCHING, ...), status, start, finish and deadline dates, name and benefits (who funds the discount). Use the id and type with mercado_libre_list_promotion_items and mercado_libre_add_item_to_promotion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Seller id (numeric), the signed-in account."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller-promotions/users/{user_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "app_version": "v2"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_promotion",
+      "description": "Get the details of one promotion: name, type, status, dates, deadline to join, benefits and, for seller campaigns, the discount rules. Needs the promotion type as well as the id (both from mercado_libre_list_seller_promotions).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "promotion_id": {
+            "type": "string",
+            "description": "Promotion id, e.g. 'P-MLB1806015' or 'C-MLB302'."
+          },
+          "promotion_type": {
+            "type": "string",
+            "description": "Promotion type, e.g. DEAL, MARKETPLACE_CAMPAIGN, SELLER_CAMPAIGN, VOLUME, DOD, LIGHTNING, SMART, PRICE_MATCHING."
+          }
+        },
+        "required": [
+          "promotion_id",
+          "promotion_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller-promotions/promotions/{promotion_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "promotion_type": "$promotion_type",
+          "app_version": "v2"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_list_promotion_items",
+      "description": "List the seller's listings in a promotion with their status there (candidate = invited, pending, started, finished), price and original_price. Filter by status or one item_id. Pages of up to 50: pass paging.searchAfter from the answer as search_after for the next page (expires after 5 minutes); it is missing on the last page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "promotion_id": {
+            "type": "string",
+            "description": "Promotion id."
+          },
+          "promotion_type": {
+            "type": "string",
+            "description": "Promotion type, e.g. DEAL, MARKETPLACE_CAMPAIGN, SELLER_CAMPAIGN."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "candidate",
+              "pending",
+              "started",
+              "finished"
+            ],
+            "description": "Only items in this promotion status."
+          },
+          "status_item": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused"
+            ],
+            "description": "Only listings in this listing status (default active)."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Only this listing."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Results per page (default and max 50)."
+          },
+          "search_after": {
+            "type": "string",
+            "description": "paging.searchAfter of the previous page."
+          }
+        },
+        "required": [
+          "promotion_id",
+          "promotion_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller-promotions/promotions/{promotion_id}/items",
+        "encodePathParams": true,
+        "queryParams": {
+          "promotion_type": "$promotion_type",
+          "status": "$status",
+          "status_item": "$status_item",
+          "item_id": "$item_id",
+          "limit": "$limit",
+          "search_after": "$search_after",
+          "app_version": "v2"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_item_promotions",
+      "description": "List every promotion a listing takes part in or is invited to: promotion id, type, status (candidate, pending, started), the price in the promotion and the original price, and for co-funded campaigns the meli and seller percentages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with site prefix, e.g. 'MLB1234567890'."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller-promotions/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "app_version": "v2"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_add_item_to_promotion",
+      "description": "Add a listing to a promotion, or accept an invitation, at a promotional price. DEAL, SELLER_CAMPAIGN, DOD and LIGHTNING take a deal_price you set (LIGHTNING also stock); MARKETPLACE_CAMPAIGN, VOLUME, SMART and PRICE_MATCHING only need promotion_id and type (plus offer_id for SMART and PRICE_MATCHING), the price comes from the invitation. The discount is live for buyers once the promotion runs. Confirm price and promotion with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with site prefix."
+          },
+          "promotion_id": {
+            "type": "string",
+            "description": "Promotion id. Not needed for PRICE_DISCOUNT."
+          },
+          "promotion_type": {
+            "type": "string",
+            "description": "Promotion type: DEAL, MARKETPLACE_CAMPAIGN, PRICE_DISCOUNT, LIGHTNING, DOD, VOLUME, PRE_NEGOTIATED, SELLER_CAMPAIGN, SMART, PRICE_MATCHING, UNHEALTHY_STOCK."
+          },
+          "deal_price": {
+            "type": "number",
+            "description": "Price during the promotion, for promotions where the seller sets it."
+          },
+          "top_deal_price": {
+            "type": "number",
+            "description": "Optional lower price for loyalty buyers (levels 3 to 6), where the promotion allows it."
+          },
+          "offer_id": {
+            "type": "string",
+            "description": "Candidate offer id, for SMART, PRICE_MATCHING and pre-negotiated promotions."
+          },
+          "stock": {
+            "type": "integer",
+            "description": "Units reserved for a LIGHTNING deal."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start, ISO 8601, for a PRICE_DISCOUNT."
+          },
+          "finish_date": {
+            "type": "string",
+            "description": "End, ISO 8601, for a PRICE_DISCOUNT."
+          }
+        },
+        "required": [
+          "item_id",
+          "promotion_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller-promotions/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "app_version": "v2"
+        },
+        "bodyMapping": {
+          "promotion_id": "$promotion_id",
+          "promotion_type": "$promotion_type",
+          "deal_price": "$deal_price",
+          "top_deal_price": "$top_deal_price",
+          "offer_id": "$offer_id",
+          "stock": "$stock",
+          "start_date": "$start_date",
+          "finish_date": "$finish_date"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_remove_item_from_promotion",
+      "description": "Take a listing out of a promotion; it goes back to its normal price. Some promotions do not allow it once started (a running LIGHTNING deal can only be paused). Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "Listing id with site prefix."
+          },
+          "promotion_type": {
+            "type": "string",
+            "description": "Promotion type, e.g. DEAL, SELLER_CAMPAIGN, PRICE_DISCOUNT, DOD."
+          },
+          "promotion_id": {
+            "type": "string",
+            "description": "Promotion id, where the type has one."
+          },
+          "offer_id": {
+            "type": "string",
+            "description": "Offer id, for SMART and PRICE_MATCHING."
+          }
+        },
+        "required": [
+          "item_id",
+          "promotion_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/seller-promotions/items/{item_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "promotion_type": "$promotion_type",
+          "promotion_id": "$promotion_id",
+          "offer_id": "$offer_id",
+          "app_version": "v2"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "mercado_libre_list_advertisers",
+      "description": "List the Mercado Ads advertiser accounts the signed-in user can reach for Product Ads: advertiser_id, site_id and name. Product Ads tools need both the advertiser_id and its site_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertising/advertisers",
+        "headers": {
+          "Api-Version": "1"
+        },
+        "queryParams": {
+          "product_id": "PADS"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_search_ad_campaigns",
+      "description": "List Product Ads campaigns of an advertiser with their status, budget, strategy and ACOS target and, with a date range and metrics, their results: clicks, prints, ctr, cost, cpc, acos, roas, units and amounts sold. metrics_summary adds totals; aggregation_type DAILY gives a series per day. Dates go back 90 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Advertiser's site id, e.g. 'MLB', from mercado_libre_list_advertisers."
+          },
+          "advertiser_id": {
+            "type": "string",
+            "description": "Advertiser id, from mercado_libre_list_advertisers."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated campaign statuses: active, paused."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "YYYY-MM-DD; required with metrics."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "YYYY-MM-DD; required with metrics."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metrics, e.g. 'clicks,prints,ctr,cost,cpc,acos,roas,units_quantity,total_amount'."
+          },
+          "metrics_summary": {
+            "type": "boolean",
+            "description": "true adds summed metrics."
+          },
+          "aggregation_type": {
+            "type": "string",
+            "enum": [
+              "DAILY"
+            ],
+            "description": "DAILY for one row per day."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip; limit + offset at most 10000."
+          }
+        },
+        "required": [
+          "site_id",
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertising/{site_id}/advertisers/{advertiser_id}/product_ads/campaigns/search",
+        "encodePathParams": true,
+        "headers": {
+          "api-version": "2"
+        },
+        "queryParams": {
+          "filters[status]": "$status",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "metrics": "$metrics",
+          "metrics_summary": "$metrics_summary",
+          "aggregation_type": "$aggregation_type",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_get_ad_campaign",
+      "description": "Get one Product Ads campaign: name, status, budget, strategy, ACOS or ROAS target and, with a date range and metrics, its results (clicks, prints, cost, acos, roas, sales, impression share and lost share by budget or rank).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Advertiser's site id, e.g. 'MLB'."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign id, from mercado_libre_search_ad_campaigns."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "YYYY-MM-DD; required with metrics."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "YYYY-MM-DD; required with metrics."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metrics, e.g. 'clicks,prints,cost,acos,roas,total_amount,impression_share,lost_impression_share_by_budget'."
+          },
+          "aggregation_type": {
+            "type": "string",
+            "enum": [
+              "DAILY"
+            ],
+            "description": "DAILY for one row per day."
+          }
+        },
+        "required": [
+          "site_id",
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertising/{site_id}/product_ads/campaigns/{campaign_id}",
+        "encodePathParams": true,
+        "headers": {
+          "api-version": "2"
+        },
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "metrics": "$metrics",
+          "aggregation_type": "$aggregation_type"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_search_product_ads",
+      "description": "List the Product Ads (one per promoted listing) of an advertiser with their status and campaign and, with a date range and metrics, each ad's results: clicks, prints, cost, cpc, acos, roas, units and amounts sold. Filter by campaign or by listing. metrics_summary adds totals; dates go back 90 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Advertiser's site id, e.g. 'MLB'."
+          },
+          "advertiser_id": {
+            "type": "string",
+            "description": "Advertiser id, from mercado_libre_list_advertisers."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Only ads of this campaign."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Only the ad of this listing."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "YYYY-MM-DD; required with metrics."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "YYYY-MM-DD; required with metrics."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metrics, e.g. 'clicks,prints,ctr,cost,cpc,acos,roas,units_quantity,total_amount'."
+          },
+          "metrics_summary": {
+            "type": "boolean",
+            "description": "true adds summed metrics."
+          },
+          "aggregation_type": {
+            "type": "string",
+            "enum": [
+              "DAILY"
+            ],
+            "description": "DAILY for one row per day."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip; limit + offset at most 10000."
+          }
+        },
+        "required": [
+          "site_id",
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertising/{site_id}/advertisers/{advertiser_id}/product_ads/ads/search",
+        "encodePathParams": true,
+        "headers": {
+          "api-version": "2"
+        },
+        "queryParams": {
+          "filters[campaign_id]": "$campaign_id",
+          "filters[item_id]": "$item_id",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "metrics": "$metrics",
+          "metrics_summary": "$metrics_summary",
+          "aggregation_type": "$aggregation_type",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "mercado_libre_search_ad_groups",
+      "description": "Find the Product Ads ad groups of an advertiser, e.g. the ad group of given listings: returns each ad group's id, name, status, campaign_id and ad_group_external_id (the listing id). Use it to see which campaign promotes a listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "description": "Advertiser's site id, e.g. 'MLB'."
+          },
+          "advertiser_id": {
+            "type": "string",
+            "description": "Advertiser id, from mercado_libre_list_advertisers."
+          },
+          "item_ids": {
+            "type": "string",
+            "description": "Comma-separated listing ids."
+          },
+          "campaign_id": {
+            "type": "string",
+            "description": "Only ad groups of this campaign."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Results to skip."
+          }
+        },
+        "required": [
+          "site_id",
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertising/{site_id}/advertisers/{advertiser_id}/product_ads/ad_groups/search",
+        "encodePathParams": true,
+        "headers": {
+          "api-version": "2"
+        },
+        "queryParams": {
+          "filters[item_ids]": "$item_ids",
+          "filters[campaign_id]": "$campaign_id",
+          "limit": "$limit",
+          "offset": "$offset"
         }
       }
     }

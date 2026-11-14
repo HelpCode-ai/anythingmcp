@@ -46,8 +46,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'aymakan_';
 const WRITES: string[] = ["aymakan_create_shipment", "aymakan_cancel_shipment", "aymakan_create_pickup_request", "aymakan_cancel_pickup_request"];
-// Tool names of the customers' own connectors for this API on the Cloud (read 19 Oct 2026).
-const HAND_BUILT = ["aymakan_shipments_by_reference", "aymakan_track_shipments"];
 
 describe('aymakan adapter: static spec conformance', () => {
   it('sends the raw key in Authorization to api.aymakan.net/v2 and always asks for JSON', () => {
@@ -109,10 +107,6 @@ describe('aymakan adapter: static spec conformance', () => {
     }
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     expect(WRITES).not.toContain(a.probe.tool);

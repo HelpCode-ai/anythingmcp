@@ -1,0 +1,1377 @@
+{
+  "slug": "fred",
+  "name": "FRED",
+  "aliases": [
+    "Federal Reserve Economic Data",
+    "St. Louis Fed",
+    "ALFRED"
+  ],
+  "description": "Economic data from FRED, the Federal Reserve Bank of St. Louis database: search 800,000 US and international time series (GDP, inflation, unemployment, interest rates, exchange rates), read their values with unit transformations and frequency aggregation, browse categories, releases, release calendars, sources and tags, and see data revisions. Read-only, free API key.",
+  "instructions": "## FRED (Federal Reserve Economic Data)\nThis connector reads **FRED**, the economic database of the Federal Reserve Bank of St. Louis (`https://api.stlouisfed.org/fred`): about 800,000 US and international time series from more than 100 sources (BEA, BLS, the Federal Reserve Board, the Census Bureau, OECD, IMF, Eurostat and others), with their categories, releases, sources, tags and revision history (ALFRED vintages). Everything is read-only.\n\n**Setup (2 minutes, free)**\n1. Sign in or create a free account at https://fredaccount.stlouisfed.org.\n2. Open **API Keys** (https://fredaccount.stlouisfed.org/apikeys), request a key and describe the use in one sentence. The key is a 32-character lower-case string and is issued at once.\n3. Paste it into `FRED_API_KEY`. It is sent as the `api_key` query parameter, together with `file_type=json`.\n\n**Workflow**\n- Find a series: `fred_search_series` with words (`search_text`), sorted by relevance; `order_by` popularity brings the main headline series first. Well known ids: GDP, GDPC1 (real GDP), UNRATE, PAYEMS (payrolls), CPIAUCSL, CPILFESL (core CPI), PCEPI, FEDFUNDS, DFF, DGS2, DGS10, T10Y2Y, MORTGAGE30US, SP500, VIXCLS, DCOILWTICO, DEXUSEU (USD per EUR), M2SL.\n- Read the values: `fred_get_observations`. It returns the latest 1000 observations, newest first; set `limit` 1 for the latest value, `observation_start`/`observation_end` for a period, `units` pc1 for year-over-year percent change, `frequency` m/q/a with `aggregation_method` to aggregate daily data. A value of \".\" means no observation (e.g. a holiday).\n- Understand the series: `fred_get_series` (units, frequency, seasonal adjustment, notes, last update), `fred_get_series_categories`, `fred_get_series_release` and `fred_get_series_tags`.\n- Browse by topic: `fred_get_category` and `fred_list_category_children` from the root category 0, then `fred_list_category_series`.\n- Releases and calendar: `fred_list_releases`, `fred_get_release`, `fred_list_release_series`; `fred_get_release_dates` for one release and `fred_list_release_dates` for all of them (set `include_release_dates_with_no_data` true for upcoming dates).\n- Sources: `fred_list_sources`, `fred_get_source`, `fred_list_source_releases`.\n- Tags: `fred_search_tags` (e.g. geography or concept tags) and `fred_list_tag_series` to find series having all given tags, e.g. `gdp;germany`.\n- Revisions: `fred_list_vintage_dates` lists when a series was published or revised; `fred_get_observations` with `realtime_start` = `realtime_end` = a vintage date shows the data as known on that day.\n- What changed: `fred_list_series_updates` lists recently updated series.\n\n**Reading the data**: values are strings in the series units (check `units` and seasonal adjustment in `fred_get_series` before comparing). Dates are YYYY-MM-DD and mark the start of the period (2026-04-01 for the second quarter of 2026). Monthly and quarterly series are published with a lag; quote the date of the latest observation, not today. Cite FRED and the original source from the series notes; some series are copyrighted by their source and the notes say so.\n\n**Limits and errors**: up to 120 requests per minute per key. FRED answers HTTP 400 with an `error_message` that names the problem: a wrong or missing key (\"api_key is not registered\"), an unknown series id (\"The series does not exist\") or an invalid parameter (e.g. a frequency higher than the series' own). 429 means the rate limit was hit: wait a minute.\n\n**Out of scope**: GeoFRED maps and regional shapes, the bulk FRED v2 release download and series groups are not part of this connector.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "fred",
+  "docsUrl": "https://fred.stlouisfed.org/docs/api/fred/",
+  "requiredEnvVars": [
+    "FRED_API_KEY"
+  ],
+  "envVarMeta": {
+    "FRED_API_KEY": {
+      "label": "FRED API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Free: fredaccount.stlouisfed.org, API Keys, Request API Key. A 32-character lower-case string.",
+      "link": "https://fredaccount.stlouisfed.org/apikeys",
+      "pattern": "^[a-z0-9]{32}$",
+      "patternMessage": "Paste only the 32-character key in lower case, as shown on the API Keys page."
+    }
+  },
+  "verifyHints": {
+    "400": "FRED refused the request. Most often the API key is wrong or not registered: copy it again from https://fredaccount.stlouisfed.org/apikeys (32 lower-case characters).",
+    "429": "FRED rate limit reached (120 requests per minute). Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "fred_get_category"
+  },
+  "connector": {
+    "name": "FRED",
+    "type": "REST",
+    "baseUrl": "https://api.stlouisfed.org/fred",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api_key": "{{FRED_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "fred_search_series",
+      "description": "Search FRED economic data series by words or by series id: GDP, inflation, unemployment, interest rates, exchange rates, house prices and about 800,000 more US and international series. Returns id, title, frequency, units, seasonal adjustment, date range and popularity; use the id with fred_get_observations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Words to search for, e.g. \"consumer price index\", \"10-year treasury\", \"unemployment rate germany\"."
+          },
+          "search_type": {
+            "type": "string",
+            "enum": [
+              "full_text",
+              "series_id"
+            ],
+            "description": "full_text (default) searches titles, units, notes and tags; series_id matches ids and accepts * wildcards, e.g. DGS*."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "search_rank",
+              "series_id",
+              "title",
+              "units",
+              "frequency",
+              "seasonal_adjustment",
+              "realtime_start",
+              "realtime_end",
+              "last_updated",
+              "observation_start",
+              "observation_end",
+              "popularity",
+              "group_popularity"
+            ],
+            "description": "Sort field; search_rank (default) is relevance, popularity puts the most used series first."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "filter_variable": {
+            "type": "string",
+            "enum": [
+              "frequency",
+              "units",
+              "seasonal_adjustment"
+            ],
+            "description": "Attribute to filter on, together with filter_value."
+          },
+          "filter_value": {
+            "type": "string",
+            "description": "Value of filter_variable, e.g. Monthly (frequency), Percent (units), Seasonally Adjusted (seasonal_adjustment)."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tags the series must all have, e.g. usa;nsa. Tag names come from fred_search_tags."
+          },
+          "exclude_tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tags the series must not have, e.g. discontinued."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 25,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        },
+        "required": [
+          "search_text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series/search",
+        "queryParams": {
+          "search_text": "$search_text",
+          "search_type": "$search_type",
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "filter_variable": "$filter_variable",
+          "filter_value": "$filter_value",
+          "tag_names": "$tag_names",
+          "exclude_tag_names": "$exclude_tag_names",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "count": "$.count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "series": {
+              "$from": "$.seriess[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "frequency": "frequency_short",
+                "units": "units_short",
+                "seasonal_adjustment": "seasonal_adjustment_short",
+                "observation_start": "observation_start",
+                "observation_end": "observation_end",
+                "last_updated": "last_updated",
+                "popularity": "popularity"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_series",
+      "description": "Get the metadata of one FRED series: title, frequency, units, seasonal adjustment, first and last observation date, last update, popularity and the notes that define it and name its source.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_id": {
+            "type": "string",
+            "description": "FRED series id, e.g. GDP, UNRATE, CPIAUCSL, DGS10, FEDFUNDS. Find ids with fred_search_series."
+          },
+          "realtime_start": {
+            "type": "string",
+            "description": "Start of the real-time period, YYYY-MM-DD (ALFRED vintages). Leave empty for today."
+          },
+          "realtime_end": {
+            "type": "string",
+            "description": "End of the real-time period, YYYY-MM-DD. Leave empty for today."
+          }
+        },
+        "required": [
+          "series_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series",
+        "queryParams": {
+          "series_id": "$series_id",
+          "realtime_start": "$realtime_start",
+          "realtime_end": "$realtime_end",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_observations",
+      "description": "Get the data values of a FRED series (date and value), newest first by default. Narrow the period with observation_start and observation_end, transform values with units (change, percent change, year-over-year), and aggregate to a lower frequency (e.g. daily to monthly) with frequency and aggregation_method. A value of \".\" means no data for that date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_id": {
+            "type": "string",
+            "description": "FRED series id, e.g. GDP, UNRATE, CPIAUCSL, DGS10, FEDFUNDS. Find ids with fred_search_series."
+          },
+          "observation_start": {
+            "type": "string",
+            "description": "First observation date, YYYY-MM-DD."
+          },
+          "observation_end": {
+            "type": "string",
+            "description": "Last observation date, YYYY-MM-DD."
+          },
+          "units": {
+            "type": "string",
+            "enum": [
+              "lin",
+              "chg",
+              "ch1",
+              "pch",
+              "pc1",
+              "pca",
+              "cch",
+              "cca",
+              "log"
+            ],
+            "description": "Value transformation: lin levels (default), chg change, ch1 change from a year ago, pch percent change, pc1 percent change from a year ago, pca compounded annual rate of change, cch continuously compounded rate of change, cca continuously compounded annual rate of change, log natural log."
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "d",
+              "w",
+              "bw",
+              "m",
+              "q",
+              "sa",
+              "a",
+              "wef",
+              "weth",
+              "wew",
+              "wetu",
+              "wem",
+              "wesu",
+              "wesa",
+              "bwew",
+              "bwem"
+            ],
+            "description": "Aggregate to a lower frequency: d daily, w weekly, bw biweekly, m monthly, q quarterly, sa semiannual, a annual (wef, weth, wew, wetu, wem, wesu, wesa: weekly ending Friday to Saturday; bwew, bwem: biweekly ending Wednesday or Monday). Must not be higher than the series' own frequency."
+          },
+          "aggregation_method": {
+            "type": "string",
+            "enum": [
+              "avg",
+              "sum",
+              "eop"
+            ],
+            "description": "How frequency aggregates: avg average (default), sum, eop end of period. Only used with frequency."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "desc (default here) returns the latest observations first; asc the oldest first.",
+            "default": "desc"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "default": 1000,
+            "description": "Observations to return, 1 to 100000 (default here 1000). With sort_order desc and limit 1 you get the latest value."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          },
+          "realtime_start": {
+            "type": "string",
+            "description": "Start of the real-time period, YYYY-MM-DD. To see the series as it was published on a past date (a vintage from fred_list_vintage_dates), set realtime_start and realtime_end to that same date."
+          },
+          "realtime_end": {
+            "type": "string",
+            "description": "End of the real-time period, YYYY-MM-DD. Leave empty for today."
+          }
+        },
+        "required": [
+          "series_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series/observations",
+        "queryParams": {
+          "series_id": "$series_id",
+          "observation_start": "$observation_start",
+          "observation_end": "$observation_end",
+          "units": "$units",
+          "frequency": "$frequency",
+          "aggregation_method": "$aggregation_method",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "realtime_start": "$realtime_start",
+          "realtime_end": "$realtime_end",
+          "file_type": "json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "count": "$.count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "sort_order": "$.sort_order",
+            "units": "$.units",
+            "realtime_start": "$.realtime_start",
+            "realtime_end": "$.realtime_end",
+            "observation_start": "$.observation_start",
+            "observation_end": "$.observation_end",
+            "observations": {
+              "$from": "$.observations[*]",
+              "$select": {
+                "date": "date",
+                "value": "value"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_series_categories",
+      "description": "List the FRED categories a series belongs to (id, name, parent_id), to find related series with fred_list_category_series.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_id": {
+            "type": "string",
+            "description": "FRED series id, e.g. GDP, UNRATE, CPIAUCSL, DGS10, FEDFUNDS. Find ids with fred_search_series."
+          }
+        },
+        "required": [
+          "series_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series/categories",
+        "queryParams": {
+          "series_id": "$series_id",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_series_release",
+      "description": "Get the statistical release a FRED series is published in (id, name, press release flag, link), e.g. Employment Situation for UNRATE. Use the release id with fred_get_release_dates for the publication calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_id": {
+            "type": "string",
+            "description": "FRED series id, e.g. GDP, UNRATE, CPIAUCSL, DGS10, FEDFUNDS. Find ids with fred_search_series."
+          }
+        },
+        "required": [
+          "series_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series/release",
+        "queryParams": {
+          "series_id": "$series_id",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_series_tags",
+      "description": "List the tags of a FRED series (name, group such as geo, freq, src, seas, notes, popularity, series count). Tags combine in fred_list_tag_series to find similar series.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_id": {
+            "type": "string",
+            "description": "FRED series id, e.g. GDP, UNRATE, CPIAUCSL, DGS10, FEDFUNDS. Find ids with fred_search_series."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "series_count",
+              "popularity",
+              "created",
+              "name",
+              "group_id"
+            ],
+            "description": "Sort field, default series_count."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          }
+        },
+        "required": [
+          "series_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series/tags",
+        "queryParams": {
+          "series_id": "$series_id",
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_vintage_dates",
+      "description": "List the vintage dates of a FRED series: the dates on which its data was published or revised (ALFRED). Pass one of them as realtime_start and realtime_end to fred_get_observations to see the data as first published.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_id": {
+            "type": "string",
+            "description": "FRED series id, e.g. GDP, UNRATE, CPIAUCSL, DGS10, FEDFUNDS. Find ids with fred_search_series."
+          },
+          "realtime_start": {
+            "type": "string",
+            "description": "Earliest vintage date, YYYY-MM-DD (default 1776-07-04, all)."
+          },
+          "realtime_end": {
+            "type": "string",
+            "description": "Latest vintage date, YYYY-MM-DD (default 9999-12-31, all)."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Results per page, 1 to 10000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        },
+        "required": [
+          "series_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series/vintagedates",
+        "queryParams": {
+          "series_id": "$series_id",
+          "realtime_start": "$realtime_start",
+          "realtime_end": "$realtime_end",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_series_updates",
+      "description": "List FRED series updated recently, latest first: what changed today or within a time window. Filter to macro (national) or regional series.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_value": {
+            "type": "string",
+            "enum": [
+              "all",
+              "macro",
+              "regional"
+            ],
+            "description": "all (default), macro for national series, regional for state, county and metro series."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start of the update window, YYYYMMDDHhmm in US Central time, e.g. 202610270800. Needs end_time."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the update window, YYYYMMDDHhmm. Needs start_time."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 25,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series/updates",
+        "queryParams": {
+          "filter_value": "$filter_value",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "count": "$.count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "series": {
+              "$from": "$.seriess[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "frequency": "frequency_short",
+                "units": "units_short",
+                "seasonal_adjustment": "seasonal_adjustment_short",
+                "observation_start": "observation_start",
+                "observation_end": "observation_end",
+                "last_updated": "last_updated",
+                "popularity": "popularity"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_category",
+      "description": "Get one FRED category (id, name, parent_id). Category 0 is the root; its children are the top-level topics such as Money, Banking and Finance or Production and Business Activity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "FRED category id; 0 is the root category. Browse with fred_list_category_children.",
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category",
+        "queryParams": {
+          "category_id": "$category_id",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_category_children",
+      "description": "List the subcategories of a FRED category (id, name, parent_id), to browse the topic tree from the root (0) down to the series.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "FRED category id; 0 is the root category. Browse with fred_list_category_children.",
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/children",
+        "queryParams": {
+          "category_id": "$category_id",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_category_series",
+      "description": "List the series in a FRED category (id, title, frequency, units, seasonal adjustment, date range, popularity), optionally filtered by frequency, units, seasonal adjustment or tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "FRED category id; 0 is the root category. Browse with fred_list_category_children."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "series_id",
+              "title",
+              "units",
+              "frequency",
+              "seasonal_adjustment",
+              "realtime_start",
+              "realtime_end",
+              "last_updated",
+              "observation_start",
+              "observation_end",
+              "popularity",
+              "group_popularity"
+            ],
+            "description": "Sort field. popularity puts the most used series first."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "filter_variable": {
+            "type": "string",
+            "enum": [
+              "frequency",
+              "units",
+              "seasonal_adjustment"
+            ],
+            "description": "Attribute to filter on, together with filter_value."
+          },
+          "filter_value": {
+            "type": "string",
+            "description": "Value of filter_variable, e.g. Monthly (frequency), Percent (units), Seasonally Adjusted (seasonal_adjustment)."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tags the series must all have, e.g. usa;nsa. Tag names come from fred_search_tags."
+          },
+          "exclude_tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tags the series must not have, e.g. discontinued."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/series",
+        "queryParams": {
+          "category_id": "$category_id",
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "filter_variable": "$filter_variable",
+          "filter_value": "$filter_value",
+          "tag_names": "$tag_names",
+          "exclude_tag_names": "$exclude_tag_names",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "count": "$.count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "series": {
+              "$from": "$.seriess[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "frequency": "frequency_short",
+                "units": "units_short",
+                "seasonal_adjustment": "seasonal_adjustment_short",
+                "observation_start": "observation_start",
+                "observation_end": "observation_end",
+                "last_updated": "last_updated",
+                "popularity": "popularity"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_releases",
+      "description": "List the statistical releases in FRED (id, name, press release flag, link), e.g. Employment Situation, Consumer Price Index, H.15 Selected Interest Rates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "release_id",
+              "name",
+              "press_release",
+              "realtime_start",
+              "realtime_end"
+            ],
+            "description": "Sort field, default release_id."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/releases",
+        "queryParams": {
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_release_dates",
+      "description": "Release calendar across all FRED releases: which release came out, or is scheduled, on which date. By default from the first day of the current year; set realtime_start and realtime_end for a window and include_release_dates_with_no_data true for upcoming dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "realtime_start": {
+            "type": "string",
+            "description": "First date of the window, YYYY-MM-DD (default: 1 January of the current year)."
+          },
+          "realtime_end": {
+            "type": "string",
+            "description": "Last date of the window, YYYY-MM-DD (default: 9999-12-31)."
+          },
+          "include_release_dates_with_no_data": {
+            "type": "boolean",
+            "description": "true also lists scheduled dates without data yet, i.e. the upcoming calendar."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "release_date",
+              "release_id",
+              "release_name"
+            ],
+            "description": "Sort field, default release_date."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/releases/dates",
+        "queryParams": {
+          "realtime_start": "$realtime_start",
+          "realtime_end": "$realtime_end",
+          "include_release_dates_with_no_data": "$include_release_dates_with_no_data",
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_release",
+      "description": "Get one FRED release (id, name, press release flag, link to the publisher's page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "release_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "FRED release id, e.g. 53 (Gross Domestic Product), 10 (Consumer Price Index), 50 (Employment Situation). Find ids with fred_list_releases or fred_get_series_release."
+          }
+        },
+        "required": [
+          "release_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/release",
+        "queryParams": {
+          "release_id": "$release_id",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_release_dates",
+      "description": "Publication dates of one FRED release, all history by default. Use sort_order desc for the latest, and include_release_dates_with_no_data true to see the next scheduled dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "release_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "FRED release id, e.g. 53 (Gross Domestic Product), 10 (Consumer Price Index), 50 (Employment Situation). Find ids with fred_list_releases or fred_get_series_release."
+          },
+          "include_release_dates_with_no_data": {
+            "type": "boolean",
+            "description": "true also lists scheduled future dates."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "default": 100,
+            "description": "Results per page, 1 to 10000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        },
+        "required": [
+          "release_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/release/dates",
+        "queryParams": {
+          "release_id": "$release_id",
+          "include_release_dates_with_no_data": "$include_release_dates_with_no_data",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_release_series",
+      "description": "List the series published in one FRED release (id, title, frequency, units, seasonal adjustment, date range, popularity), optionally filtered by frequency, units, seasonal adjustment or tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "release_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "FRED release id, e.g. 53 (Gross Domestic Product), 10 (Consumer Price Index), 50 (Employment Situation). Find ids with fred_list_releases or fred_get_series_release."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "series_id",
+              "title",
+              "units",
+              "frequency",
+              "seasonal_adjustment",
+              "realtime_start",
+              "realtime_end",
+              "last_updated",
+              "observation_start",
+              "observation_end",
+              "popularity",
+              "group_popularity"
+            ],
+            "description": "Sort field. popularity puts the most used series first."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "filter_variable": {
+            "type": "string",
+            "enum": [
+              "frequency",
+              "units",
+              "seasonal_adjustment"
+            ],
+            "description": "Attribute to filter on, together with filter_value."
+          },
+          "filter_value": {
+            "type": "string",
+            "description": "Value of filter_variable, e.g. Monthly (frequency), Percent (units), Seasonally Adjusted (seasonal_adjustment)."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tags the series must all have, e.g. usa;nsa. Tag names come from fred_search_tags."
+          },
+          "exclude_tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tags the series must not have, e.g. discontinued."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        },
+        "required": [
+          "release_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/release/series",
+        "queryParams": {
+          "release_id": "$release_id",
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "filter_variable": "$filter_variable",
+          "filter_value": "$filter_value",
+          "tag_names": "$tag_names",
+          "exclude_tag_names": "$exclude_tag_names",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "count": "$.count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "series": {
+              "$from": "$.seriess[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "frequency": "frequency_short",
+                "units": "units_short",
+                "seasonal_adjustment": "seasonal_adjustment_short",
+                "observation_start": "observation_start",
+                "observation_end": "observation_end",
+                "last_updated": "last_updated",
+                "popularity": "popularity"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_sources",
+      "description": "List the data sources in FRED (id, name, link), e.g. Bureau of Labor Statistics, Bureau of Economic Analysis, Board of Governors of the Federal Reserve System.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "source_id",
+              "name",
+              "realtime_start",
+              "realtime_end"
+            ],
+            "description": "Sort field, default source_id."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sources",
+        "queryParams": {
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_get_source",
+      "description": "Get one FRED data source (id, name, link to the agency or publisher), e.g. 22 for the Bureau of Labor Statistics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "FRED source id, e.g. 1 (Board of Governors), 18 (BEA), 22 (BLS). Find ids with fred_list_sources."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/source",
+        "queryParams": {
+          "source_id": "$source_id",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_source_releases",
+      "description": "List the releases of one FRED data source (id, name, press release flag, link).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "FRED source id, e.g. 1 (Board of Governors), 18 (BEA), 22 (BLS). Find ids with fred_list_sources."
+          }
+        },
+        "required": [
+          "source_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/source/releases",
+        "queryParams": {
+          "source_id": "$source_id",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_search_tags",
+      "description": "Search or list FRED tags (name, group, notes, popularity, number of series). Tags describe series by geography (geo), frequency (freq), source (src), seasonal adjustment (seas), release (rls) and topic (gen); combine them in fred_list_tag_series.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_text": {
+            "type": "string",
+            "description": "Words to find in tag names and notes, e.g. inflation, germany."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tag names to return exactly, e.g. monthly;usa."
+          },
+          "tag_group_id": {
+            "type": "string",
+            "enum": [
+              "freq",
+              "gen",
+              "geo",
+              "geot",
+              "rls",
+              "seas",
+              "src",
+              "cc"
+            ],
+            "description": "Only tags of one group: freq frequency, gen general or concept, geo geography, geot geography type, rls release, seas seasonal adjustment, src source, cc citation and copyright."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "series_count",
+              "popularity",
+              "created",
+              "name",
+              "group_id"
+            ],
+            "description": "Sort field, default series_count."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": {
+          "search_text": "$search_text",
+          "tag_names": "$tag_names",
+          "tag_group_id": "$tag_group_id",
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fred_list_tag_series",
+      "description": "List the FRED series that have all the given tags, e.g. gdp;germany or cpi;monthly;sa, with id, title, frequency, units, seasonal adjustment, date range and popularity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tags the series must all have, e.g. gdp;germany. Tag names come from fred_search_tags or fred_get_series_tags."
+          },
+          "exclude_tag_names": {
+            "type": "string",
+            "description": "Semicolon-separated tags the series must not have, e.g. discontinued."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "series_id",
+              "title",
+              "units",
+              "frequency",
+              "seasonal_adjustment",
+              "realtime_start",
+              "realtime_end",
+              "last_updated",
+              "observation_start",
+              "observation_end",
+              "popularity",
+              "group_popularity"
+            ],
+            "description": "Sort field. popularity puts the most used series first."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Results per page, 1 to 1000."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many results to skip, for paging."
+          }
+        },
+        "required": [
+          "tag_names"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags/series",
+        "queryParams": {
+          "tag_names": "$tag_names",
+          "exclude_tag_names": "$exclude_tag_names",
+          "order_by": "$order_by",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "file_type": "json"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "count": "$.count",
+            "offset": "$.offset",
+            "limit": "$.limit",
+            "series": {
+              "$from": "$.seriess[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "frequency": "frequency_short",
+                "units": "units_short",
+                "seasonal_adjustment": "seasonal_adjustment_short",
+                "observation_start": "observation_start",
+                "observation_end": "observation_end",
+                "last_updated": "last_updated",
+                "popularity": "popularity"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

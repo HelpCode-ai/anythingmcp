@@ -85,7 +85,10 @@ x-backend: &backend
     # end-to-end check; leave it empty otherwise.
     - SENTRY_DSN=${SENTRY_DSN_BACKEND:-}
     - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
-    - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.05}
+    # 0.5 % of HTTP requests (MCP calls a fifth of that). At 5 % Cloud sent
+    # about 1 M spans a day: far over the span quota, so Sentry accepted none
+    # and the SDK spent CPU on traces nobody could see (Nov 2026).
+    - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.005}
     - SENTRY_VERIFY_TOKEN=${SENTRY_VERIFY_TOKEN:-}
     # Prometheus /metrics — a separate listener, off by default (docs/operations/observability.md).
     # METRICS_TOKEN is required once METRICS_ENABLED=true; the listener refuses to start without it.
@@ -99,6 +102,12 @@ x-backend: &backend
     - NEXT_PUBLIC_API_URL=https://${DOMAIN}
     - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
     - REDIS_URL=redis://redis:6379
+    # Code mode: the out-of-process code-runner the backend connects to over
+    # the private network (a separate, secretless droplet). Unset = code mode
+    # unavailable (fail-closed): every run is refused, nothing runs in the
+    # backend. Code mode also stays off until a workspace turns it on per MCP
+    # server (codeMode), so setting this alone exposes nothing.
+    - CODE_RUNNER_URL=${CODE_RUNNER_URL:-}
     - JWT_SECRET=${JWT_SECRET}
     - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     # `plaintext` only to roll back past encrypted connector variables (docs/operations/backup-restore.md)
@@ -153,11 +162,29 @@ x-backend: &backend
     # use_proxy=true route through this; unset = feature off everywhere.
     - CONNECTOR_PROXY_URL=${CONNECTOR_PROXY_URL:-}
     - PROXY_RATE_LIMIT_DEFAULT=${PROXY_RATE_LIMIT_DEFAULT:-100}
+    # Largest upstream response one tool call reads, in bytes. Empty = the
+    # default, 10 MB, the same as self-hosted (see .env.example).
+    - TOOL_MAX_RESPONSE_BYTES=${TOOL_MAX_RESPONSE_BYTES:-}
+    # Public IPs the backend calls APIs from, shown on the setup and connector
+    # pages and named when an IP allowlist refuses a call (see .env.example).
+    - EGRESS_IPS=${EGRESS_IPS:-}
     # Internal MOTIS instance for the Deutsche Bahn connector. When set, the
     # adapter's MOTIS_URL is filled in automatically at import (and hidden
     # from the install form), so cloud users never see or choose it.
     # Self-hosters leave it unset and enter their own MOTIS URL.
     - MOTIS_INTERNAL_URL=${MOTIS_INTERNAL_URL:-http://motis:8080}
+    # TikTok Shop server app: TikTok Shop connectors without an App key of
+    # their own use it (see .env.example). Unset = each connector needs the
+    # seller's own app.
+    - TIKTOK_SHOP_PLATFORM_APP_KEY=${TIKTOK_SHOP_PLATFORM_APP_KEY:-}
+    - TIKTOK_SHOP_PLATFORM_APP_SECRET=${TIKTOK_SHOP_PLATFORM_APP_SECRET:-}
+    - TIKTOK_SHOP_PLATFORM_SERVICE_ID=${TIKTOK_SHOP_PLATFORM_SERVICE_ID:-}
+    # WooCommerce one-click key: off unless set to true (see .env.example).
+    - WOOCOMMERCE_ONE_CLICK=${WOOCOMMERCE_ONE_CLICK:-}
+    - META_PLATFORM_APP_ID=${META_PLATFORM_APP_ID:-}
+    - META_PLATFORM_APP_SECRET=${META_PLATFORM_APP_SECRET:-}
+    - META_PLATFORM_CONFIG_ID=${META_PLATFORM_CONFIG_ID:-}
+    - META_PLATFORM_ORG_IDS=${META_PLATFORM_ORG_IDS:-}
     # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
     # a private docker IP, which the guard blocks by default). Harmless on
     # self-host (no such host on their network).
@@ -184,19 +211,45 @@ x-backend: &backend
     # Where replies go when SMTP_FROM is a noreply address.
     - SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
     - SMTP_SECURE=${SMTP_SECURE:-false}
+    # Optional sender for trial lifecycle, win-back and blocked-call emails (main SMTP when unset).
+    - RETENTION_SMTP_HOST=${RETENTION_SMTP_HOST:-}
+    - RETENTION_SMTP_PORT=${RETENTION_SMTP_PORT:-}
+    - RETENTION_SMTP_USER=${RETENTION_SMTP_USER:-}
+    - RETENTION_SMTP_PASS=${RETENTION_SMTP_PASS:-}
+    - RETENTION_SMTP_FROM=${RETENTION_SMTP_FROM:-}
+    - RETENTION_SMTP_REPLY_TO=${RETENTION_SMTP_REPLY_TO:-}
     # Live support chat (Libredesk). Unset = no widget, no triage webhook.
     - SUPPORT_CHAT_URL=${SUPPORT_CHAT_URL:-}
     - SUPPORT_CHAT_INBOX_ID=${SUPPORT_CHAT_INBOX_ID:-}
     - SUPPORT_CHAT_SECRET=${SUPPORT_CHAT_SECRET:-}
+    - SUPPORT_CHAT_DISABLED_ORGS=${SUPPORT_CHAT_DISABLED_ORGS:-}
     - LIBREDESK_API_KEY=${LIBREDESK_API_KEY:-}
     - LIBREDESK_API_SECRET=${LIBREDESK_API_SECRET:-}
     - LIBREDESK_WEBHOOK_SECRET=${LIBREDESK_WEBHOOK_SECRET:-}
     - LIBREDESK_AI_ASSISTANT_USER_ID=${LIBREDESK_AI_ASSISTANT_USER_ID:-}
+    # Public CA intermediates that some upstreams forget to send (Node does
+    # not fetch a missing intermediate the way browsers do). The file is
+    # deploy/cloud/certs/extra-ca.pem, installed by deploy-cloud.yml; if it
+    # is missing Node logs a warning and starts with its default store.
+    - NODE_EXTRA_CA_CERTS=/app/extra-ca/extra-ca.pem
+    # File Search (#1379): inert until FILES_WORKER_URL is set and the
+    # `files` profile runs files-worker and file-extractor (below). File
+    # Share keeps its files in an S3 bucket on the Cloud.
+    - FILES_WORKER_URL=${FILES_WORKER_URL:-}
+    - FILES_WORKER_TOKEN=${FILES_WORKER_TOKEN:-}
+    - FILES_STORAGE=${FILES_STORAGE:-s3}
+    - FILES_S3_ENDPOINT=${FILES_S3_ENDPOINT:-}
+    - FILES_S3_REGION=${FILES_S3_REGION:-}
+    - FILES_S3_BUCKET=${FILES_S3_BUCKET:-}
+    - FILES_S3_ACCESS_KEY_ID=${FILES_S3_ACCESS_KEY_ID:-}
+    - FILES_S3_SECRET_ACCESS_KEY=${FILES_S3_SECRET_ACCESS_KEY:-}
+    - FILES_DOWNLOAD_BASE_URL=${FILES_DOWNLOAD_BASE_URL:-}
   volumes:
     # One heap snapshot per process, written by the heap guard when the heap
     # crosses HEAP_SNAPSHOT_PERCENT. A volume so it outlives the container
     # that wrote it — the whole point is to read it after the restart.
     - diagnostics:/app/diagnostics
+    - ./certs:/app/extra-ca:ro
   depends_on:
     postgres:
       condition: service_healthy
@@ -223,11 +276,14 @@ x-backend: &backend
     # outside probe see in the meantime.
     start_period: 180s
   restart: unless-stopped
+  # The backend logs every tool call. At 5 x 50 MB the files covered only
+  # about 19 hours, too little to compare one day with the next. 20 x 100 MB
+  # keeps about a week and uses at most 2 GB per container.
   logging:
     driver: json-file
     options:
-      max-size: "50m"
-      max-file: "5"
+      max-size: "100m"
+      max-file: "20"
 
 x-frontend: &frontend
   image: helpcodeai/anythingmcp:latest
@@ -318,6 +374,83 @@ services:
     <<: *frontend
     container_name: amcp-cloud-frontend-green
     profiles: [green]
+
+  # File Search (#1379, ee/). Not part of blue/green: one worker, its own
+  # process and limits, so a backfill never competes with MCP traffic. Off
+  # unless the `files` profile is enabled.
+  files-worker:
+    image: helpcodeai/anythingmcp:latest
+    profiles: [files]
+    container_name: amcp-cloud-files-worker
+    command: ["./start.sh", "files-worker"]
+    environment:
+      - NODE_ENV=production
+      - DEPLOYMENT_MODE=cloud
+      - DATABASE_URL=postgresql://amcp:${POSTGRES_PASSWORD}@postgres:5432/anythingmcp
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - FILES_WORKER_TOKEN=${FILES_WORKER_TOKEN:-}
+      - FILES_WORKER_HOST=0.0.0.0
+      - FILES_WORKER_PORT=8891
+      - FILES_WORKER_MAX_OLD_SPACE_MB=${FILES_WORKER_MAX_OLD_SPACE_MB:-512}
+      - FILES_WORKER_CONCURRENCY=${FILES_WORKER_CONCURRENCY:-2}
+      - FILES_PG_ACTIVE_MAX=${FILES_PG_ACTIVE_MAX:-30}
+      - FILE_EXTRACTOR_URL=http://file-extractor:8890
+      - FILE_EXTRACTOR_TOKEN=${FILE_EXTRACTOR_TOKEN:-}
+      - FILES_STORAGE=${FILES_STORAGE:-s3}
+      - FILES_S3_ENDPOINT=${FILES_S3_ENDPOINT:-}
+      - FILES_S3_REGION=${FILES_S3_REGION:-}
+      - FILES_S3_BUCKET=${FILES_S3_BUCKET:-}
+      - FILES_S3_ACCESS_KEY_ID=${FILES_S3_ACCESS_KEY_ID:-}
+      - FILES_S3_SECRET_ACCESS_KEY=${FILES_S3_SECRET_ACCESS_KEY:-}
+      - KG_LLM_ENABLED=${KG_LLM_ENABLED:-}
+      - KG_LLM_PROVIDER=${KG_LLM_PROVIDER:-}
+      - KG_LLM_MODEL=${KG_LLM_MODEL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    networks: [default, files_internal]
+    mem_limit: ${FILES_WORKER_MEM_LIMIT:-1g}
+    cpus: ${FILES_WORKER_CPUS:-1.0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Lets a running slice finish and release its lease (scheduler waits 20 s).
+    stop_grace_period: 30s
+    # The image's own healthcheck probes the backend on :4000; the worker
+    # answers on its internal port.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 -O /dev/null --header \"X-Worker-Token: $${FILES_WORKER_TOKEN}\" http://127.0.0.1:8891/internal/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  file-extractor:
+    image: ${FILE_EXTRACTOR_IMAGE:-anythingmcp-file-extractor:3}
+    build:
+      context: ./deploy/ee/file-extractor
+    profiles: [files]
+    container_name: amcp-cloud-file-extractor
+    environment:
+      - EXTRACTOR_TOKEN=${FILE_EXTRACTOR_TOKEN:-}
+    networks: [files_internal]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: ${FILE_EXTRACTOR_MEM_LIMIT:-1536m}
+    cpus: ${FILE_EXTRACTOR_CPUS:-1.0}
+    pids_limit: 128
+    restart: unless-stopped
 
   # PostgreSQL Database
   postgres:
@@ -415,3 +548,8 @@ volumes:
   caddy_data:
   caddy_config:
   diagnostics:
+
+networks:
+  # The text extractor has no route out (File Search).
+  files_internal:
+    internal: true

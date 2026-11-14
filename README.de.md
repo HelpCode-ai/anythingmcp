@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP macht ERP-, E-Commerce-, REST-, SOAP- und SQL-Systeme zu MCP-Tools für Claude und ChatGPT: 545 Connectors, 25 davon ohne API-Schlüssel." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.de.png" alt="AnythingMCP verbindet Claude, ChatGPT, Copilot und Gemini mit ERP-, E-Commerce-, REST-, SOAP- und SQL-Systemen und mit deinen Fileservern: 732 Connectors, dazu Firmengedächtnis, Skills und Dateisuche." width="100%" />
 </p>
 
-<h1 align="center">AnythingMCP: selbst gehostetes MCP-Gateway</h1>
+<h1 align="center">AnythingMCP: das Open-Source-MCP-Gateway, das zum Gehirn deines Unternehmens wird</h1>
 
 <p align="center">
   <a href="https://www.star-history.com/helpcode-ai/anythingmcp">
@@ -18,12 +18,14 @@
 </p>
 
 <p align="center">
-  <strong>AnythingMCP ist ein quelloffenes, selbst gehostetes MCP-Gateway, das jedes REST-/OpenAPI-, SOAP-, GraphQL-, OData- oder SQL-System in MCP-Tools für Claude, ChatGPT und Copilot verwandelt, ohne dass du einen MCP-Server programmierst.</strong><br/>
-  Es bringt 545 fertige Adapter mit, darunter SAP, Etsy, weclapp und Amazon Seller; 25 davon kommen ohne API-Schlüssel aus.
+  <strong>AnythingMCP ist ein quelloffenes, selbst gehostetes MCP-Gateway, das Claude, ChatGPT, Copilot und Gemini mit der Software deines Unternehmens und mit den Dokumenten auf deinen Fileservern verbindet, ohne dass du einen MCP-Server programmierst.</strong><br/>
+  Auf dem Gateway baut es das Gehirn deines Unternehmens auf: einen Knowledge Graph, der zeigt, wie deine Systeme zusammenhängen, dazu KI-Skills und ein Firmengedächtnis. Jeder KI-Client nutzt dasselbe, jeweils begrenzt durch die Rolle der Person.<br/>
+  731 fertige Connectors mit über 12.000 Tools, darunter SAP, Odoo, weclapp und Amazon Seller; 42 davon kommen ohne API-Schlüssel aus.
 </p>
 
 <p align="center">
   <a href="https://claude.ai/directory/anythingmcp"><img src="https://img.shields.io/badge/Claude-im%20offiziellen%20Verzeichnis-D97757?logo=claude&logoColor=white&labelColor=0b1220" alt="Im offiziellen Claude-Verzeichnis gelistet"></a>
+  <a href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121"><img src="https://img.shields.io/badge/ChatGPT-im%20Plugin--Verzeichnis-10A37F?logo=openai&logoColor=white&labelColor=0b1220" alt="Im ChatGPT-Plugin-Verzeichnis gelistet"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/stargazers"><img src="https://img.shields.io/github/stars/HelpCode-ai/anythingmcp?style=flat&logo=github&logoColor=white&color=2563eb&labelColor=0b1220" alt="GitHub Stars"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/releases"><img src="https://img.shields.io/github/v/release/HelpCode-ai/anythingmcp?include_prereleases&color=2563eb&labelColor=0b1220" alt="Release"></a>
   <a href="https://github.com/HelpCode-ai/anythingmcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/open%20source-AGPL--3.0-2563eb?labelColor=0b1220" alt="Open source, AGPL-3.0"></a>
@@ -31,12 +33,37 @@
 </p>
 
 <p align="center">
-  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>Die Cloud 7 Tage kostenlos testen</strong></a> · <a href="https://claude.ai/directory/anythingmcp">Zu Claude hinzufügen</a> · <a href="#run-it-yourself">Selbst betreiben</a> · <a href="docs/guides.md">Doku</a> · <a href="https://anythingmcp.com/de/guides">Connector-Anleitungen</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
+  <strong>Über 16.000 Workspaces in der AnythingMCP Cloud</strong> · <strong>über 1,5 Mio. KI-Tool-Aufrufe im Monat</strong> · <strong>im offiziellen Claude-Verzeichnis gelistet</strong>
+</p>
+
+<p align="center">
+  <a href="https://cloud.anythingmcp.com/login?mode=register"><strong>Die Cloud 7 Tage kostenlos testen</strong></a> · <a href="https://claude.ai/directory/anythingmcp">Zu Claude hinzufügen</a> · <a href="https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121">Zu ChatGPT hinzufügen</a> · <a href="#run-it-yourself">Selbst betreiben</a> · <a href="docs/guides.md">Doku</a> · <a href="https://anythingmcp.com/de/guides">Connector-Anleitungen</a> · <a href="https://github.com/HelpCode-ai/anythingmcp/discussions">Discussions</a>
 </p>
 
 **Eine Frage in Claude, beantwortet aus Etsy, SAP und einer Logistik-API.**
 
 https://github.com/user-attachments/assets/cc8c9ef3-11cf-4eab-aa4d-98472dc554b3
+
+---
+
+<a id="what-your-ai-gets"></a>
+
+## Was deine KI bekommt
+
+Ein Gateway reicht Aufrufe weiter. Ein Firmengehirn weiß außerdem, wo deine Dokumente liegen, wie deine Systeme zusammenhängen und was dein Unternehmen schon entschieden hat. AnythingMCP gibt jedem KI-Client beides, über einen einzigen MCP-Endpunkt:
+
+| | Was es macht | Edition |
+|---|---|---|
+| **Jedes System, ein Endpunkt** | 732 Connectors aus dem Katalog oder deine eigene REST-/OpenAPI-, SOAP-, GraphQL-, OData-, SQL-, IMAP/SMTP- oder MCP-Quelle. Tools werden zur Laufzeit registriert. [Connectors](#connect-any-api-soap-service-or-database) | Alle |
+| **File Search** | Indexiert SFTP, FTP/FTPS, WebDAV (Nextcloud, NAS), S3 oder eine Netzwerkfreigabe: jede PDF-Seite, Excel-Zeilen mit ihren Spaltennamen, Word, PowerPoint, Outlook-Mails mit Anhängen. Die KI antwortet mit Datei, Seite und Datum. [File Search](docs/connectors/file-search.md) | Cloud; selbst gehostet Enterprise |
+| **File Share** | Befristete Download-Links für Dateien aus deinen Ordnern oder für Dateien, die die KI erstellt (einen CSV-Export, einen Bericht), intern oder öffentlich, mit Ablaufdatum und Widerruf. [File Share](docs/connectors/file-search.md) | Cloud; selbst gehostet Enterprise |
+| **Firmengedächtnis** | Fakten und Vorlieben, in einem KI-Client gespeichert und in jedem anderen wiedergefunden: einmal in Claude gesagt, von Copilot genutzt. Persönlicher und firmenweiter Bereich, mit Ordnern und Rollengrenzen. [Gedächtnis](docs/memory.md) | Enterprise |
+| **KI-Skills** | Die Abläufe, denen deine Agenten folgen, von Hand geschrieben oder aus echten Anfragen und behobenen Fehlern gelernt und von einem Admin freigegeben. [KI-Skills](docs/knowledge-graph.md#ai-skills) | Alle |
+| **Knowledge Graph** | Wie deine Systeme zusammenhängen, damit der Agent einen Kunden im einen System mit seinen Aufträgen im anderen verknüpft, ohne dass man es ihm sagen muss. [Knowledge Graph](docs/knowledge-graph.md) | Alle |
+| **Code Mode** | Ein kurzes Programm ruft mehrere Tools in einer isolierten Sandbox auf, ohne Secrets und ohne Netzwerk; aus einer Abfrage in fünf Schritten wird so ein einziger Aufruf. [Code Mode](docs/code-mode.md) | Alle; Schreibzugriff Enterprise |
+| **Governance** | Rollen und Berechtigungen pro Tool, Response-Mapping, das Felder entfernt, bevor sie das Modell erreichen, und ein Audit-Log jedes Aufrufs. SSO und SCIM aus deinem Verzeichnis. [Sicherheit](#security-and-governance) | Alle; SSO/SCIM Enterprise |
+
+Die selbst gehostete Community-Edition ist unter AGPL-3.0 für jede Nutzung kostenlos, auch kommerziell, für bis zu 3 aktive Nutzer und mit unbegrenzt vielen Connectors und MCP-Servern. Mehr Nutzer, Single Sign-On, SCIM, File Search nach dem 30-tägigen Test und Support gibt es mit Enterprise, auf Anfrage: [Kontakt](https://anythingmcp.com/contact?plan=enterprise). Administratoren können Single Sign-On und SCIM unter **Settings → License** 30 Tage lang testen. Bestehende Starter- und Team-Lizenzschlüssel funktionieren weiter.
 
 ---
 
@@ -67,7 +94,7 @@ Der Quickstart bindet absichtlich nur an `127.0.0.1`, weil davor nichts TLS term
 
 <br/>
 
-[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) ist derselbe AGPL-Code, von uns in **Frankfurt** betrieben, mit 7 Tagen kostenlosem Test. Probier es dort mit deinen eigenen APIs aus und hol es ins eigene Haus, sobald die Zugangsdaten nicht mehr reisen sollen; die Connectors bleiben dieselben. AVV/DPA auf Anfrage über [info@helpcode.ai](mailto:info@helpcode.ai). SSO und SCIM gibt es nur selbst gehostet.
+[**AnythingMCP Cloud**](https://cloud.anythingmcp.com) ist derselbe AGPL-Code, von uns in **Frankfurt** betrieben, mit 7 Tagen kostenlosem Test. Probier es dort mit deinen eigenen APIs aus und hol es ins eigene Haus, sobald die Zugangsdaten nicht mehr reisen sollen; die Connectors bleiben dieselben. AVV/DPA auf Anfrage über [info@helpcode.ai](mailto:info@helpcode.ai). SSO und SCIM gibt es nur selbst gehostet, mit Enterprise-Lizenz.
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
 &nbsp;
@@ -101,6 +128,7 @@ Die meisten Unternehmen haben noch keine MCP-Server. Sie haben eine REST-API, ei
 | **GraphQL** | Introspection macht aus Queries und Mutations Tools, oder du definierst die Operationen selbst | [GraphQL](docs/connectors/graphql.md) · [Anleitung](https://anythingmcp.com/de/guides/graphql-to-mcp) |
 | **OData** (inklusive SAP Gateway) | Liest das `$metadata` jedes Dienstes, sodass das Modell Entitätsmengen, Schlüssel und die fachlichen SAP-Bezeichnungen sieht; V2 und V4 | [OData](docs/connectors/odata.md) · [Anleitung](https://anythingmcp.com/de/guides/odata-to-mcp) |
 | **SQL und MongoDB** | PostgreSQL, MySQL, MariaDB, SQL Server, Oracle, SAP HANA, SQLite und MongoDB: Schema-, Beispiel- und Abfrage-Tools, standardmäßig nur lesend | [Datenbank](docs/connectors/database.md) · [SAP HANA](docs/connectors/sap-hana.md) · [Anleitung](https://anythingmcp.com/de/guides/database-to-mcp) · [Demo: sql-to-mcp](https://github.com/HelpCode-ai/sql-to-mcp) |
+| **E-Mail (IMAP/SMTP)** | Jedes Postfach (IONOS, Strato, GMX, T-Online, Gmail mit App-Passwort, eigener Mailserver): Ordner auflisten, suchen, mit Anhängen lesen, markieren, verschieben, Entwürfe speichern und senden | [E-Mail](docs/connectors/email.md) |
 | **Ein anderer MCP-Server** | Seine Tools erkennen und neben deinen eigenen bereitstellen, hinter derselben Authentifizierung und demselben Audit | [MCP-Bridge](docs/connectors/mcp-bridge.md) |
 
 Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connector werden auf dem Server eingesetzt und der KI nie gezeigt.
@@ -111,7 +139,7 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 ## Connector-Katalog
 
-545 Adapter mit über 2.400 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
+732 Adapter mit über 12.000 Tools. Zu jedem gibt es eine Einrichtungsanleitung auf [anythingmcp.com/de/guides](https://anythingmcp.com/de/guides), in sieben Sprachen.
 
 | Kategorie | Beispiele |
 |---|---|
@@ -194,13 +222,13 @@ Tools werden zur Laufzeit registriert, ohne Neustart. `{{VAR}}`-Werte pro Connec
 
 ## Sicherheit und Governance
 
-Alles läuft auf deiner Infrastruktur, du entscheidest also, was sie verlässt. OAuth2, RBAC, SSO und SCIM sind im selbst gehosteten Build enthalten und werden nicht einem kostenpflichtigen Tarif vorbehalten.
+Alles läuft auf deiner Infrastruktur, du entscheidest also, was sie verlässt. OAuth2, Rollen, Berechtigungen pro Tool, Response-Mapping und das Audit-Log sind in jeder Edition enthalten; SSO und SCIM brauchen eine Enterprise-Lizenz (ein 30-tägiger Test ist eingebaut).
 
 - **Response-Mapping.** Jedes Tool legt fest, welche Felder das Modell erreichen: die IBAN eines Kunden oder das Gehalt einer Mitarbeiterin entfernen, oder die Felder benennen, die bleiben. Der Editor zeigt Vorher und Nachher an einer echten Antwort; ein mitgelieferter Adapter schrumpft von 12.172 B auf 1.072 B (−91 %), du zahlst diese Felder also auch nicht im Kontextfenster. Ein fehlerhaftes Mapping liefert standardmäßig die Rohantwort; setze `"fallbackToRaw": false` bei Tools, deren Felder niemals rausgehen dürfen, dann schlägt der Aufruf stattdessen fehl.
 - **Nur lesend, wo es darauf ankommt.** Jedes Tool trägt MCP-Annotationen (`readOnlyHint`, `destructiveHint`), aus der Operation abgeleitet und pro Tool überschreibbar. Mit rollenbasierten Tool-Whitelists veröffentlichst du einen MCP-Server, der nur lesen kann; so sollten die meisten mit einem ERP anfangen. Datenbank-Abfrage-Tools führen ein einzelnes SELECT aus und blockieren Schreibzugriffe und verkettete Statements.
 - **Jedes Auth-Verfahren, das dir begegnet.** OAuth2 (PKCE und Client Credentials), Bearer, API-Key, Basic, HMAC-Request-Signing, [LOGIN_TOKEN](docs/connectors/login-token-auth.md) und OAuth 1.0a. Zugangsdaten werden mit AES-256-GCM verschlüsselt gespeichert.
 - **Audit-Log.** Jeder Tool-Aufruf wird mit Eingabe, Ausgabe, Dauer und Status in deiner eigenen Datenbank protokolliert, einschließlich der vollständigen Antwort des Quellsystems, die das Modell nie gesehen hat.
-- **[SSO](docs/sso.md) und [SCIM](docs/scim-entra-setup.md).** Entra ID, Google, Okta, Auth0 oder jeder OIDC-Anbieter. Rollen werden bei jeder Anmeldung aus deinen Verzeichnisgruppen übernommen; wer im Verzeichnis deaktiviert wird, verliert Workspace-Zugang und MCP-API-Keys gleich mit.
+- **[SSO](docs/sso.md) und [SCIM](docs/scim-entra-setup.md)** (Enterprise). Entra ID, Google, Okta, Auth0 oder jeder OIDC-Anbieter. Rollen werden bei jeder Anmeldung aus deinen Verzeichnisgruppen übernommen; wer im Verzeichnis deaktiviert wird, verliert Workspace-Zugang und MCP-API-Keys gleich mit.
 
 ```json
 {
@@ -224,20 +252,23 @@ Alles läuft auf deiner Infrastruktur, du entscheidest also, was sie verlässt. 
 Derselbe MCP-Server funktioniert in jedem Client, der MCP spricht; du baust einen Connector also nur einmal:
 
 - **Claude.** Trag die Server-URL als **benutzerdefinierten Connector** unter *Customize → Connectors* ein; danach funktioniert er in Claude.ai, Claude Desktop und Claude Code. OAuth 2.0 wird direkt unterstützt. Mit AnythingMCP Cloud geht es auch mit einem Klick über das [Claude-Verzeichnis](https://claude.ai/directory/anythingmcp). [Claude einrichten](docs/integrations/claude.md)
-- **ChatGPT.** Apps in ChatGPT basieren auf MCP. Füge den Server in ChatGPT unter *Plugins* hinzu (*+ → Add custom MCP server*) oder nutze ihn als Tool-Schicht einer Apps-SDK-App. [ChatGPT einrichten](docs/integrations/chatgpt.md)
+- **ChatGPT.** Apps in ChatGPT basieren auf MCP. Füge den Server in ChatGPT unter *Plugins* hinzu (*Add → Add custom MCP server*) oder nutze ihn als Tool-Schicht einer Apps-SDK-App. [ChatGPT einrichten](docs/integrations/chatgpt.md)
 - **Meta Muse.** Öffne in Muse *Settings → Connectors → Add custom connector*, füge die Server-URL ein und melde dich bei AnythingMCP an. [Muse einrichten](docs/integrations/muse.md)
 - **Copilot, Gemini, Cursor** und andere MCP-Clients: [Anleitungen zur Client-Einrichtung](docs/guides.md).
 
 ---
 
-<a id="knowledge-graph-and-ai-skills"></a>
+<a id="company-brain-knowledge-graph-ai-skills-and-memory"></a>
 
-## Knowledge Graph und KI-Skills
+## Firmengehirn: Knowledge Graph, KI-Skills und Firmengedächtnis
 
 Wer Aufrufe nur weiterreicht, überlässt dem Agenten den schwierigen Teil: zu wissen, welches Tool als Nächstes dran ist und was dein Unternehmen mit „offener Auftrag" meint. AnythingMCP lernt beides und gibt es als Kontext zurück, nicht als zusätzliche Tool-Aufrufe.
 
 - **Knowledge Graph.** Eine Karte pro Workspace mit Entitäten (Kunden, Aufträge, Produkte) und ihren Beziehungen über Connectors hinweg, aufgebaut aus Tool-Definitionen und echten Aufrufen und von Hand bearbeitbar. Gespeichert werden Feldnamen und Beziehungen, nie Werte. Jeder Server stellt ihn über ein Tool `kg_how_to_obtain` bereit, damit der Agent fragen kann, wie er von einer Shopware-Bestellung zur DHL-Sendungsnummer kommt.
-- **KI-Skills.** Wiederkehrende Nutzung wird zu kleinen Regeln („der heutige Umsatz umfasst die Auftragsstatus 2, 3 und 4"), die du übernimmst, bearbeitest oder verwirfst und die in die Anweisungen des Servers einfließen.
+- **KI-Skills.** Wiederkehrende Nutzung wird zu kleinen Regeln („der heutige Umsatz umfasst die Auftragsstatus 2, 3 und 4") und zu Abläufen Schritt für Schritt, von Hand geschrieben oder aus echten Anfragen und behobenen Fehlern gelernt. Sie sind versioniert und werden von einem Admin freigegeben, bevor sie in die Anweisungen des Servers einfließen.
+- **Firmengedächtnis** (Enterprise). KI-Clients speichern Fakten, Vorlieben und Notizen mit `memory_save` und finden sie mit `memory_search` wieder, in jedem Client, der mit dem Workspace verbunden ist. *Mein Gedächtnis* bleibt privat für eine Person; das *Firmengedächtnis* („STAMMKUNDE heißt: Kunde mit Rahmenvertrag") gilt für alle, in Ordnern, die nach Rolle begrenzt sind. Es wird als von Menschen geschriebene Information ausgeliefert, nie als Anweisung. [Anleitung zum Gedächtnis](docs/memory.md)
+
+Wechsle den Assistenten, behalte das Gehirn: heute Copilot, morgen Claude, heute Nacht ein n8n-Agent, und alle finden denselben Graph, dieselben Skills und dasselbe Gedächtnis.
 
 Die KI-Durchläufe sind standardmäßig aus und nutzen deinen eigenen Schlüssel für OpenAI, OpenRouter oder Anthropic; Graph, Editor und MCP-Tool funktionieren auch ohne. [Anleitung zum Knowledge Graph](docs/knowledge-graph.md)
 
@@ -270,6 +301,18 @@ Ja. AnythingMCP liest die WSDL, macht aus jeder Operation ein Tool und baut bei 
 ### Kann Claude meine SQL-Server-, Oracle- oder PostgreSQL-Datenbank sicher abfragen?
 Abfrage-Tools sind standardmäßig nur lesend. Zusätzlich: einen Datenbankbenutzer nur mit SELECT-Rechten verwenden, statische Abfragen bevorzugen, bei denen das Modell nur die Parameter liefert, und die Tools pro Rolle freigeben. Das Response-Mapping entfernt Spalten, die das Modell nicht erreichen dürfen, und jede Abfrage landet in deinem Audit-Log.
 
+### Wie lasse ich Claude oder ChatGPT die Dokumente auf unserem Fileserver durchsuchen?
+Leg einen **File Search**-Connector an und verbinde ihn per SFTP, FTP/FTPS, WebDAV (Nextcloud, ownCloud, Synology- oder QNAP-NAS), S3 oder über eine eingebundene Netzwerkfreigabe mit dem Ordner. AnythingMCP indexiert PDFs Seite für Seite, Excel-Zeilen mit ihren Spaltennamen, Word, PowerPoint und Outlook-Mails, hält den Index aktuell und gibt jedem KI-Client die Tools `search`, `find`, `grep` und `read`, die mit Datei, Seite und Datum antworten. Ordnerberechtigungen pro Rolle gibt es mit Enterprise. [Doku zu File Search](docs/connectors/file-search.md)
+
+### Können ChatGPT, Claude und Copilot dasselbe Firmengedächtnis nutzen?
+Ja. Mit dem Workspace-Gedächtnis (Enterprise) finden die anderen KI-Clients alles, was in einem davon gespeichert wurde, denn das Gedächtnis liegt in AnythingMCP und nicht im Client. Persönliche Einträge sieht nur, wer sie angelegt hat; Firmeneinträge werden innerhalb der Ordner- und Rollengrenzen geteilt. [Doku zum Gedächtnis](docs/memory.md)
+
+### Was ist ein Firmengehirn für KI-Agenten?
+Das Wissen, das eine KI über den reinen Tool-Zugriff hinaus braucht: wo deine Dokumente liegen, wie deine Systeme verknüpft sind (der Knowledge Graph), wie dein Unternehmen arbeitet (KI-Skills) und was es entschieden hat (Firmengedächtnis). AnythingMCP hält all das in deiner eigenen Instanz und stellt es jedem MCP-Client bereit, jeweils im Rahmen der Rolle der Person.
+
+### Kann ein KI-Agent sicher Code gegen meine Tools ausführen?
+Mit Code Mode ruft ein kurzes JavaScript-Programm mehrere Tools in einem Schritt auf. Es läuft in einem eigenen Code-Runner-Container ohne Dateisystem, Netzwerk, Umgebungsvariablen oder Secrets; es kann nur die Tools aufrufen, die die Person ohnehin nutzen darf, und jeder innere Aufruf wird wie ein direkter Aufruf geprüft und protokolliert. Es bleibt aus, bis ein Betreiber es einschaltet. [Doku zu Code Mode](docs/code-mode.md)
+
 ### Wie verbinde ich Shopware, WooCommerce oder Amazon Seller Central mit Claude?
 Installiere den [E-Commerce-Adapter](#e-commerce--marketplace-connectors) für deinen Shop oder Marktplatz und autorisiere ihn. WooCommerce bringt 49 Tools mit, Amazon Seller Central nutzt die offizielle Selling Partner API, und der Shopware-6-Adapter liest den Storefront-Katalog über die Store API.
 
@@ -284,6 +327,7 @@ Installiere den [E-Commerce-Adapter](#e-commerce--marketplace-connectors) für d
 - 👥 **Anwender:** [wer AnythingMCP produktiv einsetzt](docs/ADOPTERS.md) und wie du dich einträgst
 - 🔐 **Sicherheit:** bitte kein öffentliches Issue öffnen, sondern der [Sicherheitsrichtlinie](.github/SECURITY.md) folgen
 - 🤖 **Für KI-Agenten und Crawler:** [anythingmcp.com/llms.txt](https://anythingmcp.com/llms.txt)
+- 🤖 **Repository-Dokumentation für KI-Agenten:** [llms.txt](llms.txt) · [Volltext](llms-full.txt)
 - 🏢 Entwickelt von [helpcode.ai](https://helpcode.ai) in Freiburg. KI-gestützt entwickelt, von Menschen geprüft: [AUTHORS.md](docs/AUTHORS.md) erklärt, welche Teile und wie.
 
 ## Mitwirken
@@ -292,4 +336,4 @@ Lies vor einem PR die [Contributing-Anleitung](.github/CONTRIBUTING.md). Der ein
 
 ## License
 
-**Open Source** unter der [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Kommerzielle Nutzung im eigenen Unternehmen ist erlaubt und war es schon immer; die Copyleft-Pflicht beginnt erst, wenn du AnythingMCP veränderst und die veränderte Version anderen über ein Netzwerk anbietest. Code für Cloud-Betreiber unter `ee/` ist gesondert lizenziert und für den Selbstbetrieb nicht nötig; siehe [Lizenz-FAQ](docs/license-faq.md).
+**Open Source** unter der [GNU Affero General Public License v3](LICENSE) (AGPL-3.0-only). Kommerzielle Nutzung im eigenen Unternehmen ist erlaubt und war es schon immer; die Copyleft-Pflicht beginnt erst, wenn du AnythingMCP veränderst und die veränderte Version anderen über ein Netzwerk anbietest. Code unter `ee/` (Cloud-Betrieb, die Sync-Engine von File Search, Edition-Lizenzierung) steht unter der AnythingMCP Commercial License und ist für den Betrieb des Gateways nicht nötig; siehe [Lizenz-FAQ](docs/license-faq.md).

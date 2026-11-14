@@ -7,6 +7,7 @@ import {
   connectorInstructionsUri,
   serverInstructionsUri,
 } from './mcp-resources';
+import { withRegistryIndexes } from './registry-test-double';
 
 /**
  * Regression tests for cross-tenant isolation on the per-server MCP endpoint.
@@ -33,6 +34,7 @@ describe('McpEndpointController — tenant isolation', () => {
     const res: any = {};
     res.status = jest.fn().mockReturnValue(res);
     res.json = jest.fn().mockReturnValue(res);
+    res.setHeader = jest.fn();
     res.headersSent = false;
     return res;
   };
@@ -46,7 +48,7 @@ describe('McpEndpointController — tenant isolation', () => {
         .mockResolvedValue({ instructions: undefined, connectors: [], resources: [] }),
       isUserInOrganization: jest.fn().mockResolvedValue(false),
     };
-    toolRegistry = { getAllTools: jest.fn().mockReturnValue([]) };
+    toolRegistry = withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) });
     toolExecutor = { executeTool: jest.fn() };
     rolesService = { getAllowedToolIds: jest.fn().mockResolvedValue(null) };
     const kgService = {
@@ -76,8 +78,10 @@ describe('McpEndpointController — tenant isolation', () => {
 
   it('denies a non-member whose org differs and has no membership (cross-tenant)', async () => {
     // org-B user, NOT a member of org-A → isUserInOrganization returns false.
+    const warn = jest.spyOn((controller as any).logger, 'warn').mockImplementation(() => undefined);
     const req: any = {
       user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' },
+      headers: { host: 'cloud.anythingmcp.com', 'x-forwarded-proto': 'https', authorization: 'Bearer tok' },
     };
     const res = makeRes();
 
@@ -87,9 +91,130 @@ describe('McpEndpointController — tenant isolation', () => {
       'u-b',
       'org-A',
     );
-    expect(res.status).toHaveBeenCalledWith(403);
+    // A sign-in for the wrong workspace: 401 + invalid_token, so the client
+    // runs OAuth again instead of retrying the same token forever (#1609).
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'WWW-Authenticate',
+      'Bearer realm="AnythingMCP MCP Server", error="invalid_token", ' +
+        'error_description="This sign-in is not a member of the workspace that owns this MCP server", ' +
+        'resource_metadata="https://cloud.anythingmcp.com/.well-known/oauth-protected-resource/mcp/srv-A"',
+    );
+    expect(res.json.mock.calls[0][0].error.message).toMatch(/different workspace/);
+    expect(warn.mock.calls.map((c) => String(c[0])).some((m) => m.includes('caller is not a member'))).toBe(true);
     // Must short-circuit before touching the server's connectors/tools.
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+  });
+
+  it('keeps the 403 for an API key of another workspace (signing in again would not help)', async () => {
+    const req: any = {
+      user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'mcp_api_key', apiKeyName: 'laptop' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.setHeader).not.toHaveBeenCalledWith('WWW-Authenticate', expect.anything());
+    expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+  });
+
+  describe('refusal marker for the refresh grant', () => {
+    let refusals: { mark: jest.Mock };
+    let marked: McpEndpointController;
+
+    beforeEach(() => {
+      refusals = { mark: jest.fn().mockResolvedValue(undefined) };
+      marked = new McpEndpointController(
+        mcpServersService,
+        toolRegistry,
+        toolExecutor,
+        rolesService,
+        (controller as any).kgService,
+        (controller as any).sessionManager,
+        grants as any,
+        { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        refusals as any,
+      );
+      jest.spyOn((marked as any).logger, 'warn').mockImplementation(() => undefined);
+    });
+
+    it('marks the refusal for the client of a JWT non-member before answering 401', async () => {
+      const order: string[] = [];
+      refusals.mark.mockImplementation(async () => {
+        order.push('mark');
+      });
+      const res = makeRes();
+      res.status = jest.fn((code: number) => {
+        order.push(`status ${code}`);
+        return res;
+      });
+      const req: any = {
+        user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt', azp: 'client-1' },
+        headers: { authorization: 'Bearer tok' },
+      };
+
+      await marked.handlePost('srv-A', req, res, {});
+
+      expect(refusals.mark).toHaveBeenCalledWith('u-b', 'client-1', 'srv-A');
+      expect(order).toEqual(['mark', 'status 401']);
+    });
+
+    it('still answers 401 when the marker cannot be written', async () => {
+      refusals.mark.mockRejectedValue(new Error('redis down'));
+      const res = makeRes();
+      await marked.handlePost(
+        'srv-A',
+        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt', azp: 'client-1' }, headers: {} } as any,
+        res,
+        {},
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('does not mark an app JWT without an OAuth client', async () => {
+      const res = makeRes();
+      await marked.handlePost(
+        'srv-A',
+        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' }, headers: {} } as any,
+        res,
+        {},
+      );
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(refusals.mark).not.toHaveBeenCalled();
+    });
+
+    it('does not mark for an API key of another workspace', async () => {
+      const res = makeRes();
+      await marked.handlePost(
+        'srv-A',
+        {
+          user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'mcp_api_key', azp: 'client-1' },
+          headers: {},
+        } as any,
+        res,
+        {},
+      );
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(refusals.mark).not.toHaveBeenCalled();
+    });
+
+    it('does not mark a member', async () => {
+      mcpServersService.isUserInOrganization.mockResolvedValue(true);
+      await marked.handlePost(
+        'srv-A',
+        { user: { sub: 'u-multi', organizationId: 'org-B', authMethod: 'jwt', azp: 'client-1' }, headers: {} } as any,
+        makeRes(),
+        {},
+      );
+      expect(refusals.mark).not.toHaveBeenCalled();
+    });
   });
 
   describe('subscriptions/listen', () => {
@@ -100,11 +225,11 @@ describe('McpEndpointController — tenant isolation', () => {
       const res = makeRes();
       await controller.handlePost(
         'srv-A',
-        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' } } as any,
+        { user: { sub: 'u-b', organizationId: 'org-B', authMethod: 'jwt' }, headers: {} } as any,
         res,
         LISTEN,
       );
-      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.status).toHaveBeenCalledWith(401);
       expect((controller as any).serveStateless).not.toHaveBeenCalled();
     });
 
@@ -165,6 +290,36 @@ describe('McpEndpointController — tenant isolation', () => {
     expect((controller as any).kgService.captureIntentEnabled).toHaveBeenCalledWith('org-A', 'u-multi');
   });
 
+  // An API key belongs to the workspace it was created in: unlike a sign-in,
+  // it does not reach the servers of the owner's other workspaces.
+  it("refuses an API key on a server of the owner's other workspace, even for a member", async () => {
+    mcpServersService.isUserInOrganization.mockResolvedValue(true);
+    const req: any = {
+      user: { sub: 'u-multi', organizationId: 'org-B', authMethod: 'mcp_api_key', apiKeyName: 'laptop' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mcpServersService.isUserInOrganization).not.toHaveBeenCalled();
+    expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+  });
+
+  it("serves an API key on a server of the key's own workspace", async () => {
+    const req: any = {
+      user: { sub: 'u-multi', organizationId: 'org-A', authMethod: 'mcp_api_key', apiKeyName: 'laptop' },
+      headers: {},
+    };
+    const res = makeRes();
+
+    await controller.handlePost('srv-A', req, res, {});
+
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+  });
+
   it('logs who was refused (ids and key name, no secret) and tells the client why', async () => {
     const warn = jest.spyOn((controller as any).logger, 'warn').mockImplementation(() => undefined);
     const req: any = {
@@ -194,12 +349,13 @@ describe('McpEndpointController — tenant isolation', () => {
   });
 
   it('denies when the caller organization cannot be determined (fail closed)', async () => {
-    const req: any = { user: { authMethod: 'jwt' } }; // no organizationId
+    const req: any = { user: { authMethod: 'jwt' }, headers: {} }; // no organizationId
     const res = makeRes();
 
     await controller.handlePost('srv-A', req, res, {});
 
-    expect(res.status).toHaveBeenCalledWith(403);
+    // Still refused; as a sign-in, with the 401 that makes the client sign in again.
+    expect(res.status).toHaveBeenCalledWith(401);
     expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
   });
 
@@ -233,6 +389,34 @@ describe('McpEndpointController — tenant isolation', () => {
       controller.handlePost('srv-A', req, res, {}),
     ).resolves.toBeUndefined();
 
+    // Two distinct connectors: the second copy is listed under its own name,
+    // so nothing is skipped and nothing is logged.
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Duplicate tool name "etsy_get_authenticated_user"'),
+    );
+  });
+
+  it('skips and logs the same connector assigned twice', async () => {
+    const tool = {
+      id: 'c1:etsy_get_authenticated_user',
+      connectorId: 'c1',
+      name: 'etsy_get_authenticated_user',
+      description: 'whoami',
+      parameters: { type: 'object', properties: {} },
+      connectorConfig: { envVars: {} },
+    };
+    mcpServersService.getConnectorIds.mockResolvedValue(['c1']);
+    toolRegistry.getAllTools.mockReturnValue([tool, { ...tool }]);
+    const warnSpy = jest
+      .spyOn((controller as any).logger, 'warn')
+      .mockImplementation(() => undefined);
+    const req: any = {
+      user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' },
+      headers: {},
+    };
+    await expect(
+      controller.handlePost('srv-A', req, makeRes(), {}),
+    ).resolves.toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('Duplicate tool name "etsy_get_authenticated_user"'),
     );
@@ -328,7 +512,7 @@ describe('McpEndpointController — keys created for a server', () => {
     };
     controller = new McpEndpointController(
       mcpServersService,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       { executeTool: jest.fn() } as any,
       { getAllowedToolIds: jest.fn().mockResolvedValue(null) } as any,
       {
@@ -432,6 +616,114 @@ describe('McpEndpointController — keys created for a server', () => {
  * silently produced {} for every tool carrying a followUp workflow hint (the
  * appended text is not JSON). The executor now hands back the object directly.
  */
+/**
+ * Several connectors on one server can expose the same tool name: every
+ * DATABASE connector has execute_query, and two configs of one provider share
+ * all their names. Each copy must stay listed and reach its own connector.
+ */
+describe('McpEndpointController — same tool name in several connectors', () => {
+  const dbTool = (connectorId: string, connectorName: string) => ({
+    id: `${connectorId}:execute_query`,
+    connectorId,
+    connectorName,
+    name: 'execute_query',
+    description: 'Run a read-only SQL query',
+    parameters: { type: 'object', properties: { sql: { type: 'string' } } },
+    connectorType: 'DATABASE',
+    connectorConfig: { envVars: {} },
+  });
+
+  function plan(serverTools: any[]) {
+    const toolExecutor = {
+      executeTool: jest.fn().mockResolvedValue({ content: [{ type: 'text', text: '[]' }] }),
+    };
+    const controller = new McpEndpointController(
+      { findById: jest.fn() } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
+      toolExecutor as any,
+      { getAllowedToolIds: jest.fn() } as any,
+      { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
+      { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
+      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
+    );
+    const entries = (controller as any).planToolSet({
+      serverTools,
+      allowedToolIds: null,
+      captureIntent: false,
+      invocationContext: {
+        organizationId: 'org-A',
+        mcpServerId: 'srv-A',
+        connectorIds: serverTools.map((t) => t.connectorId),
+      },
+    });
+    const registered = new Map<string, { config: any; handler: any }>();
+    const fakeMcpServer = {
+      registerTool: (name: string, config: any, handler: any) => {
+        registered.set(name, { config, handler });
+        return {};
+      },
+    };
+    for (const e of entries) e.register(fakeMcpServer);
+    return { entries, registered, toolExecutor };
+  }
+
+  it('lists every copy: the first under the bare name, the others prefixed', () => {
+    const { entries } = plan([
+      dbTool('c1', 'Shop MySQL'),
+      dbTool('c2', 'Sales DB'),
+      dbTool('c3', 'context-forge-pg'),
+    ]);
+    expect(entries.map((e: any) => e.name)).toEqual([
+      'execute_query',
+      'sales_db_execute_query',
+      'context_forge_pg_execute_query',
+    ]);
+  });
+
+  it('routes each copy to its own connector', async () => {
+    const { registered, toolExecutor } = plan([
+      dbTool('c1', 'Shop MySQL'),
+      dbTool('c2', 'Sales DB'),
+    ]);
+    await registered.get('sales_db_execute_query')!.handler({ sql: 'select 1' });
+    await registered.get('execute_query')!.handler({ sql: 'select 2' });
+    expect(toolExecutor.executeTool).toHaveBeenNthCalledWith(
+      1,
+      'execute_query',
+      { sql: 'select 1' },
+      expect.objectContaining({ connectorIds: ['c2'], mcpServerId: 'srv-A' }),
+    );
+    expect(toolExecutor.executeTool).toHaveBeenNthCalledWith(
+      2,
+      'execute_query',
+      { sql: 'select 2' },
+      expect.objectContaining({ connectorIds: ['c1'] }),
+    );
+  });
+
+  it('names the connector in the description only when the name is shared', () => {
+    const shared = plan([dbTool('c1', 'Shop MySQL'), dbTool('c2', 'Sales DB')]);
+    expect(shared.registered.get('execute_query')!.config.description).toMatch(/^\[Shop MySQL\] /);
+    expect(shared.registered.get('sales_db_execute_query')!.config.description).toMatch(/^\[Sales DB\] /);
+    const single = plan([dbTool('c1', 'Shop MySQL')]);
+    expect(single.registered.get('execute_query')!.config.description).toBe('Run a read-only SQL query');
+  });
+
+  it('keeps prefixed names unique when two connectors have the same name', () => {
+    const { entries } = plan([
+      dbTool('c1', 'DB'),
+      dbTool('c2', 'DB'),
+      dbTool('c3', 'DB'),
+    ]);
+    expect(entries.map((e: any) => e.name)).toEqual([
+      'execute_query',
+      'db_execute_query',
+      'db_execute_query_2',
+    ]);
+  });
+});
+
 describe('McpEndpointController — structuredContent', () => {
   const TOOL = {
     id: 't1',
@@ -448,7 +740,7 @@ describe('McpEndpointController — structuredContent', () => {
     const toolExecutor = { executeTool: jest.fn().mockResolvedValue(executeResult) };
     const controller = new McpEndpointController(
       { findById: jest.fn() } as any,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       toolExecutor as any,
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
@@ -521,7 +813,7 @@ describe('McpEndpointController — structuredContent', () => {
     };
     const controller = new McpEndpointController(
       { findById: jest.fn() } as any,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       toolExecutor as any,
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
@@ -692,7 +984,7 @@ describe('McpEndpointController — skills_save_to_workspace', () => {
   function plan(serverTools: any[], create = jest.fn().mockResolvedValue({ id: 'sk-1', status: 'pending' })) {
     const controller = new McpEndpointController(
       { findById: jest.fn() } as any,
-      { getAllTools: jest.fn().mockReturnValue([]) } as any,
+      withRegistryIndexes({ getAllTools: jest.fn().mockReturnValue([]) }) as any,
       { executeTool: jest.fn() } as any,
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
@@ -988,7 +1280,7 @@ describe('McpEndpointController — resources and instructions follow the tool p
     };
     controller = new McpEndpointController(
       service,
-      { getAllTools: () => TOOLS } as any,
+      withRegistryIndexes({ getAllTools: () => TOOLS }) as any,
       { executeTool: jest.fn() } as any,
       rolesService,
       kgService,

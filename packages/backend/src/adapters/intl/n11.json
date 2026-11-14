@@ -1,0 +1,1153 @@
+{
+  "slug": "n11",
+  "name": "n11",
+  "description": "Run an n11 seller account from an AI agent: products with create, update, price and stock tasks and their results, category tree and attributes, orders as shipment packages with approval, splitting, pickup and invoice link, return requests and customer questions. API key and secret from the n11 seller panel.",
+  "aliases": [
+    "n11.com",
+    "n11 Satici API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "n11",
+  "docsUrl": "https://developer.n11.com",
+  "instructions": "## n11\nThis connector uses the **n11 seller integration API** on `https://api.n11.com` (documentation at developer.n11.com): products and their tasks on the current REST services, prices and stock, the category tree and attributes, orders as shipment packages with approval, package splitting and pickup requests, and, on n11's SOAP services (the only ones n11 offers for them), return requests, customer questions and invoice links.\n\n**Setup (about 5 minutes)**\n1. Sign in to the n11 seller panel (so.n11.com) and open **Hesabım > API Hesapları** (account > API accounts). Create an API account if there is none.\n2. Copy the **API anahtarı** (key) into `N11_APP_KEY` and the **API şifresi** (secret) into `N11_APP_SECRET`.\n3. Install and run `n11_list_products`.\n\n**How requests are signed**: the REST services take the key and secret in the `appkey` and `appsecret` headers; the SOAP services (returns, questions, invoice link) take them inside the request, which the connector fills in. A wrong pair answers 401 (`SellerApiUserUnauthorizedException`) or 403 `Authentication failed`. Since 15 August 2025 the category services need the key as well.\n\n**Products**: `n11_list_products` (filter by stock code, group code, sale or approval status, brand or category; `productStatus` InApproval means n11 waits for an action from you, CatalogRejected comes with `rejectInfo`). To create products take a leaf category from `n11_list_categories` (subCategories null), its attributes from `n11_get_category_attributes` (send every isMandatory attribute: valueId when isCustomValue is false, customValue otherwise; the same productMainId groups variants), then `n11_create_products`. Change data with `n11_update_products` (status Suspended takes a product off sale), prices and stock with `n11_update_price_and_stock`, and delete with `n11_delete_products` (switched off).\n\n**Every product write is a task.** Create, update, price and stock and delete answer with a task `id` and status `IN_QUEUE` (or `REJECT` with reasons). Call `n11_get_task_details` with that id until the status is `PROCESSED`, then read each stock code's `status` (SUCCESS or FAIL) and `reasons`. A 200 on the write only means the task was queued.\n\n**Orders**: `n11_list_shipment_packages` returns packages with their lines; each line has an `orderLineId`. The flow: status `Created` (new) > `n11_approve_order_lines` (to `Picking`) > ship with the n11 cargo campaign code in `cargoTrackingNumber` > `Shipped` > `Delivered`. Split a Picking package with `n11_split_package` (by line) or `n11_split_package_by_quantity` (by quantity, optionally cancelling quantities). Bulky goods: `n11_create_collection_request`. Labour costs for jewellery lines: `n11_send_labor_costs`. Invoice: `n11_send_invoice_link` (required with invoice number and date for e-export orders, where `micro` is true). Order data before November 2024 is not available.\n\n**Returns**: `n11_list_claim_returns` (status REQUESTED by default, ALL for all; search by order number with searchInfoType ORDERID), `n11_approve_claim_return`, `n11_postpone_claim_return` with a reason from `n11_list_return_pending_reasons`, and `n11_deny_claim_return` (switched off) with a reason from `n11_list_return_deny_reasons`.\n\n**Customer questions**: `n11_list_product_questions` (dates DD/MM/YYYY, open questions by default; once a minute), `n11_get_product_question`, and `n11_answer_product_question` after the user approved the text.\n\n**Writes: confirm first.** Prices, stock, product status, order approval, splits and cancellations, returns and answers act on the live store. Before each call show the user what changes (stock codes with old and new price or stock, lines, the answer text) and wait for a yes.\n\n**Reading the data**: order dates (`startDate`, `endDate`, `lastModifiedDate`, `invoiceDateTime`) are **epoch milliseconds in Turkey time (UTC+3)**, e.g. 1793318400000; the SOAP services use dd/mm/yyyy. Prices are in TL unless `currencyType` says USD or EUR; send prices with a dot and two decimals. Ids can grow longer over time (orderNumber, n11ProductId), so treat them as strings when you store them. The invoice amount of a line is `sellerInvoiceAmount` = price x quantity minus seller discounts.\n\n**Paging**: the REST lists start at page 0 and return `totalPages`; stop when `content` is empty. Products at most 250 per page, packages 100, returns 20 per page.\n\n**Limits**: the order list allows 1,000 requests a minute, product writes 1,000 stock codes per call, questions one list call a minute.\n",
+  "requiredEnvVars": [
+    "N11_APP_KEY",
+    "N11_APP_SECRET"
+  ],
+  "prerequisites": "An n11 seller account with an API account (seller panel > Hesabım > API Hesapları) and its key and secret.",
+  "envVarMeta": {
+    "N11_APP_KEY": {
+      "label": "API key (API anahtarı)",
+      "kind": "credential",
+      "help": "n11 seller panel (so.n11.com) > Hesabım > API Hesapları: the API key of your API account.",
+      "link": "https://so.n11.com",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the API key alone, without spaces."
+    },
+    "N11_APP_SECRET": {
+      "label": "API secret (API şifresi)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: the API secret of that account.",
+      "link": "https://so.n11.com",
+      "pattern": "^\\S{4,}$",
+      "patternMessage": "Paste the API secret alone, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "n11 refused the API key and secret. Copy both again from the seller panel (Hesabım > API Hesapları).",
+    "403": "n11 answered Authentication failed: the key and secret do not belong together or the API account is inactive.",
+    "rate_limited": "n11 limits the request rate (the order list allows 1,000 requests a minute, questions one list call a minute). Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "n11_list_products",
+    "params": {
+      "size": 1
+    }
+  },
+  "connector": {
+    "name": "n11 Seller API",
+    "type": "REST",
+    "baseUrl": "https://api.n11.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "appkey",
+      "apiKey": "{{N11_APP_KEY}}",
+      "extraHeaders": {
+        "appsecret": "{{N11_APP_SECRET}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "Envelope.Body.ClaimReturnListResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.ClaimReturnListResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.ClaimReturnDenyReasonTypesResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.ClaimReturnDenyReasonTypesResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.ClaimReturnPendingReasonTypesResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.ClaimReturnPendingReasonTypesResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.ClaimReturnApproveResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.ClaimReturnApproveResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.ClaimReturnPendingResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.ClaimReturnPendingResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.ClaimReturnDenyResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.ClaimReturnDenyResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.GetProductQuestionListResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.GetProductQuestionListResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.GetProductQuestionDetailResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.GetProductQuestionDetailResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.SaveProductAnswerResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.SaveProductAnswerResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.SaveLinkSellerInvoiceResponse.result.status",
+          "equals": "failure",
+          "messagePath": "Envelope.Body.SaveLinkSellerInvoiceResponse.result.errorMessage",
+          "status": 400
+        },
+        {
+          "path": "Envelope.Body.Fault.faultstring",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "n11_list_products",
+      "description": "List your n11 products: n11 product id, stock code, title, category, product main id (group), status, sale status, prices, stock, VAT and commission rate, attributes and images. Filter by id, stock code, group code, sale or approval status, brand or category; pages from 0, up to 250 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "n11 product id."
+          },
+          "productMainId": {
+            "type": "string",
+            "description": "Group code shared by the variants."
+          },
+          "stockCode": {
+            "type": "string",
+            "description": "Your stock code (one per call)."
+          },
+          "saleStatus": {
+            "type": "string",
+            "description": "On_Sale or Out_Of_Stock.",
+            "enum": [
+              "On_Sale",
+              "Out_Of_Stock"
+            ]
+          },
+          "productStatus": {
+            "type": "string",
+            "description": "Approval status: Active (approved), InCatalogApproval, Suspended, CatalogRejected, Prohibited, Unlisted, InApproval (action needed).",
+            "enum": [
+              "Active",
+              "InCatalogApproval",
+              "Suspended",
+              "CatalogRejected",
+              "Prohibited",
+              "Unlisted",
+              "InApproval"
+            ]
+          },
+          "brandName": {
+            "type": "string",
+            "description": "Brand name."
+          },
+          "categoryIds": {
+            "type": "string",
+            "description": "Comma-separated category ids."
+          },
+          "sender": {
+            "type": "string",
+            "description": "SELLER (you ship, default), N11 (n11depom warehouse) or ALL.",
+            "enum": [
+              "SELLER",
+              "N11",
+              "ALL"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Products per page, default 20, at most 250."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ms/product-query",
+        "queryParams": {
+          "id": "$id",
+          "productMainId": "$productMainId",
+          "stockCode": "$stockCode",
+          "saleStatus": "$saleStatus",
+          "productStatus": "$productStatus",
+          "brandName": "$brandName",
+          "categoryIds": "$categoryIds",
+          "sender": "$sender",
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "content[*].description"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_list_categories",
+      "description": "Get the whole n11 category tree in one call (id, parentId, name, subCategories). A category whose subCategories is null is a leaf; products are created in leaf categories only. Large answer: call it once and reuse the ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cdn/categories"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_get_category_attributes",
+      "description": "Get the attributes of a leaf category with their allowed values: attributeId, name, isMandatory, isVariant (same productMainId groups variants), isCustomValue (free text allowed) and the value ids. Needed before creating products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "integer",
+            "description": "Leaf category id from n11_list_categories."
+          }
+        },
+        "required": [
+          "categoryId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/cdn/category/{categoryId}/attribute"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_get_task_details",
+      "description": "Read the result of a product task (create, update, price and stock, delete): task status PROCESSED, IN_QUEUE or REJECT and per stock code (itemCode) SUCCESS or FAIL with the reasons.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "integer",
+            "description": "Task id returned by a product write."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of the per-SKU results, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Results per page, e.g. 1000."
+          }
+        },
+        "required": [
+          "taskId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ms/product/task-details/page-query",
+        "bodyMapping": {
+          "taskId": "$taskId",
+          "pageable": {
+            "page": "$page",
+            "size": "$size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_list_shipment_packages",
+      "description": "List orders as shipment packages: order number, package id, status, buyer, billing and shipping address, cargo company and tracking, agreed shipping date and the lines (orderLineId, product, stock code, quantity, price, discounts, sellerInvoiceAmount, commission). Dates in epoch milliseconds (Turkey time); without dates the last 15 days. At most 100 per page, pages from 0.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "One status per call: Created (new), Picking (approved), Shipped, Delivered, Cancelled, Unpacked (split), UnSupplied.",
+            "enum": [
+              "Created",
+              "Picking",
+              "Shipped",
+              "Cancelled",
+              "Delivered",
+              "Unpacked",
+              "UnSupplied"
+            ]
+          },
+          "startDate": {
+            "type": "integer",
+            "description": "From this moment, epoch milliseconds in Turkey time (UTC+3), e.g. 1793318400000. Alone it lists the 15 days after it."
+          },
+          "endDate": {
+            "type": "integer",
+            "description": "Until this moment, epoch milliseconds in Turkey time. Windows longer than 15 days are cut to the last 15 days."
+          },
+          "orderNumber": {
+            "type": "string",
+            "description": "One order number."
+          },
+          "packageIds": {
+            "type": "string",
+            "description": "Package id(s), comma-separated."
+          },
+          "orderByField": {
+            "type": "boolean",
+            "description": "true makes the dates filter on the last update of the package instead of the order date."
+          },
+          "orderByDirection": {
+            "type": "string",
+            "description": "Sort by last update: ASC oldest first, DESC newest first.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "sender": {
+            "type": "string",
+            "description": "SELLER (default), N11 (n11depom) or ALL.",
+            "enum": [
+              "SELLER",
+              "N11",
+              "ALL"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Packages per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rest/delivery/v1/shipmentPackages",
+        "queryParams": {
+          "status": "$status",
+          "startDate": "$startDate",
+          "endDate": "$endDate",
+          "orderNumber": "$orderNumber",
+          "packageIds": "$packageIds",
+          "orderByField": "$orderByField",
+          "orderByDirection": "$orderByDirection",
+          "sender": "$sender",
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_list_claim_returns",
+      "description": "List return requests (claims) with id, status, reason, order number, product, quantity, prices, buyer and cargo tracking; 20 per page, pages from 0. Without status the REQUESTED ones. Search by order number, product id, buyer name or email with searchInfoType and searchQuery.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Return status; ALL for every status.",
+            "enum": [
+              "REQUESTED",
+              "CANCELLED",
+              "DENIED",
+              "PENDING",
+              "PENDED",
+              "APPROVED",
+              "MANUAL_REFUND",
+              "ALL"
+            ]
+          },
+          "executer": {
+            "type": "string",
+            "description": "Who acted last.",
+            "enum": [
+              "BUYER",
+              "SELLER",
+              "OPERATOR",
+              "SYSTEM",
+              "SHIPMENT"
+            ]
+          },
+          "searchInfoType": {
+            "type": "string",
+            "description": "What searchQuery contains.",
+            "enum": [
+              "BUYEREMAIL",
+              "RECIPIENTS",
+              "BUYERNAME",
+              "ORDERID",
+              "PRODUCTID"
+            ]
+          },
+          "searchQuery": {
+            "type": "string",
+            "description": "The order number, product id, name or email to search for."
+          },
+          "sender": {
+            "type": "string",
+            "description": "SELLER (default), N11 or ALL.",
+            "enum": [
+              "SELLER",
+              "N11",
+              "ALL"
+            ]
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Requests from this day, dd/mm/yyyy."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Requests until this day, dd/mm/yyyy."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/returnService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:ClaimReturnListRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth><searchData><status>${status}</status><executer>${executer}</executer><searchInfoType>${searchInfoType}</searchInfoType><searchQuery>${searchQuery}</searchQuery><sender>${sender}</sender><period><startDate>${startDate}</startDate><endDate>${endDate}</endDate></period></searchData><pagingData><currentPage>${currentPage}</currentPage></pagingData></sch:ClaimReturnListRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_list_return_deny_reasons",
+      "description": "List the reasons (id and text) you may give when refusing a return with n11_deny_claim_return.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/returnService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:ClaimReturnDenyReasonTypesRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth></sch:ClaimReturnDenyReasonTypesRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_list_return_pending_reasons",
+      "description": "List the reasons (id and text) you may give when postponing the decision on a return with n11_postpone_claim_return.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/returnService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:ClaimReturnPendingReasonTypesRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth></sch:ClaimReturnPendingReasonTypesRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_list_product_questions",
+      "description": "List customer questions about your products (id, product, subject, question, answer). startDate, endDate, currentPage and pageSize are required; without status the OPEN (unanswered) ones. n11 allows this call once a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "string",
+            "description": "From this day, DD/MM/YYYY."
+          },
+          "endDate": {
+            "type": "string",
+            "description": "Until this day, DD/MM/YYYY."
+          },
+          "currentPage": {
+            "type": "integer",
+            "description": "Page number, starting at 0."
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Questions per page, e.g. 20."
+          },
+          "status": {
+            "type": "string",
+            "description": "OPEN (unanswered, default) or CLOSED.",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          },
+          "productId": {
+            "type": "integer",
+            "description": "Only questions about this n11 product id."
+          },
+          "buyerEmail": {
+            "type": "string",
+            "description": "Only questions of this buyer email."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Only questions with this subject."
+          }
+        },
+        "required": [
+          "startDate",
+          "endDate",
+          "currentPage",
+          "pageSize"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/productService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:GetProductQuestionListRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth><productQuestionSearch><productId>${productId}</productId><buyerEmail>${buyerEmail}</buyerEmail><subject>${subject}</subject><status>${status}</status><startDate>${startDate}</startDate><endDate>${endDate}</endDate></productQuestionSearch><pagingData><currentPage>${currentPage}</currentPage><pageSize>${pageSize}</pageSize></pagingData></sch:GetProductQuestionListRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_get_product_question",
+      "description": "Get one customer question with buyer name and email, product, question and answer dates, visibility and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productQuestionId": {
+            "type": "integer",
+            "description": "Question id from n11_list_product_questions."
+          }
+        },
+        "required": [
+          "productQuestionId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/productService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:GetProductQuestionDetailRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth><productQuestionId>${productQuestionId}</productQuestionId></sch:GetProductQuestionDetailRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "n11_update_price_and_stock",
+      "description": "Update price and/or stock of products by stock code (up to 1,000 per call). listPrice and salePrice go together, with a dot and two decimals; salePrice may not exceed listPrice. Asynchronous: the answer is a task (id, type, status IN_QUEUE or REJECT, reasons); check the result per stock code with n11_get_task_details. Changes what buyers see at once: list each stock code with old and new values and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "[{\"stockCode\": \"ABC-1\", \"listPrice\": 249.90, \"salePrice\": 199.90, \"quantity\": 10, \"currencyType\": \"TL\"}]. Leave out the fields you do not change.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ms/product/tasks/price-stock-update",
+        "bodyMapping": {
+          "payload": {
+            "integrator": "AnythingMCP",
+            "skus": "$skus"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "n11_create_products",
+      "description": "Create products (up to 1,000 per call) in leaf categories with title, description, categoryId, productMainId, stockCode, barcode, images, attributes (mandatory ones from n11_get_category_attributes), prices, quantity, VAT, preparingDay and shipmentTemplate. Asynchronous: the answer is a task (id, type, status IN_QUEUE or REJECT, reasons); check the result per stock code with n11_get_task_details. Confirm the data with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "Product objects as documented by n11, e.g. [{\"title\": \"...\", \"description\": \"...\", \"categoryId\": 1000476, \"currencyType\": \"TL\", \"productMainId\": \"M1\", \"preparingDay\": 3, \"shipmentTemplate\": \"Standart\", \"stockCode\": \"ABC-1\", \"barcode\": \"8806094924862\", \"quantity\": 10, \"images\": [{\"url\": \"https://...\", \"order\": 1}], \"attributes\": [{\"id\": 1, \"valueId\": null, \"customValue\": \"Brand\"}], \"salePrice\": 2000, \"listPrice\": 2200, \"vatRate\": 20}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ms/product/tasks/product-create",
+        "bodyMapping": {
+          "payload": {
+            "integrator": "AnythingMCP",
+            "skus": "$skus"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "n11_update_products",
+      "description": "Update product data by stock code (up to 1,000 per call): status (Active or Suspended to take it off sale), preparingDay, shipmentTemplate, productMainId, maxPurchaseQuantity, description, images and product safety attributes. Asynchronous: the answer is a task (id, type, status IN_QUEUE or REJECT, reasons); check the result per stock code with n11_get_task_details. Confirm the changes with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "[{\"stockCode\": \"ABC-1\", \"status\": \"Suspended\", \"preparingDay\": 2}]. Send only the fields to change.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ms/product/tasks/product-update",
+        "bodyMapping": {
+          "payload": {
+            "integrator": "AnythingMCP",
+            "skus": "$skus"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "n11_delete_products",
+      "description": "Delete products by stock code (up to 1,000 per call). Asynchronous: the answer is a task (id, type, status IN_QUEUE or REJECT, reasons); check the result per stock code with n11_get_task_details. Cannot be undone. Installed switched off; name every stock code and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "[{\"stockCode\": \"ABC-1\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ms/product/tasks/product-delete",
+        "bodyMapping": {
+          "payload": {
+            "integrator": "AnythingMCP",
+            "skus": "$skus"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "n11_approve_order_lines",
+      "description": "Approve (accept) new order lines: moves Created lines to Picking. Use the orderLineId values from n11_list_shipment_packages; several lines per call. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "description": "Lines to approve: [{\"lineId\": 426659152}, {\"lineId\": 426659151}], lineId being the orderLineId from n11_list_shipment_packages.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lineId": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "lineId"
+              ]
+            }
+          }
+        },
+        "required": [
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/rest/order/v1/update",
+        "bodyMapping": {
+          "lines": "$lines",
+          "status": "Picking"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "n11_split_package",
+      "description": "Split a Picking package into several packages by order line (each group becomes its own package with its own tracking code; lines not listed form another package). Confirm the grouping with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "splitGroups": {
+            "type": "array",
+            "description": "[{\"orderLineIds\": [466969524]}, {\"orderLineIds\": [466969525]}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "splitGroups"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rest/delivery/v1/splitCombinePackage",
+        "bodyMapping": {
+          "splitGroups": "$splitGroups"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "n11_split_package_by_quantity",
+      "description": "Split a Picking package by quantity, optionally cancelling part of a line (cancelReasonId 61 out of stock, 62 defective, 63 wrong price, 64 force majeure, 65 other). Cancelled quantities cannot be restored: show the split and cancellation and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "splitPackages": {
+            "type": "array",
+            "description": "[{\"packageDetails\": [{\"orderLineId\": 448627086, \"quantities\": 2}]}, {\"packageDetails\": [{\"orderLineId\": 448627086, \"quantities\": 1}]}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "cancelledItems": {
+            "type": "array",
+            "description": "Optional cancellations: [{\"orderLineId\": 389132250, \"quantity\": 1, \"cancelReasonId\": 61}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "splitPackages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rest/delivery/v1/splitPackageByQuantity",
+        "bodyMapping": {
+          "splitPackages": "$splitPackages",
+          "cancelledItems": "$cancelledItems"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "n11_create_collection_request",
+      "description": "Create a collection (pickup) request with a logistics company for Picking packages of bulky goods: every line of the package with box count, desi and company code (HLZ Horoz, CEVA, BL Borusan). Books a real pickup: confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collectionRequestDetails": {
+            "type": "array",
+            "description": "[{\"id\": \"<package id>\", \"orderLineId\": 471150189, \"boxQuantity\": 1, \"desi\": 100, \"shipmentCompany\": \"HLZ\"}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "collectionRequestDetails"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/rest/delivery/v1/collectionRequest",
+        "bodyMapping": {
+          "collectionRequestDetails": "$collectionRequestDetails"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "n11_send_labor_costs",
+      "description": "Send the labour cost (excluding VAT, with its VAT rate 0, 1, 10 or 20, default 20) of order lines, for gold, jewellery and similar categories. Confirm the amounts with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "laborCostDetails": {
+            "type": "array",
+            "description": "[{\"orderLineId\": 434361111, \"totalLaborCostExcludingVAT\": 100, \"laborVatRate\": 20}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "laborCostDetails"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/rest/order/v1/labor-costs",
+        "bodyMapping": {
+          "laborCostDetails": "$laborCostDetails"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "n11_send_invoice_link",
+      "description": "Save the invoice link (https, pdf, png or jpeg) of an order; a new link replaces the previous one. For e-export orders (micro true) also send invoiceNumber and invoiceDateTime. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderNumber": {
+            "type": "string",
+            "description": "n11 order number."
+          },
+          "url": {
+            "type": "string",
+            "description": "https URL of the invoice file, at most 2,048 characters."
+          },
+          "invoiceNumber": {
+            "type": "string",
+            "description": "Invoice number: 3 letters or digits, the year, then 9 digits, e.g. N112026000000001. Required for e-export."
+          },
+          "invoiceDateTime": {
+            "type": "integer",
+            "description": "Invoice date, epoch milliseconds in Turkey time. Required for e-export."
+          }
+        },
+        "required": [
+          "orderNumber",
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/sellerInvoiceService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:SaveLinkSellerInvoiceRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth><url>${url}</url><orderNumber>${orderNumber}</orderNumber><invoiceDateTime>${invoiceDateTime}</invoiceDateTime><invoiceNumber>${invoiceNumber}</invoiceNumber></sch:SaveLinkSellerInvoiceRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "n11_approve_claim_return",
+      "description": "Approve a return request: the buyer gets the refund. Name the return and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claimReturnId": {
+            "type": "integer",
+            "description": "Return request id from n11_list_claim_returns."
+          }
+        },
+        "required": [
+          "claimReturnId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/returnService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:ClaimReturnApproveRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth><claimReturnId>${claimReturnId}</claimReturnId></sch:ClaimReturnApproveRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "n11_postpone_claim_return",
+      "description": "Postpone the decision on a return request by some days, with a reason from n11_list_return_pending_reasons and a note. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claimReturnId": {
+            "type": "integer",
+            "description": "Return request id."
+          },
+          "pendingReasonId": {
+            "type": "integer",
+            "description": "Reason id from n11_list_return_pending_reasons."
+          },
+          "pendingDayCount": {
+            "type": "integer",
+            "description": "Number of days to postpone."
+          },
+          "pendingReasonNote": {
+            "type": "string",
+            "description": "Explanation for the buyer."
+          }
+        },
+        "required": [
+          "claimReturnId",
+          "pendingReasonId",
+          "pendingDayCount",
+          "pendingReasonNote"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/returnService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:ClaimReturnPendingRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth><claimReturnId>${claimReturnId}</claimReturnId><pendingReasonId>${pendingReasonId}</pendingReasonId><pendingDayCount>${pendingDayCount}</pendingDayCount><pendingReasonNote>${pendingReasonNote}</pendingReasonNote></sch:ClaimReturnPendingRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "n11_deny_claim_return",
+      "description": "Refuse a return request with a reason from n11_list_return_deny_reasons and a note; for most reasons say how the product goes back (returnShipmentType CUSTOM with tracking number, or CAMPAIGN). Installed switched off; name the return and reason and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claimReturnId": {
+            "type": "integer",
+            "description": "Return request id."
+          },
+          "denyReasonId": {
+            "type": "integer",
+            "description": "Reason id from n11_list_return_deny_reasons."
+          },
+          "denyReasonNote": {
+            "type": "string",
+            "description": "Explanation of the refusal."
+          },
+          "returnShipmentType": {
+            "type": "string",
+            "description": "CUSTOM (you send it back with your tracking number) or CAMPAIGN (with a cargo campaign code). Empty for \"product did not reach the store\".",
+            "enum": [
+              "CUSTOM",
+              "CAMPAIGN"
+            ]
+          },
+          "shipmentCompanyId": {
+            "type": "integer",
+            "description": "Cargo company id, only with CUSTOM."
+          },
+          "trackingNumber": {
+            "type": "string",
+            "description": "Tracking number, only with CUSTOM."
+          },
+          "deliveryReceiptNumber": {
+            "type": "string",
+            "description": "Delivery receipt number."
+          },
+          "imageFirstUrl": {
+            "type": "string",
+            "description": "URL of a photo of the returned product."
+          },
+          "imageSecondUrl": {
+            "type": "string",
+            "description": "Second photo URL."
+          },
+          "imageThirdUrl": {
+            "type": "string",
+            "description": "Third photo URL."
+          },
+          "videoUrl": {
+            "type": "string",
+            "description": "URL of a video of the returned product."
+          }
+        },
+        "required": [
+          "claimReturnId",
+          "denyReasonId",
+          "denyReasonNote"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/returnService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:ClaimReturnDenyRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth><claimReturnId>${claimReturnId}</claimReturnId><denyReasonId>${denyReasonId}</denyReasonId><denyReasonNote>${denyReasonNote}</denyReasonNote><returnShipmentType>${returnShipmentType}</returnShipmentType><shipmentCompanyId>${shipmentCompanyId}</shipmentCompanyId><trackingNumber>${trackingNumber}</trackingNumber><deliveryReceiptNumber>${deliveryReceiptNumber}</deliveryReceiptNumber><imageFirstUrl>${imageFirstUrl}</imageFirstUrl><imageSecondUrl>${imageSecondUrl}</imageSecondUrl><imageThirdUrl>${imageThirdUrl}</imageThirdUrl><videoUrl>${videoUrl}</videoUrl></sch:ClaimReturnDenyRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "n11_answer_product_question",
+      "description": "Answer a customer question (1 to 2,048 characters). A question can be answered only once; it is then CLOSED and the answer is public. Show the answer to the user and get a yes first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "productQuestionId": {
+            "type": "integer",
+            "description": "Question id from n11_list_product_questions."
+          },
+          "answer": {
+            "type": "string",
+            "description": "The answer text, 1 to 2,048 characters."
+          }
+        },
+        "required": [
+          "productQuestionId",
+          "answer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/productService/",
+        "bodyEncoding": "xml",
+        "headers": {
+          "Content-Type": "text/xml; charset=utf-8",
+          "Accept": "text/xml"
+        },
+        "bodyTemplate": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:sch=\"http://www.n11.com/ws/schemas\"><soapenv:Header/><soapenv:Body><sch:SaveProductAnswerRequest><auth><appKey>{{N11_APP_KEY}}</appKey><appSecret>{{N11_APP_SECRET}}</appSecret></auth><productQuestionId>${productQuestionId}</productQuestionId><answer>${answer}</answer></sch:SaveProductAnswerRequest></soapenv:Body></soapenv:Envelope>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

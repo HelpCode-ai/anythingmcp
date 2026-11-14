@@ -2,6 +2,7 @@ import {
   ResourceIndicatorMiddleware,
   parseServerId,
   MCP_RESOURCE_COOKIE,
+  MCP_DIRECTORY_COOKIE,
 } from './resource-indicator.middleware';
 
 describe('parseServerId', () => {
@@ -88,5 +89,40 @@ describe('ResourceIndicatorMiddleware', () => {
   it('always calls next — it must never block the authorization flow', () => {
     middleware.use(req({ resource: 12345 }), res, next);
     expect(next).toHaveBeenCalled();
+  });
+});
+
+describe('parseAppEndpoint and the plugin endpoint cookie', () => {
+  // Imported here so the suites above stay as they were.
+  const { parseAppEndpoint, MCP_APP_COOKIE, ResourceIndicatorMiddleware: Middleware } =
+    jest.requireActual('./resource-indicator.middleware') as typeof import('./resource-indicator.middleware');
+
+  it('recognises the File Search plugin endpoint only', () => {
+    expect(parseAppEndpoint('https://cloud.example.com/mcp/file-search')).toBe('file-search');
+    expect(parseAppEndpoint('https://cloud.example.com/mcp/chatgpt-app')).toBeNull();
+    expect(parseAppEndpoint('https://cloud.example.com/mcp')).toBeNull();
+    expect(parseAppEndpoint('https://cloud.example.com/mcp/file-search/x')).toBeNull();
+    expect(parseAppEndpoint('not a url')).toBeNull();
+  });
+
+  it('sets the app cookie for /mcp/file-search and clears it otherwise, leaving the server id alone', () => {
+    const m = new Middleware();
+    const res: any = { cookie: jest.fn(), clearCookie: jest.fn() };
+    m.use({ method: 'GET', query: { resource: 'https://h/mcp/file-search' }, headers: {}, secure: false } as any, res, jest.fn());
+    expect(res.cookie).toHaveBeenCalledWith(MCP_APP_COOKIE, 'file-search', expect.objectContaining({ httpOnly: true, signed: true }));
+    // Not a server id: the server cookie is cleared as for any other value.
+    expect(res.clearCookie).toHaveBeenCalledWith(MCP_RESOURCE_COOKIE);
+
+    const res2: any = { cookie: jest.fn(), clearCookie: jest.fn() };
+    m.use({ method: 'GET', query: { resource: 'https://h/mcp/chatgpt-app' }, headers: {}, secure: false } as any, res2, jest.fn());
+    // The database plugin has no app step, only the directory marker.
+    expect(res2.cookie).not.toHaveBeenCalledWith(MCP_APP_COOKIE, expect.anything(), expect.anything());
+    expect(res2.cookie).toHaveBeenCalledWith(MCP_DIRECTORY_COOKIE, 'chatgpt-app', expect.objectContaining({ httpOnly: true, signed: true }));
+    expect(res2.clearCookie).toHaveBeenCalledWith(MCP_APP_COOKIE);
+
+    const res3: any = { cookie: jest.fn(), clearCookie: jest.fn() };
+    m.use({ method: 'GET', query: { resource: 'https://h/mcp' }, headers: {}, secure: false } as any, res3, jest.fn());
+    expect(res3.cookie).not.toHaveBeenCalled();
+    expect(res3.clearCookie).toHaveBeenCalledWith(MCP_DIRECTORY_COOKIE);
   });
 });

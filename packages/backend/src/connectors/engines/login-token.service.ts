@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../common/prisma.service';
@@ -74,6 +74,16 @@ export interface LoginTokenAuthConfig {
   // …or a raw string template (deprecated, brittle for GraphQL mutations).
   loginBodyTemplate?: string;
   loginHeaders?: Record<string, string>;
+  /**
+   * Send `Authorization: Basic base64(username:password)` on the login request
+   * only, for APIs whose login takes HTTP Basic credentials and answers with a
+   * token (Wazuh). The engine builds the header itself: the password is not
+   * offered to loginBody/loginBodyTemplate (`${password}` renders empty) and,
+   * without a loginBody, the login has no body. Refused, before any request,
+   * when loginHeaders already set Authorization (any case), with signedJwt,
+   * with bcrypt passwordHashing, and for a username containing ":" (RFC 7617).
+   */
+  loginBasicAuth?: boolean;
   // Required, unless the login proves who it is with `signedJwt` instead.
   username: string;
   password: string;
@@ -111,7 +121,9 @@ export interface LoginTokenAuthConfig {
     outputParam?: string; // template param name (default: passwordHashed)
   };
 
-  tokenJsonPath: string;
+  // One path, or several tried in order when the vendor does not document
+  // the login answer's shape: the first that holds a non-empty string wins.
+  tokenJsonPath: string | string[];
   expiryJsonPath?: string;
   audJsonPath?: string;
   expiryFormat?: 'iso8601' | 'unix' | 'ttl_seconds';
@@ -302,12 +314,16 @@ export class LoginTokenService {
       this.requireString(authConfig.password, 'password');
     }
     if (authConfig.tokenSource !== 'cookie') {
-      this.requireString(authConfig.tokenJsonPath, 'tokenJsonPath');
+      tokenJsonPaths(authConfig.tokenJsonPath);
     }
+
+    const basicAuth = loginBasicAuthHeader(authConfig);
 
     const passwordToSend = authConfig.signedJwt && authConfig.password === undefined
       ? ''
-      : await this.preparePassword(authConfig, request);
+      : basicAuth
+        ? ''
+        : await this.preparePassword(authConfig, request);
     const signedToken = authConfig.signedJwt
       ? signLoginJwt(authConfig.signedJwt)
       : undefined;
@@ -331,6 +347,7 @@ export class LoginTokenService {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(authConfig.loginHeaders || {}),
+      ...(basicAuth ? { Authorization: basicAuth.header } : {}),
     };
 
     let data: unknown;
@@ -348,26 +365,35 @@ export class LoginTokenService {
           `LOGIN_TOKEN loginBodyTemplate produced invalid JSON: ${e.message}`,
         );
       }
+    } else if (basicAuth) {
+      // The credentials travel in the Authorization header only.
+      data = undefined;
     } else {
       data = templateParams;
     }
 
     this.logger.debug(
-      `LOGIN_TOKEN: logging in via ${method} ${urlForLog(url, { secrets: [authConfig.password, passwordToSend, signedToken ?? ''] })}${request.proxyUrl ? ' (via proxy)' : ''}`,
+      `LOGIN_TOKEN: logging in via ${method} ${urlForLog(url, { secrets: [authConfig.password, passwordToSend, signedToken ?? '', ...(basicAuth?.secrets ?? [])] })}${request.proxyUrl ? ' (via proxy)' : ''}`,
     );
-    const response = await axios({
-      method,
-      url,
-      data: method === 'GET' ? undefined : data,
-      params: method === 'GET' ? data : undefined,
-      headers,
-      timeout: 15000,
-      ...outboundAxiosOptions({
-        credentialHeaders: Object.keys(authConfig.loginHeaders || {}),
-        credentialsInBody: true,
-      }),
-      ...proxyAgents(request),
-    });
+    let response: AxiosResponse;
+    try {
+      response = await axios({
+        method,
+        url,
+        data: method === 'GET' ? undefined : data,
+        params: method === 'GET' ? data : undefined,
+        headers,
+        timeout: 15000,
+        ...outboundAxiosOptions({
+          credentialHeaders: Object.keys(authConfig.loginHeaders || {}),
+          credentialsInBody: true,
+        }),
+        ...proxyAgents(request),
+      });
+    } catch (err) {
+      if (basicAuth) scrubLoginError(err, basicAuth.secrets);
+      throw err;
+    }
 
     let token: unknown;
     if (authConfig.tokenSource === 'cookie' && authConfig.cookieMode === 'all') {
@@ -395,8 +421,9 @@ export class LoginTokenService {
         );
       }
     } else {
-      token = jsonPath(response.data, authConfig.tokenJsonPath);
-      if (!token || typeof token !== 'string') {
+      const paths = tokenJsonPaths(authConfig.tokenJsonPath);
+      token = readTokenAt(response.data, paths);
+      if (!token) {
         // Far and away the commonest reason the token is missing is that the
         // login itself was refused — wrong password, 2FA, a locked account.
         // The endpoint answers 200 and puts the reason in the body, so saying
@@ -407,7 +434,7 @@ export class LoginTokenService {
         throw new Error(
           refusal
             ? `LOGIN_TOKEN: the service refused the login — ${refusal}`
-            : `LOGIN_TOKEN: token not found at "${authConfig.tokenJsonPath}" in login response`,
+            : `LOGIN_TOKEN: token not found at ${paths.map((p) => `"${p}"`).join(', ')} in login response`,
         );
       }
     }
@@ -598,6 +625,107 @@ export class LoginTokenService {
       throw new Error(`LOGIN_TOKEN: authConfig.${name} is required`);
     }
   }
+}
+
+/**
+ * The login's `Authorization: Basic` header when `loginBasicAuth` is true,
+ * else undefined. Built here from username and password, never through a
+ * template. Explicit configuration conflicts are refused instead of resolved
+ * silently: an Authorization in loginHeaders (which one would the vendor see?),
+ * signedJwt (no password), bcrypt passwordHashing (Basic sends the password
+ * as is) and a username with ":" (RFC 7617 cannot encode it). No error quotes
+ * a credential. `secrets` lists the strings to keep out of logs and errors.
+ */
+export function loginBasicAuthHeader(
+  cfg: LoginTokenAuthConfig,
+): { header: string; secrets: string[] } | undefined {
+  const flag = (cfg as { loginBasicAuth?: unknown }).loginBasicAuth;
+  if (flag === undefined || flag === false) return undefined;
+  if (flag !== true) {
+    throw new Error('LOGIN_TOKEN: loginBasicAuth must be true or false');
+  }
+  if (cfg.signedJwt) {
+    throw new Error('LOGIN_TOKEN: loginBasicAuth cannot be combined with signedJwt');
+  }
+  if (cfg.passwordHashing && cfg.passwordHashing.scheme !== 'none') {
+    throw new Error(
+      'LOGIN_TOKEN: loginBasicAuth sends the password as is and cannot be combined with passwordHashing',
+    );
+  }
+  if (Object.keys(cfg.loginHeaders || {}).some((h) => h.toLowerCase() === 'authorization')) {
+    throw new Error(
+      'LOGIN_TOKEN: loginBasicAuth sets the login Authorization header itself; remove Authorization from loginHeaders',
+    );
+  }
+  for (const name of ['username', 'password'] as const) {
+    const v = cfg[name];
+    if (!v || typeof v !== 'string') {
+      throw new Error(`LOGIN_TOKEN: authConfig.${name} is required`);
+    }
+  }
+  if (cfg.username.includes(':')) {
+    throw new Error('LOGIN_TOKEN: loginBasicAuth: the username must not contain ":"');
+  }
+  const encoded = Buffer.from(`${cfg.username}:${cfg.password}`, 'utf8').toString('base64');
+  return { header: `Basic ${encoded}`, secrets: [cfg.password, encoded] };
+}
+
+/**
+ * Remove the Basic credentials from a failed login's error before it travels
+ * on: the Authorization header from the request config axios attaches (also
+ * under response.config), the raw request head Node keeps on the request, and
+ * any occurrence of a secret in the message. Status and response stay, so the
+ * callers still see a 401 as a 401.
+ */
+function scrubLoginError(err: unknown, secrets: string[]): void {
+  if (!err || typeof err !== 'object') return;
+  const e = err as {
+    message?: unknown;
+    config?: { headers?: unknown };
+    response?: { config?: { headers?: unknown } };
+    request?: { _header?: unknown };
+  };
+  for (const holder of [e.config, e.response?.config]) {
+    const headers = holder?.headers as Record<string, unknown> | undefined;
+    if (!headers || typeof headers !== 'object') continue;
+    const del = (headers as { delete?: unknown }).delete;
+    if (typeof del === 'function') del.call(headers, 'Authorization');
+    for (const k of Object.keys(headers)) {
+      if (k.toLowerCase() === 'authorization') delete headers[k];
+    }
+  }
+  if (e.request && typeof e.request === 'object' && typeof e.request._header === 'string') {
+    e.request._header = e.request._header.replace(/^authorization:.*$/gim, 'Authorization: [redacted]');
+  }
+  if (typeof e.message === 'string') {
+    let m = e.message;
+    for (const secret of secrets) if (secret) m = m.split(secret).join('[redacted]');
+    e.message = m;
+  }
+}
+
+/**
+ * The token path(s) of an authConfig as a list. A single string is the usual
+ * form; a list is for logins whose answer is undocumented, tried in order.
+ * Anything else (missing, empty, a non-string entry) is a configuration error.
+ */
+export function tokenJsonPaths(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : [value];
+  if (list.length === 0 || list.some((p) => !p || typeof p !== 'string')) {
+    throw new Error(
+      'LOGIN_TOKEN: authConfig.tokenJsonPath is required (a path, or a list of paths)',
+    );
+  }
+  return list as string[];
+}
+
+/** The first non-empty string found at one of `paths`, in order. */
+export function readTokenAt(body: unknown, paths: string[]): string | undefined {
+  for (const path of paths) {
+    const value = jsonPath(body, path);
+    if (typeof value === 'string' && value.trim() !== '') return value;
+  }
+  return undefined;
 }
 
 /**

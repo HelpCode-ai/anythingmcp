@@ -10,14 +10,28 @@ on:
 jobs:
   cli:
     name: CLI (test, build)
-    runs-on: ubuntu-latest
+    # The CLI ships to npm and is installed on macOS, Linux and Windows, so it
+    # is tested on all three. fail-fast is off so one OS failing still shows the
+    # others. bash is the shell on every runner (Git Bash on Windows) so the
+    # `test` guard step below is portable.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      # The CLI has only pure-JS dependencies; skip workspace install scripts
+      # (Prisma engine download, native backend builds) so this job stays fast
+      # and does not fail on an unrelated backend dependency on Windows/macOS.
+      - run: npm ci --ignore-scripts
       - run: npm test -w packages/cli
       - run: npm run build -w packages/cli
       - run: test ! -e packages/cli/dist/cli.test.js
@@ -27,6 +41,15 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       postgres:
         image: postgres:17-alpine
         env:
@@ -43,6 +66,8 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://amcp:testpassword@localhost:5432/anythingmcp_test
+      AUDIT_TEST_DATABASE_URL: postgresql://amcp:testpassword@localhost:5432/anythingmcp_test
+      TOOL_RATE_LIMIT_TEST_REDIS_URL: redis://127.0.0.1:6379
       # CI-only secrets — long enough to pass our boot validation, never used
       # outside the test database.
       JWT_SECRET: ci-test-jwt-secret-at-least-32-chars-aaaaaa
@@ -63,13 +88,22 @@ jobs:
         run: node scripts/validate-adapters.mjs
 
       - name: Test adapter validator diagnostics
-        run: node --test scripts/validate-adapters.test.mjs scripts/adapter-new.test.mjs
+        run: node --test scripts/validate-adapters.test.mjs scripts/adapter-new.test.mjs scripts/generate-llms-txt.test.mjs
 
       - name: Test the satellite generator
         run: node --test scripts/satellites/satellites.test.mjs
 
       - name: Verify the quoted adapter count and license wording
         run: node scripts/adapter-count.mjs --check
+
+      - name: Verify generated AI documentation is up to date
+        run: node scripts/generate-llms-txt.mjs --check
+
+      # The amcp CLI's catalogue of management operations is generated from the
+      # controllers guarded by JwtOrManagementKeyGuard. A new management route
+      # must not ship without the CLI (and `amcp api --list`) knowing about it.
+      - name: Verify the CLI management operation catalogue is up to date
+        run: node scripts/generate-cli-operations.mjs --check
 
       # The Docker image ships only hoisted dependencies; a nested one passes
       # every test here and then crashes the container (see the script).
@@ -113,6 +147,57 @@ jobs:
       - name: Build backend
         run: npm run build
         working-directory: packages/backend
+
+      # Unit tests build services by hand, so a dependency Nest cannot resolve
+      # only shows when a process boots. Two did reach production: #1483
+      # (@Injectable on the wrong class, caught by the blue/green check) and
+      # #1508 (a guard needing RedisService in a module the File Search worker
+      # loads: the worker crash-looped for 14 hours, because the blue/green
+      # check boots only the backend). Boot both processes from this build,
+      # on every pull request, the way Cloud runs them.
+      - name: Boot the backend and the files worker from the build
+        working-directory: packages/backend
+        env:
+          NODE_ENV: production
+          DEPLOYMENT_MODE: cloud
+          MCP_AUTH_MODE: oauth2
+          PORT: '4100'
+          CORS_ORIGIN: http://localhost:3000
+          SERVER_URL: http://localhost:4100
+          FRONTEND_URL: http://localhost:3000
+          FILES_WORKER_HOST: 127.0.0.1
+          FILES_WORKER_PORT: '8891'
+          # CI-only, like the secrets above (the worker refuses to start without one).
+          FILES_WORKER_TOKEN: ci-files-worker-token-aaaaaaaa
+        run: |
+          set -euo pipefail
+          # boot <name> <log> <ready check> <command...>: start the command,
+          # wait up to 120 s for the check, fail if the process exits first.
+          boot() {
+            local name=$1 log=$2 ready=$3; shift 3
+            "$@" >"$log" 2>&1 &
+            local pid=$!
+            for i in $(seq 1 120); do
+              if bash -c "$ready" >/dev/null 2>&1; then
+                echo "$name ready after ${i}s"
+                kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+                return 0
+              fi
+              if ! kill -0 "$pid" 2>/dev/null; then
+                echo "::error::$name exited before it was ready"
+                tail -80 "$log"; return 1
+              fi
+              sleep 1
+            done
+            echo "::error::$name was not ready after 120 s"
+            tail -80 "$log"; kill "$pid" 2>/dev/null || true; return 1
+          }
+          boot backend "$RUNNER_TEMP/backend.log" \
+            "curl -sf http://localhost:4100/health" \
+            node dist/src/main.js
+          boot files-worker "$RUNNER_TEMP/files-worker.log" \
+            "grep -q 'files-worker ready' '$RUNNER_TEMP/files-worker.log'" \
+            node dist/src/ee/file-search/files-worker.main.js
 
   frontend:
     name: Frontend (lint, typecheck, build)

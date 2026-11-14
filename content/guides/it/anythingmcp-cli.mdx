@@ -1,0 +1,349 @@
+---
+title: "La CLI di AnythingMCP — Gestisci tutta la tua istanza MCP dal terminale"
+description: "amcp è il client a riga di comando ufficiale di AnythingMCP. Chiama i tool MCP con argomenti reali, passa i risultati a jq e cron, esegui programmi in code mode che fanno decine di chiamate in un solo passo e automatizza l'intera istanza — connettori, server MCP, ruoli, audit — con una chiave di gestione. Esempi concreti con Shopify, HubSpot e Slack."
+category: "announcements"
+keyword: "AnythingMCP CLI, amcp CLI, MCP CLI, Model Context Protocol CLI, MCP riga di comando, MCP code mode, code_execute, gestire server MCP da terminale, MCP gateway CLI, npm @anythingmcp/cli, tool MCP da terminale, CLI agente AI"
+publishedAt: "2026-11-04"
+updatedAt: "2026-11-05"
+lang: "it"
+featured: true
+---
+
+## Tutta la tua istanza MCP, dal terminale
+
+**`amcp`** è il client a riga di comando ufficiale di AnythingMCP. Con un solo binario fa due cose:
+
+1. **Chiama i tool MCP** — gli stessi tool che usano i tuoi client AI (Shopify, HubSpot, SAP, il tuo database SQL, una cartella condivisa…). Puoi eseguirli a mano, negli script di shell, da cron e CI, oppure come **programma in code mode** che concatena decine di chiamate in un solo passo.
+2. **Guida l'API di gestione** (`/api/*`) con una **chiave di gestione**. Tutto ciò che fa la dashboard — connettori, server MCP, utenti, ruoli, SSO, memory, skill, audit — diventa un comando, per te o per un agente connesso.
+
+È open source (AGPL-3.0), funziona con **AnythingMCP Cloud** e con le istanze **self-hosted**, richiede Node 22+ e si installa da npm o da Homebrew:
+
+```bash
+npm i -g @anythingmcp/cli
+# oppure su macOS e Linux (con Node e completamento della shell):
+brew install helpcode-ai/tap/amcp
+
+amcp --help
+```
+
+Ogni esempio qui sotto usa comandi, flag, endpoint e nomi di tool reali. I tool Shopify, HubSpot e Slack sono quelli dei connettori del catalogo. Solo i dati nell'output sono inventati.
+
+## Accedi: due tipi di chiave
+
+`amcp` usa due tipi di chiave e li tiene in profili separati:
+
+| Vuoi… | Chiave | Accedi con |
+|---|---|---|
+| Chiamare i tool di un server MCP | una **chiave MCP** per quel server | `amcp login --url … --server SERVER_ID` |
+| Gestire l'istanza (`amcp api`) | una **chiave di gestione** (sola lettura o admin) | `amcp login --browser` |
+
+Per una chiave di gestione, lascia fare al browser:
+
+```bash
+amcp login --browser --url https://cloud.anythingmcp.com              # read-only
+amcp login --browser --scope admin --url https://cloud.anythingmcp.com # read + write
+```
+
+La CLI apre la pagina di autorizzazione dell'istanza e stampa un breve codice. Controlli che corrisponda a quello della pagina e approvi con la tua normale sessione della dashboard (SSO incluso). La chiave torna alla CLI tramite un loopback `127.0.0.1` usa e getta, quindi non finisce mai in un URL, in un log o nella cronologia della shell.
+
+Per chiamare i tool, incolla una chiave MCP quando richiesto. La CLI non la mostra a schermo e la verifica con una vera `tools/list` prima di salvarla:
+
+```bash
+amcp login --url https://cloud.anythingmcp.com --server cmob60dvv00c01zrpeujwmnep --profile shop
+amcp whoami --profile shop
+```
+
+## 1. Esplora e chiama i tool
+
+Comincia chiedendo al server cosa sa fare. `tools ls` stampa per ogni tool il nome, l'indicazione sola lettura/distruttivo e la prima riga della descrizione:
+
+```console
+$ amcp tools ls --filter order
+shopify_search_orders   read-only   Search orders with Shopify search syntax (for example `financial_status:paid …
+shopify_get_order       read-only   Get one order: status, totals (subtotal, shipping, tax, discounts, refunds) …
+```
+
+`tools describe` mostra la descrizione completa e lo schema JSON di input, così sai esattamente quali argomenti accetta un tool. Poi lo chiami con argomenti reali:
+
+```console
+$ amcp tools call shopify_search_orders \
+    --args '{"query":"financial_status:paid created_at:>=2026-11-01","first":2}'
+{
+  "orders": {
+    "pageInfo": { "hasNextPage": true, "endCursor": "eyJsYXN0X2lkIjo2…" },
+    "nodes": [
+      {
+        "name": "#1043",
+        "createdAt": "2026-11-04T16:12:09Z",
+        "displayFinancialStatus": "PAID",
+        "displayFulfillmentStatus": "UNFULFILLED",
+        "currentTotalPriceSet": { "shopMoney": { "amount": "412.80", "currencyCode": "EUR" } },
+        "customer": { "displayName": "Kellerhaus GmbH" }
+      },
+      …
+```
+
+Gli argomenti possono arrivare anche da un file (`--args @args.json`) o da stdin (`--args -`). Un tool marcato come distruttivo chiede conferma nel terminale. In uno script devi passare `--yes` esplicitamente.
+
+## 2. Usalo nei tuoi script
+
+L'output testuale di un tool è il suo JSON su stdout. Gli errori vanno su stderr con un exit code proprio. Così `amcp` si comporta come qualsiasi comando Unix:
+
+```console
+$ amcp tools call shopify_search_orders \
+    --args '{"query":"fulfillment_status:unfulfilled created_at:<2026-11-03"}' \
+  | jq -r '.orders.nodes[] | [.name, .customer.displayName, .createdAt[:10]] | @tsv'
+#1038   Kellerhaus GmbH     2026-10-30
+#1035   Studio Lumen        2026-10-29
+#1031   Bäckerei Hofmann    2026-10-28
+```
+
+Exit code: `0` successo, `1` il tool ha restituito un errore, `2` uso o JSON non validi, `3` autenticazione, `4` connessione, errore del server o timeout.
+
+Mettendo insieme le due cose ottieni un job quotidiano. Questo pubblica ogni mattina in un canale Slack gli ordini in ritardo (il connettore Slack è sullo stesso server):
+
+```bash
+#!/usr/bin/env bash
+# late-orders.sh — run from cron: 0 8 * * 1-5
+set -euo pipefail
+SINCE=$(date -d '-2 days' +%F)     # GNU date; on macOS: date -v-2d +%F
+LATE=$(amcp tools call shopify_search_orders \
+  --args "{\"query\":\"fulfillment_status:unfulfilled created_at:<$SINCE\"}" \
+  | jq -r '.orders.nodes[] | "• \(.name) — \(.customer.displayName)"')
+[ -z "$LATE" ] && exit 0
+jq -n --arg text "Orders waiting more than 2 days:
+$LATE" '{channel: "#fulfilment", text: $text}' \
+  | amcp tools call slack_post_message --args - --yes
+```
+
+In CI puoi fare a meno del profilo: `AMCP_URL`, `AMCP_SERVER` e `AMCP_API_KEY` forniscono la connessione, e `--json` fa stampare a ogni comando un unico oggetto JSON.
+
+## 3. Code mode: un programma, tante chiamate
+
+Script come quello sopra fanno una chiamata alla volta dalla tua macchina. Il **code mode** invece manda al server un programma intero. Con il code mode impostato su `inline` per un server MCP, il server offre un tool chiamato `code_execute`. Gli mandi un breve programma JavaScript e una sandbox accanto ai tuoi tool lo esegue, con tre funzioni a disposizione:
+
+- `await amcp.search("query")` cerca i tool per nome o descrizione;
+- `await amcp.describe("tool")` restituisce lo schema di input di un tool;
+- `await amcp.run("tool", args)` chiama un tool e restituisce il risultato come valore JavaScript.
+
+Si attiva una volta per server (serve una chiave di gestione admin):
+
+```bash
+amcp api PUT /api/mcp-servers/$SRV --yes --data '{"codeMode":"inline"}'
+```
+
+Ora una domanda che richiederebbe decine di passaggi: *quali sono i nostri cinque clienti Shopify più grandi da ottobre, e a che punto è ognuno nella pipeline di HubSpot?* Scrivila come programma:
+
+```js
+// top-customers.js — runs inside the AnythingMCP sandbox: read-only, your own permissions
+const byEmail = new Map();
+let after = null, pages = 0;
+
+// 1. Page through every paid Shopify order since October
+do {
+  const r = await amcp.run("shopify_search_orders", {
+    query: "financial_status:paid created_at:>=2026-10-01",
+    first: 250, after,
+  });
+  for (const o of r.orders.nodes) {
+    if (!o.email) continue;
+    const c = byEmail.get(o.email)
+      ?? { name: o.customer?.displayName, orders: 0, revenue: 0 };
+    c.orders += 1;
+    c.revenue += Number(o.currentTotalPriceSet.shopMoney.amount);
+    byEmail.set(o.email, c);
+  }
+  const { hasNextPage, endCursor } = r.orders.pageInfo;
+  after = hasNextPage ? endCursor : null;
+  pages++;
+} while (after);
+
+// 2. Keep the five biggest customers
+const top = [...byEmail]
+  .sort((a, b) => b[1].revenue - a[1].revenue)
+  .slice(0, 5);
+
+// 3. Join each one with its HubSpot contact
+const result = [];
+for (const [email, c] of top) {
+  const h = await amcp.run("hubspot_search_objects", {
+    object_type: "contacts",
+    filter_groups: [{ filters: [
+      { propertyName: "email", operator: "EQ", value: email },
+    ] }],
+    properties: ["lifecyclestage"],
+    limit: 1,
+  });
+  const stage = h.results[0]?.properties.lifecyclestage ?? "not in CRM";
+  result.push({ email, ...c, revenue: c.revenue.toFixed(2), stage });
+}
+return { pagesScanned: pages, top: result };
+```
+
+`code_execute` accetta `{"code": "<programma>"}`. `jq -Rs` impacchetta il file per te:
+
+```console
+$ jq -Rs '{code: .}' top-customers.js | amcp tools call code_execute --args -
+{
+  "pagesScanned": 3,
+  "top": [
+    {
+      "email": "einkauf@kellerhaus.de",
+      "name": "Kellerhaus GmbH",
+      "orders": 14,
+      "revenue": "4820.50",
+      "stage": "customer"
+    },
+    {
+      "email": "m.weber@example.com",
+      "name": "Martin Weber",
+      "orders": 6,
+      "revenue": "2475.90",
+      "stage": "not in CRM"
+    },
+    …
+  ]
+}
+```
+
+Sono **8 chiamate ai tool** (3 pagine di ordini e 5 ricerche nel CRM) per **una** sola chiamata dal tuo terminale. In risposta arrivano i cinque clienti che hai chiesto, non 750 ordini grezzi. Lo stesso vale quando a chiamare è un agente AI invece di te: legge una risposta breve invece di 750 ordini, così risparmia token e sbaglia meno.
+
+Non conosci ancora i nomi dei tool? Lascia che li trovi il programma:
+
+```js
+// discover.js
+const tools = await amcp.search("invoice");          // [{ tool, description, readOnly }, …]
+const schema = await amcp.describe(tools[0].tool);   // { name, description, inputSchema, readOnly }
+return { tools: tools.map(t => t.tool), firstSchema: schema.inputSchema };
+```
+
+**Le protezioni fanno parte del progetto:**
+
+- **Sola lettura.** Un programma può chiamare solo tool che non modificano dati, e solo con i permessi della chiave che lo esegue. Le scritture restano chiamate dirette ed esplicite, come `slack_post_message --yes` sopra.
+- **Isolato.** Il programma gira in un processo sandbox separato, senza filesystem, rete né variabili d'ambiente, con un tempo massimo e un limite di chiamate per esecuzione.
+- **Tracciato.** Ogni chiamata interna finisce nel log come una diretta, insieme all'esecuzione che l'ha fatta.
+- **Su richiesta.** Il codice inline è spento finché il `codeMode` del server non è `inline` *e* il tuo ruolo non ha la capacità di codice inline. È disponibile dal piano Team in su.
+
+### Tieni quelli buoni: proponili come tool
+
+Quando un programma risponde a una domanda che torna spesso, `code_propose_tool` lo registra come proposta per un admin. Non esegue nulla. Quando un admin la approva, tutti i client AI di quel server lo ricevono come un normale tool con un nome:
+
+```console
+$ jq -Rs '{
+    name: "top_customers_with_crm_stage",
+    description: "Top 5 Shopify customers since October, with their HubSpot lifecycle stage",
+    rationale: "Sales asks for this every Monday",
+    code: .
+  }' top-customers.js | amcp tools call code_propose_tool --args -
+{"ok":true,"proposalId":"cmh4k2…","message":"Proposal recorded for admin review. It will not run or become a tool until an admin approves it."}
+```
+
+Approfondisci in [Code mode per agenti AI](/it/guides/code-mode).
+
+## 4. Gestisci l'istanza
+
+Con una chiave di gestione, `amcp api METODO PERCORSO` chiama qualsiasi rotta `/api/*`. Funziona come `gh api`, ma per AnythingMCP. L'output testuale è il body JSON già interpretato, quindi anche qui funziona `jq`.
+
+### Configura un workspace in uno script
+
+Installa un connettore del catalogo con il suo token, dai al team vendite un proprio server MCP, collega il connettore, attiva il code mode e verifica la connessione:
+
+```bash
+#!/usr/bin/env bash
+# bootstrap.sh — needs: amcp login --browser --scope admin
+set -euo pipefail
+
+CONN=$(jq -n --arg t "$HUBSPOT_TOKEN" '{credentials: {HUBSPOT_ACCESS_TOKEN: $t}}' \
+  | amcp api POST /api/adapters/hubspot/import --data - --yes | jq -r .connectorId)
+
+SRV=$(amcp api POST /api/mcp-servers --yes \
+  --data '{"name":"Sales","description":"CRM tools for the sales team"}' | jq -r .id)
+
+amcp api PUT /api/mcp-servers/$SRV/connectors --yes --data "{\"connectorIds\":[\"$CONN\"]}"
+amcp api PUT /api/mcp-servers/$SRV --yes --data '{"codeMode":"inline"}'
+amcp api POST /api/connectors/$CONN/test --yes
+# → { "ok": true, "kind": "ok", "message": "Connection successful" }
+```
+
+Il token arriva all'API tramite `jq --arg` e stdin, quindi non compare mai in `ps` né nella cronologia della shell. In uno script ogni chiamata che non sia GET richiede `--yes`. È voluto: uno script non può cambiare niente per sbaglio.
+
+### Trasforma la tua API in tool
+
+Non è nel catalogo? Crea un connettore REST e importa la sua specifica OpenAPI. WSDL, GraphQL, Postman, cURL e HAR funzionano allo stesso modo, tramite il campo `source`:
+
+```bash
+ID=$(amcp api POST /api/connectors --yes --data '{
+  "name": "Acme Billing", "type": "REST",
+  "baseUrl": "https://api.acme.example/v1",
+  "authType": "BEARER_TOKEN", "authConfig": { "token": "'"$ACME_TOKEN"'" }
+}' | jq -r .id)
+
+amcp api POST /api/connectors/$ID/import --yes \
+  --data '{"source":"openapi","url":"https://api.acme.example/v1/openapi.json"}'
+```
+
+### Guarda cosa hanno fatto i tuoi agenti
+
+Ogni chiamata ai tool, di persone o di agenti, finisce nel log di audit:
+
+```console
+$ amcp api GET "/api/audit/invocations?status=ERROR&limit=3" \
+  | jq -r '.[] | [.createdAt[11:16], .tool.name, .user.email, .error[:40]] | @tsv'
+08:41   hubspot_search_objects   lea@acme.io         HTTP 429: retry after 1s
+07:02   shopify_get_order        ops-agent@acme.io   Order not found
+06:55   zendesk_get_ticket       marco@acme.io       HTTP 404: RecordNotFound
+```
+
+`GET /api/audit/breakdowns?days=30` restituisce utilizzo e costi suddivisi per connettore, server MCP e utente. È adatto per un report mensile.
+
+### Ricevi le fatture via email
+
+Su AnythingMCP Cloud un admin può farsi inviare ogni fattura pagata in PDF via email, per esempio alla contabilità:
+
+```bash
+amcp invoices email on --to contabilita@acme.it --yes
+amcp invoices email
+# Invoices by email: on
+# Recipient: contabilita@acme.it (another address)
+```
+
+Con `--billing-contact` tornano all'email di fatturazione dell'abbonamento, con `off` non vengono più inviate. Dettagli: [Invoices on AnythingMCP Cloud](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/cloud-invoices.md).
+
+### Scopri tutta l'API offline
+
+Non serve avere la documentazione aperta. Il catalogo delle operazioni di gestione è incluso nella CLI:
+
+```console
+$ amcp api --list mcp-servers
+mcp-servers
+  GET    /api/mcp-servers  — List MCP servers for current organization
+  POST   /api/mcp-servers [body]  — Create a new MCP server
+  DELETE /api/mcp-servers/:id  — Delete MCP server
+  GET    /api/mcp-servers/:id  — Get MCP server detail
+  PUT    /api/mcp-servers/:id [body]  — Update MCP server
+  …
+```
+
+`[admin]` indica le rotte che richiedono un proprietario admin, `[body]` quelle che accettano un body. Il catalogo viene rigenerato dai controller del backend e la CI fallisce se manca una rotta, quindi corrisponde sempre alla tua istanza. Il riferimento interattivo con esempi di richiesta è su [/developers/api](/it/developers/api).
+
+## 5. Affidala a un agente
+
+Un agente di coding come Claude Code, Codex o l'agente di Cursor può usare `amcp` come fai tu. Con una chiave di gestione **in sola lettura** può controllare un workspace: quali server espongono quali connettori, quali chiamate falliscono. Con una chiave **admin** può configurare un nuovo team da capo a fondo con i comandi della sezione 4.
+
+L'ambito della chiave è la rete di sicurezza. Una chiave di gestione porta identità e ruolo del suo proprietario e non concede mai di più. Una chiave in sola lettura può solo fare `GET`. Ogni chiamata ha un rate limit per chiave (HTTP 429 invece di un'istanza sovraccarica) ed è tracciata.
+
+## Sicura per default
+
+- La chiave non è mai accettata come argomento del comando né stampata. `whoami` ne mostra solo il prefisso.
+- I profili sono salvati in `~/.config/amcp/config.json` con modalità `0600`.
+- L'HTTPS è obbligatorio, tranne il loopback per lo sviluppo locale.
+- I redirect vengono rifiutati, così una chiave non può seguire una richiesta verso un'altra origine.
+
+## Dove prenderla
+
+- **Installa:** `npm i -g @anythingmcp/cli` oppure `brew install helpcode-ai/tap/amcp`, più il completamento della shell con `amcp completion zsh` (anche bash e fish)
+- **Panoramica:** [anythingmcp.com/developers/cli](/it/developers/cli)
+- **Riferimento completo dei comandi:** il [README della CLI su GitHub](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme)
+- **Sorgente:** [github.com/HelpCode-ai/anythingmcp](https://github.com/HelpCode-ai/anythingmcp)
+
+Non hai ancora AnythingMCP? Inizia gratis su [cloud.anythingmcp.com](https://cloud.anythingmcp.com), oppure fai self-hosting.

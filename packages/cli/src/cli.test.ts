@@ -8,6 +8,8 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { configPath, writeConfig } from './config.js';
 import { serverUrl } from './mcp.js';
+import { COMMANDS, FLAGS, SHELLS, completionScript, type Shell } from './completion.js';
+import { OPTIONS } from './index.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -261,6 +263,33 @@ test('bad key is rejected without writing a profile or printing the key', async 
   }
 });
 
+test('MCP login tells a rejected key (401) from a key not allowed on the server (403)', async () => {
+  for (const status of [401, 403]) {
+    const server = createServer((_req, res) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'private server detail' }));
+    });
+    server.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Missing address');
+      const directory = await mkdtemp(join(tmpdir(), 'amcp-cli-status-'));
+      const env = { ...process.env, XDG_CONFIG_HOME: directory, AMCP_API_KEY: 'mcp_status-secret' };
+      await assert.rejects(execFileAsync(process.execPath, [join(__dirname, 'index.js'), 'login', '--url',
+        `http://127.0.0.1:${address.port}`, '--server', 'test'], { env }), (error: unknown) => {
+        const failure = error as { code: number; stdout: string; stderr: string };
+        assert.equal(failure.code, 3);
+        assert.match(failure.stderr, status === 401 ? /^Authentication failed \(401\)/ : /^Forbidden \(403\).*server ID/);
+        assert.doesNotMatch(failure.stdout + failure.stderr, /mcp_status-secret|private server detail/);
+        return true;
+      });
+    } finally {
+      server.close();
+    }
+  }
+});
+
 test('server failures report only the HTTP status', async () => {
   const server = createServer((_req, res) => { res.writeHead(503); res.end('sensitive upstream text'); });
   server.listen(0, '127.0.0.1');
@@ -421,5 +450,404 @@ test('tools describe and call support JSON, files, stdin, failures and destructi
       { loggedOut: true, profile: 'default' });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test('completion prints a plain-text script for each shell and rejects anything else', async () => {
+  const run = (args: string[]) => execFileAsync(process.execPath, [join(__dirname, 'index.js'), ...args]);
+  for (const shell of SHELLS) {
+    for (const args of [['completion', shell], ['completion', shell, '--json']]) {
+      const { stdout, stderr } = await run(args);
+      assert.equal(stdout, completionScript(shell));
+      assert.equal(stderr, '');
+    }
+  }
+  for (const args of [['completion'], ['completion', 'powershell'], ['completion', 'bash', 'extra']]) {
+    await assert.rejects(run(args), (error: unknown) => {
+      const failure = error as { code: number; stdout: string; stderr: string };
+      assert.equal(failure.code, 2);
+      assert.equal(failure.stdout, '');
+      assert.match(failure.stderr, /^Usage: amcp completion <bash\|zsh\|fish>/);
+      return true;
+    });
+  }
+  assert.match((await run(['--help'])).stdout, /amcp completion <bash\|zsh\|fish>/);
+});
+
+test('completion covers every command and every parseArgs option', async () => {
+  // Adding an option to parseArgs without adding it to completion fails here.
+  const options = OPTIONS as Record<string, { type: string; short?: string }>;
+  assert.deepEqual(FLAGS.map((flag) => flag.name).sort(), Object.keys(options).sort());
+  for (const flag of FLAGS) {
+    assert.equal(!!flag.value, options[flag.name].type === 'string', `--${flag.name} value`);
+    assert.equal(flag.short, options[flag.name].short, `--${flag.name} short form`);
+  }
+  const { stdout: help } = await execFileAsync(process.execPath, [join(__dirname, 'index.js'), '--help']);
+  for (const [, name] of help.matchAll(/--([a-z][a-z-]*)/g)) {
+    assert.ok(FLAGS.some((flag) => flag.name === name), `--${name} from usage()`);
+  }
+  const words = COMMANDS.flatMap((command) =>
+    [command, ...(command.subcommands ?? []), ...(command.values ?? [])].map((word) => word.name));
+  for (const shell of SHELLS) {
+    const script = completionScript(shell);
+    for (const word of words) assert.match(script, new RegExp(`\\b${word}\\b`), `${shell}: ${word}`);
+    for (const flag of FLAGS) {
+      assert.ok(script.includes(shell === 'fish' ? `-l ${flag.name} ` : `--${flag.name}`), `${shell}: --${flag.name}`);
+    }
+  }
+});
+
+async function scriptFile(shell: Shell): Promise<string> {
+  const file = join(await mkdtemp(join(tmpdir(), 'amcp-completion-')), `amcp.${shell}`);
+  await writeFile(file, completionScript(shell));
+  return file;
+}
+
+async function shellAvailable(shell: string): Promise<boolean> {
+  try { await execFileAsync(shell, ['-c', 'exit 0']); return true; }
+  catch { return false; }
+}
+
+test('completion scripts pass shell syntax checks', async (t) => {
+  const checks: Array<[Shell, string[]]> = [['bash', ['-n']], ['zsh', ['-n']], ['fish', ['--no-execute']]];
+  for (const [shell, flags] of checks) {
+    await t.test(shell, async (st) => {
+      if (!await shellAvailable(shell)) { st.skip(`${shell} is not installed`); return; }
+      await execFileAsync(shell, [...flags, await scriptFile(shell)]);
+    });
+  }
+});
+
+test('bash completion suggests commands, subcommands, flags and shells', async () => {
+  const file = await scriptFile('bash');
+  const complete = async (...words: string[]) => {
+    const { stdout } = await execFileAsync('bash', ['-c',
+      'source "$1"; shift; COMP_WORDS=("$@"); COMP_CWORD=$(($# - 1)); _amcp; printf "%s\\n" "${COMPREPLY[@]}"',
+      'bash', file, 'amcp', ...words]);
+    return stdout.split('\n').filter(Boolean).sort();
+  };
+  assert.deepEqual(await complete(''), ['api', 'completion', 'invoices', 'login', 'logout', 'tools', 'whoami']);
+  assert.deepEqual(await complete('tools', 'c'), ['call']);
+  assert.deepEqual(await complete('--profile', 'work', 'tools', ''), ['call', 'describe', 'ls']);
+  assert.deepEqual(await complete('tools', 'call', 'my_tool', '--t'), ['--timeout']);
+  assert.deepEqual(await complete('whoami', ''), ['--help', '--json', '--profile', '--version', '-h', '-v']);
+  assert.deepEqual(await complete('login', '--profile', ''), []);
+  assert.deepEqual(await complete('completion', ''), ['bash', 'fish', 'zsh']);
+  assert.deepEqual(await complete('-'), ['--help', '--json', '--version', '-h', '-v']);
+});
+
+test('fish completion suggests commands, subcommands, flags and shells', async (t) => {
+  if (!await shellAvailable('fish')) { t.skip('fish is not installed'); return; }
+  const file = await scriptFile('fish');
+  const complete = async (line: string) => {
+    const { stdout } = await execFileAsync('fish', ['--no-config', '-c', 'source $argv[1]; complete -C $argv[2]', file, line]);
+    return stdout.split('\n').filter(Boolean).map((entry) => entry.split('\t')[0]).sort();
+  };
+  assert.deepEqual(await complete('amcp '), ['api', 'completion', 'invoices', 'login', 'logout', 'tools', 'whoami']);
+  assert.deepEqual(await complete('amcp tools c'), ['call']);
+  assert.deepEqual(await complete('amcp --profile work tools '), ['call', 'describe', 'ls']);
+  assert.deepEqual(await complete('amcp tools call my_tool --t'), ['--timeout']);
+  assert.deepEqual(await complete('amcp completion '), ['bash', 'fish', 'zsh']);
+});
+
+test('api calls the management API with a bearer key and maps status codes', async () => {
+  const seen: { method?: string; path: string; auth?: string; body: string }[] = [];
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk.toString();
+    seen.push({ method: req.method, path: req.url || '', auth: req.headers['authorization'] as string | undefined, body });
+    if (req.headers['authorization'] !== 'Bearer mcp_mgmtsecret') { res.writeHead(401); res.end('{}'); return; }
+    if (req.url === '/api/users/me') {
+      res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ email: 'me@test.local' })); return;
+    }
+    if (req.url === '/api/connectors' && req.method === 'POST') {
+      res.writeHead(201, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ created: JSON.parse(body || '{}') })); return;
+    }
+    if (req.url === '/api/forbidden') { res.writeHead(403); res.end('{}'); return; }
+    if (req.url === '/api/read-only') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'This API key is read-only', statusCode: 403 }));
+      return;
+    }
+    res.writeHead(404); res.end('{}');
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const cli = join(__dirname, 'index.js');
+    const env = { ...process.env, AMCP_URL: base, AMCP_API_KEY: 'mcp_mgmtsecret' };
+    const me = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/users/me'], { env });
+    assert.match(me.stdout, /me@test\.local/);
+    const created = await execFileAsync(process.execPath, [cli, 'api', 'POST', '/api/connectors', '--data', '{"name":"x"}', '--yes'], { env });
+    assert.match(created.stdout, /"name": "x"/);
+    const forbidden = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/forbidden'], { env })
+      .then(() => { throw new Error('should have failed'); }, (error: { code?: number; stdout?: string; stderr?: string }) => error);
+    assert.equal(forbidden.code, 3);
+    assert.doesNotMatch((forbidden.stdout || '') + (forbidden.stderr || ''), /mcp_mgmtsecret/);
+    // A 403 keeps the server's reason, so a read-only key is not mistaken for a broken one.
+    const readOnly = await execFileAsync(process.execPath, [cli, 'api', 'POST', '/api/read-only', '--yes'], { env })
+      .then(() => { throw new Error('should have failed'); }, (error: { code?: number; stderr?: string }) => error);
+    assert.equal(readOnly.code, 3);
+    assert.match(readOnly.stderr || '', /^Forbidden \(403\): This API key is read-only$/m);
+    // A GET body is refused locally with a clear message, before any request.
+    const before = seen.length;
+    const getBody = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/users/me', '--data', '{}'], { env })
+      .then(() => { throw new Error('should have failed'); }, (error: { code?: number; stderr?: string }) => error);
+    assert.equal(getBody.code, 2);
+    assert.match(getBody.stderr || '', /--data is not allowed with GET/);
+    assert.equal(seen.length, before, 'no request sent for a GET with --data');
+    assert.ok(seen.length > 0 && seen.every((r) => r.auth === 'Bearer mcp_mgmtsecret'), 'bearer key sent on every request');
+  } finally {
+    server.close();
+  }
+});
+
+test('management login stores a management key and api uses it from the profile', async () => {
+  const server = createServer(async (req, res) => {
+    if (req.headers['authorization'] !== 'Bearer mcp_mgmtlogin') { res.writeHead(401); res.end('{}'); return; }
+    if (req.url === '/api/users/me') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ email: 'owner@test.local', role: 'ADMIN' }));
+      return;
+    }
+    res.writeHead(404); res.end('{}');
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const cli = join(__dirname, 'index.js');
+    const directory = await mkdtemp(join(tmpdir(), 'amcp-mgmt-'));
+    const env = { ...process.env, XDG_CONFIG_HOME: directory, AMCP_API_KEY: 'mcp_mgmtlogin' };
+    const login = await execFileAsync(process.execPath, [cli, 'login', '--management', '--url', base], { env });
+    assert.match(login.stdout, /management/);
+    assert.doesNotMatch(login.stdout + login.stderr, /mcp_mgmtlogin/);
+    const stored = JSON.parse(await readFile(join(directory, 'amcp', 'config.json'), 'utf8'));
+    assert.equal(stored.profiles.default.managementKey, 'mcp_mgmtlogin');
+    assert.equal(stored.profiles.default.key, '');
+    assert.equal(stored.profiles.default.server, '');
+    // No AMCP_API_KEY in env now: the api command must use the stored key.
+    const noKeyEnv: NodeJS.ProcessEnv = { ...env };
+    delete noKeyEnv.AMCP_API_KEY;
+    delete noKeyEnv.AMCP_URL;
+    const me = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/users/me'], { env: noKeyEnv });
+    assert.match(me.stdout, /owner@test\.local/);
+    assert.doesNotMatch(me.stdout + me.stderr, /mcp_mgmtlogin/);
+    const identity = await execFileAsync(process.execPath, [cli, 'whoami'], { env: noKeyEnv });
+    assert.match(identity.stdout, /Management key: mcp_mgmt/);
+
+    // A management login on a profile that already holds an MCP login for the
+    // same instance keeps the MCP server and key; another instance replaces them.
+    const both = await mkdtemp(join(tmpdir(), 'amcp-both-'));
+    await writeConfig({ profiles: { default: { url: base, server: 'srv1', key: 'mcp_toolkey' } } }, configPath({ XDG_CONFIG_HOME: both }));
+    await execFileAsync(process.execPath, [cli, 'login', '--management', '--url', base], { env: { ...env, XDG_CONFIG_HOME: both } });
+    const merged = JSON.parse(await readFile(join(both, 'amcp', 'config.json'), 'utf8')).profiles.default;
+    assert.deepEqual(merged, { url: base, server: 'srv1', key: 'mcp_toolkey', managementKey: 'mcp_mgmtlogin' });
+    await writeConfig({ profiles: { default: { url: 'https://other.example', server: 'srv1', key: 'mcp_toolkey' } } }, configPath({ XDG_CONFIG_HOME: both }));
+    await execFileAsync(process.execPath, [cli, 'login', '--management', '--url', base], { env: { ...env, XDG_CONFIG_HOME: both } });
+    const replaced = JSON.parse(await readFile(join(both, 'amcp', 'config.json'), 'utf8')).profiles.default;
+    assert.deepEqual(replaced, { url: base, server: '', key: '', managementKey: 'mcp_mgmtlogin' });
+  } finally {
+    server.close();
+  }
+});
+
+test('api --list prints the generated management operation catalogue', async () => {
+  const { OPERATIONS } = await import('./generated/operations.js');
+  const cli = join(__dirname, 'index.js');
+
+  // JSON listing matches the generated catalogue and covers the core surface.
+  const listed = JSON.parse((await execFileAsync(process.execPath, [cli, 'api', '--list', '--json'])).stdout);
+  assert.equal(listed.operations.length, OPERATIONS.length);
+  const paths = new Set(listed.operations.map((o: { path: string }) => o.path));
+  for (const p of ['/api/users/me', '/api/mcp-servers', '/api/connectors', '/api/mcp-keys']) {
+    assert.ok(paths.has(p), `catalogue is missing ${p}`);
+  }
+  // Every operation is well-formed and reachable by `amcp api <METHOD> <path>`.
+  for (const op of listed.operations) {
+    assert.ok(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(op.method), `bad method ${op.method}`);
+    assert.ok(op.path.startsWith('/api/'), `bad path ${op.path}`);
+    assert.equal(typeof op.admin, 'boolean');
+    assert.ok(Array.isArray(op.pathParams));
+  }
+  // The core management resources are all represented (coverage guard).
+  const resources = new Set(listed.operations.map((o: { resource: string }) => o.resource));
+  for (const r of ['mcp-servers', 'connectors', 'users', 'roles', 'mcp-keys', 'file-search']) {
+    assert.ok(resources.has(r), `catalogue is missing resource ${r}`);
+  }
+
+  // Text listing filtered to one resource shows only that resource's routes.
+  const text = (await execFileAsync(process.execPath, [cli, 'api', '--list', 'mcp-servers'])).stdout;
+  assert.match(text, /\/api\/mcp-servers/);
+  assert.doesNotMatch(text, /\/api\/connectors/);
+});
+
+test('browser login delivers a key over the loopback callback and binds state', async () => {
+  const { browserAuthorize } = await import('./browser-auth.js');
+  process.env.AMCP_NO_BROWSER = '1';
+
+  // Simulate the dashboard page: read the authorize URL, POST the key to the
+  // loopback callback as an x-www-form-urlencoded form, exactly as /cli-auth does.
+  const postForm = (callback: string, fields: Record<string, string>, origin?: string) => {
+    const body = new URLSearchParams(fields).toString();
+    return fetch(callback, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', ...(origin ? { origin } : {}) },
+      body,
+    });
+  };
+
+  // Happy path: the key arrives and the scope/label reach the authorize URL.
+  const ok = await browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'admin', label: 'amcp CLI (test)',
+    onUrl: (url) => {
+      const u = new URL(url);
+      assert.equal(u.pathname, '/cli-auth');
+      assert.equal(u.searchParams.get('scope'), 'MANAGEMENT_ADMIN');
+      assert.equal(u.searchParams.get('label'), 'amcp CLI (test)');
+      const callback = u.searchParams.get('callback')!;
+      const state = u.searchParams.get('state')!;
+      assert.match(callback, /^http:\/\/127\.0\.0\.1:\d+\/$/);
+      void postForm(callback, { state, key: 'mcp_browserflow' }, 'https://example.test');
+    },
+  });
+  assert.equal(ok.key, 'mcp_browserflow');
+
+  // Browsers send Origin "null" when an HTTPS page posts to the http://
+  // loopback; that must still deliver the key.
+  const fromNull = await browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const u = new URL(url);
+      void postForm(u.searchParams.get('callback')!, { state: u.searchParams.get('state')!, key: 'mcp_nullorigin' }, 'null');
+    },
+  });
+  assert.equal(fromNull.key, 'mcp_nullorigin');
+
+  // A POST naming a foreign origin is refused and does not end the login; the
+  // genuine POST that follows still succeeds.
+  const foreign = await browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const u = new URL(url);
+      const callback = u.searchParams.get('callback')!;
+      const state = u.searchParams.get('state')!;
+      void (async () => {
+        const refused = await postForm(callback, { state, key: 'mcp_evil' }, 'https://evil.test');
+        assert.equal(refused.status, 403);
+        await postForm(callback, { state, key: 'mcp_genuine' }, 'https://example.test');
+      })();
+    },
+  });
+  assert.equal(foreign.key, 'mcp_genuine');
+
+  // A mismatched state is rejected (a stray or forged callback cannot win).
+  await assert.rejects(browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const callback = new URL(url).searchParams.get('callback')!;
+      void postForm(callback, { state: 'wrong', key: 'mcp_nope' });
+    },
+  }), /State mismatch/);
+
+  // An explicit denial is surfaced as an error, not a saved key.
+  await assert.rejects(browserAuthorize({
+    instanceUrl: 'https://example.test', instanceOrigin: 'https://example.test',
+    scope: 'read', label: 'x', timeoutMs: 3000,
+    onUrl: (url) => {
+      const u = new URL(url);
+      void postForm(u.searchParams.get('callback')!, { state: u.searchParams.get('state')!, error: 'access_denied' });
+    },
+  }), /declined/);
+
+  delete process.env.AMCP_NO_BROWSER;
+});
+
+test('--version prints the package version', async () => {
+  const cli = join(__dirname, 'index.js');
+  const { version } = JSON.parse(await readFile(join(__dirname, '..', 'package.json'), 'utf8'));
+  const plain = await execFileAsync(process.execPath, [cli, '--version']);
+  assert.equal(plain.stdout, `amcp ${version}\n`);
+  const short = await execFileAsync(process.execPath, [cli, '-v', '--json']);
+  assert.deepEqual(JSON.parse(short.stdout), { version });
+});
+
+test('browserCommand passes the login URL to Windows as one argument, not through cmd', async () => {
+  const { browserCommand } = await import('./browser-auth.js');
+  const url = 'https://example.test/cli/authorize?callback=http%3A%2F%2F127.0.0.1%3A5000%2Fcb&state=abc&scope=read';
+  const [cmd, args] = browserCommand('win32', url);
+  assert.equal(cmd, 'rundll32');
+  assert.deepEqual(args, ['url.dll,FileProtocolHandler', url]);
+  assert.notEqual(cmd, 'cmd');
+  assert.deepEqual(browserCommand('darwin', url), ['open', [url]]);
+  assert.deepEqual(browserCommand('linux', url), ['xdg-open', [url]]);
+});
+
+test('invoices email shows and changes the workspace setting with the management key', async () => {
+  const seen: { method?: string; path: string; body: string }[] = [];
+  let state = { available: true, enabled: false, billingContact: 'billing@acme-gmbh.de', recipient: { kind: 'billing', address: 'billing@acme-gmbh.de' }, lastSent: null as unknown };
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk.toString();
+    seen.push({ method: req.method, path: req.url || '', body });
+    if (req.headers['authorization'] !== 'Bearer mcp_mgmtsecret') { res.writeHead(401); res.end('{}'); return; }
+    if (req.url !== '/api/license/invoice-email') { res.writeHead(404); res.end('{}'); return; }
+    if (req.method === 'PUT') {
+      const change = JSON.parse(body);
+      const to = change.to === undefined ? state.recipient.address : change.to ?? state.billingContact;
+      state = { ...state, enabled: change.enabled, recipient: { kind: to === state.billingContact ? 'billing' : 'custom', address: to } };
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(state));
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    const cli = join(__dirname, 'index.js');
+    const env = { ...process.env, AMCP_URL: `http://127.0.0.1:${address.port}`, AMCP_API_KEY: 'mcp_mgmtsecret' };
+    const shown = await execFileAsync(process.execPath, [cli, 'invoices', 'email'], { env });
+    assert.match(shown.stdout, /^Invoices by email: off$/m);
+    assert.match(shown.stdout, /^Recipient: billing@acme-gmbh\.de \(billing contact\)$/m);
+
+    const on = await execFileAsync(process.execPath, [cli, 'invoices', 'email', 'on', '--to', 'accounting@acme-gmbh.de', '--yes'], { env });
+    assert.match(on.stdout, /^Invoices by email: on$/m);
+    assert.match(on.stdout, /^Recipient: accounting@acme-gmbh\.de \(another address\)$/m);
+    assert.deepEqual(JSON.parse(seen.at(-1)!.body), { enabled: true, to: 'accounting@acme-gmbh.de' });
+
+    // Only the address: the switch stays as it is (read first).
+    await execFileAsync(process.execPath, [cli, 'invoices', 'email', '--billing-contact', '--yes', '--json'], { env });
+    assert.deepEqual(JSON.parse(seen.at(-1)!.body), { enabled: true, to: null });
+    assert.equal(seen.at(-2)!.method, 'GET');
+
+    await execFileAsync(process.execPath, [cli, 'invoices', 'email', 'off', '--yes'], { env });
+    assert.deepEqual(JSON.parse(seen.at(-1)!.body), { enabled: false });
+
+    // Changes need --yes without a terminal; bad combinations fail before any request.
+    const before = seen.length;
+    for (const args of [
+      ['invoices', 'email', 'on'],
+      ['invoices', 'email', 'off', '--to', 'a@b.de', '--yes'],
+      ['invoices', 'email', 'on', '--to', 'a@b.de', '--billing-contact', '--yes'],
+      ['invoices', 'email', 'on', '--to', 'a@b.de,c@d.de', '--yes'],
+      ['invoices', 'email', 'maybe'],
+      ['invoices', 'list'],
+    ]) {
+      const failure = await execFileAsync(process.execPath, [cli, ...args], { env })
+        .then(() => { throw new Error(`should have failed: ${args.join(' ')}`); }, (error: { code?: number }) => error);
+      assert.equal(failure.code, 2, args.join(' '));
+    }
+    assert.equal(seen.length, before);
+  } finally {
+    server.close();
   }
 });

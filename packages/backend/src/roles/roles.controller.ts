@@ -11,9 +11,9 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
-import { IsString, IsOptional, IsArray, ArrayMaxSize } from 'class-validator';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiSecurity, ApiBody, ApiResponse } from '@nestjs/swagger';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
+import { IsString, IsOptional, IsArray, ArrayMaxSize, IsInt, Min, Max } from 'class-validator';
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { RolesService } from './roles.service';
 
@@ -43,12 +43,28 @@ class UpdateRoleDto {
 class SetToolAccessDto {
   @ApiProperty({
     description:
-      'Tool IDs this role can invoke. Replaces the existing assignment. Members without an MCP role keep unrestricted access.',
+      'Tool IDs this role can invoke. Replaces the existing assignment. While no role of the workspace has a tool list, members without an MCP role can call every tool; once one role has a tool list, members without a role get no tools.',
     type: [String],
   })
   @IsArray()
   @IsString({ each: true })
   toolIds: string[];
+}
+
+export class SetToolRateLimitsDto {
+  @ApiPropertyOptional({ description: 'Calls per minute. Null clears the limit; omission preserves it.', type: Number, nullable: true, minimum: 1, maximum: 2147483647 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  callsPerMinute?: number | null;
+
+  @ApiPropertyOptional({ description: 'Calls per hour. Null clears the limit; omission preserves it.', type: Number, nullable: true, minimum: 1, maximum: 2147483647 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  callsPerHour?: number | null;
 }
 
 class AssignRoleDto {
@@ -77,20 +93,38 @@ class SetUserRolesDto {
 
 @ApiTags('Roles')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@ApiSecurity('api-key')
+@UseGuards(JwtOrManagementKeyGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('api/roles')
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all roles (ADMIN)' })
+  @ApiOperation({
+    summary: 'List all roles (ADMIN)',
+    description:
+      'The MCP roles of your workspace plus the built-in system roles. An MCP role is a whitelist of tools: a member ' +
+      'with one or more roles may call only the tools those roles allow (the union); a member with no MCP role keeps ' +
+      'access to every tool of the servers they reach. Separate from the workspace role (ADMIN, EDITOR, VIEWER).',
+  })
   async listRoles(@Req() req: any) {
     return this.rolesService.findAll(req.user.organizationId);
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a custom role (ADMIN)' })
+  @ApiOperation({
+    summary: 'Create a custom role (ADMIN)',
+    description:
+      'Creates an empty role. Next, choose its tools with `PUT /api/roles/{id}/tools` and give it to members with ' +
+      '`PUT /api/roles/assignments/{userId}`.',
+  })
+  @ApiBody({
+    type: CreateRoleDto,
+    examples: {
+      sales: { summary: 'Read-only sales role', value: { name: 'sales-read-only', description: 'CRM lookups, no writes' } },
+    },
+  })
   async createRole(@Req() req: any, @Body() dto: CreateRoleDto) {
     return this.rolesService.create({ ...dto, organizationId: req.user.organizationId });
   }
@@ -140,7 +174,25 @@ export class RolesController {
   }
 
   @Put(':id/tools')
-  @ApiOperation({ summary: 'Set tool access for a role (ADMIN)' })
+  @ApiOperation({
+    summary: 'Set tool access for a role (ADMIN)',
+    description:
+      'Sets the tools members with this role may call. The list **replaces** the current one; `[]` allows none. ' +
+      'Retained grants keep their rate limits; new grants start unlimited. ' +
+      'Tool ids are the `id` of each tool in `GET /api/connectors` (its `tools`) or `GET /api/connectors/{id}/tools`, ' +
+      'and must all belong to your workspace. System roles cannot be changed.\n\n' +
+      '```bash\namcp api PUT /api/roles/<roleId>/tools --data \'{"toolIds":["<toolId>","<toolId>"]}\' --yes\n```',
+  })
+  @ApiBody({
+    type: SetToolAccessDto,
+    examples: {
+      twoTools: {
+        summary: 'Allow two tools',
+        value: { toolIds: ['cmob7a1b200d01zrp5h6j7k8l', 'cmob7a1b200d11zrp9m0n1p2q'] },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, schema: { type: 'object', example: { message: 'Tool access updated' } } })
   async setToolAccess(
     @Req() req: any,
     @Param('id') id: string,
@@ -150,6 +202,24 @@ export class RolesController {
     if (!role) throw new NotFoundException('Role not found');
     await this.rolesService.setToolAccess(id, dto.toolIds, req.user.organizationId);
     return { message: 'Tool access updated' };
+  }
+
+  @Put(':id/tools/:toolId/rate-limit')
+  @ApiOperation({
+    summary: 'Set rate limits on an existing role/tool grant (ADMIN)',
+    description: 'Positive integer calls per minute/hour, per user, shared across their sessions and API keys. Null clears a window; omitted fields are preserved. Across granting roles each window uses its highest value, with null meaning unlimited. System roles cannot be modified.',
+  })
+  @ApiBody({ type: SetToolRateLimitsDto })
+  async setToolRateLimits(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('toolId') toolId: string,
+    @Body() dto: SetToolRateLimitsDto,
+  ) {
+    const role = await this.rolesService.findByIdForOrg(id, req.user.organizationId);
+    if (!role) throw new NotFoundException('Role not found');
+    if (role.isSystem) throw new ForbiddenException('Cannot modify system roles');
+    return this.rolesService.setToolRateLimits(id, toolId, req.user.organizationId, dto);
   }
 
   // ── User assignment ───────────────────────────────────────────────────────
@@ -174,7 +244,22 @@ export class RolesController {
   }
 
   @Get('assignments/:userId')
-  @ApiOperation({ summary: 'List the MCP roles assigned to a user (ADMIN)' })
+  @ApiOperation({
+    summary: 'List the MCP roles assigned to a user (ADMIN)',
+    description:
+      'The MCP roles a member holds, with where each assignment comes from (`source`: `manual`, or set by identity ' +
+      'provider group sync). User ids are in `GET /api/users`.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      example: {
+        roleIds: ['cmoc1d2e300e01zrpr3s4t5u6'],
+        roles: [{ id: 'cmoc1d2e300e01zrpr3s4t5u6', name: 'sales-read-only', source: 'manual' }],
+      },
+    },
+  })
   async getAssignments(@Req() req: any, @Param('userId') userId: string) {
     const assignments = await this.rolesService.getUserRoles(
       userId,
@@ -191,7 +276,24 @@ export class RolesController {
   }
 
   @Put('assignments/:userId')
-  @ApiOperation({ summary: 'Set the MCP roles assigned to a user (ADMIN)' })
+  @ApiOperation({
+    summary: 'Set the MCP roles assigned to a user (ADMIN)',
+    description:
+      'Replaces the member\'s **manual** role assignments with `roleIds` (at most 100; `[]` clears them). Assignments ' +
+      'that come from identity provider group sync are kept. The member may then call the union of the tools of all ' +
+      'their roles. 404 when the user is not a member of your workspace or a role id is unknown.',
+  })
+  @ApiBody({
+    type: SetUserRolesDto,
+    examples: {
+      one: { summary: 'Give one role', value: { roleIds: ['cmoc1d2e300e01zrpr3s4t5u6'] } },
+      clear: { summary: 'Remove all manual roles', value: { roleIds: [] } },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    schema: { type: 'object', example: { message: 'Roles updated', roleIds: ['cmoc1d2e300e01zrpr3s4t5u6'] } },
+  })
   async setAssignments(
     @Req() req: any,
     @Param('userId') userId: string,

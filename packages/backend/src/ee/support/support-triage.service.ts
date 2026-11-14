@@ -10,6 +10,7 @@ export const TRIAGE_CATEGORIES = [
   'connector-setup',
   'connector-error',
   'new-connector-request',
+  'billing-question',
   'billing',
   'account',
   'bug',
@@ -21,7 +22,8 @@ export type TriageCategory = (typeof TRIAGE_CATEGORIES)[number];
 
 /**
  * Categories the AI assistant may answer on its own, enterprise customers
- * included. Billing, bugs, feature requests and sales always go to a person.
+ * included. Billing problems, bugs, feature requests and sales always go to
+ * a person.
  */
 export const AI_HANDLED_CATEGORIES: readonly TriageCategory[] = [
   'connector-setup',
@@ -30,6 +32,14 @@ export const AI_HANDLED_CATEGORIES: readonly TriageCategory[] = [
   'account',
   'other',
 ];
+
+/**
+ * Billing how-to questions answered from the dashboard (where the invoices
+ * are, invoices by email, card, plan change, cancelling). The assistant
+ * answers them for Cloud self-service customers only: enterprise customers
+ * are billed by contract, not through the Stripe portal.
+ */
+export const AI_HANDLED_SELF_SERVICE_CATEGORIES: readonly TriageCategory[] = ['billing-question'];
 
 const PRIORITIES = ['Low', 'Medium', 'High'] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -66,7 +76,7 @@ Typical problems: OAuth apps whose redirect URI is not set to <instance URL>/api
 
 You receive the customer's messages, a snapshot of their workspace (plan, trial end, connectors and their names, connector issues of the last 24 hours, last_tool_call: the day of the latest successful tool call or "never") and the catalog connectors the messages name. Return ONLY a JSON object:
 {
-  "category": one of ${TRIAGE_CATEGORIES.map((c) => `"${c}"`).join(', ')},
+  "category": one of ${TRIAGE_CATEGORIES.map((c) => `"${c}"`).join(', ')}; "billing-question" is a how-to question the dashboard answers (where to find or download an invoice, getting invoices by email, changing the card, upgrading, downgrading or cancelling the plan), "billing" is a problem a person must handle (refund, double or unexpected charge, failed or disputed payment, discount or price, correcting an invoice),
   "priority": "Low" | "Medium" | "High",
   "language": ISO 639-1 code of the customer's language,
   "summary": one or two sentences in English for the support agent, naming the likely cause when the workspace snapshot shows it,
@@ -75,13 +85,13 @@ You receive the customer's messages, a snapshot of their workspace (plan, trial 
 
 Priority: High when the customer cannot use the product at all, for billing problems, and for enterprise customers; Low for feature and connector requests; otherwise Medium.
 
-Rules for suggested_reply: short, friendly, concrete next steps; use the workspace snapshot when it explains the problem; never promise refunds, cancellations, discounts, deadlines or features; never offer a call or meeting; for billing write that a person will check and reply; do not invent settings or URLs you are not sure of; no em dashes.
+Rules for suggested_reply: short, friendly, concrete next steps; use the workspace snapshot when it explains the problem; never promise refunds, cancellations, discounts, deadlines or features; never offer a call or meeting; for "billing" write that a person will check and reply; for "billing-question" give the dashboard path: invoices are under Settings → License → Manage subscription & billing → Invoice history, and the same License page has the "Invoices by email" switch; do not invent settings or URLs you are not sure of; no em dashes.
 
 Facts to get right:
 - When the catalog line names a connector, we have it: never write that we do not; point to its setup page. Only when it names none and the workspace has none may you say a person will check whether we support the app.
-- Connectors installed but last_tool_call "never" means no AI assistant is connected yet: the next step is adding the MCP server URL (MCP Servers page) to the assistant, e.g. in Claude Customize → Connectors → Add custom connector.
+- Connectors installed but last_tool_call "never" means no AI assistant is connected yet: the next step is adding the MCP server URL to the assistant, e.g. in Claude Customize → Connectors → Add custom connector. Use the URL from mcp_server_urls when present (else the MCP Servers page); a connectors/setup link is never an MCP server URL.
 - The redirect URI <instance URL>/api/mcp-oauth/callback is only for connectors that sign in with OAuth, entered in the provider's developer console. It is never used to connect an AI assistant, for API-key or bot-token connectors (Telegram, for example), or for webhooks.
-- If the customer pasted a password, token or key, say once that it is now visible in the chat and should be revoked or regenerated, and that new ones go only into the connector page.`;
+- If the customer pasted a password, token or key, say once that it is now visible in the chat and should be revoked or regenerated, and that new ones go only into the connector page. Exception: a Telegram bot token (digits, a colon, then about 35 letters, digits, _ or -) is connected automatically from the chat and a confirmation is posted there; do not ask to revoke it.`;
 
 /**
  * Tags, prioritises and annotates every new support conversation. Runs only
@@ -170,7 +180,7 @@ export class SupportTriageService {
   ) {
     const enterprise = isEnterprise(attrs);
     const assistant = this.aiAssistantUserId();
-    const toAssistant = routeToAssistant(r, channel, assistant);
+    const toAssistant = routeToAssistant(r, channel, assistant, attrs);
     const tags = [r.category, ...segmentTags(attrs), 'ai-triaged'];
     if (toAssistant) tags.push('ai-assistant');
     let teamId: number | undefined;
@@ -229,6 +239,8 @@ const KNOWN_ATTRS = [
   'role',
   'connectors',
   'connector_names',
+  'connector_links',
+  'mcp_server_urls',
   'connector_issues',
   'last_tool_call',
   'signed_up_at',
@@ -253,12 +265,11 @@ export function routeToAssistant(
   r: TriageResult,
   channel: string | undefined,
   assistantUserId: number | null,
+  attrs: Record<string, string> = {},
 ): boolean {
-  return (
-    !!assistantUserId &&
-    channel === 'livechat' &&
-    AI_HANDLED_CATEGORIES.includes(r.category)
-  );
+  if (!assistantUserId || channel !== 'livechat') return false;
+  if (AI_HANDLED_CATEGORIES.includes(r.category)) return true;
+  return AI_HANDLED_SELF_SERVICE_CATEGORIES.includes(r.category) && !isEnterprise(attrs);
 }
 
 export function isEnterprise(attrs: Record<string, string>): boolean {
@@ -317,6 +328,8 @@ export function triageNote(r: TriageResult, attrs: Record<string, string>): stri
     ['Trial ends', attrs.trial_ends_at],
     ['Connectors', [attrs.connectors, attrs.connector_names].filter(Boolean).join(': ')],
     ['Connector issues', attrs.connector_issues],
+    ['Connector links', attrs.connector_links],
+    ['MCP server URL', attrs.mcp_server_urls],
     ['Last AI tool call', attrs.last_tool_call],
     ['Email verified', attrs.email_verified],
   ].filter(([, v]) => v);

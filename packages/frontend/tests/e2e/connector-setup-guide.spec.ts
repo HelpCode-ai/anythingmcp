@@ -42,17 +42,25 @@ const ETSY = {
         problems: [{ q: 'Etsy shows a sign-in page', a: 'Sign in first.' }],
       },
       {
+        id: 'keys',
+        title: 'Copy your two keys',
+        fields: ['ETSY_CLIENT_ID', 'ETSY_CLIENT_SECRET'],
+        saveAndCheck: true,
+      },
+      {
+        id: 'approval',
+        title: "Wait for Etsy's approval",
+        body: 'Etsy reviews every new app before it can be used.',
+        waitForProvider: true,
+        problems: [{ q: "Clicking my app's name does nothing", a: 'That is normal while the app is pending.' }],
+      },
+      {
         id: 'callback',
         title: 'Add the callback URL',
         values: [{ label: 'Callback URL', value: '{{redirectUri}}' }],
         confirm: 'I added the callback URL and saved',
       },
-      {
-        id: 'keys',
-        title: 'Copy your keys and sign in',
-        fields: ['ETSY_CLIENT_ID', 'ETSY_CLIENT_SECRET'],
-        problems: [{ q: 'My app says Pending', a: 'Etsy emails you when it is active.' }],
-      },
+      { id: 'sign-in', title: 'Sign in with Etsy', body: 'AnythingMCP checks your keys once more, then opens Etsy.' },
     ],
   },
 };
@@ -92,7 +100,19 @@ interface Calls {
   events: any[];
 }
 
-async function setup(page: Page, opts: { verify?: any; calls30d?: number; authMode?: string } = {}): Promise<Calls> {
+const PENDING = { ok: false, kind: 'auth_failed', status: 403, message: 'Etsy does not accept these app keys yet. A new Etsy app stays Pending until Etsy approves it.' };
+
+async function setup(
+  page: Page,
+  opts: {
+    /** The check's answer; a function answers each call in turn (the app approved between two checks). */
+    verify?: any | ((n: number) => any);
+    calls30d?: number;
+    authMode?: string;
+    /** What the existing connector c9 already stores. */
+    stored?: { envVars: Record<string, string>; maskedEnvVars: string[] };
+  } = {},
+): Promise<Calls> {
   const calls: Calls = { verify: [], imports: [], authorize: [], events: [] };
   await page.context().addCookies([{ name: 'amcp_token', value: 'test-token', url: 'http://localhost:3100' }]);
   await page.addInitScript((user) => {
@@ -112,7 +132,8 @@ async function setup(page: Page, opts: { verify?: any; calls30d?: number; authMo
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (/\/api\/adapters\/(etsy|woocommerce)\/verify$/.test(url)) {
       calls.verify.push(req.postDataJSON());
-      return json(opts.verify ?? { ok: true, toolName: 'probe', durationMs: 90, sample: '{"ok":true}' });
+      const answer = typeof opts.verify === 'function' ? opts.verify(calls.verify.length) : opts.verify;
+      return json(answer ?? { ok: true, toolName: 'probe', durationMs: 90, sample: '{"ok":true}' });
     }
     if (/\/api\/adapters\/(etsy|woocommerce)\/import$/.test(url)) {
       calls.imports.push(req.postDataJSON());
@@ -127,7 +148,7 @@ async function setup(page: Page, opts: { verify?: any; calls30d?: number; authMo
     }
     if (url.includes('/api/connectors/c9/test')) return json({ ok: true, message: 'Connected' });
     if (url.includes('/api/connectors/c9')) {
-      return json({ id: 'c9', setupStatus: 'ready', envVars: {}, maskedEnvVars: [], mcpServers: [{ mcpServerId: 's1' }] });
+      return json({ id: 'c9', setupStatus: 'ready', envVars: {}, maskedEnvVars: [], ...opts.stored, mcpServers: [{ mcpServerId: 's1' }] });
     }
     if (url.includes('/api/mcp-servers/s1/activity')) return json({ calls30d: opts.calls30d ?? 0, lastCallAt: null });
     if (url.includes('/api/mcp-servers/s1')) return json({ id: 's1', name: 'Default', slug: 'default' });
@@ -145,7 +166,7 @@ async function setup(page: Page, opts: { verify?: any; calls30d?: number; authMo
   return calls;
 }
 
-test('Etsy: intro, then one step at a time, then the sign-in', async ({ page }) => {
+test('Etsy: intro, then one step at a time; an app already approved skips the wait', async ({ page }) => {
   const calls = await setup(page);
   await page.route('https://www.etsy.com/**', (route) => route.fulfill({ status: 200, body: 'Etsy consent page' }));
   await page.goto('/connectors/setup/etsy');
@@ -172,54 +193,97 @@ test('Etsy: intro, then one step at a time, then the sign-in', async ({ page }) 
   await page.getByLabel('I created the app').check();
   await next.click();
 
-  // Step 2: this instance's callback URL, to copy.
-  await expect(page.getByRole('heading', { name: 'Add the callback URL' })).toBeVisible();
-  await expect(page.getByText(REDIRECT)).toBeVisible();
-  await page.getByLabel('I added the callback URL and saved').check();
-  await page.getByRole('button', { name: 'Continue' }).click();
-
-  // Step 3: the keys, checked, then off to Etsy.
-  await expect(page.getByRole('heading', { name: 'Copy your keys and sign in' })).toBeVisible();
+  // Step 2: the keys, checked here, saved, then asked about at Etsy.
+  await expect(page.getByRole('heading', { name: 'Copy your two keys' })).toBeVisible();
   await expect(page.getByLabel('Refresh token')).toBeHidden();
-  await page.getByRole('button', { name: 'Check and sign in to Etsy' }).click();
+  await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
   await expect(page.getByText('Required').first()).toBeVisible();
   expect(calls.verify).toHaveLength(0);
   await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
   await page.getByLabel('Shared secret').fill('s3cr3t0abc');
+  await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
+
+  // Etsy accepts them: no wait, straight to the callback URL.
+  await expect(page.getByRole('heading', { name: 'Add the callback URL' })).toBeVisible();
+  await expect(page).toHaveURL(/\/connectors\/setup\/etsy\?connector=c9$/);
+  expect(calls.imports).toHaveLength(1);
+  expect(calls.imports[0].credentials).toMatchObject({ ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2', ETSY_CLIENT_SECRET: 's3cr3t0abc' });
+  expect(calls.verify[0]).toMatchObject({ connectorId: 'c9' });
+  await expect(page.getByText(REDIRECT)).toBeVisible();
+  // Back skips the wait Etsy already cleared.
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(page.getByRole('heading', { name: 'Copy your two keys' })).toBeVisible();
+  await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
+  await page.getByLabel('I added the callback URL and saved').check();
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  // Last step: checked once more, then off to Etsy, without a second connector.
+  await expect(page.getByRole('heading', { name: 'Sign in with Etsy' })).toBeVisible();
   await page.getByRole('button', { name: 'Check and sign in to Etsy' }).click();
   await page.waitForURL('https://www.etsy.com/oauth/connect?state=s1');
-  expect(calls.verify[0].credentials).toMatchObject({ ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2', ETSY_CLIENT_SECRET: 's3cr3t0abc' });
   expect(calls.imports).toHaveLength(1);
   expect(calls.authorize).toEqual([{ returnTo: '/connectors/setup/etsy?connector=c9&step=done' }]);
 
   const viewed = calls.events.filter((e) => e.event === 'setup_step_viewed').map((e) => e.metadata.step);
-  expect(viewed).toEqual(['create-app', 'callback', 'keys']);
+  expect(viewed).toEqual(['create-app', 'keys', 'callback', 'sign-in']);
 });
 
-test('Etsy: an app still Pending keeps the user on the keys step, and the page reopens there', async ({ page }) => {
-  const calls = await setup(page, {
-    verify: { ok: false, kind: 'auth_failed', status: 403, message: 'Etsy does not accept these app keys yet. A new Etsy app stays Pending until Etsy approves it.' },
-  });
+test('Etsy: an app awaiting approval waits with its keys saved, and goes on once Etsy approves it', async ({ page }) => {
+  let approved = false;
+  const calls = await setup(page, { verify: () => (approved ? { ok: null, kind: 'needs_authorization' } : PENDING) });
   await page.goto('/connectors/setup/etsy');
   await page.getByRole('button', { name: 'Start' }).click();
   await page.getByLabel('I created the app').check();
   await page.getByRole('button', { name: 'Continue' }).click();
-  await page.getByLabel('I added the callback URL and saved').check();
+  await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
+  await page.getByLabel('Shared secret').fill('s3cr3t0abc');
+  await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
+
+  // The wait: what it is, that the keys are kept, and no way past it yet.
+  await expect(page.getByRole('heading', { name: "Wait for Etsy's approval" })).toBeVisible();
+  await expect(page.getByText('Etsy does not accept these keys yet')).toBeVisible();
+  await expect(page.getByText(/Your keys are saved/)).toBeVisible();
+  await expect(page.getByText(/Last checked at/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+  expect(calls.imports).toHaveLength(1);
+
+  // Tomorrow, after Etsy's e-mail: the same connector, the wait step, and
+  // the page asks Etsy again on its own.
+  approved = true;
+  await page.reload();
+  await expect(page).toHaveURL(/connector=c9/);
+  await page.getByRole('button', { name: "Continue at step 3: Wait for Etsy's approval" }).click();
+  await expect(page.getByText('Etsy approved your app.')).toBeVisible();
+  expect(calls.verify.at(-1)).toMatchObject({ connectorId: 'c9', credentials: {} });
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Add the callback URL' })).toBeVisible();
+  expect(calls.imports).toHaveLength(1);
+});
+
+test('Etsy: "Check again" asks right away, and a wrong secret leads back to the keys', async ({ page }) => {
+  let approved = false;
+  const calls = await setup(page, { verify: () => (approved ? { ok: null, kind: 'needs_authorization' } : PENDING) });
+  await page.goto('/connectors/setup/etsy');
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.getByLabel('I created the app').check();
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
   await page.getByLabel('Shared secret').fill('s3cr3t0abc');
-  await page.getByRole('button', { name: 'Check and sign in to Etsy' }).click();
-  await expect(page.getByText('stays Pending until Etsy approves it')).toBeVisible();
-  expect(calls.imports).toHaveLength(0);
+  await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
+  await expect(page.getByText('Etsy does not accept these keys yet')).toBeVisible();
 
-  // Tomorrow, after Etsy's e-mail: straight back to the keys, boxes ticked,
-  // and nothing typed was kept.
-  await page.reload();
-  await page.getByRole('button', { name: 'Continue at step 3: Copy your keys and sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Copy your keys and sign in' })).toBeVisible();
-  await expect(page.getByLabel('Shared secret')).toHaveValue('');
-  await page.getByRole('button', { name: 'Back' }).click();
-  await expect(page.getByLabel('I added the callback URL and saved')).toBeChecked();
+  // Already approved at Etsy, still refused: the keys again, from the same row.
+  await page.getByRole('button', { name: /Already approved, but this still waits/ }).click();
+  await expect(page.getByRole('heading', { name: 'Copy your two keys' })).toBeVisible();
+  await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
+  await expect(page.getByText('Etsy does not accept these keys yet')).toBeVisible();
+
+  const before = calls.verify.length;
+  approved = true;
+  await page.getByRole('button', { name: 'Check again' }).click();
+  await expect(page.getByText('Etsy approved your app.')).toBeVisible();
+  expect(calls.verify.length).toBe(before + 1);
+  await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled();
 });
 
 test('the guide can be left for the one-page form, and back', async ({ page }) => {
@@ -238,7 +302,8 @@ test('WooCommerce: the link into the shop is built from the address of the step 
   await page.getByRole('button', { name: 'Start' }).click();
   await page.getByLabel('Shop address').fill('https://shop.example.com/');
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByText('The https:// address of the site root.')).toBeVisible();
+  // The refusal says what to change, not only what the address should look like.
+  await expect(page.getByText('Remove the / at the end: https://shop.example.com')).toBeVisible();
   await page.getByLabel('Shop address').fill('https://shop.example.com');
   await page.getByRole('button', { name: 'Continue' }).click();
 
@@ -300,17 +365,22 @@ test('marketplace: each card says what the setup takes, and can be filtered by i
   await expect(page.getByText('Telegram Bot', { exact: true })).toHaveCount(0);
 });
 
-test('finishing an existing connector can skip to the keys, and a refusal does not follow you back', async ({ page }) => {
-  await setup(page, { verify: { ok: false, kind: 'auth_failed', status: 403, message: 'Etsy does not accept these app keys yet.' } });
+test('finishing an existing connector can skip to the sign-in; an app still pending waits there', async ({ page }) => {
+  const calls = await setup(page, {
+    verify: PENDING,
+    stored: { envVars: { ETSY_CLIENT_ID: 'a1b2c3d4e5f6g7h8i9j0k1l2' }, maskedEnvVars: ['ETSY_CLIENT_SECRET'] },
+  });
   await page.goto('/connectors/setup/etsy?connector=c9');
-  await page.getByRole('button', { name: 'Done the rest already? Go to step 3: Copy your keys and sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Copy your keys and sign in' })).toBeVisible();
-  await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2');
-  await page.getByLabel('Shared secret').fill('s3cr3t0abc');
+  await page.getByRole('button', { name: 'Done the rest already? Go to step 5: Sign in with Etsy' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in with Etsy' })).toBeVisible();
   await page.getByRole('button', { name: 'Check and sign in to Etsy' }).click();
-  await expect(page.getByText('Etsy does not accept these app keys yet.')).toBeVisible();
+  // Refused: not an error at the last step, but the wait, with the keys kept.
+  await expect(page.getByRole('heading', { name: "Wait for Etsy's approval" })).toBeVisible();
+  await expect(page.getByText('Etsy does not accept these keys yet')).toBeVisible();
+  expect(calls.imports).toHaveLength(0);
+  expect(calls.authorize).toHaveLength(0);
   await page.getByRole('button', { name: 'Back' }).click();
-  await expect(page.getByRole('heading', { name: 'Add the callback URL' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Copy your two keys' })).toBeVisible();
   await expect(page.getByText('Etsy does not accept these app keys yet.')).toHaveCount(0);
 });
 

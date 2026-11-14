@@ -1,0 +1,439 @@
+{
+  "slug": "factorial-hr",
+  "name": "Factorial HR",
+  "description": "Manage company HR data with Factorial: inspect employees, organizational teams, leave requests, and attendance shifts.",
+  "instructions": "Manage company HR data with Factorial: inspect employees, organizational teams, time-off/leave requests, and attendance shifts.\n\n**Authentication**:\n1. Sign in to your Factorial workspace at https://app.factorialhr.com (or demo at https://app.demo.factorial.dev).\n2. Navigate to **Settings → API Keys**.\n3. Generate a company API key and copy it immediately.\n4. Set the `FACTORIAL_API_KEY` environment variable. Calls are authenticated via the `x-api-key` header.\n\n**Identifiers**:\n- Employee IDs: numeric strings or integers identifying an employee (e.g. \"123456\").\n- Team IDs: numeric strings identifying a team or department (e.g. \"4567\").\n- Leave IDs: numeric strings identifying a time-off request (e.g. \"78901\").\n- Shift IDs: numeric strings identifying an attendance record (e.g. \"89012\").\n\n**Pagination and limits**:\n- Cursor-based pagination using `limit`, `after_id`, and `before_id`.\n- The maximum and default page size is 100 items per request; list tools default to `limit: 20` for concise responses.\n- Responses contain a `meta` object with `has_next_page`, `end_cursor`, `has_previous_page`, and `start_cursor` alongside the `data` array.\n- To fetch the next page, pass `after_id = meta.end_cursor` from the previous page while `meta.has_next_page` is true.\n\n**Common workflows**:\n1. **Find an employee and check profile**: Call `factorial_hr_list_employees` with `full_text_name` or `only_active: true`, then call `factorial_hr_get_employee` with the returned employee `id`.\n2. **Review team structure**: Call `factorial_hr_list_teams` to list departments and managers, then list employees filtering by `team_ids`.\n3. **Audit attendance and leave**: Call `factorial_hr_list_leaves` for an employee's requested time-off, and call `factorial_hr_list_shifts` to inspect clocked shifts in a date range.\n\n**Limitations**:\n- Read-only connector: write, update, and delete actions are not supported.\n- Requires company-wide API key with appropriate permissions (some employee fields depend on admin privileges).",
+  "region": "intl",
+  "category": "hr",
+  "icon": "factorial-hr",
+  "docsUrl": "https://apidoc.factorialhr.com",
+  "requiredEnvVars": [
+    "FACTORIAL_API_KEY"
+  ],
+  "envVarMeta": {
+    "FACTORIAL_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Factorial, Settings > API Keys: generate an API key and copy it.",
+      "link": "https://app.factorialhr.com/",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the API key generated in Factorial Settings > API Keys."
+    }
+  },
+  "connector": {
+    "name": "Factorial HR",
+    "type": "REST",
+    "baseUrl": "https://api.factorialhr.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{FACTORIAL_API_KEY}}"
+    }
+  },
+  "probe": {
+    "tool": "factorial_hr_list_employees",
+    "params": {
+      "limit": 1
+    }
+  },
+  "verifyHints": {
+    "401": "Invalid or revoked Factorial API key. Generate a new key in Factorial under Settings > API Keys.",
+    "403": "Forbidden. Your Factorial API key lacks permission to access this resource.",
+    "429": "Rate limit exceeded. Factorial allows up to 100 requests per minute."
+  },
+  "tools": [
+    {
+      "name": "factorial_hr_list_employees",
+      "description": "List company employees with directory details, contact information, role, and active status. Filter by name, email, team, manager status, or active employment. Paginate with after_id = meta.end_cursor while meta.has_next_page is true. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of employees to return per page (default 20, maximum 100)."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Cursor pointer to fetch records after this cursor (pass meta.end_cursor from previous page)."
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Cursor pointer to fetch records before this cursor (pass meta.start_cursor from previous page)."
+          },
+          "only_active": {
+            "type": "boolean",
+            "description": "Set to true to return only active employees not terminated as of today."
+          },
+          "only_managers": {
+            "type": "boolean",
+            "description": "Set to true to return only employees who have at least one direct report."
+          },
+          "full_text_name": {
+            "type": "string",
+            "description": "Filter employees by searching for full or partial name."
+          },
+          "name_starts_with": {
+            "type": "string",
+            "description": "Filter employees whose first or last name starts with the given prefix."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter employees by one or more specific employee IDs."
+          },
+          "emails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter employees by one or more email addresses."
+          },
+          "team_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter employees by one or more team IDs they belong to."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2026-10-01/resources/employees/employees",
+        "queryParams": {
+          "limit": "$limit",
+          "after_id": "$after_id",
+          "before_id": "$before_id",
+          "only_active": "$only_active",
+          "only_managers": "$only_managers",
+          "full_text_name": "$full_text_name",
+          "name_starts_with": "$name_starts_with",
+          "ids[]": "$ids",
+          "emails[]": "$emails",
+          "team_ids[]": "$team_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].bank_number",
+            "data[*].swift_bic",
+            "data[*].bank_number_format",
+            "data[*].social_security_number",
+            "data[*].address_line_1",
+            "data[*].address_line_2",
+            "data[*].postal_code",
+            "data[*].personal_email",
+            "data[*].contact_number",
+            "data[*].disability_percentage_cents"
+          ]
+        }
+      }
+    },
+    {
+      "name": "factorial_hr_get_employee",
+      "description": "Retrieve detailed profile, personal information, contract details, and role for a single employee by their ID. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique identifier of the employee to retrieve."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2026-10-01/resources/employees/employees/{id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "bank_number",
+            "swift_bic",
+            "bank_number_format",
+            "social_security_number",
+            "address_line_1",
+            "address_line_2",
+            "postal_code",
+            "personal_email",
+            "contact_number",
+            "disability_percentage_cents"
+          ]
+        }
+      }
+    },
+    {
+      "name": "factorial_hr_list_teams",
+      "description": "List company teams, departments, and organizational units with leader and parent team hierarchy. Filter by team IDs. Paginate with after_id = meta.end_cursor while meta.has_next_page is true. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of teams to return per page (default 20, maximum 100)."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Cursor pointer to fetch records after this cursor (pass meta.end_cursor from previous page)."
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Cursor pointer to fetch records before this cursor (pass meta.start_cursor from previous page)."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter by one or more specific team IDs."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2026-10-01/resources/teams/teams",
+        "queryParams": {
+          "limit": "$limit",
+          "after_id": "$after_id",
+          "before_id": "$before_id",
+          "ids[]": "$ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "name": "name",
+                "description": "description",
+                "parent_team_id": "parent_team_id",
+                "depth": "depth",
+                "company_id": "company_id",
+                "lead_ids": "lead_ids",
+                "employee_ids": "employee_ids"
+              }
+            },
+            "meta": {
+              "start_cursor": "$.meta.start_cursor",
+              "end_cursor": "$.meta.end_cursor",
+              "has_next_page": "$.meta.has_next_page",
+              "has_previous_page": "$.meta.has_previous_page",
+              "limit": "$.meta.limit",
+              "total": "$.meta.total"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "factorial_hr_list_leaves",
+      "description": "List employee time-off and leave requests with approval status, date ranges, and leave type. Set include_duration to request duration details and include_duration_by_day for the per-day breakdown (detailed fields are only populated when the corresponding option is requested). Filter by employee IDs, date window, or approval. Paginate with after_id = meta.end_cursor while meta.has_next_page is true. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of leave records to return per page (default 20, maximum 100)."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Cursor pointer to fetch records after this cursor (pass meta.end_cursor from previous page)."
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Cursor pointer to fetch records before this cursor (pass meta.start_cursor from previous page)."
+          },
+          "employee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter leaves by one or more employee IDs."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter leaves by one or more specific leave IDs."
+          },
+          "from": {
+            "type": "string",
+            "description": "Filter leaves starting on or after this date (format YYYY-MM-DD)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Filter leaves ending on or before this date (format YYYY-MM-DD)."
+          },
+          "approved": {
+            "type": "boolean",
+            "description": "Filter leaves by approval status (true for approved, false for unapproved/pending)."
+          },
+          "only_active": {
+            "type": "boolean",
+            "description": "Set to true to exclude leaves belonging to terminated employees."
+          },
+          "include_deleted_leaves": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to include deleted leaves (not included by default if not specified)."
+          },
+          "include_duration": {
+            "type": "boolean",
+            "default": false,
+            "description": "Set to true to request duration information (duration_attributes, days_taken, hours_amount_in_cents). Detailed fields are only populated when requested."
+          },
+          "include_duration_by_day": {
+            "type": "boolean",
+            "default": false,
+            "description": "Set to true to request the per-day duration breakdown (duration_by_day_attributes). Detailed fields are only populated when requested."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2026-10-01/resources/timeoff/leaves",
+        "queryParams": {
+          "limit": "$limit",
+          "after_id": "$after_id",
+          "before_id": "$before_id",
+          "employee_ids[]": "$employee_ids",
+          "ids[]": "$ids",
+          "from": "$from",
+          "to": "$to",
+          "approved": "$approved",
+          "only_active": "$only_active",
+          "include_deleted_leaves": "$include_deleted_leaves",
+          "include_duration": "$include_duration",
+          "include_duration_by_day": "$include_duration_by_day"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "employee_id": "employee_id",
+                "company_id": "company_id",
+                "leave_type_id": "leave_type_id",
+                "start_on": "start_on",
+                "finish_on": "finish_on",
+                "half_day": "half_day",
+                "approved": "approved",
+                "days_taken": "days_taken",
+                "duration_attributes": "duration_attributes",
+                "duration_by_day_attributes": "duration_by_day_attributes",
+                "hours_amount_in_cents": "hours_amount_in_cents",
+                "employee_full_name": "employee_full_name",
+                "leave_type_name": "leave_type_name",
+                "start_time": "start_time",
+                "created_at": "created_at",
+                "updated_at": "updated_at",
+                "deleted_at": "deleted_at"
+              }
+            },
+            "meta": {
+              "start_cursor": "$.meta.start_cursor",
+              "end_cursor": "$.meta.end_cursor",
+              "has_next_page": "$.meta.has_next_page",
+              "has_previous_page": "$.meta.has_previous_page",
+              "limit": "$.meta.limit",
+              "total": "$.meta.total"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "factorial_hr_list_shifts",
+      "description": "List employee attendance clock-in and clock-out shifts with recorded hours and locations. Filter by employee IDs or date window. Paginate with after_id = meta.end_cursor while meta.has_next_page is true. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of shift records to return per page (default 20, maximum 100)."
+          },
+          "after_id": {
+            "type": "string",
+            "description": "Cursor pointer to fetch records after this cursor (pass meta.end_cursor from previous page)."
+          },
+          "before_id": {
+            "type": "string",
+            "description": "Cursor pointer to fetch records before this cursor (pass meta.start_cursor from previous page)."
+          },
+          "employee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter attendance shifts by one or more employee IDs."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter attendance shifts by one or more specific shift IDs."
+          },
+          "start_on": {
+            "type": "string",
+            "description": "Filter shifts starting on or after this date (format YYYY-MM-DD)."
+          },
+          "end_on": {
+            "type": "string",
+            "description": "Filter shifts ending on or before this date (format YYYY-MM-DD)."
+          },
+          "half_day": {
+            "type": "boolean",
+            "default": false,
+            "description": "Set to true to return only the shifts marked as covering half a day. Passing false has no effect."
+          },
+          "sort_created_at_asc": {
+            "type": "boolean",
+            "default": true,
+            "description": "Flag to sort attendance shifts by created_at in ascending order (default true)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/2026-10-01/resources/attendance/shifts",
+        "queryParams": {
+          "limit": "$limit",
+          "after_id": "$after_id",
+          "before_id": "$before_id",
+          "employee_ids[]": "$employee_ids",
+          "ids[]": "$ids",
+          "start_on": "$start_on",
+          "end_on": "$end_on",
+          "half_day": "$half_day",
+          "sort_created_at_asc": "$sort_created_at_asc"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].in_location_latitude",
+            "data[*].in_location_longitude",
+            "data[*].in_location_accuracy",
+            "data[*].out_location_latitude",
+            "data[*].out_location_longitude",
+            "data[*].out_location_accuracy"
+          ]
+        }
+      }
+    }
+  ]
+}

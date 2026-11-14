@@ -1,0 +1,12 @@
+- Welche Entity-Sets und Felder veröffentlicht unsere Sage 100 Web API im $metadata-Dokument?
+- Such in Adressen nach dem Matchcode „MUSTER" und zeig mir Anschrift und Ort.
+- Liste die Belege aus diesem Monat mit Belegnummer, Adresse und Gesamtbetrag auf.
+- Zeig mir den Beleg 20260415 aus Belege inklusive aller Belegpositionen.
+- Such im Artikelstamm (Artikel) nach „Schraube M8" und zeig Mengeneinheit und Preis.
+- Welche Adressen in München gibt es in Adressen, mit Adressnummer und Matchcode?
+- Lies den vollständigen Artikeldatensatz zum Schlüssel „100420" aus Artikel.
+- Welche Belege seit dem 01.01.2026 haben einen Betrag über 10.000 EUR?
+- Zeig die letzten 20 Belege zur Adressnummer 10015, absteigend nach Belegdatum sortiert.
+- Welche kundenspezifischen Entity-Sets stellt unsere Sage-100-Installation bereit?
+- Öffne die Adresse 10015 aus Adressen mit den verknüpften Ansprechpartnern.
+- Prüfe in $metadata, welches Entity-Set die Lagerbestände unserer Sage 100 enthält, und frage die ersten 20 Zeilen ab.

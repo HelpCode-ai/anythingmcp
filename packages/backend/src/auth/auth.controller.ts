@@ -1,3 +1,4 @@
+import { LicenseGuardService } from '../license/license-guard.service';
 import {
   Controller,
   Post,
@@ -45,6 +46,8 @@ import { EditionService } from '../ee/licensing/edition.service';
 import { SignupAttributionDto } from './signup-attribution.dto';
 import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from './disposable-email.util';
 import { emailLookupWhere, normalizeEmail, sameEmail } from '../common/email.util';
+import { maskEmail } from './mcp-email-verification';
+import { EmailVerificationService, MAX_CODES_PER_HOUR } from './email-verification.service';
 
 /**
  * Registration and password reset answer the same whether or not the address
@@ -234,7 +237,23 @@ export class AuthController {
     private readonly productEvents: ProductEventService,
     private readonly edition: EditionService,
     @Optional() private readonly adsSignup?: AdsSignupService,
-  ) {}
+    @Optional() private readonly licenseGuard?: LicenseGuardService,
+  ) {
+    // Built from this controller's own dependencies (it is stateless), so the
+    // dashboard endpoints and the MCP authorization page share one
+    // implementation without changing how this controller is constructed.
+    this.verification = new EmailVerificationService(
+      prisma,
+      usersService,
+      emailService,
+      configService,
+      licenseService,
+      adsSignup,
+    );
+  }
+
+  /** Issuing and checking email verification codes (shared with LoginController). */
+  private readonly verification: EmailVerificationService;
 
   private getFrontendUrl(_req?: any): string {
     // SECURITY: we deliberately ignore req.headers.origin / req.headers.referer
@@ -269,37 +288,10 @@ export class AuthController {
   private async createAndSendVerificationCode(
     userId: string,
     email: string,
-    req?: any,
+    _req?: any,
     opts: { sendInBackground?: boolean } = {},
   ): Promise<boolean> {
-    // Invalidate old tokens
-    await this.prisma.emailVerificationToken.updateMany({
-      where: { userId, usedAt: null },
-      data: { usedAt: new Date() },
-    });
-
-    // Generate 6-digit code + UUID link token
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const linkToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-
-    await this.prisma.emailVerificationToken.create({
-      data: { userId, token: linkToken, code, expiresAt },
-    });
-
-    // Link straight to the instance's verify-email page (the anythingmcp.com
-    // hop 404s behind the marketing site's i18n middleware).
-    const instanceUrl = this.getFrontendUrl(req);
-    const verifyUrl = `${instanceUrl}/verify-email?token=${linkToken}`;
-
-    // Send email
-    const send = this.emailService.sendVerificationEmail(email, code, verifyUrl).catch((err) => {
-      this.logger.error(`Failed to send verification email to ${email}: ${err}`);
-      return false;
-    });
-    // The code exists either way; only the delivery is left running.
-    if (opts.sendInBackground) return true;
-    return send;
+    return this.verification.sendCode(userId, email, opts);
   }
 
   @Post('login/recovery')
@@ -629,35 +621,9 @@ export class AuthController {
   async verifyEmail(@Req() req: any, @Body() dto: VerifyEmailDto) {
     const userId = req.user.sub;
 
-    const record = await this.prisma.emailVerificationToken.findFirst({
-      where: {
-        userId,
-        code: dto.code,
-        usedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-    });
-
-    if (!record) {
+    if (!(await this.verification.verifyCode(userId, dto.code))) {
       throw new BadRequestException('Invalid or expired verification code');
     }
-
-    // Mark token as used
-    await this.prisma.emailVerificationToken.update({
-      where: { id: record.id },
-      data: { usedAt: new Date() },
-    });
-
-    // Mark user as verified
-    await this.usersService.update(userId, { emailVerified: true });
-
-    // Cloud: deterministically ensure the workspace has a trial before any
-    // license gate evaluates (best-effort; never blocks verification).
-    await this.ensureCloudTrial(userId);
-
-    // Cloud, ChatGPT Ads sign-ups only: report the verified sign-up (in the
-    // background; never blocks verification).
-    void this.adsSignup?.onEmailVerified(userId);
 
     return { message: 'Email verified successfully', emailVerified: true };
   }
@@ -680,45 +646,12 @@ export class AuthController {
       where: { id: record.id },
       data: { usedAt: new Date() },
     });
-    await this.usersService.update(record.userId, { emailVerified: true });
-
-    // Cloud: ensure a trial exists before the user lands back in the app.
-    await this.ensureCloudTrial(record.userId);
-    void this.adsSignup?.onEmailVerified(record.userId);
+    // Cloud: also ensures a trial exists before the user lands back in the app.
+    await this.verification.markVerified(record.userId);
 
     // Redirect to frontend
     const frontendUrl = this.getFrontendUrl(req);
     return res.redirect(`${frontendUrl}/login?emailVerified=true`);
-  }
-
-  /**
-   * Cloud only: make sure a freshly-verified user's workspace has a trial
-   * license, idempotently and best-effort. This removes the client-side race
-   * where a failed trial activation in the login flow dropped the user onto the
-   * "no-license" wall instead of onboarding. Never throws — verification must
-   * succeed regardless; the login flow + LicenseWall "Start trial" CTA remain
-   * as fallbacks.
-   */
-  private async ensureCloudTrial(userId: string): Promise<void> {
-    const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
-    if (!isCloud) return;
-    try {
-      const user = await this.usersService.findById(userId);
-      if (!user?.organizationId) return;
-      // Idempotent: skip if this org already has any license (trial or paid).
-      const existing = await this.prisma.license.findFirst({
-        where: { organizationId: user.organizationId },
-      });
-      if (existing) return;
-      await this.licenseService.requestTrialLicense(
-        user.email,
-        user.name || user.email,
-        user.organizationId,
-      );
-      this.logger.log(`Cloud trial activated for org ${user.organizationId} on email verification.`);
-    } catch (err: any) {
-      this.logger.warn(`Cloud trial activation on verify failed for user ${userId}: ${err.message}`);
-    }
   }
 
   @Post('resend-verification')
@@ -737,11 +670,8 @@ export class AuthController {
     }
 
     // Rate limit: max 5 tokens in the last hour
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const recentCount = await this.prisma.emailVerificationToken.count({
-      where: { userId, createdAt: { gt: oneHourAgo } },
-    });
-    if (recentCount >= 5) {
+    const recentCount = await this.verification.codesSentWithin(userId, 60 * 60 * 1000);
+    if (recentCount >= MAX_CODES_PER_HOUR) {
       throw new BadRequestException('Too many verification attempts. Please try again later.');
     }
 
@@ -781,6 +711,8 @@ export class AuthController {
     // Refused here too, not only on acceptance, so the admin learns it before
     // the invitee does.
     await this.edition.assertSeatAvailable(existing?.id);
+    // Cloud: the plan's user cap (PLAN_CAPS_ENFORCE).
+    await this.licenseGuard?.checkCanAddMember(req.user.organizationId);
 
     // Reuse an existing pending invitation instead of rejecting: throwing a
     // 409 here left admins stuck with no way to get the link after a failed
@@ -954,6 +886,7 @@ export class AuthController {
         );
       }
       await this.edition.assertSeatAvailable(existing.id);
+      await this.licenseGuard?.checkCanAddMember(invite.organizationId);
       await this.organizationsService.addMember(existing.id, invite.organizationId, invite.role);
       // Switch their active org to the newly joined one
       user = await this.organizationsService.switchOrg(existing.id, invite.organizationId);
@@ -968,6 +901,7 @@ export class AuthController {
         throw new BadRequestException('A display name is required.');
       }
       await this.edition.assertSeatAvailable();
+      await this.licenseGuard?.checkCanAddMember(invite.organizationId);
       const passwordHash = await this.authService.hashPassword(dto.password);
       user = await this.usersService.create({
         email: invite.email,
@@ -1057,7 +991,7 @@ export class AuthController {
     // for which accounts are SSO-only.
     if (user.passwordLoginDisabled) {
       this.logger.warn(
-        `Password reset refused for SSO-only account: ${user.email}`,
+        `Password reset refused for SSO-only account: ${maskEmail(user.email)}`,
       );
       return answerNoSoonerThan(startedAt, NEUTRAL_PASSWORD_RESET);
     }
@@ -1084,7 +1018,7 @@ export class AuthController {
       .then((sent) => {
         if (!sent) {
           this.logger.warn(
-            `Password reset requested for ${dto.email} but email could not be sent (SMTP not configured)`,
+            `Password reset requested for ${maskEmail(dto.email)} but email could not be sent (SMTP not configured)`,
           );
         }
       })

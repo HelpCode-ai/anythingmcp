@@ -1,0 +1,68 @@
+---
+title: "How to Connect Home Assistant to MCP for AI Agents"
+description: "Read Home Assistant entity states, history, logbook, and calendars with AI agents via MCP. Read-only: the adapter never controls devices."
+category: "connectors"
+keyword: "Home Assistant MCP Server, Home Assistant API AI, Home Assistant REST API MCP, connect Home Assistant to Claude, Home Assistant ChatGPT"
+publishedAt: "2026-10-26"
+adapterSlug: "home-assistant"
+---
+
+## Home Assistant with AI Agents
+
+Home Assistant is the most widely used open-source home automation platform, running on your own hardware. By connecting its REST API to AnythingMCP, AI agents can read the current state of every sensor, light, door, and thermostat, the recorded history, the logbook, and your calendars.
+
+The adapter is **read-only**: every tool is a `GET` request. It cannot call actions (services), turn devices on or off, unlock doors, run scripts, or change states. Home Assistant's own action endpoint is not admin-only, so the read-only guarantee comes from the adapter exposing only `GET` requests, not from the token.
+
+## Quick Setup
+
+```bash
+git clone https://github.com/HelpCode-ai/anythingmcp.git
+cd anythingmcp && docker compose up -d
+```
+
+1. In Home Assistant, create a dedicated **non-admin** user for AnythingMCP (**Settings > People > Users > Add user**, with Administrator switched off). None of the endpoints this adapter uses needs admin rights.
+2. Log in as that user, open your profile (your name at the bottom left), open the **Security** tab, and under **Long-lived access tokens** click **Create token**. Copy it: it is shown once, and Home Assistant makes these tokens valid for 10 years.
+3. Open `http://localhost:3000/connectors/store`, import the Home Assistant adapter, and configure:
+   - `HOME_ASSISTANT_URL`: The address you open Home Assistant at, without a trailing slash and without `/api` (e.g., `https://home.example.com` or `http://192.168.1.10:8123`).
+   - `HOME_ASSISTANT_TOKEN`: The long-lived access token, sent as `Authorization: Bearer <token>`.
+4. Check the setup with `home_assistant_get_config`.
+
+```json
+{
+  "mcpServers": {
+    "home-assistant": { "url": "http://localhost:4000/mcp" }
+  }
+}
+```
+
+## Where Home Assistant Runs
+
+- **Self-hosted AnythingMCP**: Home Assistant usually lives on a private network (`http://192.168.x.x:8123`, `homeassistant.local`). The outbound SSRF guard blocks private and local addresses by default, so an administrator must allow the host through the `SSRF_ALLOWED_HOSTS` environment variable or the allowlist in the admin settings.
+- **AnythingMCP Cloud**: Cloud can only reach a Home Assistant instance exposed on the public internet over HTTPS, for example behind a reverse proxy. Private IPs and local hostnames are refused, and the allowlist cannot be changed on Cloud.
+
+## Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `home_assistant_get_config` | Version, location name, time zone, unit system, and loaded components (`GET /api/config`) |
+| `home_assistant_list_states` | Compact list of every entity: entity_id, state, name, unit, last change (`GET /api/states`) |
+| `home_assistant_get_state` | One entity with all its attributes (`GET /api/states/{entity_id}`) |
+| `home_assistant_get_history` | Recorded state changes for one or more entities; `filter_entity_id` is required (`GET /api/history/period/{start_time}`) |
+| `home_assistant_get_logbook` | Human-readable events such as a door opening or a person arriving (`GET /api/logbook/{start_time}`) |
+| `home_assistant_list_calendars` | Calendar entities, e.g. `calendar.family` (`GET /api/calendars`) |
+| `home_assistant_get_calendar_events` | Events of one calendar; `start` and `end` are required (`GET /api/calendars/{entity_id}`) |
+
+**Timestamps** are ISO 8601 in UTC with a `Z` suffix, e.g. `2026-10-01T00:00:00Z`. An offset such as `+02:00` puts a `+` into the URL, so convert to UTC first.
+
+**Response size:** Home Assistant's raw `/api/states` is large (about 60 KB for the 123 entities of the built-in demo), so `home_assistant_list_states` keeps only five fields per entity (about 19 KB for the same demo). Use `home_assistant_get_state` when you need one entity's attributes.
+
+## Privacy
+
+Home data reveals who is at home and daily routines. Assign this connector only to MCP servers whose users may see this household's data.
+
+## Use Cases
+
+- **"What was the living room temperature overnight?"**
+- **"Which windows are open right now?"**
+- **"When did the garage door last open?"**
+- **"What's on the family calendar this week?"**

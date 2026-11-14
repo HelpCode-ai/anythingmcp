@@ -164,7 +164,7 @@ describe('wildberries adapter: feedbacks, questions and returns', () => {
     }
   });
 
-  it('answers a feedback with id and text, as the working hand-built tool did', async () => {
+  it('answers a feedback with id and text, as the API expects', async () => {
     mockedAxios.mockResolvedValue({ data: '' });
     await call('wildberries_answer_feedback', { id: 'f1', text: 'Спасибо за отзыв' });
     expect(sent().data).toEqual({ id: 'f1', text: 'Спасибо за отзыв' });

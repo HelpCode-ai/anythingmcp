@@ -1,0 +1,1260 @@
+{
+  "slug": "metabase",
+  "name": "Metabase",
+  "aliases": [
+    "Metabase Cloud",
+    "Metabase API"
+  ],
+  "description": "Metabase BI: search and run saved questions and dashboard cards, run SQL or MBQL queries, read database, table and field metadata, browse collections, and create or update questions, dashboards and collections.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "metabase",
+  "docsUrl": "https://www.metabase.com/docs/latest/api",
+  "instructions": "## Metabase\nThis connector works with a **Metabase** instance (self-hosted or Metabase Cloud) through its REST API: databases and their tables and fields, saved questions, models and metrics, dashboards, collections, search, recent and popular items, people and groups. It runs saved questions, dashboard cards and ad hoc SQL or MBQL queries, and creates or updates questions, dashboards and collections.\n\n**Setup (3 minutes)**\n1. `METABASE_URL`: the address you open Metabase at, e.g. `https://metabase.example.com` or `https://yourcompany.metabaseapp.com`, without `/api`.\n2. As an admin open **Admin settings**, **Settings**, **Authentication**, **API keys**, click **Create API key**, give it a name and a **group**. The key acts with that group's permissions: a group with view access to collections and query access to the databases you want is enough for reading; curate access is needed for creating and changing content. Admin-only reads (`metabase_list_users`) need the Administrators group.\n3. Copy the key (shown once) into `METABASE_API_KEY`. It is sent in the `x-api-key` header.\n4. Run `metabase_get_current_user` to check it.\n\n**Workflow**\n- Find content: `metabase_search` (questions, dashboards, tables, ...), `metabase_list_collections`, `metabase_get_collection`, `metabase_list_collection_items`, `metabase_list_cards`, `metabase_list_dashboards`, `metabase_get_recent_items`, `metabase_get_popular_items`.\n- Answer with saved work first: `metabase_get_card` shows what a question computes, `metabase_run_card` runs it (with `parameters` for its filters). For a dashboard, `metabase_get_dashboard` then `metabase_run_dashboard_card` per card.\n- Explore data: `metabase_list_databases`, `metabase_get_database`, `metabase_list_database_schemas`, `metabase_list_schema_tables`, `metabase_get_table_metadata`, `metabase_get_database_metadata`, `metabase_get_field_values` (category values for filters).\n- Ad hoc queries: `metabase_run_native_query` with SQL in the database's dialect, or `metabase_run_query` with an MBQL query built from table and field ids. Aggregate in the query and keep results small.\n- Build: `metabase_create_card`, `metabase_update_card`, `metabase_create_dashboard`, `metabase_update_dashboard` (add cards by sending the full dashcards list), `metabase_create_collection`, `metabase_update_collection`. Archiving through the update tools moves items to the trash, where they can be restored.\n- People: `metabase_get_current_user`, `metabase_list_users`, `metabase_list_permission_groups`.\n\n**Reading the answers**: query results are `data.cols` (name, display_name, base_type such as type/Integer, type/DateTime) and `data.rows` (arrays in column order), with `row_count`. Dates are ISO 8601 in the report time zone of the instance. Ids of databases, tables, fields, questions and dashboards are integers; the top collection is `root`. `type` on a card is question, model or metric; in search and collection items a model shows as `dataset`.\n\n**Paging**: `metabase_search`, `metabase_list_collection_items` and `metabase_list_users` take `limit` and `offset` and return `total`. The other lists return everything.\n\n**Limits**: query tools return at most 2,000 rows (the API's limit for ad hoc results); aggregate or filter instead of paging through raw rows. A native query runs with the database connection Metabase uses, so use a read-only database user in Metabase for connections that should never change.\n\n**Errors**: a query that fails comes back with `status: failed` and the database's message in `error` (reported as a failed call). 401 means a wrong or deleted key, 403 a key whose group lacks the permission (data access, curate or admin), 404 a wrong id or an address without `/api` routes (check `METABASE_URL`).",
+  "prerequisites": "A Metabase instance (self-hosted or Metabase Cloud) and an API key created by an admin under Admin settings, Authentication, API keys.",
+  "requiredEnvVars": [
+    "METABASE_URL",
+    "METABASE_API_KEY"
+  ],
+  "envVarMeta": {
+    "METABASE_URL": {
+      "label": "Metabase address",
+      "kind": "address",
+      "secret": false,
+      "help": "The address you open Metabase at, without /api and without a trailing slash.",
+      "example": "https://metabase.example.com",
+      "pattern": "^https?://[^\\s?#]+[^/\\s?#]$",
+      "patternMessage": "Enter the Metabase address, e.g. https://metabase.example.com, without a trailing slash."
+    },
+    "METABASE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Admin settings, Settings, Authentication, API keys: create a key and assign it to a group. It is shown once.",
+      "example": "mb_...",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Metabase refused the API key: it is wrong or was deleted. Create a new one under Admin settings, Authentication, API keys.",
+    "403": "The key is valid but its group may not do this. Give the key's group the needed data or collection permissions.",
+    "404": "Nothing answered at this address. Check METABASE_URL: the address you open Metabase at, without /api."
+  },
+  "probe": {
+    "tool": "metabase_get_current_user"
+  },
+  "connector": {
+    "name": "Metabase API",
+    "type": "REST",
+    "baseUrl": "{{METABASE_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{METABASE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/health",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "equals": "failed",
+          "messagePath": "error",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "metabase_get_current_user",
+      "description": "The account the API key acts as: id, name, e-mail, whether it is an admin, and its group memberships. A quick check that the key and address work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/user/current"
+      }
+    },
+    {
+      "name": "metabase_list_users",
+      "description": "People in Metabase (admin only): id, name, e-mail, active state, groups, last login. Search by name or e-mail with query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Part of a name or e-mail address."
+          },
+          "status": {
+            "type": "string",
+            "description": "active (default), deactivated or all (deactivated and all need an admin key).",
+            "enum": [
+              "active",
+              "deactivated",
+              "all"
+            ]
+          },
+          "group_id": {
+            "type": "integer",
+            "description": "Only members of this permission group (from metabase_list_permission_groups)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum items to return (paging together with offset).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/user",
+        "queryParams": {
+          "query": "$query",
+          "status": "$status",
+          "group_id": "$group_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "metabase_list_permission_groups",
+      "description": "Permission groups (All Users, Administrators and custom groups) with their member count.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/permissions/group"
+      }
+    },
+    {
+      "name": "metabase_list_databases",
+      "description": "Databases connected to Metabase: id, name, engine (postgres, bigquery-cloud-sdk, snowflake, ...), sync state. include=tables also lists every table, include=schemas the schema names. Connection details are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "tables or schemas to embed them in each database.",
+            "enum": [
+              "tables",
+              "schemas"
+            ]
+          },
+          "saved": {
+            "type": "boolean",
+            "description": "true adds the virtual \"Saved Questions\" database."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database",
+        "queryParams": {
+          "include": "$include",
+          "saved": "$saved"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].details",
+            "data[*].features",
+            "data[*].settings"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_get_database",
+      "description": "One database: name, engine, time zone, sync schedule and, with include=tables, its tables. Connection details are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "integer",
+            "description": "Database id from metabase_list_databases."
+          },
+          "include": {
+            "type": "string",
+            "description": "tables, or tables.fields to add every column.",
+            "enum": [
+              "tables",
+              "tables.fields"
+            ]
+          }
+        },
+        "required": [
+          "database_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database/{database_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "details",
+            "features",
+            "settings"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_get_database_metadata",
+      "description": "Full metadata of a database: every table with its fields (id, name, display name, base and semantic type, foreign key target). The field and table ids are what MBQL queries use. Large for big databases: prefer metabase_list_schema_tables and metabase_get_table_metadata then.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "integer",
+            "description": "Database id from metabase_list_databases."
+          },
+          "include_hidden": {
+            "type": "boolean",
+            "description": "true also returns hidden tables and fields."
+          },
+          "skip_fields": {
+            "type": "boolean",
+            "description": "true returns the tables without their fields."
+          }
+        },
+        "required": [
+          "database_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database/{database_id}/metadata",
+        "queryParams": {
+          "include_hidden": "$include_hidden",
+          "skip_fields": "$skip_fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "details",
+            "features",
+            "settings",
+            "tables[*].fields[*].fingerprint",
+            "tables[*].fields[*].dimensions"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_list_database_schemas",
+      "description": "Schema names of one database (for example public or analytics), for metabase_list_schema_tables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "integer",
+            "description": "Database id from metabase_list_databases."
+          }
+        },
+        "required": [
+          "database_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database/{database_id}/schemas"
+      }
+    },
+    {
+      "name": "metabase_list_schema_tables",
+      "description": "Tables of one schema of a database: id, name, display name, description, entity type, row count estimate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "integer",
+            "description": "Database id from metabase_list_databases."
+          },
+          "schema": {
+            "type": "string",
+            "description": "Schema name from metabase_list_database_schemas."
+          }
+        },
+        "required": [
+          "database_id",
+          "schema"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/database/{database_id}/schema/{schema}"
+      }
+    },
+    {
+      "name": "metabase_get_table_metadata",
+      "description": "A table with its fields (id, name, display name, base type, semantic type such as type/PK, type/FK, type/Category, foreign key targets), segments and metrics. Use the field ids in MBQL queries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_id": {
+            "type": "integer",
+            "description": "Table id from metabase_list_schema_tables or metabase_get_database_metadata."
+          },
+          "include_hidden_fields": {
+            "type": "boolean",
+            "description": "true also returns hidden fields."
+          }
+        },
+        "required": [
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/table/{table_id}/query_metadata",
+        "queryParams": {
+          "include_hidden_fields": "$include_hidden_fields"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "db.details",
+            "db.features",
+            "db.settings",
+            "fields[*].fingerprint",
+            "fields[*].dimensions"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_get_field_values",
+      "description": "Distinct values Metabase has cached for a category field (up to 1000), useful for filter values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "integer",
+            "description": "Field id from metabase_get_table_metadata."
+          }
+        },
+        "required": [
+          "field_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/field/{field_id}/values"
+      }
+    },
+    {
+      "name": "metabase_list_cards",
+      "description": "Saved questions, models and metrics: id, name, type (question, model, metric), display, collection, description, the query behind it (dataset_query), creator and last edit. Result metadata is left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "f": {
+            "type": "string",
+            "description": "all (default), mine, bookmarked, archived; using_model, using_segment, table or database together with model_id.",
+            "enum": [
+              "all",
+              "mine",
+              "bookmarked",
+              "archived",
+              "using_model",
+              "using_segment",
+              "table",
+              "database"
+            ]
+          },
+          "model_id": {
+            "type": "integer",
+            "description": "With f=using_model or table or database: the model, table or database id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/card",
+        "queryParams": {
+          "f": "$f",
+          "model_id": "$model_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].result_metadata",
+            "[*].visualization_settings"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_get_card",
+      "description": "One saved question, model or metric: name, description, collection, display, the query (dataset_query: native SQL or MBQL), parameters and dashboards it is on.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "integer",
+            "description": "Question (card) id from metabase_list_cards or metabase_search."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/card/{card_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "result_metadata"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_run_card",
+      "description": "Run a saved question (or model) and return its result: data.cols (column names and types), data.rows (rows as arrays), row_count. Pass parameters to fill its filters. Returns at most 2,000 rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "integer",
+            "description": "Question (card) id from metabase_list_cards or metabase_search."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Filter values for the question's parameters, e.g. [{\"type\": \"category\", \"value\": [\"CA\"], \"target\": [\"variable\", [\"template-tag\", \"state\"]]}] for a SQL variable, or with \"id\" and \"target\" [\"dimension\", ...] as listed in the card's parameters."
+          },
+          "ignore_cache": {
+            "type": "boolean",
+            "description": "true runs the query again instead of using a cached result."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/card/{card_id}/query",
+        "bodyMapping": {
+          "parameters": "$parameters",
+          "ignore_cache": "$ignore_cache"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "json_query",
+            "data.results_metadata",
+            "data.insights",
+            "data.cols[*].fingerprint",
+            "data.cols[*].field_ref"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_list_dashboards",
+      "description": "Dashboards: id, name, description, collection, creator and last edit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "f": {
+            "type": "string",
+            "description": "all (default), mine or archived.",
+            "enum": [
+              "all",
+              "mine",
+              "archived"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/dashboard",
+        "queryParams": {
+          "f": "$f"
+        }
+      }
+    },
+    {
+      "name": "metabase_get_dashboard",
+      "description": "One dashboard with its tabs, filters (parameters) and cards (dashcards): each dashcard has its id, card_id, the card, position and parameter mappings. Use dashcard id and card id with metabase_run_dashboard_card.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dashboard_id": {
+            "type": "integer",
+            "description": "Dashboard id from metabase_list_dashboards or metabase_search."
+          }
+        },
+        "required": [
+          "dashboard_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/dashboard/{dashboard_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "param_fields",
+            "dashcards[*].card.result_metadata",
+            "dashcards[*].card.visualization_settings"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_run_dashboard_card",
+      "description": "Run one card of a dashboard with the dashboard's filter values and return its result rows (data.cols, data.rows). At most 2,000 rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dashboard_id": {
+            "type": "integer",
+            "description": "Dashboard id from metabase_list_dashboards or metabase_search."
+          },
+          "dashcard_id": {
+            "type": "integer",
+            "description": "Dashcard id from metabase_get_dashboard (dashcards[].id)."
+          },
+          "card_id": {
+            "type": "integer",
+            "description": "Card id of that dashcard (dashcards[].card_id)."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Dashboard filter values: [{\"id\": \"<parameter id from the dashboard>\", \"type\": \"string/=\", \"value\": [\"CA\"], \"target\": <the target from the dashcard parameter_mappings>}]."
+          }
+        },
+        "required": [
+          "dashboard_id",
+          "dashcard_id",
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/dashboard/{dashboard_id}/dashcard/{dashcard_id}/card/{card_id}/query",
+        "bodyMapping": {
+          "parameters": "$parameters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "json_query",
+            "data.results_metadata",
+            "data.insights",
+            "data.cols[*].fingerprint",
+            "data.cols[*].field_ref"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_list_collections",
+      "description": "Collections (folders for questions, models and dashboards): id, name, location (path of parent ids), personal owner, archived flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "archived": {
+            "type": "boolean",
+            "description": "true returns archived collections instead."
+          },
+          "personal_only": {
+            "type": "boolean",
+            "description": "true returns only personal collections."
+          },
+          "exclude_other_user_collections": {
+            "type": "boolean",
+            "description": "true leaves out other people's personal collections (admins see them otherwise)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/collection",
+        "queryParams": {
+          "archived": "$archived",
+          "personal-only": "$personal_only",
+          "exclude-other-user-collections": "$exclude_other_user_collections"
+        }
+      }
+    },
+    {
+      "name": "metabase_get_collection",
+      "description": "One collection: name, description, location, authority level (official), personal owner.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "Collection id from metabase_list_collections, or root for the top level (\"Our analytics\")."
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/collection/{collection_id}"
+      }
+    },
+    {
+      "name": "metabase_list_collection_items",
+      "description": "What a collection contains: questions (card), models (dataset), metrics, dashboards, sub-collections, with id, name, model, description and last edit. Filter by models and page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "string",
+            "description": "Collection id from metabase_list_collections, or root for the top level (\"Our analytics\")."
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "card",
+                "dataset",
+                "metric",
+                "dashboard",
+                "collection",
+                "snippet",
+                "pulse",
+                "timeline",
+                "document"
+              ]
+            },
+            "description": "Only these item kinds: card, dataset, metric, dashboard, collection, snippet, pulse, timeline, document."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true lists archived items."
+          },
+          "pinned_state": {
+            "type": "string",
+            "description": "all (default), is_pinned or is_not_pinned.",
+            "enum": [
+              "all",
+              "is_pinned",
+              "is_not_pinned"
+            ]
+          },
+          "sort_column": {
+            "type": "string",
+            "description": "name, last_edited_at, last_edited_by or model.",
+            "enum": [
+              "name",
+              "last_edited_at",
+              "last_edited_by",
+              "model"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "asc or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum items to return (paging together with offset).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/collection/{collection_id}/items",
+        "queryParams": {
+          "models": "$models",
+          "archived": "$archived",
+          "pinned-state": "$pinned_state",
+          "sort-column": "$sort_column",
+          "sort-direction": "$sort_direction",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "metabase_search",
+      "description": "Search Metabase content by name and description: questions (card), models (dataset), metrics, dashboards, collections, tables, databases, segments. Returns data[] with model, id, name, collection and score, and total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search words."
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "card",
+                "dataset",
+                "metric",
+                "dashboard",
+                "collection",
+                "table",
+                "database",
+                "segment",
+                "action",
+                "indexed-entity",
+                "document"
+              ]
+            },
+            "description": "Only these kinds: card, dataset, metric, dashboard, collection, table, database, segment, action, indexed-entity, document."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true searches the trash."
+          },
+          "table_db_id": {
+            "type": "integer",
+            "description": "Only tables and questions of this database id."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "true returns only verified items (Pro and Enterprise)."
+          },
+          "search_native_query": {
+            "type": "boolean",
+            "description": "true also matches the SQL text of native questions."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum items to return (paging together with offset).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/search",
+        "queryParams": {
+          "q": "$q",
+          "models": "$models",
+          "archived": "$archived",
+          "table_db_id": "$table_db_id",
+          "verified": "$verified",
+          "search_native_query": "$search_native_query",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].dataset_query",
+            "data[*].scores"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_run_native_query",
+      "description": "Run a SQL (native) query on a connected database without saving it, with the permissions of the API key's group. Returns data.cols and data.rows, at most 2,000 rows. Use {{name}} variables with template_tags and parameters for values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "integer",
+            "description": "Database id from metabase_list_databases."
+          },
+          "sql": {
+            "type": "string",
+            "description": "The SQL statement in the database's own dialect, e.g. SELECT state, count(*) FROM people GROUP BY state ORDER BY 2 DESC LIMIT 20."
+          },
+          "template_tags": {
+            "type": "object",
+            "description": "Variables used in the SQL as {{name}}: {\"state\": {\"name\": \"state\", \"display-name\": \"State\", \"type\": \"text\"}}."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Values for the variables: [{\"type\": \"category\", \"value\": \"CA\", \"target\": [\"variable\", [\"template-tag\", \"state\"]]}]."
+          }
+        },
+        "required": [
+          "database_id",
+          "sql"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/dataset",
+        "bodyMapping": {
+          "database": "$database_id",
+          "type": "native",
+          "native": {
+            "query": "$sql",
+            "template-tags": "$template_tags"
+          },
+          "parameters": "$parameters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "json_query",
+            "data.results_metadata",
+            "data.insights",
+            "data.cols[*].fingerprint",
+            "data.cols[*].field_ref"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_run_query",
+      "description": "Run any dataset query without saving it: an MBQL query built from table and field ids ({\"database\": 1, \"type\": \"query\", \"query\": {\"source-table\": 2, \"aggregation\": [[\"count\"]], \"breakout\": [[\"field\", 14, {\"temporal-unit\": \"month\"}]]}}) or a native one. Returns data.cols and data.rows, at most 2,000 rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dataset_query": {
+            "type": "object",
+            "description": "The whole query object with database, type (query or native) and query or native, as in a card's dataset_query."
+          }
+        },
+        "required": [
+          "dataset_query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/dataset",
+        "bodyMapping": {
+          "__merge": "$dataset_query"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "json_query",
+            "data.results_metadata",
+            "data.insights",
+            "data.cols[*].fingerprint",
+            "data.cols[*].field_ref"
+          ]
+        }
+      }
+    },
+    {
+      "name": "metabase_get_recent_items",
+      "description": "Items the API key's account recently viewed (views) or picked in the data picker (selections): questions, dashboards, tables, collections with id and model.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "views (default) or selections.",
+            "enum": [
+              "views",
+              "selections"
+            ],
+            "default": "views"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/activity/recents",
+        "queryParams": {
+          "context": "$context"
+        }
+      }
+    },
+    {
+      "name": "metabase_get_popular_items",
+      "description": "The most viewed dashboards, questions and tables of the instance, for \"what do people use most\".",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/activity/popular_items"
+      }
+    },
+    {
+      "name": "metabase_create_card",
+      "description": "Save a new question, model or metric in a collection. dataset_query is the query (native SQL or MBQL, as in metabase_run_query); display is the chart type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the question."
+          },
+          "dataset_query": {
+            "type": "object",
+            "description": "The query: {\"database\": 1, \"type\": \"native\", \"native\": {\"query\": \"SELECT ...\"}} or an MBQL query."
+          },
+          "display": {
+            "type": "string",
+            "description": "Chart type: table, scalar, line, bar, row, area, pie, combo, funnel, map, pivot, progress, gauge, waterfall, scatter, smartscalar, object.",
+            "default": "table"
+          },
+          "visualization_settings": {
+            "type": "object",
+            "description": "Chart settings, e.g. {\"graph.dimensions\": [\"month\"], \"graph.metrics\": [\"count\"]}. Default {}.",
+            "default": {}
+          },
+          "type": {
+            "type": "string",
+            "description": "question (default), model or metric.",
+            "enum": [
+              "question",
+              "model",
+              "metric"
+            ]
+          },
+          "collection_id": {
+            "type": "integer",
+            "description": "Collection to save it in; leave out for the root collection."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description shown with the question."
+          },
+          "dashboard_id": {
+            "type": "integer",
+            "description": "Save it inside this dashboard instead of a collection (dashboard question)."
+          }
+        },
+        "required": [
+          "name",
+          "dataset_query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/card",
+        "bodyMapping": {
+          "name": "$name",
+          "dataset_query": "$dataset_query",
+          "display": "$display",
+          "visualization_settings": "$visualization_settings",
+          "type": "$type",
+          "collection_id": "$collection_id",
+          "description": "$description",
+          "dashboard_id": "$dashboard_id"
+        }
+      }
+    },
+    {
+      "name": "metabase_update_card",
+      "description": "Change a saved question: name, description, query, chart type and settings, collection, or archive it (archived true moves it to the trash, where it can be restored; false restores it). Only the fields you pass change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "card_id": {
+            "type": "integer",
+            "description": "Question (card) id from metabase_list_cards or metabase_search."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "dataset_query": {
+            "type": "object",
+            "description": "New query object."
+          },
+          "display": {
+            "type": "string",
+            "description": "New chart type."
+          },
+          "visualization_settings": {
+            "type": "object",
+            "description": "New chart settings (replaces the old ones)."
+          },
+          "collection_id": {
+            "type": "integer",
+            "description": "Move it to this collection."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true moves it to the trash, false restores it."
+          }
+        },
+        "required": [
+          "card_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/card/{card_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "dataset_query": "$dataset_query",
+          "display": "$display",
+          "visualization_settings": "$visualization_settings",
+          "collection_id": "$collection_id",
+          "archived": "$archived"
+        }
+      }
+    },
+    {
+      "name": "metabase_create_dashboard",
+      "description": "Create an empty dashboard in a collection. Add cards afterwards with metabase_update_dashboard.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Dashboard name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "collection_id": {
+            "type": "integer",
+            "description": "Collection to put it in; leave out for the root collection."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Dashboard filters: [{\"id\": \"f1\", \"name\": \"State\", \"slug\": \"state\", \"type\": \"string/=\"}]."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/dashboard",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "collection_id": "$collection_id",
+          "parameters": "$parameters"
+        }
+      }
+    },
+    {
+      "name": "metabase_update_dashboard",
+      "description": "Change a dashboard: name, description, collection, filters, tabs, archive state, or its cards. dashcards REPLACES the whole card list: read metabase_get_dashboard first, keep the existing dashcards (with their ids) and add new ones with a negative id, e.g. {\"id\": -1, \"card_id\": 42, \"row\": 0, \"col\": 0, \"size_x\": 12, \"size_y\": 6}. The grid is 24 columns wide.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dashboard_id": {
+            "type": "integer",
+            "description": "Dashboard id from metabase_list_dashboards or metabase_search."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "collection_id": {
+            "type": "integer",
+            "description": "Move it to this collection."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true moves it to the trash, false restores it."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The full list of dashboard filters."
+          },
+          "dashcards": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The full list of dashboard cards (see the description)."
+          },
+          "tabs": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The full list of tabs: [{\"id\": 1, \"name\": \"Overview\"}], new tabs with a negative id."
+          }
+        },
+        "required": [
+          "dashboard_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/dashboard/{dashboard_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "collection_id": "$collection_id",
+          "archived": "$archived",
+          "parameters": "$parameters",
+          "dashcards": "$dashcards",
+          "tabs": "$tabs"
+        }
+      }
+    },
+    {
+      "name": "metabase_create_collection",
+      "description": "Create a collection (folder), optionally inside another one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Collection name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "Parent collection id; leave out for the root."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/collection",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "parent_id": "$parent_id"
+        }
+      }
+    },
+    {
+      "name": "metabase_update_collection",
+      "description": "Rename a collection, change its description, move it under another parent, or archive it (archived true moves it and its content to the trash; false restores it).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_id": {
+            "type": "integer",
+            "description": "Collection id from metabase_list_collections."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "parent_id": {
+            "type": "integer",
+            "description": "New parent collection id."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true moves it to the trash, false restores it."
+          }
+        },
+        "required": [
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/collection/{collection_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "parent_id": "$parent_id",
+          "archived": "$archived"
+        }
+      }
+    }
+  ]
+}

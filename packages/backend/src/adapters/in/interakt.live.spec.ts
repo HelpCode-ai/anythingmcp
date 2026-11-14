@@ -16,7 +16,7 @@ import { getAdapter, listAdapters } from '../catalog';
  *      every tool's method and URL through the real RestEngine against
  *      Interakt's published Postman collection, the customer search filters,
  *      the template body (bodyValues in order, the cause of the "Missing
- *      variable values" refusals seen on a hand-built connector), traits sent
+ *      variable values" refusals), traits sent
  *      as an object, and the result:false error rule.
  *
  *   2. Live: skipped unless RUN_INTERAKT_LIVE=1 and INTERAKT_API_KEY are set.

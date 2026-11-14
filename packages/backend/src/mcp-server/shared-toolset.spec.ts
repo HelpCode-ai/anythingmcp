@@ -1,13 +1,17 @@
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { RegisteredTool } from './tool-registry';
+import { getAdapter, listAdapters } from '../adapters/catalog';
 import {
   CHATGPT_EXTRA_TOOL_NAMES,
+  GENERATIVE_MEDIA_ADAPTERS,
+  GENERATIVE_MEDIA_TOOLS,
   SHARED_TOOL_NAMES,
   SHARED_TOOLSET_INSTRUCTIONS,
   SharedToolsetDeps,
   SharedToolsetProfile,
   excludedOnSharedEndpoint,
+  sharedEndpointAccess,
   assistantForRedirectUris,
   profileForRedirectUris,
   registerSharedToolset,
@@ -57,6 +61,21 @@ const WISE_PAY = tool({
     baseUrl: 'https://api.wise.com',
     authType: 'BEARER_TOKEN',
     config: { adapterSlug: 'wise' },
+  },
+});
+
+const WISE_READ = tool({
+  name: 'wise_list_transfers',
+  connectorId: 'c-wise',
+  connectorConfig: WISE_PAY.connectorConfig,
+});
+const BINANCE_READ = tool({
+  name: 'binance_get_ticker',
+  connectorId: 'c-binance',
+  connectorConfig: {
+    baseUrl: 'https://api.binance.com',
+    authType: 'NONE',
+    config: { adapterSlug: 'binance' },
   },
 });
 
@@ -274,30 +293,128 @@ describe('shared /mcp tool set', () => {
     expect((deps.execute as jest.Mock).mock.calls[0][0]).toBe(second);
   });
 
-  it('does not serve payment, banking or trading connectors', async () => {
-    expect(excludedOnSharedEndpoint(WISE_PAY)).toBe(true);
-    expect(excludedOnSharedEndpoint(CRM_WRITE)).toBe(false);
-    expect(
-      excludedOnSharedEndpoint(
-        tool({ name: 'x', connectorId: 'c', connectorConfig: { baseUrl: '', authType: 'NONE', config: { adapterSlug: 'sorare' } } }),
-      ),
-    ).toBe(true);
+  it('serves only the read tools of payment and banking connectors, and no cryptocurrency ones', async () => {
+    expect(excludedOnSharedEndpoint(WISE_PAY, 'default')).toBe(true);
+    expect(excludedOnSharedEndpoint(WISE_READ, 'default')).toBe(false);
+    expect(excludedOnSharedEndpoint(CRM_WRITE, 'default')).toBe(false);
+    expect(excludedOnSharedEndpoint(BINANCE_READ, 'default')).toBe(true);
+    expect(sharedEndpointAccess('stripe', 'default')).toBe('read');
+    expect(sharedEndpointAccess('payone', 'default')).toBe('read');
+    expect(sharedEndpointAccess('sorare', 'default')).toBe('none');
+    expect(sharedEndpointAccess('etsy', 'default')).toBe('all');
 
-    const { client, deps } = await connect([CRM_READ, WISE_PAY]);
+    // Code tools are never served on the shared endpoint (no per-server
+    // codeMode switch applies here).
+    const CODE_TOOL = tool({
+      name: 'summary',
+      connectorId: 'c-code',
+      endpointMapping: { method: 'code', path: '' } as any,
+    });
+    expect(excludedOnSharedEndpoint(CODE_TOOL, 'default')).toBe(true);
+    expect(excludedOnSharedEndpoint(CODE_TOOL, 'chatgpt')).toBe(true);
+
+    const { client, deps } = await connect([CRM_READ, WISE_PAY, WISE_READ, BINANCE_READ]);
     const search = await call(client, 'anythingmcp_search_tools', {});
-    expect(search.body.tools.map((t: any) => t.name)).not.toContain('wise_create_transfer');
+    const names = search.body.tools.map((t: any) => t.name);
+    expect(names).toContain('wise_list_transfers');
+    expect(names).not.toContain('wise_create_transfer');
+    expect(names).not.toContain('binance_get_ticker');
 
-    const run = await call(client, 'anythingmcp_run_write_tool', {
+    const pay = await call(client, 'anythingmcp_run_write_tool', {
       tool: 'wise_create_transfer',
       arguments: {},
     });
+    expect(pay.isError).toBe(true);
+    expect(pay.body.error).toMatch(/payment or banking connector/);
+    const crypto = await call(client, 'anythingmcp_run_read_tool', { tool: 'binance_get_ticker', arguments: {} });
+    expect(crypto.isError).toBe(true);
+    expect(crypto.body.error).toMatch(/cryptocurrency connector/);
+    expect(deps.execute).not.toHaveBeenCalled();
+
+    const read = await call(client, 'anythingmcp_run_read_tool', { tool: 'wise_list_transfers', arguments: {} });
+    expect(read.isError).toBeFalsy();
+    expect((deps.execute as jest.Mock).mock.calls[0][0]).toBe(WISE_READ);
+
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.connectors.map((c: any) => c.id).sort()).toEqual(['c-crm', 'c-wise']);
+    expect(list.body.notServedHere).toEqual(['c-binance']);
+    expect(list.body.readToolsOnlyHere).toEqual(['c-wise']);
+  });
+
+  it('keeps payment and banking connectors out of the ChatGPT profile whole', async () => {
+    expect(excludedOnSharedEndpoint(WISE_READ, 'chatgpt')).toBe(true);
+    expect(excludedOnSharedEndpoint(WISE_PAY, 'chatgpt')).toBe(true);
+    expect(excludedOnSharedEndpoint(BINANCE_READ, 'chatgpt')).toBe(false);
+    expect(
+      excludedOnSharedEndpoint(
+        tool({ name: 'x', connectorId: 'c', connectorConfig: { baseUrl: '', authType: 'NONE', config: { adapterSlug: 'sorare' } } }),
+        'chatgpt',
+      ),
+    ).toBe(true);
+
+    const { client, deps } = await connect([CRM_READ, WISE_PAY, WISE_READ], makeDeps(), 'chatgpt');
+    const search = await call(client, 'anythingmcp_search_tools', {});
+    expect(search.body.tools.map((t: any) => t.name)).toEqual(['crm_find_customer']);
+
+    const run = await call(client, 'anythingmcp_run_read_tool', { tool: 'wise_list_transfers', arguments: {} });
     expect(run.isError).toBe(true);
-    expect(run.body.error).toMatch(/payment, banking or trading/);
     expect(deps.execute).not.toHaveBeenCalled();
 
     const list = await call(client, 'anythingmcp_list_connectors');
     expect(list.body.connectors.map((c: any) => c.id)).toEqual(['c-crm']);
     expect(list.body.notServedHere).toEqual(['c-wise']);
+    expect(list.body.readToolsOnlyHere).toBeUndefined();
+  });
+
+  it('keeps image, video and audio generation off the default profile, and betting odds off ChatGPT', async () => {
+    const adapterTool = (name: string, slug: string, connectorId: string) =>
+      tool({ name, connectorId, connectorConfig: { baseUrl: '', authType: 'API_KEY', config: { adapterSlug: slug } } });
+    const SPEECH = adapterTool('elevenlabs_create_speech', 'elevenlabs', 'c-voice');
+    const IMAGE = adapterTool('openai_generate_image', 'openai', 'c-openai');
+    const ANSWER = adapterTool('openai_create_response', 'openai', 'c-openai');
+    const ODDS = adapterTool('the_odds_api_get_odds', 'the-odds-api', 'c-odds');
+
+    expect(sharedEndpointAccess('stability-ai', 'default')).toBe('none');
+    expect(sharedEndpointAccess('stability-ai', 'chatgpt')).toBe('all');
+    expect(sharedEndpointAccess('openai', 'default')).toBe('all');
+    expect(sharedEndpointAccess('the-odds-api', 'default')).toBe('all');
+    expect(sharedEndpointAccess('the-odds-api', 'chatgpt')).toBe('none');
+    expect(excludedOnSharedEndpoint(IMAGE, 'default')).toBe(true);
+    expect(excludedOnSharedEndpoint(IMAGE, 'chatgpt')).toBe(false);
+    expect(excludedOnSharedEndpoint(ANSWER, 'default')).toBe(false);
+    expect(excludedOnSharedEndpoint(ODDS, 'chatgpt')).toBe(true);
+
+    const { client, deps } = await connect([CRM_READ, SPEECH, IMAGE, ANSWER, ODDS]);
+    const names = (await call(client, 'anythingmcp_search_tools', {})).body.tools.map((t: any) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['openai_create_response', 'the_odds_api_get_odds']));
+    expect(names).not.toContain('openai_generate_image');
+    expect(names).not.toContain('elevenlabs_create_speech');
+
+    const image = await call(client, 'anythingmcp_run_write_tool', { tool: 'openai_generate_image', arguments: {} });
+    expect(image.isError).toBe(true);
+    expect(image.body.error).toMatch(/generates images, video or audio/);
+    const speech = await call(client, 'anythingmcp_run_write_tool', { tool: 'elevenlabs_create_speech', arguments: {} });
+    expect(speech.body.error).toMatch(/image, video or audio generation connector/);
+    expect(deps.execute).not.toHaveBeenCalled();
+
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.notServedHere).toEqual(['c-voice']);
+    expect(list.body.generationToolsNotServedHere).toEqual(['c-openai']);
+    expect(list.body.readToolsOnlyHere).toBeUndefined();
+
+    const chatgpt = await connect([CRM_READ, IMAGE, ODDS], makeDeps(), 'chatgpt');
+    const chatgptNames = (await call(chatgpt.client, 'anythingmcp_search_tools', {})).body.tools.map((t: any) => t.name);
+    expect(chatgptNames).toContain('openai_generate_image');
+    expect(chatgptNames).not.toContain('the_odds_api_get_odds');
+  });
+
+  it('names only generation tools that exist in the catalog', () => {
+    const catalog = new Map(listAdapters().map((a) => [a.slug, a]));
+    for (const slug of GENERATIVE_MEDIA_ADAPTERS) expect(catalog.has(slug)).toBe(true);
+    for (const [slug, names] of Object.entries(GENERATIVE_MEDIA_TOOLS)) {
+      const tools = (getAdapter(slug)?.tools ?? []).map((t) => t.name);
+      for (const name of names) expect(tools).toContain(name);
+    }
   });
 
   it('keeps kg_how_to_obtain listed and says so when the graph is off', async () => {
@@ -377,6 +494,24 @@ describe('connectors that are not set up yet', () => {
     expect(out.body.error).toContain('not set up yet');
     expect(out.body.error).toContain('https://cloud.example.com/connectors/c-etsy');
     expect(deps.execute).not.toHaveBeenCalled();
+  });
+
+  it('say up front that the trial ended, with the reactivation link, and still list the connectors', async () => {
+    const notice = {
+      message: "This workspace's AnythingMCP trial ended on 9 October 2026. … Show this link to the user: https://cloud.example.com/reactivate/tok",
+      reactivateUrl: 'https://cloud.example.com/reactivate/tok',
+    };
+    const ended = await connect([CRM_READ], makeDeps({ trialEnded: jest.fn(async () => notice) }));
+    const list = await call(ended.client, 'anythingmcp_list_connectors');
+    expect(Object.keys(list.body)[0]).toBe('trialEnded');
+    expect(list.body.trialEnded).toMatchObject(notice);
+    expect(list.body.trialEnded.hint).toContain('reactivateUrl');
+    expect(list.body.connectors.map((c: any) => c.id)).toEqual(['c-crm']);
+
+    const active = await connect([CRM_READ], makeDeps({ trialEnded: jest.fn(async () => null) }));
+    expect((await call(active.client, 'anythingmcp_list_connectors')).body.trialEnded).toBeUndefined();
+    const failing = await connect([CRM_READ], makeDeps({ trialEnded: jest.fn(async () => { throw new Error('db'); }) }));
+    expect((await call(failing.client, 'anythingmcp_list_connectors')).body.trialEnded).toBeUndefined();
   });
 
   it('drop the empty-workspace hint when the only connector is waiting for setup', async () => {

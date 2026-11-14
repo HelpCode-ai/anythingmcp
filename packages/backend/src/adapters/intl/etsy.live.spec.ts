@@ -40,6 +40,22 @@ describe('etsy adapter — static spec conformance', () => {
    * in Etsy's OpenAPI spec. The adapter had `/active` appended and got 404
    * "Resource not found" on all 37 calls (19 workspaces, 8-22 Oct 2026).
    */
+  /**
+   * getListing accepts only these includes. Models kept asking for
+   * includes=Inventory and got 400 on every call (22 in 6 workspaces on
+   * 28 Oct 2026); inventory has its own tool.
+   */
+  it('limits listing includes to the values Etsy accepts', () => {
+    for (const name of ['etsy_get_listing', 'etsy_get_listings_by_ids']) {
+      const tool = (adapter as any).tools.find((t: any) => t.name === name);
+      const includes = new RegExp(tool.parameters.properties.includes.pattern);
+      expect(includes.test('Images,Shop')).toBe(true);
+      expect(includes.test('Images,Inventory')).toBe(false);
+      expect(includes.test('Inventory')).toBe(false);
+      expect(tool.parameters.properties.includes.description).toContain('etsy_read_listing_inventory');
+    }
+  });
+
   it('lists a shop section with the path from the Etsy OpenAPI spec', () => {
     const tool = (adapter as any).tools.find((t: any) => t.name === 'etsy_get_listings_by_shop_section');
     expect(tool.endpointMapping.path).toBe('/shops/{shop_id}/shop-sections/listings');
@@ -76,6 +92,10 @@ describe('etsy adapter — static spec conformance', () => {
     });
     expect(batch.parameters.required).toEqual(['listing_ids']);
     expect(Object.keys(batch.parameters.properties).sort()).toEqual(['buyer_country', 'currency', 'includes', 'listing_ids']);
+    // Same includes as etsy_get_listing: Etsy rejects Inventory and Shipping here too.
+    expect(batch.parameters.properties.includes.description).toBe(
+      byName('etsy_get_listing').parameters.properties.includes.description,
+    );
     for (const t of [tx, batch]) {
       expect(t.enabled).toBeUndefined();
       expect(a.instructions).toContain(t.name);
@@ -112,8 +132,13 @@ describe('etsy adapter — static spec conformance', () => {
     const auth = a.connector.authConfig;
     expect(auth.authorizationUrl).toBe('https://www.etsy.com/oauth/connect');
     // Space-separated, as Etsy documents. Write scopes for the listing and
-    // tracking tools; no listings_d, because no tool here deletes anything.
-    expect(auth.scopes).toBe('email_r shops_r listings_r listings_w transactions_r transactions_w');
+    // tracking tools; listings_d for the delete tool, which installs off.
+    expect(auth.scopes).toBe('email_r shops_r listings_r listings_w listings_d transactions_r transactions_w');
+    // Rows holding an earlier list get the current one on re-authorization.
+    expect((adapter as unknown as { previousOAuthScopes: string[] }).previousOAuthScopes).toEqual([
+      'email_r shops_r listings_r transactions_r',
+      'email_r shops_r listings_r listings_w transactions_r transactions_w',
+    ]);
     // Etsy takes the client in the body (client_id, and the shared secret it
     // checks). Basic would change the refresh request of every Etsy row.
     expect(auth.tokenAuthMethod).toBeUndefined();

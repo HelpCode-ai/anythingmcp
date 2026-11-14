@@ -12,14 +12,16 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiProperty, ApiPropertyOptional, ApiSecurity, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../common/pagination.dto';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { IsString, IsOptional, IsBoolean, IsArray, IsIn } from 'class-validator';
 import { SKILLS_DELIVERY_MODES, type SkillsDelivery } from '../knowledge-graph/kg-skill.service';
+import { CODE_MODE_MODES, type CodeMode } from '../mcp-server/code-tool.util';
 import { McpServersService } from './mcp-servers.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { PrismaService } from '../common/prisma.service';
+import { MemberVisibilityService, type VisibilityScope } from '../settings/member-visibility.service';
 
 class CreateMcpServerDto {
   @ApiProperty({ description: 'Human-readable name.', example: 'Sales Workspace' })
@@ -83,6 +85,16 @@ class UpdateMcpServerDto {
   @IsOptional()
   @IsIn(SKILLS_DELIVERY_MODES as unknown as string[])
   skillsDelivery?: SkillsDelivery;
+
+  @ApiPropertyOptional({
+    enum: CODE_MODE_MODES,
+    description:
+      'Code mode for this server: off (default, no code execution), tools (saved code tools only), inline (also the generic code_execute / code_propose_tool). Needs a configured code-runner to actually run.',
+    example: 'inline',
+  })
+  @IsOptional()
+  @IsIn(CODE_MODE_MODES as unknown as string[])
+  codeMode?: CodeMode;
 }
 
 class AssignConnectorsDto {
@@ -97,16 +109,37 @@ class AssignConnectorsDto {
   connectorIds: string[];
 }
 
+const UNRESTRICTED_SCOPE: VisibilityScope = Object.freeze({ restricted: false as const });
+
+/**
+ * Member visibility (settings/member-visibility.service.ts) on this
+ * controller: in a workspace set to `restricted`, a member who is not an admin
+ * reads only the servers they own or that hold a connector they may see, and
+ * in each server only those connectors. A hidden server answers exactly the
+ * 404 an unknown id gets. Admins and open workspaces take today's code path.
+ * Writes keep their owner-or-admin rule; a VIEWER cannot create a server in
+ * any mode. The route-by-route rules are listed in
+ * mcp-servers.member-visibility.spec.ts.
+ */
 @ApiTags('MCP Servers')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@ApiSecurity('api-key')
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/mcp-servers')
 export class McpServersController {
   constructor(
     private readonly mcpServersService: McpServersService,
     private readonly licenseGuard: LicenseGuardService,
     private readonly prisma: PrismaService,
+    // Not @Optional: Nest refuses to boot without it. It is missing only in
+    // unit specs that build the controller by hand and predate the setting.
+    private readonly visibility?: MemberVisibilityService,
   ) {}
+
+  /** The caller's member visibility; unrestricted for admins and open workspaces. */
+  private scopeFor(req: any): Promise<VisibilityScope> {
+    return this.visibility ? this.visibility.scopeFor(req.user) : Promise.resolve(UNRESTRICTED_SCOPE);
+  }
 
   private assertOrgMatch(server: any, req: any) {
     if (server.organizationId !== req.user.organizationId) {
@@ -125,14 +158,25 @@ export class McpServersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List MCP servers for current organization' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: '1..200' })
-  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiOperation({
+    summary: 'List MCP servers for current organization',
+    description:
+      'Every MCP server of your workspace, oldest first. Each one is an MCP endpoint at `/mcp/{id}` that exposes the ' +
+      'tools of its connectors. Includes the names of its connectors, `_count` (connectors, API keys) and `usage` ' +
+      '(`calls30d`, `lastCallAt`). Without `limit` all servers are returned.\n\n' +
+      '```bash\namcp api GET /api/mcp-servers\n```\n\n' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets only the servers they own ' +
+      'or that hold a connector they can see, each with only those connectors in its names and counts.',
+  })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size, 1..200. Omit for all.', example: 50 })
+  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip.', example: 0 })
   async list(@Req() req: any, @Query() pagination: PaginationQueryDto) {
-    const servers = await this.mcpServersService.findAllByOrg(req.user.organizationId, {
-      limit: pagination.limit,
-      offset: pagination.offset,
-    });
+    const scope = await this.scopeFor(req);
+    const page = { limit: pagination.limit, offset: pagination.offset };
+    // Restricted: filtered in the query, so limit and offset page over visible servers only.
+    const servers = !scope.restricted
+      ? await this.mcpServersService.findAllByOrg(req.user.organizationId, page)
+      : await this.mcpServersService.findAllVisibleByOrg(req.user.organizationId, scope, page);
     // A stats query failing must not take the server list down with it.
     const usage = await this.mcpServersService
       .usageByServer(servers.map((s) => s.id))
@@ -144,16 +188,50 @@ export class McpServersController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new MCP server' })
+  @ApiOperation({
+    summary: 'Create a new MCP server',
+    description:
+      'Creates an empty MCP server; its endpoint is `/mcp/{id}` (the `id` in the response). Then put connectors on it ' +
+      'with `PUT /api/mcp-servers/{id}/connectors`, set code mode or skills delivery with `PUT /api/mcp-servers/{id}`, ' +
+      'and give AI clients a key with `POST /api/mcp-keys` (`mcpServerId`) or let them sign in with OAuth. ' +
+      'A slug is derived from the name when omitted; a slug already used in the workspace answers 409. ' +
+      '403 when the plan allows no more MCP servers, and 403 for a VIEWER: only an EDITOR or an ADMIN can create a server.',
+  })
+  @ApiBody({
+    type: CreateMcpServerDto,
+    examples: {
+      sales: {
+        summary: 'A server for the sales team',
+        value: {
+          name: 'Sales',
+          description: 'CRM and e-mail tools for the sales team',
+          instructions: 'Use HubSpot for customer data. Never delete records.',
+        },
+      },
+    },
+  })
   async create(@Req() req: any, @Body() dto: CreateMcpServerDto) {
+    // Same rule and message as every other server write. The default server a
+    // member gets at sign-up or invite is created by the service, not here.
+    if (req.user.role === 'VIEWER') {
+      throw new ForbiddenException('Viewers cannot modify MCP servers');
+    }
     await this.licenseGuard.checkCanCreateMcpServer(req.user.sub, req.user.organizationId);
     return this.mcpServersService.create(req.user.sub, req.user.organizationId, dto);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get MCP server detail' })
+  @ApiOperation({
+    summary: 'Get MCP server detail',
+    description:
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a server they ' +
+      'cannot see, and only the connectors they can see on the others.',
+  })
   async get(@Req() req: any, @Param('id') id: string) {
-    const server = await this.mcpServersService.findById(id);
+    const scope = await this.scopeFor(req);
+    const server = !scope.restricted
+      ? await this.mcpServersService.findById(id)
+      : await this.mcpServersService.findVisibleById(id, req.user.organizationId, scope);
     if (!server) throw new NotFoundException('MCP server not found');
     this.assertOrgMatch(server, req);
     const apiKeys = await this.mcpServersService.listOwnKeysForServer(
@@ -166,23 +244,61 @@ export class McpServersController {
 
   @Get(':id/activity')
   @ApiOperation({
-    summary:
-      'Calls in the last 30 days and the time of the last one. Polled by the connect page to show when the first request from an AI client arrives.',
+    summary: 'Calls in the last 30 days and the time of the last one',
+    description:
+      'Tool calls made through this server in the last 30 days and when the last one happened. Polled by the connect ' +
+      'page to show when the first request from an AI client arrives; also a cheap way to check a server is in use. ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a server they cannot see.',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: { type: 'object', example: { calls30d: 1284, lastCallAt: '2026-11-05T09:41:12.000Z' } },
   })
   async activity(@Req() req: any, @Param('id') id: string) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
     this.assertOrgMatch(server, req);
+    const scope = await this.scopeFor(req);
+    if (scope.restricted && !(await this.mcpServersService.isVisibleTo(id, req.user.organizationId, scope))) {
+      throw new NotFoundException('MCP server not found');
+    }
     const usage = await this.mcpServersService.usageByServer([id]);
     return usage.get(id) ?? { calls30d: 0, lastCallAt: null };
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'Update MCP server' })
+  @ApiOperation({
+    summary: 'Update MCP server',
+    description:
+      'Changes only the fields sent. `codeMode` controls code execution on this server:\n\n' +
+      '- `off` (default): no code execution.\n' +
+      '- `tools`: saved code tools (approved programs stored as tools) can run.\n' +
+      '- `inline`: also the generic `code_execute` (run a short program that calls several tools in one step) and ' +
+      '`code_propose_tool` (propose a program as a saved code tool for an admin to approve).\n\n' +
+      'Code runs in an isolated sandbox and needs a configured code-runner. `skillsDelivery` sets how applied skills ' +
+      'reach clients (`auto`, `inline`, `index`); `isActive: false` switches the endpoint off. Only the server owner or ' +
+      'an admin may change it; a slug already used in the workspace answers 409.\n\n' +
+      '```bash\namcp api PUT /api/mcp-servers/<id> --data \'{"codeMode":"inline"}\' --yes\n```',
+  })
+  @ApiBody({
+    type: UpdateMcpServerDto,
+    examples: {
+      codeMode: { summary: 'Turn on code mode', value: { codeMode: 'inline' } },
+      disable: { summary: 'Switch the endpoint off', value: { isActive: false } },
+      instructions: {
+        summary: 'Change the instructions sent to AI clients',
+        value: { instructions: 'Answer in English. Use the ERP for prices, never the web.' },
+      },
+    },
+  })
   async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateMcpServerDto) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
     this.assertCanWrite(server, req);
+    // Switching a paused server back on counts against the plan's cap (Cloud).
+    if (dto.isActive === true && !server.isActive) {
+      await this.licenseGuard.checkCanActivateMcpServer(server.organizationId);
+    }
     return this.mcpServersService.update(id, dto);
   }
 
@@ -197,7 +313,16 @@ export class McpServersController {
   }
 
   @Put(':id/connectors')
-  @ApiOperation({ summary: 'Assign connectors to MCP server' })
+  @ApiOperation({
+    summary: 'Assign connectors to MCP server',
+    description:
+      'Sets the connectors whose tools this server exposes. The list **replaces** the current assignment: send every ' +
+      'connector that should stay, or `[]` to remove them all. Connected AI clients are told the tool list changed. ' +
+      '404 when an id is not a connector of your workspace. Which tools each user may call is then decided by roles ' +
+      '(`/api/roles`).\n\n' +
+      '```bash\namcp api PUT /api/mcp-servers/<id>/connectors --data \'{"connectorIds":["<connectorId>"]}\' --yes\n```',
+  })
+  @ApiResponse({ status: 200, schema: { type: 'object', example: { message: 'Connectors assigned' } } })
   async assignConnectors(
     @Req() req: any,
     @Param('id') id: string,

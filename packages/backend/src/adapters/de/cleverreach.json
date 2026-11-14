@@ -1,0 +1,1567 @@
+{
+  "slug": "cleverreach",
+  "name": "CleverReach",
+  "aliases": [
+    "CleverReach Newsletter",
+    "Clever Reach"
+  ],
+  "description": "CleverReach email marketing (Germany): groups and receivers with attributes, tags and events, upserts, activation and double opt-in mails, blacklist and bounces, draft mailings with previews and templates, and mailing reports with opens, clicks and bounces. REST API v3 with OAuth.",
+  "region": "de",
+  "category": "marketing-automation",
+  "icon": "cleverreach",
+  "docsUrl": "https://developers.cleverreach.com/docs/api/main/cleverreach-rest-api",
+  "instructions": "## CleverReach\nThis connector uses the **CleverReach REST API v3** (`https://rest.cleverreach.com/v3`) of CleverReach, the German email marketing service: groups (receiver lists) and their receivers (subscribers) with attributes, tags and events, double opt-in mails, the blacklist and bounces, mailings as drafts with previews, and reports of sent mailings. It does not send a mailing to its list: CleverReach grants that only with an extra scope on request, so the final send happens in CleverReach.\n\n**Setup (about 10 minutes, CleverReach admin)**\n1. In CleverReach open **Account**, **Extras**, **REST API** and create an OAuth app. Select the scopes **Recipients** (`oa_receivers`), **Reports** (`oa_reports`), **Forms** (`oa_forms`) and **Emails** (`oa_mailings`).\n2. Register the redirect URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n3. Copy the app's **Client ID** into `CLEVERREACH_CLIENT_ID` and its **Client Secret** into `CLEVERREACH_CLIENT_SECRET`, leave `CLEVERREACH_REFRESH_TOKEN` empty and install.\n4. Click **Authorize with Provider** on the connector and sign in to CleverReach. Tokens are renewed automatically. Run `cleverreach_whoami` to check.\n\n**Workflow**\n- Lists: `cleverreach_list_groups`, `cleverreach_get_group`, `cleverreach_get_group_stats`, `cleverreach_create_group`, `cleverreach_update_group`, segments with `cleverreach_list_group_filters`.\n- Receivers: `cleverreach_list_group_receivers`, `cleverreach_get_receiver` (by id or email, with `group_id` for group fields), `cleverreach_find_receivers` (temporary filter across groups), `cleverreach_list_receiver_groups`, `cleverreach_list_receiver_events`.\n- Adding and changing receivers: `cleverreach_create_receiver` for one, `cleverreach_upsert_receivers` for many (matched by email), `cleverreach_update_receiver`, `cleverreach_activate_receiver`, `cleverreach_deactivate_receiver`. `cleverreach_delete_receiver` is installed switched off.\n- Double opt-in: create the receiver with `registered` set to now and `activated` \"0\", then `cleverreach_send_form_mail` with type activate and the form id from `cleverreach_list_forms`; CleverReach activates the receiver when the link is clicked. Without registered and activated a new receiver is active at once, which needs consent you can prove.\n- Tags and fields: `cleverreach_add_receiver_tags`, `cleverreach_remove_receiver_tags`, `cleverreach_list_tags`; attributes with `cleverreach_list_attributes` and `cleverreach_create_attribute` (global, or per group with `group_id`).\n- Do not mail: `cleverreach_list_blacklist`, `cleverreach_get_blacklist_entry`, `cleverreach_add_to_blacklist`, `cleverreach_remove_from_blacklist`; bounces with `cleverreach_list_bounces` and `cleverreach_list_bounced_receivers`.\n- Mailings: `cleverreach_list_mailings`, `cleverreach_get_mailing`, `cleverreach_list_templates`, `cleverreach_list_mailing_channels`, then `cleverreach_create_mailing` (a draft for groups or a filter), `cleverreach_update_mailing`, `cleverreach_send_mailing_preview` to the account's own users, `cleverreach_get_mailing_links`.\n- Results: `cleverreach_list_reports`, `cleverreach_get_report`, `cleverreach_get_report_stats` (by mode), `cleverreach_list_report_receivers` (who opened, clicked, bounced or unsubscribed).\n\n**Consent and writes**: receivers are personal data under the GDPR. Only add or activate addresses with documented consent, show the user what will change and wait for a yes before writes.\n\n**Reading the answers**: ids are numbers sent as strings. Receiver tools accept the receiver id or the email address. Times (`registered`, `activated`, `deactivated`, `stamp`, report dates) are Unix timestamps in seconds; 0 means not set. A receiver is active in a group when `activated` is set and `deactivated` is 0. `global_attributes` apply in every group, `attributes` in one group.\n\n**Paging**: pages start at 0. Receivers take `pagesize` (up to 5000) and `page`; bounces up to 500 per page; mailings `limit` and `page` (paging only when `state` is not all). A page shorter than the page size is the last one.\n\n**Errors**: the answer carries an error code and message. 401 means the token expired or was revoked (authorize again), 403 that the OAuth app lacks the scope for that area, 404 an unknown id or an address not in that group (or not blacklisted), 400 invalid data such as a wrong attribute name or timestamp.",
+  "prerequisites": "A CleverReach account with admin rights to create an OAuth app under Account, Extras, REST API.",
+  "requiredEnvVars": [
+    "CLEVERREACH_CLIENT_ID",
+    "CLEVERREACH_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "CLEVERREACH_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "CLEVERREACH_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "CleverReach, Account, Extras, REST API: the Client ID of your OAuth app.",
+      "link": "https://developers.cleverreach.com/docs/guides/authentication/"
+    },
+    "CLEVERREACH_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Client Secret of the same OAuth app.",
+      "link": "https://developers.cleverreach.com/docs/guides/authentication/"
+    },
+    "CLEVERREACH_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "advanced": true,
+      "help": "Leave empty: Authorize with Provider fills it in."
+    }
+  },
+  "verifyHints": {
+    "401": "CleverReach did not accept the token. Authorize the connector again; check that the Client ID and secret belong to the same OAuth app.",
+    "403": "The OAuth app lacks a scope for this area. Edit the app under Account, Extras, REST API, add Recipients, Reports, Forms or Emails, and authorize again."
+  },
+  "probe": {
+    "tool": "cleverreach_whoami"
+  },
+  "connector": {
+    "name": "CleverReach REST API v3",
+    "type": "REST",
+    "baseUrl": "https://rest.cleverreach.com/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{CLEVERREACH_CLIENT_ID}}",
+      "clientSecret": "{{CLEVERREACH_CLIENT_SECRET}}",
+      "refreshToken": "{{CLEVERREACH_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://rest.cleverreach.com/oauth/authorize.php",
+      "tokenUrl": "https://rest.cleverreach.com/oauth/token.php",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/debug/whoami"
+  },
+  "tools": [
+    {
+      "name": "cleverreach_whoami",
+      "description": "Information about the CleverReach account the token belongs to: client id, company, login and contact data. Needs no ids; checks the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/debug/whoami"
+      }
+    },
+    {
+      "name": "cleverreach_list_groups",
+      "description": "List the groups (receiver lists) of the account with id, name, description (receiver_info), locked and backup flags and last changes. Group ids are needed by most receiver tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. name or stamp."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": {
+          "order": "$order"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_get_group",
+      "description": "Get one group (receiver list) by id: name, receiver_info, locked, backup and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}"
+      }
+    },
+    {
+      "name": "cleverreach_get_group_stats",
+      "description": "Counts of a group: total, active, inactive and bounced receivers, average points, quality and order figures.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/stats"
+      }
+    },
+    {
+      "name": "cleverreach_create_group",
+      "description": "Create a group (receiver list) with a name and optional description. Returns the new group with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Group name."
+          },
+          "receiver_info": {
+            "type": "string",
+            "description": "Description shown in CleverReach."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "Lock the group against changes in the CleverReach interface."
+          },
+          "backup": {
+            "type": "boolean",
+            "description": "Keep backups of the group."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups",
+        "bodyMapping": {
+          "name": "$name",
+          "receiver_info": "$receiver_info",
+          "locked": "$locked",
+          "backup": "$backup"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_update_group",
+      "description": "Rename a group or change its description, locked or backup flag. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          },
+          "name": {
+            "type": "string",
+            "description": "Group name."
+          },
+          "receiver_info": {
+            "type": "string",
+            "description": "Description shown in CleverReach."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "Lock the group against changes in the CleverReach interface."
+          },
+          "backup": {
+            "type": "boolean",
+            "description": "Keep backups of the group."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/groups/{group_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "receiver_info": "$receiver_info",
+          "locked": "$locked",
+          "backup": "$backup"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_list_group_filters",
+      "description": "List the filters (segments) of a group with id, name, operator and rules. A filter id can target a mailing at a segment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/filters"
+      }
+    },
+    {
+      "name": "cleverreach_list_group_receivers",
+      "description": "List the receivers (subscribers) of a group with email, active flag, registered, activated and deactivated timestamps, source and attributes. Filter by state or by given emails or ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          },
+          "type": {
+            "type": "string",
+            "description": "all (default), active, inactive or bounce.",
+            "enum": [
+              "all",
+              "active",
+              "inactive",
+              "bounce"
+            ]
+          },
+          "pagesize": {
+            "type": "integer",
+            "description": "Receivers per page, at most 5000."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 0."
+          },
+          "detail": {
+            "type": "integer",
+            "description": "Extra detail, bitwise: 0 none, 1 events, 2 orders, 4 tags (7 = all)."
+          },
+          "email_list": {
+            "type": "string",
+            "description": "Only these emails, comma-separated."
+          },
+          "id_list": {
+            "type": "string",
+            "description": "Only these receiver ids, comma-separated."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by plus asc or desc, e.g. \"activated desc\"."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/receivers",
+        "queryParams": {
+          "type": "$type",
+          "pagesize": "$pagesize",
+          "page": "$page",
+          "detail": "$detail",
+          "email_list": "$email_list",
+          "id_list": "$id_list",
+          "order_by": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_get_receiver",
+      "description": "Get one receiver by id or email: global attributes, tags, points, bounce state. Pass group_id to also get its group attributes and active state in that group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id for the group-specific fields (activated, deactivated, attributes)."
+          }
+        },
+        "required": [
+          "receiver"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/receivers/{receiver}",
+        "queryParams": {
+          "group_id": "$group_id"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_find_receivers",
+      "description": "Find receivers across groups with a temporary filter: rules on email, source, timestamps, points or attributes, combined with AND or OR. Nothing is saved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rules": {
+            "type": "array",
+            "description": "Rules: [{\"field\": \"email\", \"logic\": \"contains\", \"condition\": \"@example.com\"}]. logic: eq, neq, sm, bg, isnull, notisnull, contains, begins, ends. Fields: email, source, imported, registered, activated, deactivated, bounced, points or an attribute name.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "groups": {
+            "type": "array",
+            "description": "Group ids to search in.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "operator": {
+            "type": "string",
+            "description": "AND (default) or OR between the rules.",
+            "enum": [
+              "AND",
+              "OR"
+            ]
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort, e.g. \"activated desc\"."
+          },
+          "detail": {
+            "type": "integer",
+            "description": "Extra detail, bitwise: 0 none, 1 events, 2 orders, 4 tags (7 = all)."
+          },
+          "pagesize": {
+            "type": "integer",
+            "description": "Receivers per page."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 0."
+          },
+          "activeonly": {
+            "type": "boolean",
+            "description": "Only active receivers."
+          }
+        },
+        "required": [
+          "rules"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/receivers/filter",
+        "bodyMapping": {
+          "rules": "$rules",
+          "groups": "$groups",
+          "operator": "$operator",
+          "orderby": "$orderby",
+          "detail": "$detail",
+          "pagesize": "$pagesize",
+          "page": "$page",
+          "activeonly": "$activeonly"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cleverreach_list_receiver_groups",
+      "description": "List the groups a receiver (id or email) is in, optionally only those where it is active or inactive.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          },
+          "state": {
+            "type": "string",
+            "description": "all (default), active or inactive.",
+            "enum": [
+              "all",
+              "active",
+              "inactive"
+            ]
+          }
+        },
+        "required": [
+          "receiver"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/receivers/{receiver}/groups",
+        "queryParams": {
+          "state": "$state"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_list_receiver_events",
+      "description": "List the events of a receiver (id or email): custom events added by shops or apps, with type, value and timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only events in this group."
+          }
+        },
+        "required": [
+          "receiver"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/receivers/{receiver}/events",
+        "queryParams": {
+          "group_id": "$group_id"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_create_receiver",
+      "description": "Add one receiver (subscriber) to a group with email, timestamps, source, attributes and tags. Without registered and activated the receiver is active at once; for double opt-in send activated 0 and then cleverreach_send_form_mail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "registered": {
+            "type": "string",
+            "description": "Registration time; set it to now for a new receiver as a Unix timestamp in seconds, e.g. \"1730000000\"."
+          },
+          "activated": {
+            "type": "string",
+            "description": "Activation time; set it only to activate at once without a double opt-in mail, leave it out (or \"0\") when a DOI mail will activate the receiver as a Unix timestamp in seconds, e.g. \"1730000000\"."
+          },
+          "deactivated": {
+            "type": "string",
+            "description": "Deactivation time; any value other than 0 makes the receiver inactive. Leave it out unless you mean that as a Unix timestamp in seconds, e.g. \"1730000000\"."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the address came from, e.g. Website signup."
+          },
+          "global_attributes": {
+            "type": "object",
+            "description": "Global attributes (all groups) by name, e.g. {\"firstname\": \"Anna\", \"lastname\": \"Weber\"}. Names from cleverreach_list_attributes."
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Group attributes (this group only) by name, e.g. {\"customer_number\": \"4711\"}."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags, letters, numbers, _ and -; prefix an origin with a period, e.g. shop.vip.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "group_id",
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups/{group_id}/receivers",
+        "bodyMapping": {
+          "email": "$email",
+          "registered": "$registered",
+          "activated": "$activated",
+          "deactivated": "$deactivated",
+          "source": "$source",
+          "global_attributes": "$global_attributes",
+          "attributes": "$attributes",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_update_receiver",
+      "description": "Update a receiver in a group (by id or email): attributes, tags, source or timestamps. The email cannot change here. Leave deactivated out unless you mean to deactivate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          },
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          },
+          "registered": {
+            "type": "string",
+            "description": "Registration time; set it to now for a new receiver as a Unix timestamp in seconds, e.g. \"1730000000\"."
+          },
+          "activated": {
+            "type": "string",
+            "description": "Activation time; set it only to activate at once without a double opt-in mail, leave it out (or \"0\") when a DOI mail will activate the receiver as a Unix timestamp in seconds, e.g. \"1730000000\"."
+          },
+          "deactivated": {
+            "type": "string",
+            "description": "Deactivation time; any value other than 0 makes the receiver inactive. Leave it out unless you mean that as a Unix timestamp in seconds, e.g. \"1730000000\"."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the address came from, e.g. Website signup."
+          },
+          "global_attributes": {
+            "type": "object",
+            "description": "Global attributes (all groups) by name, e.g. {\"firstname\": \"Anna\", \"lastname\": \"Weber\"}. Names from cleverreach_list_attributes."
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Group attributes (this group only) by name, e.g. {\"customer_number\": \"4711\"}."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags, letters, numbers, _ and -; prefix an origin with a period, e.g. shop.vip.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "receiver",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/groups/{group_id}/receivers/{receiver}",
+        "bodyMapping": {
+          "registered": "$registered",
+          "activated": "$activated",
+          "deactivated": "$deactivated",
+          "source": "$source",
+          "global_attributes": "$global_attributes",
+          "attributes": "$attributes",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_upsert_receivers",
+      "description": "Create or update many receivers of a group in one call, matched by email (send large lists in chunks of a few hundred). Each item takes email plus the fields of cleverreach_create_receiver. deactivated 0 can reactivate receivers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          },
+          "receivers": {
+            "type": "array",
+            "description": "Receivers: [{\"email\": \"a@example.com\", \"registered\": \"1730000000\", \"global_attributes\": {\"firstname\": \"Anna\"}, \"tags\": [\"shop.customer\"]}, ...].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "group_id",
+          "receivers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/groups/{group_id}/receivers/upsert",
+        "bodyMapping": {
+          "__raw": "$receivers"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_activate_receiver",
+      "description": "Activate a receiver in a group (by id or email) so mailings reach it. Only with the receiver's consent, e.g. after a confirmed opt-in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          },
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          }
+        },
+        "required": [
+          "receiver",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/groups/{group_id}/receivers/{receiver}/activate"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "cleverreach_deactivate_receiver",
+      "description": "Deactivate a receiver in a group (by id or email), e.g. after an unsubscribe request. The receiver stays in the group but gets no mailings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          },
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          }
+        },
+        "required": [
+          "receiver",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/groups/{group_id}/receivers/{receiver}/deactivate"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "cleverreach_delete_receiver",
+      "description": "Delete a receiver from a group for good, e.g. for a data erasure request; its history in that group is lost. Installed switched off; confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group (receiver list) id from cleverreach_list_groups."
+          },
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          }
+        },
+        "required": [
+          "receiver",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/groups/{group_id}/receivers/{receiver}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "cleverreach_add_receiver_tags",
+      "description": "Add tags to a receiver (id or email). Tags use letters, numbers, _ and -; an origin prefix goes before a period (shop.vip). Pass group_id to trigger tag-based automations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags to add, e.g. [\"shop.vip\", \"newsletter\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id; needed for automations reacting to the tag."
+          }
+        },
+        "required": [
+          "receiver",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/receivers/{receiver}/tags",
+        "bodyMapping": {
+          "tags": "$tags",
+          "group_id": "$group_id"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_remove_receiver_tags",
+      "description": "Remove tags from a receiver (id or email): one tag, several comma-separated, or all tags of an origin with origin.*.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver": {
+            "type": "string",
+            "description": "Receiver id or the receiver's email address."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Tag or comma-separated tags, e.g. shop.vip or shop.*"
+          }
+        },
+        "required": [
+          "tags",
+          "receiver"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/receivers/{receiver}/tags/{tags}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "cleverreach_list_tags",
+      "description": "List the tags used in the account with their origin and how many receivers carry them. Filter by group or origin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Only tags in this group."
+          },
+          "origin": {
+            "type": "string",
+            "description": "Only tags of this origin, e.g. shop."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "tag, origin or count.",
+            "enum": [
+              "tag",
+              "origin",
+              "count"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Tags per page."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": {
+          "group_id": "$group_id",
+          "origin": "$origin",
+          "order_by": "$order_by",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_list_attributes",
+      "description": "List receiver attributes (data fields): global ones, or with group_id the group-specific ones. Each has id, name, type (text, number, gender, date), description and default value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group id for group attributes; leave out for global attributes."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/attributes",
+        "queryParams": {
+          "group_id": "$group_id"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_create_attribute",
+      "description": "Create a receiver attribute (data field), global or for one group: name, type (text, number, gender, date), description, preview and default value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Attribute name, lower case letters, numbers and underscores, e.g. interest_outdoor."
+          },
+          "type": {
+            "type": "string",
+            "description": "Data type.",
+            "enum": [
+              "text",
+              "number",
+              "gender",
+              "date"
+            ]
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id for a group attribute; leave out for a global one."
+          },
+          "description": {
+            "type": "string",
+            "description": "Label shown in CleverReach."
+          },
+          "preview_value": {
+            "type": "string",
+            "description": "Value used in previews."
+          },
+          "default_value": {
+            "type": "string",
+            "description": "Default value."
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/attributes",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "group_id": "$group_id",
+          "description": "$description",
+          "preview_value": "$preview_value",
+          "default_value": "$default_value"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_list_blacklist",
+      "description": "List the account blacklist: addresses and patterns that never receive mailings, with comment and date.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/blacklist"
+      }
+    },
+    {
+      "name": "cleverreach_get_blacklist_entry",
+      "description": "Check whether an email address is on the blacklist and read its comment and date. A 404 means it is not blacklisted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/blacklist/{email}"
+      }
+    },
+    {
+      "name": "cleverreach_add_to_blacklist",
+      "description": "Put an email address on the account blacklist so no mailing reaches it any more, with an optional comment (e.g. complaint by phone).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address (or a pattern such as *@example.com)."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Why it was blacklisted."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/blacklist",
+        "bodyMapping": {
+          "email": "$email",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_remove_from_blacklist",
+      "description": "Remove an email address from the blacklist so it can receive mailings again. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/blacklist/{email}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "cleverreach_list_bounces",
+      "description": "List bounces of the account: email, category (hardbounce, softbounce, blocked, delayed, spam), occurrences, bounce message, last update and whether it came from a mailing or a DOI mail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pagesize": {
+            "type": "integer",
+            "description": "Entries per page, at most 500."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bounces",
+        "queryParams": {
+          "pagesize": "$pagesize",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_list_bounced_receivers",
+      "description": "List receivers that have a bounce date, page by page, to clean up lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Receivers per page."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/receivers/bounced",
+        "queryParams": {
+          "limit": "$limit",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_list_forms",
+      "description": "List the signup forms of the account with id, name and group. Form ids are used to send double opt-in or opt-out mails.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms"
+      }
+    },
+    {
+      "name": "cleverreach_send_form_mail",
+      "description": "Send the double opt-in (activate) or opt-out confirmation (deactivate) email of a form to a receiver already in the form's group. Pass doidata as proof of consent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "description": "Form id from cleverreach_list_forms."
+          },
+          "type": {
+            "type": "string",
+            "description": "activate (double opt-in mail) or deactivate (unsubscribe confirmation).",
+            "enum": [
+              "activate",
+              "deactivate"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "description": "Receiver email."
+          },
+          "doidata": {
+            "type": "object",
+            "description": "Consent proof: {\"user_ip\": \"1.2.3.4\", \"referer\": \"https://example.com/newsletter\", \"user_agent\": \"Mozilla/5.0 ...\"}."
+          }
+        },
+        "required": [
+          "type",
+          "form_id",
+          "email",
+          "doidata"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/forms/{form_id}/send/{type}",
+        "bodyMapping": {
+          "email": "$email",
+          "doidata": "$doidata"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_list_mailings",
+      "description": "List mailings by state (finished, draft, waiting, running, automation) with id, name, subject, sender and dates. start and end filter by the time that fits the state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "all (default), finished, draft, waiting, running or automation.",
+            "enum": [
+              "all",
+              "finished",
+              "draft",
+              "waiting",
+              "running",
+              "automation"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Mailings to return (at most 1000; 100 when state is not all)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 0; only when state is not all."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Only this category (channel) id."
+          },
+          "start": {
+            "type": "integer",
+            "description": "From this Unix timestamp."
+          },
+          "end": {
+            "type": "integer",
+            "description": "Up to this Unix timestamp."
+          },
+          "omit_body": {
+            "type": "boolean",
+            "description": "Leave out the HTML and text bodies (recommended for lists).",
+            "default": true
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mailings",
+        "queryParams": {
+          "state": "$state",
+          "limit": "$limit",
+          "page": "$page",
+          "channel_id": "$channel_id",
+          "start": "$start",
+          "end": "$end",
+          "omit_body": "$omit_body"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_get_mailing",
+      "description": "Get one mailing by id: name, subject, sender, HTML and text content, receivers (groups or filter), settings and state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mailing_id": {
+            "type": "string",
+            "description": "Mailing id from cleverreach_list_mailings."
+          }
+        },
+        "required": [
+          "mailing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mailings/{mailing_id}"
+      }
+    },
+    {
+      "name": "cleverreach_create_mailing",
+      "description": "Create a mailing as a draft: name, subject, sender, HTML and text content, target groups or filter and tracking settings. It is not sent; send it from CleverReach after a preview.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Internal name."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Sender name."
+          },
+          "sender_email": {
+            "type": "string",
+            "description": "Sender email (a verified sender of the account)."
+          },
+          "content": {
+            "type": "object",
+            "description": "Content: {\"type\": \"html/text\", \"html\": \"<html>...</html>\", \"text\": \"...\"}; type html, text or html/text."
+          },
+          "receivers": {
+            "type": "object",
+            "description": "Recipients: {\"groups\": [\"123456\"]} or {\"filter\": \"66\"}."
+          },
+          "settings": {
+            "type": "object",
+            "description": "Settings: {\"editor\": \"advanced\", \"open_tracking\": true, \"click_tracking\": true, \"unsubscribe_form_id\": \"23\", \"category_id\": \"54\"}; editor wizard, freeform, advanced or plaintext."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags of the mailing.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "subject",
+          "sender_name",
+          "sender_email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/mailings",
+        "bodyMapping": {
+          "name": "$name",
+          "subject": "$subject",
+          "sender_name": "$sender_name",
+          "sender_email": "$sender_email",
+          "content": "$content",
+          "receivers": "$receivers",
+          "settings": "$settings",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_update_mailing",
+      "description": "Update a draft mailing: name, subject, sender, content, receivers, settings or tags. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mailing_id": {
+            "type": "string",
+            "description": "Mailing id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Internal name."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Sender name."
+          },
+          "sender_email": {
+            "type": "string",
+            "description": "Sender email (a verified sender of the account)."
+          },
+          "content": {
+            "type": "object",
+            "description": "Content: {\"type\": \"html/text\", \"html\": \"<html>...</html>\", \"text\": \"...\"}; type html, text or html/text."
+          },
+          "receivers": {
+            "type": "object",
+            "description": "Recipients: {\"groups\": [\"123456\"]} or {\"filter\": \"66\"}."
+          },
+          "settings": {
+            "type": "object",
+            "description": "Settings: {\"editor\": \"advanced\", \"open_tracking\": true, \"click_tracking\": true, \"unsubscribe_form_id\": \"23\", \"category_id\": \"54\"}; editor wizard, freeform, advanced or plaintext."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags of the mailing.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "mailing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/mailings/{mailing_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "subject": "$subject",
+          "sender_name": "$sender_name",
+          "sender_email": "$sender_email",
+          "content": "$content",
+          "receivers": "$receivers",
+          "settings": "$settings",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_send_mailing_preview",
+      "description": "Send a preview of a mailing to test addresses. Only email addresses of users of the CleverReach account are accepted as preview receivers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mailing_id": {
+            "type": "string",
+            "description": "Mailing id."
+          },
+          "receivers": {
+            "type": "array",
+            "description": "Preview addresses (users of the account).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "previewText": {
+            "type": "string",
+            "description": "Text added to the subject (default \" - PREVIEW\")."
+          }
+        },
+        "required": [
+          "mailing_id",
+          "receivers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/mailings/{mailing_id}/sendpreview",
+        "bodyMapping": {
+          "receivers": "$receivers",
+          "previewText": "$previewText"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_get_mailing_links",
+      "description": "List the links in a mailing with their ids and URLs; link ids filter cleverreach_list_report_receivers by clicks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mailing_id": {
+            "type": "string",
+            "description": "Mailing id."
+          }
+        },
+        "required": [
+          "mailing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mailings/{mailing_id}/links"
+      }
+    },
+    {
+      "name": "cleverreach_list_templates",
+      "description": "List the user's own mailing templates with id and name, to start a new mailing from a design.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mailings/templates/user"
+      }
+    },
+    {
+      "name": "cleverreach_list_mailing_channels",
+      "description": "List mailing categories (channels) with id and name, used to group mailings and reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/mailings/channel"
+      }
+    },
+    {
+      "name": "cleverreach_list_reports",
+      "description": "List reports of sent mailings with sent count, opens, clicks, bounces, unsubscribes and send date. Filter by group, category or time range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pagesize": {
+            "type": "integer",
+            "description": "Reports per page."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 0."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only reports for this group."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Only this category id."
+          },
+          "start": {
+            "type": "integer",
+            "description": "From this Unix timestamp (needs end)."
+          },
+          "end": {
+            "type": "integer",
+            "description": "Up to this Unix timestamp (needs start)."
+          },
+          "mode": {
+            "type": "string",
+            "description": "full or basic (smaller answer).",
+            "enum": [
+              "full",
+              "basic"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports",
+        "queryParams": {
+          "pagesize": "$pagesize",
+          "page": "$page",
+          "group_id": "$group_id",
+          "channel_id": "$channel_id",
+          "start": "$start",
+          "end": "$end",
+          "mode": "$mode"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_get_report",
+      "description": "Get the report of one sent mailing (same id as the mailing): recipients, opens, clicks, bounces, unsubscribes and rates. Split tests carry their versions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "Report (mailing) id."
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report_id}"
+      }
+    },
+    {
+      "name": "cleverreach_get_report_stats",
+      "description": "Detailed statistics of a report by mode: full, clients, mediaclients, countries, quality (bounces), firsthours, traffic, daily (with start and end), links, conversion or custom.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "Report (mailing) id."
+          },
+          "mode": {
+            "type": "string",
+            "description": "Statistic.",
+            "enum": [
+              "full",
+              "clients",
+              "mediaclients",
+              "countries",
+              "quality",
+              "firsthours",
+              "traffic",
+              "daily",
+              "links",
+              "conversion",
+              "custom"
+            ]
+          },
+          "start": {
+            "type": "string",
+            "description": "For daily: from this Unix timestamp."
+          },
+          "end": {
+            "type": "string",
+            "description": "For daily: up to this Unix timestamp."
+          }
+        },
+        "required": [
+          "mode",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report_id}/stats/{mode}",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      }
+    },
+    {
+      "name": "cleverreach_list_report_receivers",
+      "description": "List the receivers of a report by state: sent, opened, clicked (optionally one link), notopened, notclicked, bounced or unsubscribed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "Report (mailing) id."
+          },
+          "state": {
+            "type": "string",
+            "description": "Which receivers.",
+            "enum": [
+              "sent",
+              "opened",
+              "clicked",
+              "notopened",
+              "notclicked",
+              "bounced",
+              "unsubscribed"
+            ]
+          },
+          "linkid": {
+            "type": "string",
+            "description": "For clicked: only this link id (cleverreach_get_mailing_links)."
+          },
+          "from": {
+            "type": "string",
+            "description": "From this Unix timestamp."
+          },
+          "to": {
+            "type": "string",
+            "description": "Up to this Unix timestamp."
+          },
+          "detail": {
+            "type": "integer",
+            "description": "Extra detail, bitwise: 0 none, 1 events, 2 orders, 4 tags (7 = all)."
+          },
+          "pagesize": {
+            "type": "integer",
+            "description": "Receivers per page."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 0."
+          }
+        },
+        "required": [
+          "state",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report_id}/receivers/{state}",
+        "queryParams": {
+          "linkid": "$linkid",
+          "from": "$from",
+          "to": "$to",
+          "detail": "$detail",
+          "pagesize": "$pagesize",
+          "page": "$page"
+        }
+      }
+    }
+  ]
+}

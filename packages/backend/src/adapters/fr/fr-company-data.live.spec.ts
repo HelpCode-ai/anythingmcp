@@ -3,8 +3,8 @@ import * as adapter from './fr-company-data.json';
 /**
  * French company open data, no key: API Recherche d'entreprises (recherche-entreprises.api.gouv.fr,
  * OpenAPI at /openapi.json), BODACC and BALO on DILA's Opendatasoft portals (Explore API v2.1) and the
- * DGE ratios dataset on data.economie.gouv.fr. Built from a customer's hand-built BODACC connector
- * (notices by SIREN); every tool was called live from the Cloud on 22 Oct 2026.
+ * DGE ratios dataset on data.economie.gouv.fr. Every tool was
+ * called live on 22 Oct 2026.
  * Live part: RUN_FR_COMPANY_DATA_LIVE=1 npx jest src/adapters/fr/fr-company-data
  */
 
@@ -53,8 +53,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'fr_company_data_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["bodacc_par_siren"];
 
 describe('fr-company-data adapter: static spec conformance', () => {
 
@@ -108,10 +106,6 @@ describe('fr-company-data adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);

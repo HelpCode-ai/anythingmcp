@@ -8,6 +8,10 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    // Proxied rewrites plus Sentry put 13 `close` listeners on one response;
+    // see lib/response-listener-limit.ts. Applies with or without SENTRY_DSN.
+    const { raiseResponseListenerLimit } = await import('./lib/response-listener-limit');
+    raiseResponseListenerLimit();
     await import('../sentry.server.config');
   }
   if (process.env.NEXT_RUNTIME === 'edge') {

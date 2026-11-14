@@ -13,7 +13,7 @@ import { describeAdapterEnvVars } from '../env-var-meta';
  *
  *   1. Static: always runs. Pins Basic authentication, the API base path,
  *      every tool's method, path and query or body mapping (from Monet's
- *      published Postman collection and a customer's working connector), and
+ *      published Postman collection), and
  *      which tools write and install switched off.
  *
  *   2. Live: skipped unless MONET_USERNAME and MONET_PASSWORD are set. Reads

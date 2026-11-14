@@ -1,0 +1,742 @@
+{
+  "slug": "godaddy",
+  "name": "GoDaddy",
+  "aliases": [
+    "GoDaddy Domains",
+    "GoDaddy DNS",
+    "GoDaddy API"
+  ],
+  "description": "Domains registered at GoDaddy through the GoDaddy Domains API: list domains and their status, expiry, lock and auto-renew, check availability and prices, get name suggestions, read and change DNS records, nameservers and WHOIS contacts, and renew a domain. Personal Access Token.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "godaddy",
+  "docsUrl": "https://developer.godaddy.com/docs/api-users/domains",
+  "instructions": "## GoDaddy\nThis connector manages the domains of one GoDaddy account through the **GoDaddy Domains API v1** (`https://api.godaddy.com/v1/domains`): the list of domains with status, expiry, transfer lock and auto-renew, availability checks with prices, name suggestions, DNS records on GoDaddy's nameservers, the nameservers themselves, WHOIS contacts, and renewal. Registering (buying) new domains, transfers, forwarding and cancelling a domain are not part of this connector; do those at godaddy.com.\n\n**Setup (3 minutes)**\n1. Sign in at https://developer.godaddy.com/personal-access-token with the GoDaddy account that owns the domains and select **Generate Token**.\n2. Give it a name, an expiry (up to 1 year) and the scopes it needs: `domains.domain:read` for the read tools; add `domains.dns:update` to change DNS records, `domains.domain:update` for lock, auto-renew and renewal, `domains.nameserver:update` for nameservers and `domains.contact:update` for contacts. The **Domains & DNS** bundle selects all of them.\n3. Copy the token (it is shown once) into `GODADDY_PAT` and run `godaddy_list_domains` to check it.\n\nGoDaddy's older key and secret (`Authorization: sso-key KEY:SECRET`, from developer.godaddy.com/keys) still works on these v1 endpoints but GoDaddy is retiring it for the Domains API during 2026, so this connector uses the Personal Access Token.\n\n**Who may use the API**: GoDaddy's documentation says domain management (list, DNS, contacts, renewals, lock) needs an account that holds at least one domain or a plan that grants management access, and that anything that costs money (renewal) needs a payment method on file or a funded Good as Gold balance. From 2024 GoDaddy limited the Management and DNS APIs to accounts with 10 or more domains or a Discount Domain Club plan (and the Availability API to 50 or more domains); the current documentation no longer states those thresholds, but an account refused with `403` and a code such as `ACCESS_DENIED` is still blocked by an eligibility rule, not by a wrong token.\n\n**Workflow**\n- Portfolio: `godaddy_list_domains` (filter by `statuses` or `status_groups`, add `includes=contacts,nameServers` for more detail), then `godaddy_get_domain` for one domain: status, `expires`, `renewAuto`, `locked`, `privacy`, `nameServers` and the four contacts. The transfer authorization code is removed from the answer; get it in the GoDaddy account when you really move a domain.\n- Finding a name: `godaddy_check_availability` for one domain, `godaddy_check_availability_bulk` for up to 500 at once, `godaddy_suggest_domains` for alternatives from keywords, `godaddy_list_tlds` for the extensions GoDaddy sells. These only read; buy at godaddy.com.\n- DNS: `godaddy_list_dns_records` shows the whole zone, `godaddy_get_dns_records` the records of one type and name. `godaddy_add_dns_records` appends records and keeps the existing ones (calling it twice adds duplicates). `godaddy_replace_dns_records` overwrites every record of one type and name with the list you give (the usual way to change an A record or a TXT value). `godaddy_delete_dns_records` removes every record of one type and name. Always read the records first and tell the user what will change.\n- Settings: `godaddy_update_domain` sets the transfer lock, auto-renew or the nameservers. Changing the nameservers moves DNS away from GoDaddy: after that the DNS tools no longer manage the domain.\n- Contacts: `godaddy_update_contacts` replaces the registrant (required) and optionally the admin, billing and tech contacts; read them first with `godaddy_get_domain` and send complete contacts. A new registrant name, organization or email can start a 60-day transfer lock (ICANN change of registrant) and a confirmation email. `godaddy_resend_registrant_verification` sends the ICANN registrant email verification again.\n- Renewal: `godaddy_renew_domain` renews a domain for `period` years and **charges the account's payment method**. It is installed switched off; turn it on only if the agent should be able to spend money, and always confirm the domain, the years and the price with the user first.\n\n**Reading the answers**\n- Prices from the availability tools are in **micro units** of `currency`: `price` 12990000 with `currency` USD is 12.99 USD. Availability prices are indicative; `definitive: false` means the answer came from a cache, use `check_type=FULL` for a live registry check.\n- Dates (`expires`, `createdAt`, `renewDeadline`) are ISO 8601 in UTC.\n- DNS record `name` is relative to the domain: `@` is the domain itself, `www` is www.example.com. `ttl` is in seconds (600 to 86400 on GoDaddy DNS). `priority` is for MX and SRV, `service`, `protocol`, `port` and `weight` for SRV.\n- Writes answer `200` or `204` with no body on success.\n\n**Paging**: `godaddy_list_domains` returns at most `limit` domains (up to 1000); for the next page pass the last `domain` of the page as `marker`. `godaddy_list_dns_records` and `godaddy_get_dns_records` take `offset` and `limit`.\n\n**Limits**: the API allows about 600 requests per credential in a window of roughly 23 minutes (`RateLimit-*` headers; GoDaddy may change it). On `429` wait for the reset before trying again.\n\n**Errors**: `401` a wrong, revoked or expired token; `403` a missing scope or an account that does not meet GoDaddy's eligibility rules (read `code` in the body); `404` a domain that is not in this account or a type and name with no records; `409` or `422` a value GoDaddy refuses (for example a TTL under 600 or an invalid IP address), with the field in `fields`.",
+  "prerequisites": "A GoDaddy account that holds domains, and a Personal Access Token from developer.godaddy.com with the Domains & DNS scopes you need.",
+  "requiredEnvVars": [
+    "GODADDY_PAT"
+  ],
+  "envVarMeta": {
+    "GODADDY_PAT": {
+      "label": "Personal Access Token",
+      "kind": "credential",
+      "secret": true,
+      "help": "developer.godaddy.com, Personal Access Token, Generate Token. Pick the Domains & DNS scopes (at least domains.domain:read). The token is shown only once and expires on the date you choose (at most one year).",
+      "link": "https://developer.godaddy.com/personal-access-token",
+      "pattern": "^(?!Bearer )(?!sso-key )\\S{20,}$",
+      "patternMessage": "Paste only the token, without Bearer and without spaces. The older key and secret pair (sso-key) is not used here."
+    }
+  },
+  "verifyHints": {
+    "401": "GoDaddy refused the token. It may be mistyped, revoked or expired: generate a new Personal Access Token at developer.godaddy.com/personal-access-token.",
+    "403": "The token works but GoDaddy refused the call: the token lacks the scope (domains.domain:read for reading), or the account does not meet GoDaddy's Domains API eligibility rules. The code in the answer tells which.",
+    "rate_limited": "GoDaddy allows about 600 requests per credential in a window of roughly 23 minutes. Wait for the window to reset and try again."
+  },
+  "probe": {
+    "tool": "godaddy_list_domains",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "GoDaddy Domains API",
+    "type": "REST",
+    "baseUrl": "https://api.godaddy.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{GODADDY_PAT}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "godaddy_list_domains",
+      "description": "List the domains of the GoDaddy account: domain, status, expires, renewAuto, locked, privacy, createdAt. Optionally with contacts and nameservers. Sorted by domain name; page with marker.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "string",
+            "description": "Only domains with these statuses, comma-separated, e.g. ACTIVE,EXPIRED,PENDING_TRANSFER,CANCELLED."
+          },
+          "status_groups": {
+            "type": "string",
+            "description": "Only domains in these status groups, comma-separated: INACTIVE, PRE_REGISTRATION, REDEMPTION, RENEWABLE, VERIFICATION_ICANN, VISIBLE."
+          },
+          "includes": {
+            "type": "string",
+            "description": "Extra detail per domain, comma-separated: contacts, nameServers."
+          },
+          "modified_date": {
+            "type": "string",
+            "description": "Only domains changed since this ISO 8601 date-time, e.g. 2026-01-01T00:00:00Z."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Maximum number of domains to return (1-1000)."
+          },
+          "marker": {
+            "type": "string",
+            "description": "Paging: the last domain name of the previous page; the list continues after it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/domains",
+        "queryParams": {
+          "statuses": "$statuses",
+          "statusGroups": "$status_groups",
+          "includes": "$includes",
+          "modifiedDate": "$modified_date",
+          "limit": "$limit",
+          "marker": "$marker"
+        }
+      }
+    },
+    {
+      "name": "godaddy_get_domain",
+      "description": "Details of one domain in the account: status, expires, renewAuto, renewDeadline, locked, privacy, nameServers, transferProtected and the registrant, admin, billing and tech contacts. The transfer authorization code is left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/domains/{domain}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "authCode"
+          ]
+        }
+      }
+    },
+    {
+      "name": "godaddy_check_availability",
+      "description": "Check whether one domain can be registered and at what price. Returns available, price and currency (price in micro units: 12990000 = 12.99), period in years and definitive (false when the answer came from a cache).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Full domain name including the extension, e.g. example.com."
+          },
+          "check_type": {
+            "type": "string",
+            "enum": [
+              "FAST",
+              "FULL"
+            ],
+            "description": "FAST (default) may answer from a cache; FULL asks the registry live and is slower."
+          },
+          "for_transfer": {
+            "type": "boolean",
+            "description": "true to check whether the domain can be transferred in instead of registered."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/domains/available",
+        "queryParams": {
+          "domain": "$domain",
+          "checkType": "$check_type",
+          "forTransfer": "$for_transfer"
+        }
+      }
+    },
+    {
+      "name": "godaddy_check_availability_bulk",
+      "description": "Check up to 500 domain names in one call. Returns a domains array with available, price (micro units), currency and period for each name, and errors for names that could not be checked. Reads only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "description": "Full domain names including the extension, e.g. [\"example.com\", \"example.net\"]."
+          },
+          "check_type": {
+            "type": "string",
+            "enum": [
+              "FAST",
+              "FULL"
+            ],
+            "description": "FAST (default) may answer from a cache; FULL asks the registry live."
+          }
+        },
+        "required": [
+          "domains"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/domains/available",
+        "queryParams": {
+          "checkType": "$check_type"
+        },
+        "bodyMapping": {
+          "__raw": "$domains"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "godaddy_suggest_domains",
+      "description": "Suggest available domain names from a domain or keywords, e.g. when the wanted name is taken. Returns a list of domain names; check prices with godaddy_check_availability_bulk.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A domain name or keywords, e.g. sunrise bakery or sunrisebakery.com."
+          },
+          "tlds": {
+            "type": "string",
+            "description": "Only these extensions, comma-separated, e.g. com,net,de."
+          },
+          "sources": {
+            "type": "string",
+            "description": "Suggestion strategies, comma-separated: CC_TLD (country extensions), EXTENSION (other extensions), KEYWORD_SPIN (varied keywords), PREMIUM (premium names)."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter country code as a regional hint, e.g. DE."
+          },
+          "city": {
+            "type": "string",
+            "description": "City name as a regional hint."
+          },
+          "length_min": {
+            "type": "integer",
+            "description": "Minimum length of the name before the extension."
+          },
+          "length_max": {
+            "type": "integer",
+            "description": "Maximum length of the name before the extension."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of suggestions."
+          },
+          "wait_ms": {
+            "type": "integer",
+            "description": "How long GoDaddy may collect suggestions, in milliseconds (default 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/domains/suggest",
+        "queryParams": {
+          "query": "$query",
+          "tlds": "$tlds",
+          "sources": "$sources",
+          "country": "$country",
+          "city": "$city",
+          "lengthMin": "$length_min",
+          "lengthMax": "$length_max",
+          "limit": "$limit",
+          "waitMs": "$wait_ms"
+        }
+      }
+    },
+    {
+      "name": "godaddy_list_tlds",
+      "description": "List the top-level domains (extensions) GoDaddy sells, with name and type (GENERIC or COUNTRY_CODE).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/domains/tlds"
+      },
+      "responseMapping": {
+        "cacheTtl": 86400
+      }
+    },
+    {
+      "name": "godaddy_list_dns_records",
+      "description": "List every DNS record of a domain on GoDaddy's nameservers: type, name (@ for the domain itself), data, ttl, and priority, service, protocol, port, weight where they apply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of records to return."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/domains/{domain}/records",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "godaddy_get_dns_records",
+      "description": "List the DNS records of one type and name, e.g. type TXT and name _dmarc, or type A and name @. Returns an empty list when there are none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CNAME",
+              "MX",
+              "NS",
+              "SOA",
+              "SRV",
+              "TXT"
+            ],
+            "description": "Record type."
+          },
+          "name": {
+            "type": "string",
+            "description": "Record name relative to the domain: @ for the domain itself, www, _dmarc, mail, ..."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of records to return."
+          }
+        },
+        "required": [
+          "domain",
+          "type",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/domains/{domain}/records/{type}/{name}",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "godaddy_add_dns_records",
+      "description": "Add DNS records to a domain without touching the existing ones. Each call adds the records again, so check with godaddy_get_dns_records first to avoid duplicates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          },
+          "records": {
+            "type": "array",
+            "description": "Records to add.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "A",
+                    "AAAA",
+                    "CAA",
+                    "CNAME",
+                    "MX",
+                    "NS",
+                    "SRV",
+                    "TXT"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "description": "@ for the domain itself, or a host such as www."
+                },
+                "data": {
+                  "type": "string",
+                  "description": "Value: an IP address for A and AAAA, a host name for CNAME, MX and NS, the text for TXT."
+                },
+                "ttl": {
+                  "type": "integer",
+                  "description": "Seconds, 600 to 86400."
+                },
+                "priority": {
+                  "type": "integer",
+                  "description": "MX and SRV only."
+                },
+                "service": {
+                  "type": "string",
+                  "description": "SRV only, e.g. _sip."
+                },
+                "protocol": {
+                  "type": "string",
+                  "description": "SRV only, e.g. _tcp."
+                },
+                "port": {
+                  "type": "integer",
+                  "description": "SRV only."
+                },
+                "weight": {
+                  "type": "integer",
+                  "description": "SRV only."
+                }
+              },
+              "required": [
+                "type",
+                "name",
+                "data"
+              ]
+            }
+          }
+        },
+        "required": [
+          "domain",
+          "records"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/domains/{domain}/records",
+        "bodyMapping": {
+          "__raw": "$records"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "godaddy_replace_dns_records",
+      "description": "Replace all DNS records of one type and name with the given list, e.g. set the A record of @ to a new IP or change a TXT value. Records of other types and names stay as they are.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CNAME",
+              "MX",
+              "NS",
+              "SRV",
+              "TXT"
+            ],
+            "description": "Record type to replace."
+          },
+          "name": {
+            "type": "string",
+            "description": "Record name to replace: @ for the domain itself, www, _dmarc, ..."
+          },
+          "records": {
+            "type": "array",
+            "description": "The new records for this type and name; every existing one is replaced.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "string",
+                  "description": "Value: an IP address for A and AAAA, a host name for CNAME, MX and NS, the text for TXT."
+                },
+                "ttl": {
+                  "type": "integer",
+                  "description": "Seconds, 600 to 86400."
+                },
+                "priority": {
+                  "type": "integer",
+                  "description": "MX and SRV only."
+                },
+                "service": {
+                  "type": "string",
+                  "description": "SRV only."
+                },
+                "protocol": {
+                  "type": "string",
+                  "description": "SRV only."
+                },
+                "port": {
+                  "type": "integer",
+                  "description": "SRV only."
+                },
+                "weight": {
+                  "type": "integer",
+                  "description": "SRV only."
+                }
+              },
+              "required": [
+                "data"
+              ]
+            }
+          }
+        },
+        "required": [
+          "domain",
+          "type",
+          "name",
+          "records"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/domains/{domain}/records/{type}/{name}",
+        "bodyMapping": {
+          "__raw": "$records"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "godaddy_delete_dns_records",
+      "description": "Delete every DNS record of one type and name from a domain, e.g. all TXT records named _acme-challenge. NS and SOA records cannot be deleted this way.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "A",
+              "AAAA",
+              "CAA",
+              "CNAME",
+              "MX",
+              "SRV",
+              "TXT"
+            ],
+            "description": "Record type to delete."
+          },
+          "name": {
+            "type": "string",
+            "description": "Record name to delete: @ for the domain itself, www, _acme-challenge, ..."
+          }
+        },
+        "required": [
+          "domain",
+          "type",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/domains/{domain}/records/{type}/{name}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "godaddy_update_domain",
+      "description": "Change settings of a domain: the transfer lock, auto-renew, or the nameservers. Only the fields you pass change. New nameservers move DNS away from GoDaddy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          },
+          "locked": {
+            "type": "boolean",
+            "description": "true locks the domain against transfers to another registrar, false unlocks it."
+          },
+          "renew_auto": {
+            "type": "boolean",
+            "description": "true renews the domain automatically before it expires (charged to the account), false turns that off."
+          },
+          "name_servers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "New nameserver host names, at least two, e.g. [\"ns1.example-dns.com\", \"ns2.example-dns.com\"]. GoDaddy's own are ns*.domaincontrol.com."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/domains/{domain}",
+        "bodyMapping": {
+          "locked": "$locked",
+          "renewAuto": "$renew_auto",
+          "nameServers": "$name_servers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "godaddy_update_contacts",
+      "description": "Replace the WHOIS contacts of a domain. The registrant is required; admin, billing and tech are optional. Send complete contacts (read them with godaddy_get_domain first). A new registrant can trigger a confirmation email and a 60-day transfer lock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          },
+          "contact_registrant": {
+            "type": "object",
+            "description": "Registrant (owner): nameFirst, nameLast, email, phone (+49.7611234567), organization, jobTitle, addressMailing {address1, address2, city, state, postalCode, country (two letters)}."
+          },
+          "contact_admin": {
+            "type": "object",
+            "description": "Administrative contact, same fields as the registrant."
+          },
+          "contact_billing": {
+            "type": "object",
+            "description": "Billing contact, same fields as the registrant."
+          },
+          "contact_tech": {
+            "type": "object",
+            "description": "Technical contact, same fields as the registrant."
+          }
+        },
+        "required": [
+          "domain",
+          "contact_registrant"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/domains/{domain}/contacts",
+        "bodyMapping": {
+          "contactRegistrant": "$contact_registrant",
+          "contactAdmin": "$contact_admin",
+          "contactBilling": "$contact_billing",
+          "contactTech": "$contact_tech"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "godaddy_resend_registrant_verification",
+      "description": "Send the ICANN registrant email verification for a domain again, when the registrant did not receive or let expire the first one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/domains/{domain}/verifyRegistrantEmail"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "godaddy_renew_domain",
+      "description": "Renew a domain for a number of years. This charges the account's payment method: confirm the domain, the years and the price with the user before calling. Do not retry on an unclear error; check expires with godaddy_get_domain instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.com."
+          },
+          "period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Years to add (1-10, within the extension's maximum). Default: the period of the original purchase."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/domains/{domain}/renew",
+        "bodyMapping": {
+          "period": "$period"
+        }
+      },
+      "enabled": false,
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

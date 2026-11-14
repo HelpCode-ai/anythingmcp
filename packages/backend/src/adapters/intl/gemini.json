@@ -191,6 +191,7 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": [
@@ -221,7 +222,7 @@
       "responseMapping": {
         "transform": {
           "mode": "jmespath",
-          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
+          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text || `[]`), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
           "maxBytes": 200000
         }
       },
@@ -267,6 +268,7 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": "$contents",
@@ -279,7 +281,7 @@
       "responseMapping": {
         "transform": {
           "mode": "jmespath",
-          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
+          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text || `[]`), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
           "maxBytes": 200000
         }
       },
@@ -337,6 +339,7 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": [
@@ -371,7 +374,7 @@
       "responseMapping": {
         "transform": {
           "mode": "jmespath",
-          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
+          "expression": "{text: join('', candidates[0].content.parts[?text != null && thought != `true`].text || `[]`), finishReason: candidates[0].finishReason, finishMessage: candidates[0].finishMessage, modelVersion: modelVersion, responseId: responseId, usage: usageMetadata, grounding: candidates[0].groundingMetadata.groundingChunks[*].web}",
           "maxBytes": 200000
         }
       },
@@ -584,6 +587,8 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
+        "maxResponseBytes": 41943040,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": [
@@ -682,6 +687,8 @@
       },
       "endpointMapping": {
         "method": "POST",
+        "timeoutMs": 120000,
+        "maxResponseBytes": 41943040,
         "path": "/models/{model}:generateContent",
         "bodyMapping": {
           "contents": [

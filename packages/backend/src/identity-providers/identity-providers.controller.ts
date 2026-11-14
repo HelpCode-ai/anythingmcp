@@ -18,8 +18,9 @@ import {
   ApiOperation,
   ApiProperty,
   ApiPropertyOptional,
+  ApiSecurity,
 } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import {
   IsString,
   IsOptional,
@@ -202,7 +203,8 @@ class ReplaceRoleMappingsDto {
  */
 @ApiTags('Identity Providers')
 @ApiBearerAuth()
-@UseGuards(SelfHostedOnlyGuard, AuthGuard('jwt'), RolesGuard)
+@ApiSecurity('api-key')
+@UseGuards(SelfHostedOnlyGuard, JwtOrManagementKeyGuard, RolesGuard)
 @Roles('ADMIN')
 @Controller('api/identity-providers')
 export class IdentityProvidersController {

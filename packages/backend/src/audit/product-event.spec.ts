@@ -113,13 +113,56 @@ describe('POST /api/product-events — /start-trial funnel', () => {
   });
 });
 
+describe('POST /api/product-events — File Search wizard', () => {
+  it('records the funnel with protocol, preset, adapter and coarse counts', async () => {
+    const { controller, req, stored } = build();
+    const base = { protocol: 'sftp', preset: 'synology', adapterSlug: 'synology-file-search' };
+    await controller.record(req, { event: 'file_search_wizard_opened', metadata: { ...base, via: 'store_hint' } });
+    await controller.record(req, { event: 'file_search_test_failed', metadata: { ...base, kind: 'auth' } });
+    await controller.record(req, { event: 'file_search_test_passed', metadata: base });
+    await controller.record(req, { event: 'file_search_scan_finished', metadata: { ...base, kind: 'fits', files: '101-500' } });
+    await controller.record(req, { event: 'file_search_activated', metadata: { ...base, files: '101-500' } });
+    await controller.record(req, { event: 'file_search_locked_shown', metadata: { kind: 'connector_limit' } });
+    expect(stored().map((e: any) => [e.event, e.metadata])).toEqual([
+      ['file_search_wizard_opened', { adapterSlug: 'synology-file-search', via: 'store_hint', protocol: 'sftp', preset: 'synology' }],
+      ['file_search_test_failed', { adapterSlug: 'synology-file-search', kind: 'auth', protocol: 'sftp', preset: 'synology' }],
+      ['file_search_test_passed', { adapterSlug: 'synology-file-search', protocol: 'sftp', preset: 'synology' }],
+      ['file_search_scan_finished', { adapterSlug: 'synology-file-search', kind: 'fits', protocol: 'sftp', preset: 'synology', files: '101-500' }],
+      ['file_search_activated', { adapterSlug: 'synology-file-search', protocol: 'sftp', preset: 'synology', files: '101-500' }],
+      ['file_search_locked_shown', { kind: 'connector_limit' }],
+    ]);
+  });
+
+  it('drops an unknown protocol or preset and an exact file count', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, {
+      event: 'file_search_scan_finished',
+      metadata: { protocol: 'nas.example.com', preset: '/volume1/share', files: 1234, kind: 'fits' },
+    });
+    await controller.record(req, { event: 'file_search_activated', metadata: { protocol: 'webdav', files: '1234' } });
+    expect(stored().map((e: any) => e.metadata)).toEqual([{ kind: 'fits' }, { protocol: 'webdav' }]);
+  });
+
+  it('keeps a search whose first result is a File Search suggestion', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, { event: 'catalog_search', metadata: { query: 'Dateiserver', results: 2, match: 'suggested', via: 'welcome' } });
+    expect(stored()[0].metadata).toEqual({ via: 'welcome', query: 'Dateiserver', results: 2, match: 'suggested' });
+  });
+});
+
 describe('scrubProviderMessage', () => {
   it('drops query strings, masks given secrets and token-like runs, caps the length', () => {
     expect(scrubProviderMessage('GET https://x.example/api?appid=abc failed', [])).toBe('GET https://x.example/api failed');
     expect(scrubProviderMessage('bad key s3cr3t-value', ['s3cr3t-value'])).toBe('bad key ***');
     expect(scrubProviderMessage(`token ${'a1'.repeat(20)} expired`)).toBe('token *** expired');
-    expect(scrubProviderMessage('x'.repeat(30) + ' ' + 'word '.repeat(60))!.length).toBe(160);
+    expect(scrubProviderMessage('x'.repeat(30) + ' ' + 'word '.repeat(100))!.length).toBe(400);
     expect(scrubProviderMessage('   ')).toBeNull();
+  });
+
+  it("keeps the provider's words that follow our hint", () => {
+    const hint = 'The target API returned a server error (500). This is on their side, not your configuration.';
+    const odoo = `${hint} (Request failed with status code 500: {"name":"builtins.ValueError","message":"Invalid field 'customer_rank' on 'res.partner'"})`;
+    expect(scrubProviderMessage(odoo)).toContain("Invalid field 'customer_rank' on 'res.partner'");
   });
 
   it('cuts a URL at its first ? or #, wherever it sits in the text', () => {
@@ -140,7 +183,7 @@ describe('scrubProviderMessage', () => {
       const started = Date.now();
       const out = scrubProviderMessage(input);
       expect(Date.now() - started).toBeLessThan(200);
-      expect(out!.length).toBeLessThanOrEqual(160);
+      expect(out!.length).toBeLessThanOrEqual(400);
     }
   });
 });
@@ -156,5 +199,91 @@ describe('ProductEventService.log — server-written metadata', () => {
       metadata: { client: 'Claude', cardTrialOffered: true },
     });
     expect(create.mock.calls[0][0].data.metadata).toEqual({ client: 'Claude', cardTrialOffered: true });
+  });
+
+  it('keeps the reactivation-link arm on a blocked call and the state on a page view', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    for (const variant of ['page', 'pricing']) {
+      await service.log({
+        event: 'trial_expired_call_blocked',
+        organizationId: 'org-1',
+        metadata: { toolName: 't', adapterSlug: 'odoo', client: 'claude-ai', variant },
+      });
+    }
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'trial-ended' } });
+    await service.log({ event: 'license_wall_viewed', organizationId: 'org-1', metadata: { variant: 'trust' } });
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'x', variant: 'y' } });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({ toolName: 't', adapterSlug: 'odoo', client: 'claude-ai', variant: 'page' });
+    expect(stored[1].variant).toBe('pricing');
+    expect(stored[2]).toEqual({ state: 'trial-ended' });
+    expect(stored[3]).toEqual({ variant: 'trust' });
+    expect(stored[4]).toBeNull();
+  });
+
+  it('keeps a paywall_action from either pay screen, with only known actions, plans and periods', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    expect(service.isKnown('paywall_action')).toBe(true);
+    await service.log({
+      event: 'paywall_action',
+      organizationId: 'org-1',
+      metadata: { source: 'trial_ended_wall', variant: 'trust', action: 'subscribe_clicked', plan: 'team', period: 'yearly', device: 'mobile' },
+    });
+    await service.log({
+      event: 'paywall_action',
+      organizationId: 'org-1',
+      metadata: { source: 'mcp_reactivate', action: 'pwned', plan: 'business', period: 'weekly', email: 'a@b.c' },
+    });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({
+      source: 'trial_ended_wall',
+      device: 'mobile',
+      variant: 'trust',
+      action: 'subscribe_clicked',
+      plan: 'team',
+      period: 'yearly',
+    });
+    expect(stored[1]).toEqual({ source: 'mcp_reactivate' });
+  });
+
+  it('keeps the Telegram price test arm, and only its two values', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({ event: 'reactivate_page_viewed', organizationId: 'org-1', metadata: { state: 'trial-ended', offer: 'personal' } });
+    await service.log({ event: 'paywall_action', organizationId: 'org-1', metadata: { action: 'shown', offer: 'free-forever' } });
+    const stored = create.mock.calls.map((c) => c[0].data.metadata);
+    expect(stored[0]).toEqual({ state: 'trial-ended', offer: 'personal' });
+    expect(stored[1]).toEqual({ action: 'shown' });
+  });
+});
+
+describe('ProductEventService — the Claude setup discoverability events', () => {
+  it('keeps the shared tool call metadata, and only known profiles and setup tools', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({
+      event: 'shared_tool_called',
+      organizationId: 'org-1',
+      metadata: { tool: 'anythingmcp_run_read_tool', profile: 'default', setupTool: 'setup_find_connectors', client: 'Claude' },
+    });
+    await service.log({
+      event: 'shared_tool_called',
+      organizationId: 'org-1',
+      metadata: { tool: 'anythingmcp_search_tools', profile: 'other', setupTool: 'drop_tables' },
+    });
+    expect(create.mock.calls.map(([{ data }]) => data.metadata)).toEqual([
+      { client: 'Claude', tool: 'anythingmcp_run_read_tool', profile: 'default', setupTool: 'setup_find_connectors' },
+      { tool: 'anythingmcp_search_tools' },
+    ]);
+  });
+
+  it('refuses both events from a page: only the server writes them', async () => {
+    const { controller, req, stored } = build();
+    for (const event of ['shared_tool_called', 'post_approve_app_picked']) {
+      await controller.record(req as any, { event, metadata: { adapterSlug: 'telegram-bot' } } as any);
+    }
+    expect(stored()).toEqual([]);
   });
 });

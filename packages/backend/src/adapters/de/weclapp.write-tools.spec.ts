@@ -29,11 +29,9 @@ const writes = tools.filter((t) => t.endpointMapping.method !== 'GET');
  * weclapp's write tools. Request shapes follow weclapp's OpenAPI v2 file
  * (https://www.weclapp.com/api/openapi_v2.json) and its user guide, which
  * documents `PUT ...?ignoreMissingProperties=true` as the way to change single
- * fields. Where it matters, they mirror what already works in production:
- * hand-built tools on the cloud set the responsible user on invoices, orders
- * and parties with exactly this partial PUT (739/741, 220/223 and 93/96
- * successful calls), create customers with POST /party (40/40) and quotations
- * with their positions in one POST (6/6).
+ * fields: the responsible user on invoices, orders and parties is set with
+ * that partial PUT, customers are created with POST /party and quotations
+ * with their positions in one POST.
  */
 describe('weclapp adapter: write tools', () => {
   const engine = new RestEngine(
@@ -55,7 +53,7 @@ describe('weclapp adapter: write tools', () => {
     mockedAxios.mockResolvedValue({ data: { id: '1' } });
   });
 
-  it('sets one field of an invoice with a partial PUT, as the proven hand-built tool does', async () => {
+  it('sets one field of an invoice with a partial PUT', async () => {
     await run('weclapp_edit_sales_invoice', {
       salesInvoiceId: '4711',
       fields: { responsibleUserId: '3555' },
@@ -298,6 +296,57 @@ describe('weclapp adapter: write tools', () => {
     await run('weclapp_get_property_translations', { entityName: 'article', entityId: '5101', locale: 'en', propertyNames: ['name', 'description'] });
     expect(sent().url).toBe(`${base}/propertyTranslation/readPropertyTranslations`);
     expect(sent().params).toEqual({ entityName: 'article', entityId: '5101', locale: 'en', propertyNames: ['name', 'description'] });
+  });
+
+  // weclapp API v2 (https://www.weclapp.com/api/openapi_v2.yaml): GET /{entity}/id/{id},
+  // GET /notification, GET /externalConnection[/id/{id}], GET /salesChannel/activeSalesChannels.
+  it('reads one reference record by id, with the same resources as the reference list', async () => {
+    const t = tool('weclapp_get_reference_record');
+    expect(t.parameters.required).toEqual(['resource', 'id']);
+    expect(t.parameters.properties.resource.enum).toEqual(tool('weclapp_list_reference_data').parameters.properties.resource.enum);
+    expect(t.parameters.properties.resource.enum).toEqual(expect.arrayContaining(['tax', 'articleCategory', 'user']));
+    await run('weclapp_get_reference_record', { resource: 'tax', id: '3008' });
+    expect(sent().method).toBe('GET');
+    expect(sent().url).toBe(`${base}/tax/id/3008`);
+    jest.clearAllMocks();
+    await run('weclapp_get_reference_record', { resource: 'articleCategory', id: '1/../../party' });
+    expect(sent().url).toBe(`${base}/articleCategory/id/1%2F..%2F..%2Fparty`);
+  });
+
+  it('reads notifications and external connections with weclapp filters', async () => {
+    for (const [name, path, filter, key, value] of [
+      ['weclapp_list_notifications', '/notification', 'read-eq=false', 'read-eq', 'false'],
+      ['weclapp_list_external_connections', '/externalConnection', 'connectionType-eq=SHOPIFY', 'connectionType-eq', 'SHOPIFY'],
+    ]) {
+      jest.clearAllMocks();
+      await run(name, { filter, sort: '-createdDate', page: 1, pageSize: 20 });
+      expect(sent().method).toBe('GET');
+      expect(sent().url).toBe(`${base}${path}`);
+      expect(sent().params).toEqual({ page: 1, pageSize: 20, sort: '-createdDate', [key]: value });
+    }
+    jest.clearAllMocks();
+    await run('weclapp_get_external_connection', { externalConnectionId: '4021' });
+    expect(sent().url).toBe(`${base}/externalConnection/id/4021`);
+    expect(tool('weclapp_get_external_connection').parameters.required).toEqual(['externalConnectionId']);
+  });
+
+  it('lists the active sales channels without parameters', async () => {
+    await run('weclapp_list_active_sales_channels', {});
+    expect(sent().method).toBe('GET');
+    expect(sent().url).toBe(`${base}/salesChannel/activeSalesChannels`);
+  });
+
+  it('names the notification, connection, channel and reference-record reads in the instructions', () => {
+    const ins = (adapter as unknown as { instructions: string }).instructions;
+    for (const name of [
+      'weclapp_get_reference_record',
+      'weclapp_list_notifications',
+      'weclapp_list_external_connections',
+      'weclapp_get_external_connection',
+      'weclapp_list_active_sales_channels',
+    ]) {
+      expect(`${name}:${ins.includes(`\`${name}\``)}`).toBe(`${name}:true`);
+    }
   });
 
   it('installs every delete switched off', () => {

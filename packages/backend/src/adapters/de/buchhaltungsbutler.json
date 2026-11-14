@@ -1,12 +1,12 @@
 {
   "slug": "buchhaltungsbutler",
   "name": "BuchhaltungsButler",
-  "description": "BuchhaltungsButler, German automated bookkeeping: postings, receipts, bank transactions, debtors, creditors, posting accounts and cost centres. Every endpoint is a POST; auth is HTTP Basic (API client id and secret) plus an api_key field in the request body.",
+  "description": "BuchhaltungsButler, German automated bookkeeping: postings, receipts, bank transactions, debtors, creditors, posting accounts and cost centres; books receipts and bank transactions. Every endpoint is a POST; auth is HTTP Basic (API client id and secret) plus an api_key field in the request body.",
   "region": "de",
   "category": "accounting",
   "icon": "buchhaltungsbutler",
   "docsUrl": "https://docs.buchhaltungsbutler.de/",
-  "instructions": "**Getting credentials**: BuchhaltungsButler needs *three* values, not one.\n1. In the web app open **Einstellungen → API** and create an API client. You receive an **API client id** and an **API client secret**: these are the HTTP Basic username and password.\n2. On the same page copy the **API key** for the client (Mandant) you want to reach. This is a separate value that travels in the body of every request.\n3. Set `BUCHHALTUNGSBUTLER_CLIENT_ID`, `BUCHHALTUNGSBUTLER_CLIENT_SECRET` and `BUCHHALTUNGSBUTLER_API_KEY`.\n\nThe connector's Basic Auth username and password are this API client id and secret, filled in from the variables. They are **not** your BuchhaltungsButler login: an e-mail address and password there are refused with a 401.\n\nA wrong client id or secret answers `401 {\"error_code\":3,\"message\":\"API credentials unknown or invalid\"}`. A path the API does not know answers with the web app's HTML 404 page, not with JSON.\n\n**Everything is a POST.** The API does not use GET for reads: `/receipts/get`, `/postings/get` and the rest are POST endpoints whose JSON body carries both the api_key and the filter. The tool names here say what each one actually does.\n\n**Required filters**:\n- `buchhaltungsbutler_list_receipts` needs `list_direction`: `inbound` (Eingangsbelege, supplier invoices) or `outbound` (Ausgangsbelege, your own invoices). For \"all receipts\" call it twice.\n- `buchhaltungsbutler_list_postings` needs `date_from` and `date_to`.\n\n**Customers and suppliers** are *debtors* and *creditors* in BuchhaltungsButler (Debitoren / Kreditoren, under `/settings/get/...`). Their numbers are posting account numbers.\n\n**Paging** uses `limit` and `offset`. Defaults differ per endpoint (debtors and creditors return 25, receipts and transactions 500, postings up to 1000); ask for what you need rather than looping.\n\n**Dates** are `YYYY-MM-DD` strings. A posting's date is the booking date (Buchungsdatum), which is not the same as the receipt date.\n\n**Rate limit**: at most 100 requests per minute per client (Mandant).\n\nVerified against a live tenant in October 2026 (BuchhaltungsButler API v1). `webapp.buchhaltungsbutler.de` and `app.buchhaltungsbutler.de` both serve the API.",
+  "instructions": "**Getting credentials**: BuchhaltungsButler needs *three* values, not one.\n1. In the web app open **Einstellungen → API** and create an API client. You receive an **API client id** and an **API client secret**: these are the HTTP Basic username and password.\n2. On the same page copy the **API key** for the client (Mandant) you want to reach. This is a separate value that travels in the body of every request.\n3. Set `BUCHHALTUNGSBUTLER_CLIENT_ID`, `BUCHHALTUNGSBUTLER_CLIENT_SECRET` and `BUCHHALTUNGSBUTLER_API_KEY`.\n\nThe connector's Basic Auth username and password are this API client id and secret, filled in from the variables. They are **not** your BuchhaltungsButler login: an e-mail address and password there are refused with a 401.\n\nA wrong client id or secret answers `401 {\"error_code\":3,\"message\":\"API credentials unknown or invalid\"}`. A path the API does not know answers with the web app's HTML 404 page, not with JSON.\n\n**Everything is a POST.** The API does not use GET for reads: `/receipts/get`, `/postings/get` and the rest are POST endpoints whose JSON body carries both the api_key and the filter. The tool names here say what each one actually does.\n\n**Required filters**:\n- `buchhaltungsbutler_list_receipts` needs `list_direction`: `inbound` (Eingangsbelege, supplier invoices) or `outbound` (Ausgangsbelege, your own invoices). For \"all receipts\" call it twice.\n- `buchhaltungsbutler_list_postings` needs `date_from` and `date_to`.\n\n**Customers and suppliers** are *debtors* and *creditors* in BuchhaltungsButler (Debitoren / Kreditoren, under `/settings/get/...`). Their numbers are posting account numbers.\n\n**Paging** uses `limit` and `offset`. Defaults differ per endpoint (debtors and creditors return 25, receipts and transactions 500, postings up to 1000); ask for what you need rather than looping.\n\n**Dates** are `YYYY-MM-DD` strings. A posting's date is the booking date (Buchungsdatum), which is not the same as the receipt date.\n\n**Booking (writes to the accounting)**: `buchhaltungsbutler_book_receipt` and `buchhaltungsbutler_book_transaction` create real postings (Buchungen) that flow into the VAT return and the DATEV export. The lines are parallel lists: entry 1 of `postingaccounts`, `amounts`, `vats` and `postingtexts` is posting line 1, and so on. Amounts are strings like `\"119.00\"`. Show the user every line and wait for a yes before booking. Unfixed postings are taken back with `buchhaltungsbutler_remove_receipt_booking` / `buchhaltungsbutler_remove_transaction_booking`; fixed ones only by reversal with `buchhaltungsbutler_reverse_posting` (switched off at install). `buchhaltungsbutler_get_receipt` reads one receipt with its foreign-currency fields; `buchhaltungsbutler_link_receipt_to_transaction` matches a receipt to a payment. `buchhaltungsbutler_add_customer` and `buchhaltungsbutler_add_supplier` create debtors and creditors. `buchhaltungsbutler_trash_receipt` (switched off at install) marks a receipt as deleted; `buchhaltungsbutler_recover_receipt` brings it back.\n\n**Rate limit**: at most 100 requests per minute per client (Mandant).\n\nVerified against a live tenant in October 2026 (BuchhaltungsButler API v1). `webapp.buchhaltungsbutler.de` and `app.buchhaltungsbutler.de` both serve the API.",
   "requiredEnvVars": [
     "BUCHHALTUNGSBUTLER_CLIENT_ID",
     "BUCHHALTUNGSBUTLER_CLIENT_SECRET",
@@ -74,7 +74,7 @@
         "method": "POST",
         "path": "/postings/get",
         "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
           "date_from": "$date_from",
           "date_to": "$date_to",
           "account": "$account",
@@ -131,6 +131,10 @@
           "offset": {
             "type": "number",
             "description": "Rows to skip, for paging."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "true returns only receipts marked as deleted (to find one for buchhaltungsbutler_recover_receipt)."
           }
         },
         "required": [
@@ -141,7 +145,7 @@
         "method": "POST",
         "path": "/receipts/get",
         "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
           "list_direction": "$list_direction",
           "payment_status": "$payment_status",
           "counterparty": "$counterparty",
@@ -149,7 +153,8 @@
           "date_from": "$date_from",
           "date_to": "$date_to",
           "limit": "$limit",
-          "offset": "$offset"
+          "offset": "$offset",
+          "deleted": "$deleted"
         }
       }
     },
@@ -189,7 +194,7 @@
         "method": "POST",
         "path": "/transactions/get",
         "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
           "date_from": "$date_from",
           "date_to": "$date_to",
           "account": "$account",
@@ -219,7 +224,7 @@
         "method": "POST",
         "path": "/settings/get/debtors",
         "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
           "limit": "$limit",
           "offset": "$offset"
         }
@@ -245,7 +250,7 @@
         "method": "POST",
         "path": "/settings/get/creditors",
         "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
           "limit": "$limit",
           "offset": "$offset"
         }
@@ -262,7 +267,7 @@
         "method": "POST",
         "path": "/accounts/get",
         "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY"
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}"
         }
       }
     },
@@ -302,7 +307,7 @@
         "method": "POST",
         "path": "/settings/get/postingaccounts",
         "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
           "order": "$order",
           "exclude_debtors": "$exclude_debtors",
           "exclude_creditors": "$exclude_creditors",
@@ -336,11 +341,586 @@
         "method": "POST",
         "path": "/cost-locations/get",
         "bodyMapping": {
-          "api_key": "$BUCHHALTUNGSBUTLER_API_KEY",
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
           "code": "$code",
           "limit": "$limit",
           "offset": "$offset"
         }
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_get_receipt",
+      "description": "Get one receipt (Beleg) by its id_by_customer with every field, including the foreign-currency amount, currency and exchange rate that the list does not return, and optionally the file as base64. Read it before booking a foreign-currency receipt. Read-only, although the API takes it as a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_by_customer": {
+            "type": "string",
+            "description": "The receipt's id_by_customer from buchhaltungsbutler_list_receipts."
+          },
+          "get_file": {
+            "type": "boolean",
+            "description": "true adds the receipt file as a base64 string (PDF, ZUGFeRD PDF or XRechnung XML). Leave it out unless the file is needed: it is large."
+          }
+        },
+        "required": [
+          "id_by_customer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/receipts/get/{id_by_customer}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "get_file": "$get_file"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_book_receipt",
+      "description": "Book a receipt (Beleg): creates postings (Buchungen) in the accounting of the client for an inbound or outbound invoice, one line per posting account with amount, tax key and text. This writes real bookkeeping entries that flow into the VAT return and the DATEV export; they stay changeable until they are fixed (festgeschrieben) and can be removed with buchhaltungsbutler_remove_receipt_booking while unfixed. Works only when creditor or debtor posting is active for the client. For a foreign-currency receipt read it first with buchhaltungsbutler_get_receipt and book the converted amount. Show the user the lines (accounts, amounts, tax keys) and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receipt_id_by_customer": {
+            "type": "integer",
+            "description": "The receipt's id_by_customer from buchhaltungsbutler_list_receipts."
+          },
+          "postingaccounts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Posting account (Gegenkonto) per posting line, e.g. [\"4930\", \"4980\"]. One entry per line; buchhaltungsbutler_list_posting_accounts lists the numbers."
+          },
+          "amounts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Gross amount per line in the format 0000.00, e.g. [\"119.00\", \"23.80\"], same order as postingaccounts. The lines must add up to the open amount of the document."
+          },
+          "vats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tax key per posting line, same order as postingaccounts. Common keys: 0_none (no VAT), 19_vat / 7_vat (19% / 7% output VAT, Umsatzsteuer), 19_pre / 7_pre (19% / 7% input VAT, Vorsteuer), 19_both_1 (reverse charge §13b 19% USt./VSt.), 19_both_506 (§13b EU), 19_both_511 (§13b third country), 19_both_2 / 7_both (intra-EU acquisition 19% / 7%), 19_pre_app / 7_pre_app (apportioned input VAT). Other documented keys: 19_both_6506, 19_both_6511, 19_both_6501, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_both_app_1, 19_both_app_506, 19_both_app_511, 19_both_app_2, 7_both_app."
+          },
+          "postingtexts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Booking text per line, e.g. [\"Büromaterial März\"], same order as postingaccounts."
+          },
+          "cost_locations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cost centre (Kostenstelle 1) per line, same order; from buchhaltungsbutler_list_cost_locations."
+          },
+          "cost_locations_two": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Second cost centre (Kostenstelle 2) per line, same order."
+          },
+          "creditor": {
+            "type": "integer",
+            "description": "Creditor number (supplier posting account). Needed for an inbound invoice when creditor posting is active; buchhaltungsbutler_list_suppliers lists them."
+          },
+          "debtor": {
+            "type": "integer",
+            "description": "Debtor number (customer posting account). Needed for an outbound invoice when debtor posting is active; buchhaltungsbutler_list_customers lists them."
+          }
+        },
+        "required": [
+          "receipt_id_by_customer",
+          "postingaccounts",
+          "amounts",
+          "vats",
+          "postingtexts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/postings/add/receipt",
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "receipt_id_by_customer": "$receipt_id_by_customer",
+          "postingaccounts": "$postingaccounts",
+          "amounts": "$amounts",
+          "vats": "$vats",
+          "postingtexts": "$postingtexts",
+          "cost_locations": "$cost_locations",
+          "cost_locations_two": "$cost_locations_two",
+          "creditor": "$creditor",
+          "debtor": "$debtor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_book_transaction",
+      "description": "Book a bank transaction: creates postings (Buchungen) for a payment on a financial account, one line per posting account with amount, tax key and text, optionally clearing open-item receipts per line. This writes real bookkeeping entries; they can be removed with buchhaltungsbutler_remove_transaction_booking while unfixed. Use it for payments without a receipt (fees, transfers, salaries) or to split a payment; to settle an invoice by its receipt, buchhaltungsbutler_link_receipt_to_transaction is usually enough. Show the user the lines and wait for a yes before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id_by_customer": {
+            "type": "integer",
+            "description": "The transaction's id_by_customer from buchhaltungsbutler_list_transactions."
+          },
+          "postingaccounts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Posting account (Gegenkonto) per posting line, e.g. [\"4930\", \"4980\"]. One entry per line; buchhaltungsbutler_list_posting_accounts lists the numbers."
+          },
+          "amounts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Gross amount per line in the format 0000.00, e.g. [\"119.00\", \"23.80\"], same order as postingaccounts. The lines must add up to the open amount of the document."
+          },
+          "vats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tax key per posting line, same order as postingaccounts. Common keys: 0_none (no VAT), 19_vat / 7_vat (19% / 7% output VAT, Umsatzsteuer), 19_pre / 7_pre (19% / 7% input VAT, Vorsteuer), 19_both_1 (reverse charge §13b 19% USt./VSt.), 19_both_506 (§13b EU), 19_both_511 (§13b third country), 19_both_2 / 7_both (intra-EU acquisition 19% / 7%), 19_pre_app / 7_pre_app (apportioned input VAT). Other documented keys: 19_both_6506, 19_both_6511, 19_both_6501, 19_both_1_no_pre, 19_both_2_no_pre, 7_both_no_pre, 19_both_app_1, 19_both_app_506, 19_both_app_511, 19_both_app_2, 7_both_app."
+          },
+          "postingtexts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Booking text per line, e.g. [\"Büromaterial März\"], same order as postingaccounts."
+          },
+          "cost_locations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cost centre (Kostenstelle 1) per line, same order; from buchhaltungsbutler_list_cost_locations."
+          },
+          "cost_locations_two": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Second cost centre (Kostenstelle 2) per line, same order."
+          },
+          "oi_receipts_ids_by_customer": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": "Only when open-item (OP) posting is active for the client: the receipt id_by_customer each line settles, same order as postingaccounts, null for a line without a receipt, e.g. [\"7\", null]."
+          }
+        },
+        "required": [
+          "transaction_id_by_customer",
+          "postingaccounts",
+          "amounts",
+          "vats",
+          "postingtexts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/postings/add/transaction",
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "transaction_id_by_customer": "$transaction_id_by_customer",
+          "postingaccounts": "$postingaccounts",
+          "amounts": "$amounts",
+          "vats": "$vats",
+          "postingtexts": "$postingtexts",
+          "cost_locations": "$cost_locations",
+          "cost_locations_two": "$cost_locations_two",
+          "oi_receipts_ids_by_customer": "$oi_receipts_ids_by_customer"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_remove_receipt_booking",
+      "description": "Remove the postings of a receipt by unconfirming them, so the receipt is open for booking again (for example to correct an account or tax key). Works only while the postings are not fixed (festgeschrieben); fixed postings need a reversal with buchhaltungsbutler_reverse_posting. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receipt_id_by_customer": {
+            "type": "integer",
+            "description": "The receipt's id_by_customer."
+          }
+        },
+        "required": [
+          "receipt_id_by_customer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/postings/unconfirm/receipt",
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "receipt_id_by_customer": "$receipt_id_by_customer"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_remove_transaction_booking",
+      "description": "Remove the postings of a bank transaction by unconfirming them, so it can be booked again. Works only while the postings are not fixed. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id_by_customer": {
+            "type": "integer",
+            "description": "The transaction's id_by_customer."
+          }
+        },
+        "required": [
+          "transaction_id_by_customer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/postings/unconfirm/transaction",
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "transaction_id_by_customer": "$transaction_id_by_customer"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_link_receipt_to_transaction",
+      "description": "Assign a receipt to a bank transaction (the invoice this payment settles), as the matching in the BuchhaltungsButler web app does. Check that amount and counterparty match, and confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id_by_customer": {
+            "type": "integer",
+            "description": "The transaction's id_by_customer from buchhaltungsbutler_list_transactions."
+          },
+          "receipt_id_by_customer": {
+            "type": "integer",
+            "description": "The receipt's id_by_customer from buchhaltungsbutler_list_receipts."
+          }
+        },
+        "required": [
+          "transaction_id_by_customer",
+          "receipt_id_by_customer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/assign/receipt",
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "transaction_id_by_customer": "$transaction_id_by_customer",
+          "receipt_id_by_customer": "$receipt_id_by_customer"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_add_customer",
+      "description": "Create a customer as a debtor account (Debitor) in BuchhaltungsButler, with address, VAT id and bank details; BuchhaltungsButler takes the next free debtor number unless you pass one. Returns the new debtor. Check with buchhaltungsbutler_list_customers that it does not exist yet, and confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the customer (debtor)."
+          },
+          "postingaccount_number": {
+            "type": "string",
+            "description": "Posting account number for the customer (debtor); leave it out to take the next free number."
+          },
+          "contact_person_name": {
+            "type": "string",
+            "description": "Contact person."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and house number."
+          },
+          "additional_address_line": {
+            "type": "string",
+            "description": "Additional address line."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter ISO code (DK) or the German country name (Dänemark)."
+          },
+          "sales_tax_id": {
+            "type": "string",
+            "description": "VAT identification number (USt-IdNr.)."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "iban": {
+            "type": "string",
+            "description": "IBAN."
+          },
+          "bic": {
+            "type": "string",
+            "description": "BIC."
+          },
+          "customer_number": {
+            "type": "string",
+            "description": "Your customer number for the debtor."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/settings/add/debtor",
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "name": "$name",
+          "postingaccount_number": "$postingaccount_number",
+          "contact_person_name": "$contact_person_name",
+          "street": "$street",
+          "additional_address_line": "$additional_address_line",
+          "zip": "$zip",
+          "city": "$city",
+          "country": "$country",
+          "sales_tax_id": "$sales_tax_id",
+          "email": "$email",
+          "iban": "$iban",
+          "bic": "$bic",
+          "customer_number": "$customer_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_add_supplier",
+      "description": "Create a supplier as a creditor account (Kreditor) in BuchhaltungsButler, with address, VAT id, bank details and payment term; BuchhaltungsButler takes the next free creditor number unless you pass one. Returns the new creditor. Check with buchhaltungsbutler_list_suppliers that it does not exist yet, and confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the supplier (creditor)."
+          },
+          "postingaccount_number": {
+            "type": "string",
+            "description": "Posting account number for the supplier (creditor); leave it out to take the next free number."
+          },
+          "contact_person_name": {
+            "type": "string",
+            "description": "Contact person."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and house number."
+          },
+          "additional_address_line": {
+            "type": "string",
+            "description": "Additional address line."
+          },
+          "zip": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country": {
+            "type": "string",
+            "description": "Two-letter ISO code (DK) or the German country name (Dänemark)."
+          },
+          "sales_tax_id": {
+            "type": "string",
+            "description": "VAT identification number (USt-IdNr.)."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "iban": {
+            "type": "string",
+            "description": "IBAN."
+          },
+          "bic": {
+            "type": "string",
+            "description": "BIC."
+          },
+          "due_in_days": {
+            "type": "integer",
+            "description": "Payment term in days."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/settings/add/creditor",
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "name": "$name",
+          "postingaccount_number": "$postingaccount_number",
+          "contact_person_name": "$contact_person_name",
+          "street": "$street",
+          "additional_address_line": "$additional_address_line",
+          "zip": "$zip",
+          "city": "$city",
+          "country": "$country",
+          "sales_tax_id": "$sales_tax_id",
+          "email": "$email",
+          "iban": "$iban",
+          "bic": "$bic",
+          "due_in_days": "$due_in_days"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_trash_receipt",
+      "description": "Mark a receipt as deleted (it moves to the deleted receipts and can be brought back with buchhaltungsbutler_recover_receipt). Name the receipt (number, counterparty, amount) and get a yes first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_by_customer": {
+            "type": "string",
+            "description": "The receipt's id_by_customer from buchhaltungsbutler_list_receipts."
+          }
+        },
+        "required": [
+          "id_by_customer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/receipts/delete/{id_by_customer}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_recover_receipt",
+      "description": "Restore a receipt that was marked as deleted, so it is back among the active receipts. buchhaltungsbutler_list_receipts with deleted=true finds its id_by_customer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_by_customer": {
+            "type": "string",
+            "description": "The deleted receipt's id_by_customer."
+          }
+        },
+        "required": [
+          "id_by_customer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/receipts/restore/{id_by_customer}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "buchhaltungsbutler_reverse_posting",
+      "description": "Cancel one posting: an unfixed posting is deleted, a fixed (festgeschrieben) posting is reversed with a counter-posting (Stornobuchung) that stays in the books. Cannot be undone. Name the posting and get a yes first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "posting_id_by_customer": {
+            "type": "integer",
+            "description": "The posting's id_by_customer from buchhaltungsbutler_list_postings."
+          }
+        },
+        "required": [
+          "posting_id_by_customer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/postings/cancel",
+        "bodyMapping": {
+          "api_key": "{{BUCHHALTUNGSBUTLER_API_KEY}}",
+          "posting_id_by_customer": "$posting_id_by_customer"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
       }
     }
   ]

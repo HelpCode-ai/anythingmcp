@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { isHmacJwtSignature } from './hmac-jwt.util';
 import { RestEngine, usesExtendedHmac, renderExtendedHmacTemplate } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
@@ -210,12 +211,17 @@ describe('extended HMAC template', () => {
 describe('opt-in: adapters signed before query signing keep the original path', () => {
   const NEW_FIELDS = ['placement', 'paramName', 'timestampParam', 'queryParams'];
 
-  it('every catalog HMAC adapter except shopee uses none of the new fields', () => {
+  it('every catalog HMAC adapter except the query-signed ones uses none of the new fields', () => {
+    // Shopee, TikTok Shop and the AliExpress (IOP) adapters were written for query signing.
+    const querySigned = ['aliexpress-affiliate', 'aliexpress-dropshipping', 'falabella-seller-center', 'shopee', 'tiktok-shop'];
+    // Ghost signs a JWT per request (signature.jwt) and never reaches the
+    // canonical-string path these fields belong to.
     const hmac = listAdapters()
       .map((m) => getAdapter(m.slug)!)
-      .filter((a) => a.connector.authType === 'HMAC');
-    expect(hmac.map((a) => a.slug).sort()).toEqual(['kaufland', 'shopee']);
-    for (const a of hmac.filter((x) => x.slug !== 'shopee')) {
+      .filter((a) => a.connector.authType === 'HMAC')
+      .filter((a) => !isHmacJwtSignature((a.connector.authConfig as { signature?: Record<string, unknown> }).signature));
+    expect(hmac.map((a) => a.slug).sort()).toEqual([...querySigned, 'kaufland'].sort());
+    for (const a of hmac.filter((x) => !querySigned.includes(x.slug))) {
       const sig = (a.connector.authConfig as { signature: Record<string, unknown> }).signature;
       expect(NEW_FIELDS.filter((f) => f in sig)).toEqual([]);
       expect(usesExtendedHmac(sig)).toBe(false);

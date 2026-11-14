@@ -4,6 +4,7 @@ import axios from 'axios';
 import { XMLParser } from 'fast-xml-parser';
 import { assertSafeOutboundUrl, SsrfBlockedError } from '../../common/ssrf.util';
 import { outboundAxiosOptions } from '../../common/outbound-http';
+import { ResponseTooLargeError, toolMaxResponseBytes } from '../../common/response-size-limit';
 import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
 import {
   openWsdl,
@@ -338,6 +339,8 @@ export class SoapEngine {
         timeout: 30000,
         // SOAP responses may have non-2xx status (SOAP faults return 500)
         validateStatus: (status) => status < 600,
+        // See response-size-limit.ts.
+        maxContentLength: toolMaxResponseBytes(),
         ...outboundAxiosOptions({ credentialHeaders }),
       });
 
@@ -364,8 +367,8 @@ export class SoapEngine {
 
       return this.parseResponse(response.data);
     } catch (err: any) {
-      // Re-throw enriched errors
-      if (err.soapDetail) throw err;
+      // Re-throw enriched errors, and our own response size error as is.
+      if (err.soapDetail || err instanceof ResponseTooLargeError) throw err;
 
       // Axios network errors
       const detail: Record<string, unknown> = {

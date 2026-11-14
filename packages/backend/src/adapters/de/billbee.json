@@ -1,7 +1,7 @@
 {
   "slug": "billbee",
   "name": "Billbee Order Management",
-  "description": "Manage orders, products, customers, stock and shipments in Billbee, the leading German/DACH multichannel order-management (Warenwirtschaft) platform used by 20,000+ online retailers.",
+  "description": "Manage orders, products, customers, stock and shipments in Billbee, the leading German/DACH multichannel order-management (Warenwirtschaft) platform used by 20,000+ online retailers: read orders and articles, change order states, add tracking numbers, create labels and invoices, and update stock.",
   "region": "de",
   "category": "e-commerce",
   "icon": "billbee",
@@ -25,7 +25,7 @@
       "Accept": "application/json"
     }
   },
-  "instructions": "Billbee is the leading German/DACH multichannel order-management tool (20,000+ retailers) connecting marketplaces and shops (Amazon, eBay, Otto, Kaufland, Shopify, WooCommerce, etc.). This connector wraps the REST API at https://api.billbee.io/api/v1.\n\n## Authentication (THREE credentials, all required)\nBillbee requires both an application API key AND HTTP Basic Auth at the same time:\n1. `BILLBEE_API_KEY` — sent in the `X-Billbee-Api-Key` header. Request it from Billbee (via their API request form / support@billbee.io, describing what you build).\n2. `BILLBEE_LOGIN_EMAIL` — your Billbee account login email (Basic Auth username).\n3. `BILLBEE_API_PASSWORD` — a dedicated API password (NOT your normal login password). Enable the API and set this password in the Billbee web app under Settings → Billbee API → General Settings.\nAll three are mandatory; the API key alone or Basic Auth alone will be rejected.\n\n## Pagination\nList endpoints use `page` (1-based) and `pageSize` (max 250). Responses wrap rows in a paged envelope: a `Data` array plus a `Paging` object with `Page`, `TotalPages`, `TotalRows`. Iterate `page` until `Page == TotalPages`.\n\n## Orders\n`billbee_list_orders` filters by `minOrderDate`/`maxOrderDate` and `modifiedAtMin`/`modifiedAtMax` (incremental sync). Order states are numeric; use `billbee_get_order` for full detail, or `billbee_get_order_by_extref` to look up by the marketplace's external order number.\n\n## Rate limit\nHard limit of 2 requests per second per (API key + user); exceeding it returns HTTP 429 — back off and retry. The API has usage-based pricing above a free allotment, so avoid tight polling loops; prefer `modifiedAtMin`/`updatedOrNewSince`-style incremental queries.",
+  "instructions": "Billbee is the leading German/DACH multichannel order-management tool (20,000+ retailers) connecting marketplaces and shops (Amazon, eBay, Otto, Kaufland, Shopify, WooCommerce, etc.). This connector wraps the REST API at https://api.billbee.io/api/v1.\n\n## Authentication (THREE credentials, all required)\nBillbee requires both an application API key AND HTTP Basic Auth at the same time:\n1. `BILLBEE_API_KEY` — sent in the `X-Billbee-Api-Key` header. Request it from Billbee (via their API request form / support@billbee.io, describing what you build).\n2. `BILLBEE_LOGIN_EMAIL` — your Billbee account login email (Basic Auth username).\n3. `BILLBEE_API_PASSWORD` — a dedicated API password (NOT your normal login password). Enable the API and set this password in the Billbee web app under Settings → Billbee API → General Settings.\nAll three are mandatory; the API key alone or Basic Auth alone will be rejected.\n\n## Pagination\nList endpoints use `page` (1-based) and `pageSize` (max 250). Responses wrap rows in a paged envelope: a `Data` array plus a `Paging` object with `Page`, `TotalPages`, `TotalRows`. Iterate `page` until `Page == TotalPages`.\n\n## Orders\n`billbee_list_orders` filters by `minOrderDate`/`maxOrderDate` and `modifiedAtMin`/`modifiedAtMax` (incremental sync). Order states are numeric; use `billbee_get_order` for full detail, or `billbee_get_order_by_extref` to look up by the marketplace's external order number.\n\n## Writing\nThe write tools act on the live account, and Billbee passes most changes on to the connected shops and marketplaces:\n- `billbee_set_order_state`: 3 paid, 4 shipped, 8 canceled, 13 packed (full list in the parameter). The shop or marketplace may email the buyer.\n- `billbee_add_shipment_to_order` stores a tracking number created elsewhere. `billbee_ship_order_with_label` books a real label with a carrier connected in Billbee (DHL, DPD, GLS...); take `providerId` and `productId` from `billbee_list_shipping_providers`, and ask the user before booking.\n- `billbee_update_stock` sets the absolute quantity by SKU; with multi-stock, pass `stockId` from `billbee_list_stocks`.\n- `billbee_update_order` and `billbee_update_product` change only the fields passed, with Billbee's PascalCase names.\n- `billbee_create_invoice` is limited to one call per order every 5 minutes.\nOrder ids in paths are Billbee's internal ids (`BillBeeOrderId`), not the shop order number: look those up with `billbee_get_order_by_extref`.\n\n## Rate limit\nHard limit of 2 requests per second per (API key + user); exceeding it returns HTTP 429 — back off and retry. The API has usage-based pricing above a free allotment, so avoid tight polling loops; prefer `modifiedAtMin`/`updatedOrNewSince`-style incremental queries.",
   "tools": [
     {
       "name": "billbee_list_orders",
@@ -236,6 +236,408 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/shipment/shippingproviders"
+      }
+    },
+    {
+      "name": "billbee_list_stocks",
+      "description": "List the stock locations (Lager) defined in the Billbee account, with their ids. Needed for billbee_update_stock when the multi-stock feature is on.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/stocks"
+      }
+    },
+    {
+      "name": "billbee_set_order_state",
+      "description": "Change the main state of one order, e.g. to paid (3) or shipped (4). Billbee passes the new state on to the shop or marketplace if that is configured, so the buyer may be notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The internal Billbee order id (BillBeeOrderId from billbee_list_orders or billbee_get_order, not the shop order number)"
+          },
+          "newStateId": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "description": "New state: 1 ordered, 2 confirmed, 3 paid, 4 shipped, 5 reclamation, 6 deleted, 7 closed, 8 canceled, 9 archived, 11 demand note 1, 12 demand note 2, 13 packed, 14 offered, 15 payment reminder, 16 fulfilling"
+          }
+        },
+        "required": [
+          "id",
+          "newStateId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{id}/orderstate",
+        "bodyMapping": {
+          "NewStateId": "$newStateId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "billbee_add_shipment_to_order",
+      "description": "Attach a shipment you already created elsewhere (a tracking number from DHL, DPD, a carrier portal...) to an order. It does not create a label and does not change the order state; use billbee_set_order_state for that.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The internal Billbee order id (BillBeeOrderId from billbee_list_orders or billbee_get_order, not the shop order number)"
+          },
+          "shippingId": {
+            "type": "string",
+            "description": "Tracking number (Sendungsnummer) of the shipment"
+          },
+          "shippingProviderId": {
+            "type": "integer",
+            "description": "Id of a shipping provider in this Billbee account, from billbee_list_shipping_providers"
+          },
+          "shippingProviderProductId": {
+            "type": "integer",
+            "description": "Id of that provider's product, from billbee_list_shipping_providers"
+          },
+          "carrierId": {
+            "type": "integer",
+            "description": "Id of the carrier, overrides the carrier of the provider"
+          },
+          "shipmentType": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "0 shipment (default), 1 return (Retoure)"
+          },
+          "comment": {
+            "type": "string",
+            "description": "Text stored with the shipment"
+          },
+          "orderNumber": {
+            "type": "string",
+            "description": "A different order number for this shipment, if there is one"
+          }
+        },
+        "required": [
+          "id",
+          "shippingId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{id}/shipment",
+        "bodyMapping": {
+          "ShippingId": "$shippingId",
+          "ShippingProviderId": "$shippingProviderId",
+          "ShippingProviderProductId": "$shippingProviderProductId",
+          "CarrierId": "$carrierId",
+          "ShipmentType": "$shipmentType",
+          "Comment": "$comment",
+          "OrderId": "$orderNumber"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "billbee_ship_order_with_label",
+      "description": "Create a shipping label for an order through a carrier connected in Billbee (DHL, DPD, GLS, Deutsche Post...), using the account's own carrier contract. Returns the shipment with its tracking number and the label. Each call books a real, billable shipment with the carrier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "description": "The internal Billbee order id"
+          },
+          "providerId": {
+            "type": "integer",
+            "description": "Shipping provider id, from billbee_list_shipping_providers"
+          },
+          "productId": {
+            "type": "integer",
+            "description": "Shipping product id of that provider, from billbee_list_shipping_providers"
+          },
+          "changeStateToSend": {
+            "type": "boolean",
+            "description": "Set the order to shipped after the label is created"
+          },
+          "weightInGram": {
+            "type": "integer",
+            "description": "Parcel weight in grams, overrides the weight Billbee calculates from the articles"
+          },
+          "shipDate": {
+            "type": "string",
+            "description": "Ship date sent to the carrier (ISO 8601 date)"
+          },
+          "clientReference": {
+            "type": "string",
+            "description": "Reference text printed on the label (not supported by every carrier)"
+          },
+          "dimension": {
+            "type": "object",
+            "description": "Parcel size in cm: {\"length\": 30, \"width\": 20, \"height\": 10}"
+          },
+          "printerName": {
+            "type": "string",
+            "description": "Name of a cloud printer connected in Billbee to send the label to"
+          }
+        },
+        "required": [
+          "orderId",
+          "providerId",
+          "productId"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipment/shipwithlabel",
+        "bodyMapping": {
+          "OrderId": "$orderId",
+          "ProviderId": "$providerId",
+          "ProductId": "$productId",
+          "ChangeStateToSend": "$changeStateToSend",
+          "WeightInGram": "$weightInGram",
+          "ShipDate": "$shipDate",
+          "ClientReference": "$clientReference",
+          "Dimension": "$dimension",
+          "PrinterName": "$printerName"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "billbee_update_stock",
+      "description": "Set the stock quantity of one article, by SKU. The quantity is absolute (the new total), not a change. Billbee sends the new stock on to the connected shops and marketplaces.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "SKU of the article"
+          },
+          "newQuantity": {
+            "type": "number",
+            "description": "New absolute stock quantity"
+          },
+          "billbeeId": {
+            "type": "integer",
+            "description": "Billbee product id, if the SKU is not unique"
+          },
+          "stockId": {
+            "type": "integer",
+            "description": "Stock location id from billbee_list_stocks, when multi-stock is on"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason stored with the stock change"
+          },
+          "autosubtractReservedAmount": {
+            "type": "boolean",
+            "description": "Subtract the quantity reserved by open orders from newQuantity"
+          },
+          "forceSendStockToShops": {
+            "type": "boolean",
+            "description": "Send the stock to the shops even if it did not change"
+          }
+        },
+        "required": [
+          "sku",
+          "newQuantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/updatestock",
+        "bodyMapping": {
+          "Sku": "$sku",
+          "NewQuantity": "$newQuantity",
+          "BillbeeId": "$billbeeId",
+          "StockId": "$stockId",
+          "Reason": "$reason",
+          "AutosubtractReservedAmount": "$autosubtractReservedAmount",
+          "ForceSendStockToShops": "$forceSendStockToShops"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "billbee_add_order_tags",
+      "description": "Add tags to an order. Existing tags stay; tags already on the order are ignored, and tags are not case sensitive.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The internal Billbee order id (BillBeeOrderId from billbee_list_orders or billbee_get_order, not the shop order number)"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags to add, e.g. [\"express\", \"check address\"]"
+          }
+        },
+        "required": [
+          "id",
+          "tags"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{id}/tags",
+        "bodyMapping": {
+          "Tags": "$tags"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "billbee_update_order",
+      "description": "Change one or more fields of an order. Only the fields you pass change. Use Billbee's field names as billbee_get_order returns them, e.g. {\"SellerComment\": \"Call before delivery\"}. For the state use billbee_set_order_state, for tags billbee_add_order_tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The internal Billbee order id (BillBeeOrderId from billbee_list_orders or billbee_get_order, not the shop order number)"
+          },
+          "fields": {
+            "type": "object",
+            "description": "Fields to change, with Billbee order field names (PascalCase)"
+          }
+        },
+        "required": [
+          "id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/orders/{id}",
+        "bodyMapping": {
+          "__raw": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "billbee_update_product",
+      "description": "Change one or more fields of a product. Only the fields you pass change. Use Billbee's field names as billbee_get_product returns them, e.g. {\"Price\": 19.9, \"Weight\": 450}. For stock use billbee_update_stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The Billbee product id"
+          },
+          "fields": {
+            "type": "object",
+            "description": "Fields to change, with Billbee product field names (PascalCase)"
+          }
+        },
+        "required": [
+          "id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{id}",
+        "bodyMapping": {
+          "__raw": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "billbee_create_invoice",
+      "description": "Create the invoice for an existing order with the account's invoice template. Billbee allows this at most once per order every 5 minutes. Returns the invoice number and, with includeInvoicePdf, the PDF as base64.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The internal Billbee order id (BillBeeOrderId from billbee_list_orders or billbee_get_order, not the shop order number)"
+          },
+          "includeInvoicePdf": {
+            "type": "boolean",
+            "description": "Include the invoice PDF (base64) in the response"
+          },
+          "templateId": {
+            "type": "integer",
+            "description": "Invoice template id, instead of the one assigned to the order"
+          },
+          "sendToCloudId": {
+            "type": "integer",
+            "description": "Id of a connected cloud printer or cloud storage to send the invoice to"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/CreateInvoice/{id}",
+        "queryParams": {
+          "includeInvoicePdf": "$includeInvoicePdf",
+          "templateId": "$templateId",
+          "sendToCloudId": "$sendToCloudId"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
       }
     }
   ]

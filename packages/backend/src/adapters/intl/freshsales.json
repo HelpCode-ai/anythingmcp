@@ -1,0 +1,2109 @@
+{
+  "slug": "freshsales",
+  "name": "Freshsales",
+  "description": "Freshsales (Freshworks CRM) from any AI agent: contacts, accounts, deals and pipelines, notes, tasks, appointments, sales activities, search and marketing lists. REST API with a per-user API key and the account bundle URL.",
+  "instructions": "## Freshsales\nThis connector uses the Freshsales (Freshworks CRM) REST API: contacts, accounts (sales_accounts in the API), deals, notes, tasks, appointments, sales activities, search, marketing lists and the configuration picklists. Every call acts with the permissions of the user whose API key is set: records outside that user's scope are not visible.\n\n**Setup**\n1. In Freshsales click your profile picture, then **Profile Settings** and the **API Settings** tab.\n2. Copy **Your API key** into `FRESHSALES_API_KEY`.\n3. On the same tab copy the **bundle alias** (the account address) into `FRESHSALES_BUNDLE_URL`, for example `https://acme.myfreshworks.com/crm/sales`. Accounts created before the Freshworks suite use `https://acme.freshsales.io`. Leave out `/api` and any trailing slash.\n\nThe key is sent as `Authorization: Token token=<key>`. Requests go to `<bundle URL>/api/...`.\n\n**Start here**\n- `freshsales_list_owners` lists the users; their ids are the `owner_id` of every record.\n- `freshsales_list_selector` reads a picklist (territories, deal pipelines and stages, currencies, deal types and reasons, lead sources, industry and business types, campaigns, contact statuses, lifecycle stages, sales activity types and outcomes). `freshsales_list_pipeline_stages` gives the stages of one pipeline.\n- `freshsales_list_fields` lists the fields of contacts, accounts, deals or sales activities, including custom fields: their internal names start with `cf_` and go in `custom_field`.\n\n**Finding records**\n- `freshsales_search`: text search by name or email; `include` takes the singular entity names `contact`, `sales_account`, `deal`, `user` (a plural returns nothing).\n- `freshsales_lookup`: exact match on one field, e.g. `q=jane@example.com&f=email&entities=contact`.\n- `freshsales_filtered_search`: rule-based filter on contacts, accounts or deals, e.g. `{\"attribute\": \"contact_email.email\", \"operator\": \"is_in\", \"value\": \"jane@example.com\"}`.\n- Lists always go through a view: call `freshsales_list_views` for the module, take the id of a view such as \"All Contacts\" or \"My Open Deals\", then `freshsales_list_contacts`, `freshsales_list_accounts` or `freshsales_list_deals`.\n\n**Contacts**: `freshsales_get_contact` (embed related records with `include`, e.g. `sales_accounts,deals,notes`), `freshsales_list_contact_activities` for the timeline, `freshsales_create_contact`, `freshsales_update_contact`, and `freshsales_upsert_contact` to create or update by email.\n\n**Accounts**: `freshsales_get_account`, `freshsales_create_account` (unique `name`), `freshsales_update_account`.\n\n**Deals**: `freshsales_get_deal`, `freshsales_create_deal` (needs `name` and `amount`), `freshsales_update_deal`. Moving a deal means setting `deal_stage_id` to a stage of its pipeline; won and lost are stages too, and a lost deal can carry `deal_reason_id`.\n\n**Notes, tasks, appointments and activities** are attached to a record through `targetable_type` (`Contact`, `SalesAccount` or `Deal`) and `targetable_id`.\n- Notes: `freshsales_create_note`, `freshsales_update_note`.\n- Tasks: `freshsales_list_tasks` (filter `open`, `due_today`, `due_tomorrow`, `overdue` or `completed`), `freshsales_get_task`, `freshsales_create_task`, `freshsales_update_task`, `freshsales_complete_task`.\n- Appointments: `freshsales_list_appointments` (filter `open` for upcoming, `past` for past; older portals use `upcoming`), `freshsales_get_appointment`, `freshsales_create_appointment`, `freshsales_update_appointment`. Attendees are users (`FdMultitenant::User`) or contacts (`Contact`).\n- Sales activities (logged calls, visits, custom activity types): `freshsales_list_sales_activities`, `freshsales_get_sales_activity`, `freshsales_create_sales_activity`.\n\n**Marketing lists**: `freshsales_list_marketing_lists`, `freshsales_list_marketing_list_contacts`, `freshsales_add_contacts_to_list`, `freshsales_remove_contacts_from_list`.\n\n**Reading answers**\n- Timestamps come back in UTC or with an offset (`2026-02-13T23:27:49Z`). Date inputs accept `YYYY-MM-DD` or ISO 8601; without a zone UTC is assumed.\n- Amounts are in the deal's currency; `base_currency_amount` is converted to the portal currency.\n- Blank fields are returned as `null`. Related records embedded with `include` arrive in separate top-level arrays (`users`, `sales_accounts`, `deals`...) next to the record, linked by id.\n- Lists return `meta.total_pages` and `meta.total`; pass `page` (from 1) and `per_page` (default 25, at most 100).\n\n**Leads**: current Freshsales accounts keep prospects as contacts with a lifecycle stage; there is no separate leads module. Filter contacts by lifecycle stage through a view or `freshsales_filtered_search`.\n\n**Limits and errors**: 1000 requests per hour per account (429 when exceeded). 401 means a wrong or missing key, 403 that the user lacks the permission or the feature is not on the plan, 404 a wrong id or a wrong bundle URL. Validation errors return 400 with `errors.message`.\n",
+  "region": "intl",
+  "category": "crm",
+  "icon": "freshsales",
+  "docsUrl": "https://developers.freshworks.com/crm/api/",
+  "aliases": [
+    "Freshworks CRM",
+    "Freshsales Suite"
+  ],
+  "requiredEnvVars": [
+    "FRESHSALES_BUNDLE_URL",
+    "FRESHSALES_API_KEY"
+  ],
+  "envVarMeta": {
+    "FRESHSALES_BUNDLE_URL": {
+      "label": "Bundle URL",
+      "kind": "address",
+      "help": "Profile Settings, API Settings tab: the bundle alias of your account, e.g. https://acme.myfreshworks.com/crm/sales (older accounts: https://acme.freshsales.io). Without /api and without a trailing slash.",
+      "example": "https://acme.myfreshworks.com/crm/sales",
+      "pattern": "^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.((myfreshworks|freshworks)\\.com/crm/sales|freshsales\\.io)$",
+      "patternMessage": "Use the https address of your account, e.g. https://acme.myfreshworks.com/crm/sales or https://acme.freshsales.io, without /api or a trailing slash."
+    },
+    "FRESHSALES_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Freshsales: profile picture, Profile Settings, API Settings tab, Your API key.",
+      "link": "https://crmsupport.freshworks.com/support/solutions/articles/50000002503-how-to-find-my-api-key-",
+      "pattern": "^[A-Za-z0-9_-]{10,}$",
+      "patternMessage": "Paste only the key, without Token token= and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Freshsales refused the API key. Copy it again from Profile Settings, API Settings.",
+    "403": "The user behind this key may not read users. Use the key of a user with access to the CRM data.",
+    "404": "No Freshsales account at this bundle URL. Copy the bundle alias from Profile Settings, API Settings, e.g. https://acme.myfreshworks.com/crm/sales."
+  },
+  "probe": {
+    "tool": "freshsales_list_owners"
+  },
+  "connector": {
+    "name": "Freshsales",
+    "type": "REST",
+    "baseUrl": "{{FRESHSALES_BUNDLE_URL}}/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Token token={{FRESHSALES_API_KEY}}"
+    },
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/selector/owners"
+  },
+  "tools": [
+    {
+      "name": "freshsales_list_owners",
+      "description": "List the users of the Freshsales portal (id, name, email). Use the ids as owner_id on contacts, accounts, deals, tasks and activities.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/selector/owners"
+      }
+    },
+    {
+      "name": "freshsales_list_selector",
+      "description": "List the values of a configuration picklist: territories, deal stages and pipelines, currencies, deal reasons and types, lead sources, industry and business types, campaigns, contact statuses, lifecycle stages, sales activity types and outcomes. Returns ids to use in create and update calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "Picklist to read.",
+            "enum": [
+              "territories",
+              "deal_stages",
+              "deal_pipelines",
+              "currencies",
+              "deal_reasons",
+              "deal_types",
+              "deal_payment_statuses",
+              "deal_products",
+              "lead_sources",
+              "industry_types",
+              "business_types",
+              "campaigns",
+              "contact_statuses",
+              "lifecycle_stages",
+              "sales_activity_types",
+              "sales_activity_outcomes",
+              "sales_activity_entity_types",
+              "designations"
+            ]
+          }
+        },
+        "required": [
+          "selector"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/selector/{selector}"
+      }
+    },
+    {
+      "name": "freshsales_list_pipeline_stages",
+      "description": "List the stages of one deal pipeline (id, name, position). Use the ids as deal_stage_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipeline_id": {
+            "type": "integer",
+            "description": "Pipeline id from freshsales_list_selector with selector deal_pipelines."
+          }
+        },
+        "required": [
+          "pipeline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/selector/deal_pipelines/{pipeline_id}/deal_stages"
+      }
+    },
+    {
+      "name": "freshsales_list_fields",
+      "description": "List the fields of a module, including custom fields (internal name cf_..., label, type, choices). Use it before writing custom_field values or lookup fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string",
+            "description": "Module whose fields to list.",
+            "enum": [
+              "contacts",
+              "sales_accounts",
+              "deals",
+              "sales_activities"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Pass field_group to also get the field groups."
+          }
+        },
+        "required": [
+          "module"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/{module}/fields",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_list_views",
+      "description": "List the saved views (filters) of contacts, accounts or deals, with their ids. Every list call needs a view id, e.g. \"All Contacts\", \"My Deals\" or \"Recently Modified\".",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string",
+            "description": "Module whose views to list.",
+            "enum": [
+              "contacts",
+              "sales_accounts",
+              "deals"
+            ]
+          }
+        },
+        "required": [
+          "module"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{module}/filters"
+      }
+    },
+    {
+      "name": "freshsales_list_contacts",
+      "description": "List the contacts of a view, 25 per page by default, with sorting. Get the view id from freshsales_list_views (module contacts).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "view_id": {
+            "type": "integer",
+            "description": "View (filter) id from freshsales_list_views, e.g. the id of \"All Contacts\"."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Field to sort by: created_at, updated_at, last_contacted, lead_score or open_deals_amount for contacts; created_at or updated_at for accounts; created_at, updated_at, expected_close or amount for deals."
+          },
+          "sort_type": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related records to embed, e.g. owner,sales_accounts,deals,tasks,appointments,notes,sales_activities,creater,updater,source,campaign,territory."
+          }
+        },
+        "required": [
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/view/{view_id}",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort",
+          "sort_type": "$sort_type",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_get_contact",
+      "description": "Get one contact with all fields, optionally embedding owner, accounts, deals, tasks, appointments, notes and sales activities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related records to embed, e.g. owner,sales_accounts,deals,tasks,appointments,notes,sales_activities,creater,updater,source,campaign,territory."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_list_contact_activities",
+      "description": "List the activity timeline of a contact: emails, calls, notes, field changes, web visits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Pass user to embed the user of each activity."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of activities to return."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}/activities",
+        "queryParams": {
+          "include": "$include",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "freshsales_create_contact",
+      "description": "Create a contact. Give at least an email or a last name (mobile_number also works). Returns the new contact with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "email": {
+            "type": "string",
+            "description": "Primary email address."
+          },
+          "work_number": {
+            "type": "string",
+            "description": "Work phone number."
+          },
+          "mobile_number": {
+            "type": "string",
+            "description": "Mobile phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "zipcode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone name, e.g. Berlin or Eastern Time (US & Canada)."
+          },
+          "linkedin": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user id from freshsales_list_owners."
+          },
+          "territory_id": {
+            "type": "integer",
+            "description": "Territory id (selector territories)."
+          },
+          "lead_source_id": {
+            "type": "integer",
+            "description": "Lead source id (selector lead_sources)."
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id (selector campaigns)."
+          },
+          "lifecycle_stage_id": {
+            "type": "integer",
+            "description": "Lifecycle stage id (selector lifecycle_stages)."
+          },
+          "contact_status_id": {
+            "type": "integer",
+            "description": "Contact status id (selector contact_statuses), must belong to the lifecycle stage."
+          },
+          "sales_accounts": {
+            "type": "array",
+            "description": "Accounts to link: [{\"id\": 12, \"is_primary\": true}]. Account ids from freshsales_search or freshsales_list_accounts.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "custom_field": {
+            "type": "object",
+            "description": "Custom fields by internal name (cf_...), e.g. {\"cf_region\": \"EMEA\"}. Names from freshsales_list_fields."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "contact": {
+            "first_name": "$first_name",
+            "last_name": "$last_name",
+            "job_title": "$job_title",
+            "email": "$email",
+            "work_number": "$work_number",
+            "mobile_number": "$mobile_number",
+            "address": "$address",
+            "city": "$city",
+            "state": "$state",
+            "zipcode": "$zipcode",
+            "country": "$country",
+            "time_zone": "$time_zone",
+            "linkedin": "$linkedin",
+            "owner_id": "$owner_id",
+            "territory_id": "$territory_id",
+            "lead_source_id": "$lead_source_id",
+            "campaign_id": "$campaign_id",
+            "lifecycle_stage_id": "$lifecycle_stage_id",
+            "contact_status_id": "$contact_status_id",
+            "sales_accounts": "$sales_accounts",
+            "custom_field": "$custom_field"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_update_contact",
+      "description": "Update a contact. Only the fields passed are changed; custom_field merges by internal name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "job_title": {
+            "type": "string",
+            "description": "Job title."
+          },
+          "email": {
+            "type": "string",
+            "description": "Primary email address."
+          },
+          "work_number": {
+            "type": "string",
+            "description": "Work phone number."
+          },
+          "mobile_number": {
+            "type": "string",
+            "description": "Mobile phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "zipcode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone name, e.g. Berlin or Eastern Time (US & Canada)."
+          },
+          "linkedin": {
+            "type": "string",
+            "description": "LinkedIn profile URL."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user id from freshsales_list_owners."
+          },
+          "territory_id": {
+            "type": "integer",
+            "description": "Territory id (selector territories)."
+          },
+          "lead_source_id": {
+            "type": "integer",
+            "description": "Lead source id (selector lead_sources)."
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id (selector campaigns)."
+          },
+          "lifecycle_stage_id": {
+            "type": "integer",
+            "description": "Lifecycle stage id (selector lifecycle_stages)."
+          },
+          "contact_status_id": {
+            "type": "integer",
+            "description": "Contact status id (selector contact_statuses), must belong to the lifecycle stage."
+          },
+          "sales_accounts": {
+            "type": "array",
+            "description": "Accounts to link: [{\"id\": 12, \"is_primary\": true}]. Account ids from freshsales_search or freshsales_list_accounts.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "custom_field": {
+            "type": "object",
+            "description": "Custom fields by internal name (cf_...), e.g. {\"cf_region\": \"EMEA\"}. Names from freshsales_list_fields."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contacts/{contact_id}",
+        "bodyMapping": {
+          "contact": {
+            "first_name": "$first_name",
+            "last_name": "$last_name",
+            "job_title": "$job_title",
+            "email": "$email",
+            "work_number": "$work_number",
+            "mobile_number": "$mobile_number",
+            "address": "$address",
+            "city": "$city",
+            "state": "$state",
+            "zipcode": "$zipcode",
+            "country": "$country",
+            "time_zone": "$time_zone",
+            "linkedin": "$linkedin",
+            "owner_id": "$owner_id",
+            "territory_id": "$territory_id",
+            "lead_source_id": "$lead_source_id",
+            "campaign_id": "$campaign_id",
+            "lifecycle_stage_id": "$lifecycle_stage_id",
+            "contact_status_id": "$contact_status_id",
+            "sales_accounts": "$sales_accounts",
+            "custom_field": "$custom_field"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_upsert_contact",
+      "description": "Create or update a contact matched by a unique field (usually the email): updates the existing contact, or creates it when none matches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unique_identifier": {
+            "type": "object",
+            "description": "Field that identifies the contact, e.g. {\"emails\": \"jane@example.com\"} or a unique custom field {\"cf_external_id\": \"A-17\"}."
+          },
+          "contact": {
+            "type": "object",
+            "description": "Contact fields to set, e.g. {\"first_name\": \"Jane\", \"job_title\": \"CFO\", \"custom_field\": {\"cf_region\": \"EMEA\"}}."
+          }
+        },
+        "required": [
+          "unique_identifier",
+          "contact"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/upsert",
+        "bodyMapping": {
+          "unique_identifier": "$unique_identifier",
+          "contact": "$contact"
+        }
+      }
+    },
+    {
+      "name": "freshsales_list_accounts",
+      "description": "List the accounts (companies) of a view, 25 per page by default. Get the view id from freshsales_list_views (module sales_accounts).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "view_id": {
+            "type": "integer",
+            "description": "View (filter) id from freshsales_list_views, e.g. the id of \"All Contacts\"."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Field to sort by: created_at, updated_at, last_contacted, lead_score or open_deals_amount for contacts; created_at or updated_at for accounts; created_at, updated_at, expected_close or amount for deals."
+          },
+          "sort_type": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related records to embed, e.g. owner,contacts,deals,tasks,appointments,notes,creater,updater,territory,industry_type,business_type."
+          }
+        },
+        "required": [
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales_accounts/view/{view_id}",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort",
+          "sort_type": "$sort_type",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_get_account",
+      "description": "Get one account with all fields, optionally embedding owner, contacts, deals, tasks, appointments and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Account id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related records to embed, e.g. owner,contacts,deals,tasks,appointments,notes,creater,updater,territory,industry_type,business_type."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales_accounts/{account_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_create_account",
+      "description": "Create an account (company). name is required and must be unique. Returns the new account with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Account (company) name. Unique in Freshsales."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website domain or URL."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "zipcode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "number_of_employees": {
+            "type": "integer",
+            "description": "Number of employees."
+          },
+          "annual_revenue": {
+            "type": "number",
+            "description": "Annual revenue in the account currency."
+          },
+          "industry_type_id": {
+            "type": "integer",
+            "description": "Industry type id (selector industry_types)."
+          },
+          "business_type_id": {
+            "type": "integer",
+            "description": "Business type id (selector business_types)."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user id from freshsales_list_owners."
+          },
+          "territory_id": {
+            "type": "integer",
+            "description": "Territory id (selector territories)."
+          },
+          "parent_sales_account_id": {
+            "type": "integer",
+            "description": "Id of the parent account."
+          },
+          "linkedin": {
+            "type": "string",
+            "description": "LinkedIn company page URL."
+          },
+          "custom_field": {
+            "type": "object",
+            "description": "Custom fields by internal name (cf_...), e.g. {\"cf_region\": \"EMEA\"}. Names from freshsales_list_fields."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sales_accounts",
+        "bodyMapping": {
+          "sales_account": {
+            "name": "$name",
+            "website": "$website",
+            "phone": "$phone",
+            "address": "$address",
+            "city": "$city",
+            "state": "$state",
+            "zipcode": "$zipcode",
+            "country": "$country",
+            "number_of_employees": "$number_of_employees",
+            "annual_revenue": "$annual_revenue",
+            "industry_type_id": "$industry_type_id",
+            "business_type_id": "$business_type_id",
+            "owner_id": "$owner_id",
+            "territory_id": "$territory_id",
+            "parent_sales_account_id": "$parent_sales_account_id",
+            "linkedin": "$linkedin",
+            "custom_field": "$custom_field"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_update_account",
+      "description": "Update an account (company): name, address, owner, industry, custom fields. Only the fields passed are changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Account id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Account (company) name. Unique in Freshsales."
+          },
+          "website": {
+            "type": "string",
+            "description": "Website domain or URL."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or region."
+          },
+          "zipcode": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "number_of_employees": {
+            "type": "integer",
+            "description": "Number of employees."
+          },
+          "annual_revenue": {
+            "type": "number",
+            "description": "Annual revenue in the account currency."
+          },
+          "industry_type_id": {
+            "type": "integer",
+            "description": "Industry type id (selector industry_types)."
+          },
+          "business_type_id": {
+            "type": "integer",
+            "description": "Business type id (selector business_types)."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user id from freshsales_list_owners."
+          },
+          "territory_id": {
+            "type": "integer",
+            "description": "Territory id (selector territories)."
+          },
+          "parent_sales_account_id": {
+            "type": "integer",
+            "description": "Id of the parent account."
+          },
+          "linkedin": {
+            "type": "string",
+            "description": "LinkedIn company page URL."
+          },
+          "custom_field": {
+            "type": "object",
+            "description": "Custom fields by internal name (cf_...), e.g. {\"cf_region\": \"EMEA\"}. Names from freshsales_list_fields."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sales_accounts/{account_id}",
+        "bodyMapping": {
+          "sales_account": {
+            "name": "$name",
+            "website": "$website",
+            "phone": "$phone",
+            "address": "$address",
+            "city": "$city",
+            "state": "$state",
+            "zipcode": "$zipcode",
+            "country": "$country",
+            "number_of_employees": "$number_of_employees",
+            "annual_revenue": "$annual_revenue",
+            "industry_type_id": "$industry_type_id",
+            "business_type_id": "$business_type_id",
+            "owner_id": "$owner_id",
+            "territory_id": "$territory_id",
+            "parent_sales_account_id": "$parent_sales_account_id",
+            "linkedin": "$linkedin",
+            "custom_field": "$custom_field"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_list_deals",
+      "description": "List the deals of a view, 25 per page by default. Get the view id from freshsales_list_views (module deals).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "view_id": {
+            "type": "integer",
+            "description": "View (filter) id from freshsales_list_views, e.g. the id of \"All Contacts\"."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Field to sort by: created_at, updated_at, last_contacted, lead_score or open_deals_amount for contacts; created_at or updated_at for accounts; created_at, updated_at, expected_close or amount for deals."
+          },
+          "sort_type": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related records to embed, e.g. owner,sales_account,contacts,deal_stage,deal_pipeline,deal_reason,deal_type,currency,tasks,appointments,notes,products."
+          }
+        },
+        "required": [
+          "view_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals/view/{view_id}",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort",
+          "sort_type": "$sort_type",
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_get_deal",
+      "description": "Get one deal with all fields, optionally embedding account, contacts, stage, pipeline, products, tasks and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "integer",
+            "description": "Deal id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related records to embed, e.g. owner,sales_account,contacts,deal_stage,deal_pipeline,deal_reason,deal_type,currency,tasks,appointments,notes,products."
+          }
+        },
+        "required": [
+          "deal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals/{deal_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_create_deal",
+      "description": "Create a deal. name and amount are required; link it to an account with sales_account_id and to contacts with contacts_added_list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Deal name."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Deal value in the deal currency."
+          },
+          "currency_id": {
+            "type": "integer",
+            "description": "Currency id (selector currencies); default is the portal currency."
+          },
+          "sales_account_id": {
+            "type": "integer",
+            "description": "Account the deal belongs to."
+          },
+          "deal_pipeline_id": {
+            "type": "integer",
+            "description": "Pipeline id (selector deal_pipelines)."
+          },
+          "deal_stage_id": {
+            "type": "integer",
+            "description": "Stage id from freshsales_list_pipeline_stages."
+          },
+          "deal_type_id": {
+            "type": "integer",
+            "description": "Deal type id (selector deal_types)."
+          },
+          "deal_reason_id": {
+            "type": "integer",
+            "description": "Lost reason id (selector deal_reasons), for lost deals."
+          },
+          "expected_close": {
+            "type": "string",
+            "description": "Expected close date, YYYY-MM-DD."
+          },
+          "probability": {
+            "type": "integer",
+            "description": "Win probability in percent (0-100)."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user id from freshsales_list_owners."
+          },
+          "lead_source_id": {
+            "type": "integer",
+            "description": "Lead source id (selector lead_sources)."
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id (selector campaigns)."
+          },
+          "territory_id": {
+            "type": "integer",
+            "description": "Territory id (selector territories)."
+          },
+          "contacts_added_list": {
+            "type": "array",
+            "description": "Contact ids to link to the deal.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "custom_field": {
+            "type": "object",
+            "description": "Custom fields by internal name (cf_...), e.g. {\"cf_region\": \"EMEA\"}. Names from freshsales_list_fields."
+          }
+        },
+        "required": [
+          "name",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deals",
+        "bodyMapping": {
+          "deal": {
+            "name": "$name",
+            "amount": "$amount",
+            "currency_id": "$currency_id",
+            "sales_account_id": "$sales_account_id",
+            "deal_pipeline_id": "$deal_pipeline_id",
+            "deal_stage_id": "$deal_stage_id",
+            "deal_type_id": "$deal_type_id",
+            "deal_reason_id": "$deal_reason_id",
+            "expected_close": "$expected_close",
+            "probability": "$probability",
+            "owner_id": "$owner_id",
+            "lead_source_id": "$lead_source_id",
+            "campaign_id": "$campaign_id",
+            "territory_id": "$territory_id",
+            "contacts_added_list": "$contacts_added_list",
+            "custom_field": "$custom_field"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_update_deal",
+      "description": "Update a deal: amount, stage (deal_stage_id moves it through the pipeline, including won and lost stages), close date, owner, linked contacts. Only the fields passed are changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "integer",
+            "description": "Deal id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Deal name."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Deal value in the deal currency."
+          },
+          "currency_id": {
+            "type": "integer",
+            "description": "Currency id (selector currencies); default is the portal currency."
+          },
+          "sales_account_id": {
+            "type": "integer",
+            "description": "Account the deal belongs to."
+          },
+          "deal_pipeline_id": {
+            "type": "integer",
+            "description": "Pipeline id (selector deal_pipelines)."
+          },
+          "deal_stage_id": {
+            "type": "integer",
+            "description": "Stage id from freshsales_list_pipeline_stages."
+          },
+          "deal_type_id": {
+            "type": "integer",
+            "description": "Deal type id (selector deal_types)."
+          },
+          "deal_reason_id": {
+            "type": "integer",
+            "description": "Lost reason id (selector deal_reasons), for lost deals."
+          },
+          "expected_close": {
+            "type": "string",
+            "description": "Expected close date, YYYY-MM-DD."
+          },
+          "probability": {
+            "type": "integer",
+            "description": "Win probability in percent (0-100)."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user id from freshsales_list_owners."
+          },
+          "lead_source_id": {
+            "type": "integer",
+            "description": "Lead source id (selector lead_sources)."
+          },
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id (selector campaigns)."
+          },
+          "territory_id": {
+            "type": "integer",
+            "description": "Territory id (selector territories)."
+          },
+          "contacts_added_list": {
+            "type": "array",
+            "description": "Contact ids to link to the deal.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "custom_field": {
+            "type": "object",
+            "description": "Custom fields by internal name (cf_...), e.g. {\"cf_region\": \"EMEA\"}. Names from freshsales_list_fields."
+          },
+          "contacts_removed_list": {
+            "type": "array",
+            "description": "Contact ids to unlink from the deal.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "deal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/deals/{deal_id}",
+        "bodyMapping": {
+          "deal": {
+            "name": "$name",
+            "amount": "$amount",
+            "currency_id": "$currency_id",
+            "sales_account_id": "$sales_account_id",
+            "deal_pipeline_id": "$deal_pipeline_id",
+            "deal_stage_id": "$deal_stage_id",
+            "deal_type_id": "$deal_type_id",
+            "deal_reason_id": "$deal_reason_id",
+            "expected_close": "$expected_close",
+            "probability": "$probability",
+            "owner_id": "$owner_id",
+            "lead_source_id": "$lead_source_id",
+            "campaign_id": "$campaign_id",
+            "territory_id": "$territory_id",
+            "contacts_added_list": "$contacts_added_list",
+            "custom_field": "$custom_field",
+            "contacts_removed_list": "$contacts_removed_list"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_create_note",
+      "description": "Add a note to a contact, account or deal. The note shows on the record timeline.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Note text."
+          },
+          "targetable_type": {
+            "type": "string",
+            "description": "Record the item belongs to.",
+            "enum": [
+              "Contact",
+              "SalesAccount",
+              "Deal"
+            ]
+          },
+          "targetable_id": {
+            "type": "integer",
+            "description": "Id of that contact, account or deal."
+          }
+        },
+        "required": [
+          "description",
+          "targetable_type",
+          "targetable_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notes",
+        "bodyMapping": {
+          "note": {
+            "description": "$description",
+            "targetable_type": "$targetable_type",
+            "targetable_id": "$targetable_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_update_note",
+      "description": "Change the text of an existing note on a contact, account or deal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "note_id": {
+            "type": "integer",
+            "description": "Note id (from the notes embedded in freshsales_get_contact, freshsales_get_account or freshsales_get_deal with include=notes)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Note text."
+          },
+          "targetable_type": {
+            "type": "string",
+            "description": "Record the item belongs to.",
+            "enum": [
+              "Contact",
+              "SalesAccount",
+              "Deal"
+            ]
+          },
+          "targetable_id": {
+            "type": "integer",
+            "description": "Id of that contact, account or deal."
+          }
+        },
+        "required": [
+          "note_id",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/notes/{note_id}",
+        "bodyMapping": {
+          "note": {
+            "description": "$description",
+            "targetable_type": "$targetable_type",
+            "targetable_id": "$targetable_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_list_tasks",
+      "description": "List tasks by status: open, due today, due tomorrow, overdue or completed. One filter per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Which tasks to list.",
+            "enum": [
+              "open",
+              "due_today",
+              "due_tomorrow",
+              "overdue",
+              "completed"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: owner, targetable (the linked contact, account or deal), users (collaborators)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page (default 25, at most 100)."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "filter": "$filter",
+          "include": "$include",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshsales_get_task",
+      "description": "Get one task with its owner, collaborators and linked record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "description": "Task id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: owner, targetable, users."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/{task_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_create_task",
+      "description": "Create a task on a contact, account or deal. title, due_date, owner_id, targetable_type and targetable_id are required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Task description."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601, e.g. 2026-11-04T10:00:00Z."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "User the task is assigned to (freshsales_list_owners)."
+          },
+          "targetable_type": {
+            "type": "string",
+            "description": "Record the item belongs to.",
+            "enum": [
+              "Contact",
+              "SalesAccount",
+              "Deal"
+            ]
+          },
+          "targetable_id": {
+            "type": "integer",
+            "description": "Id of that contact, account or deal."
+          },
+          "task_type_id": {
+            "type": "integer",
+            "description": "Task type id (selector sales_activity_types)."
+          },
+          "outcome_id": {
+            "type": "integer",
+            "description": "Outcome id (selector sales_activity_outcomes)."
+          },
+          "task_users_attributes": {
+            "type": "array",
+            "description": "Collaborators: [{\"user_id\": 5}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "due_date",
+          "owner_id",
+          "targetable_type",
+          "targetable_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "task": {
+            "title": "$title",
+            "description": "$description",
+            "due_date": "$due_date",
+            "owner_id": "$owner_id",
+            "targetable_type": "$targetable_type",
+            "targetable_id": "$targetable_id",
+            "task_type_id": "$task_type_id",
+            "outcome_id": "$outcome_id",
+            "task_users_attributes": "$task_users_attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_update_task",
+      "description": "Update a task: title, description, due date, owner, linked record or collaborators. Only the fields passed are changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "description": "Task id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Task description."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date and time, ISO 8601, e.g. 2026-11-04T10:00:00Z."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "User the task is assigned to (freshsales_list_owners)."
+          },
+          "targetable_type": {
+            "type": "string",
+            "description": "Record the item belongs to.",
+            "enum": [
+              "Contact",
+              "SalesAccount",
+              "Deal"
+            ]
+          },
+          "targetable_id": {
+            "type": "integer",
+            "description": "Id of that contact, account or deal."
+          },
+          "task_type_id": {
+            "type": "integer",
+            "description": "Task type id (selector sales_activity_types)."
+          },
+          "outcome_id": {
+            "type": "integer",
+            "description": "Outcome id (selector sales_activity_outcomes)."
+          },
+          "task_users_attributes": {
+            "type": "array",
+            "description": "Collaborators: [{\"user_id\": 5}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/{task_id}",
+        "bodyMapping": {
+          "task": {
+            "title": "$title",
+            "description": "$description",
+            "due_date": "$due_date",
+            "owner_id": "$owner_id",
+            "targetable_type": "$targetable_type",
+            "targetable_id": "$targetable_id",
+            "task_type_id": "$task_type_id",
+            "outcome_id": "$outcome_id",
+            "task_users_attributes": "$task_users_attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_complete_task",
+      "description": "Mark a task as done (status completed). Use freshsales_update_task to change other fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "description": "Task id."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/{task_id}",
+        "bodyMapping": {
+          "task": {
+            "status": 1
+          }
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "freshsales_list_appointments",
+      "description": "List appointments (meetings), upcoming or past, with attendees and linked records. One filter per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Which appointments: open (upcoming) or past. Older portals accept upcoming instead of open.",
+            "enum": [
+              "open",
+              "past",
+              "upcoming"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: creater, targetable, appointment_attendees."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page (default 25, at most 100)."
+          }
+        },
+        "required": [
+          "filter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/appointments",
+        "queryParams": {
+          "filter": "$filter",
+          "include": "$include",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshsales_get_appointment",
+      "description": "Get one appointment with its time, location, attendees and linked contact, account or deal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "integer",
+            "description": "Appointment id."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: creater, targetable, appointment_attendees."
+          }
+        },
+        "required": [
+          "appointment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/appointments/{appointment_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "freshsales_create_appointment",
+      "description": "Schedule an appointment (meeting) with a contact, account or deal, with attendees. title, from_date and end_date are required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Appointment title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start, ISO 8601 with offset, e.g. 2026-11-04T10:00:00+01:00 (a date for all-day appointments)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, ISO 8601 with offset (a date for all-day appointments)."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone name, e.g. Berlin."
+          },
+          "is_allday": {
+            "type": "boolean",
+            "description": "True for an all-day appointment."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location."
+          },
+          "targetable_type": {
+            "type": "string",
+            "description": "Record the item belongs to.",
+            "enum": [
+              "Contact",
+              "SalesAccount",
+              "Deal"
+            ]
+          },
+          "targetable_id": {
+            "type": "integer",
+            "description": "Id of that contact, account or deal."
+          },
+          "outcome_id": {
+            "type": "integer",
+            "description": "Outcome id (selector sales_activity_outcomes)."
+          },
+          "appointment_attendees_attributes": {
+            "type": "array",
+            "description": "Attendees: [{\"attendee_type\": \"FdMultitenant::User\", \"attendee_id\": 5}, {\"attendee_type\": \"Contact\", \"attendee_id\": 42}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "from_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/appointments",
+        "bodyMapping": {
+          "appointment": {
+            "title": "$title",
+            "description": "$description",
+            "from_date": "$from_date",
+            "end_date": "$end_date",
+            "time_zone": "$time_zone",
+            "is_allday": "$is_allday",
+            "location": "$location",
+            "targetable_type": "$targetable_type",
+            "targetable_id": "$targetable_id",
+            "outcome_id": "$outcome_id",
+            "appointment_attendees_attributes": "$appointment_attendees_attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_update_appointment",
+      "description": "Reschedule or edit an appointment. Only the fields passed are changed; attendees passed are added.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "integer",
+            "description": "Appointment id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Appointment title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Start, ISO 8601 with offset, e.g. 2026-11-04T10:00:00+01:00 (a date for all-day appointments)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, ISO 8601 with offset (a date for all-day appointments)."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Time zone name, e.g. Berlin."
+          },
+          "is_allday": {
+            "type": "boolean",
+            "description": "True for an all-day appointment."
+          },
+          "location": {
+            "type": "string",
+            "description": "Location."
+          },
+          "targetable_type": {
+            "type": "string",
+            "description": "Record the item belongs to.",
+            "enum": [
+              "Contact",
+              "SalesAccount",
+              "Deal"
+            ]
+          },
+          "targetable_id": {
+            "type": "integer",
+            "description": "Id of that contact, account or deal."
+          },
+          "outcome_id": {
+            "type": "integer",
+            "description": "Outcome id (selector sales_activity_outcomes)."
+          },
+          "appointment_attendees_attributes": {
+            "type": "array",
+            "description": "Attendees: [{\"attendee_type\": \"FdMultitenant::User\", \"attendee_id\": 5}, {\"attendee_type\": \"Contact\", \"attendee_id\": 42}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "appointment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/appointments/{appointment_id}",
+        "bodyMapping": {
+          "appointment": {
+            "title": "$title",
+            "description": "$description",
+            "from_date": "$from_date",
+            "end_date": "$end_date",
+            "time_zone": "$time_zone",
+            "is_allday": "$is_allday",
+            "location": "$location",
+            "targetable_type": "$targetable_type",
+            "targetable_id": "$targetable_id",
+            "outcome_id": "$outcome_id",
+            "appointment_attendees_attributes": "$appointment_attendees_attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_list_sales_activities",
+      "description": "List logged sales activities (calls, meetings, custom activity types), newest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page (default 25, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales_activities",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshsales_get_sales_activity",
+      "description": "Get one logged sales activity with its type, outcome, times, notes and linked record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sales_activity_id": {
+            "type": "integer",
+            "description": "Sales activity id."
+          }
+        },
+        "required": [
+          "sales_activity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sales_activities/{sales_activity_id}"
+      }
+    },
+    {
+      "name": "freshsales_create_sales_activity",
+      "description": "Log a sales activity (for example a call or visit) on a contact, account or deal. title, sales_activity_type_id, start_date, end_date, owner_id and the target are required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Activity title."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Activity notes."
+          },
+          "sales_activity_type_id": {
+            "type": "integer",
+            "description": "Activity type id (selector sales_activity_types)."
+          },
+          "sales_activity_outcome_id": {
+            "type": "integer",
+            "description": "Outcome id (selector sales_activity_outcomes)."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start, ISO 8601 with offset."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End, ISO 8601 with offset."
+          },
+          "owner_id": {
+            "type": "integer",
+            "description": "Owner user id."
+          },
+          "targetable_type": {
+            "type": "string",
+            "description": "Record the item belongs to.",
+            "enum": [
+              "Contact",
+              "SalesAccount",
+              "Deal"
+            ]
+          },
+          "targetable_id": {
+            "type": "integer",
+            "description": "Id of that contact, account or deal."
+          },
+          "custom_field": {
+            "type": "object",
+            "description": "Custom fields by internal name (cf_...), e.g. {\"cf_region\": \"EMEA\"}. Names from freshsales_list_fields."
+          }
+        },
+        "required": [
+          "title",
+          "sales_activity_type_id",
+          "start_date",
+          "end_date",
+          "owner_id",
+          "targetable_type",
+          "targetable_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sales_activities",
+        "bodyMapping": {
+          "sales_activity": {
+            "title": "$title",
+            "notes": "$notes",
+            "sales_activity_type_id": "$sales_activity_type_id",
+            "sales_activity_outcome_id": "$sales_activity_outcome_id",
+            "start_date": "$start_date",
+            "end_date": "$end_date",
+            "owner_id": "$owner_id",
+            "targetable_type": "$targetable_type",
+            "targetable_id": "$targetable_id",
+            "custom_field": "$custom_field"
+          }
+        }
+      }
+    },
+    {
+      "name": "freshsales_search",
+      "description": "Full-text search by name or email across contacts, accounts, deals and users. Returns id, type and name of each match (10 by default, at most 100).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Search text, e.g. a name, part of a name or an email."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated entities to search: contact, sales_account, deal, user. Use the singular forms."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Number of results (default 10, at most 100)."
+          }
+        },
+        "required": [
+          "q",
+          "include"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "q": "$q",
+          "include": "$include",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshsales_lookup",
+      "description": "Exact-match lookup on one field: find contacts by email, or contacts, accounts or deals by name or a custom field value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Exact value to match, e.g. jane@example.com."
+          },
+          "f": {
+            "type": "string",
+            "description": "Field to match: email or name, or the internal name of a text, number or dropdown custom field (cf_...)."
+          },
+          "entities": {
+            "type": "string",
+            "description": "Comma-separated: contact, sales_account, deal. The field must exist on every entity listed."
+          }
+        },
+        "required": [
+          "q",
+          "f",
+          "entities"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lookup",
+        "queryParams": {
+          "q": "$q",
+          "f": "$f",
+          "entities": "$entities"
+        }
+      }
+    },
+    {
+      "name": "freshsales_filtered_search",
+      "description": "Filter contacts, accounts or deals by field rules (exact matches, ranges, lists), e.g. contacts whose email is in a list. Returns full records.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity to filter.",
+            "enum": [
+              "contact",
+              "sales_account",
+              "deal"
+            ]
+          },
+          "filter_rule": {
+            "type": "array",
+            "description": "Rules combined with AND: [{\"attribute\": \"contact_email.email\", \"operator\": \"is_in\", \"value\": \"jane@example.com\"}]. Operators include is_in, is, is_not, contains, starts_with, is_after, is_before.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page (default 25, at most 100)."
+          }
+        },
+        "required": [
+          "entity",
+          "filter_rule"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/filtered_search/{entity}",
+        "bodyMapping": {
+          "filter_rule": "$filter_rule",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "freshsales_list_marketing_lists",
+      "description": "List the marketing lists (static contact lists) with their ids.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lists"
+      }
+    },
+    {
+      "name": "freshsales_list_marketing_list_contacts",
+      "description": "List the contacts of a marketing list, 25 per page by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Marketing list id from freshsales_list_marketing_lists."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page (default 25, at most 100)."
+          }
+        },
+        "required": [
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/lists/{list_id}",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "freshsales_add_contacts_to_list",
+      "description": "Add existing contacts to a marketing list by their contact ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Marketing list id."
+          },
+          "ids": {
+            "type": "array",
+            "description": "Contact ids to add.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "list_id",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/lists/{list_id}/add_contacts",
+        "bodyMapping": {
+          "ids": "$ids"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "freshsales_remove_contacts_from_list",
+      "description": "Remove contacts from a marketing list. The contacts themselves are kept.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Marketing list id."
+          },
+          "ids": {
+            "type": "array",
+            "description": "Contact ids to remove from the list.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "list_id",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/lists/{list_id}/remove_contacts",
+        "bodyMapping": {
+          "ids": "$ids"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    }
+  ]
+}

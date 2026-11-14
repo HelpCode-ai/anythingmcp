@@ -76,8 +76,12 @@ function buildController(over: { stored?: any; licenseGuard?: any } = {}) {
   const prisma = {
     connector: {
       findMany: jest.fn().mockResolvedValue(stored ? [stored] : []),
+      // Honour an organizationId filter the way Prisma does.
       findFirst: jest.fn().mockImplementation(async ({ where }: any) =>
-        where.id ? stored : null,
+        where.id &&
+        (where.organizationId === undefined || stored?.organizationId === where.organizationId)
+          ? stored
+          : null,
       ),
       create: jest.fn().mockImplementation(async ({ data }: any) => ({ id: 'new1', ...data })),
     },
@@ -106,6 +110,7 @@ function buildController(over: { stored?: any; licenseGuard?: any } = {}) {
     licenseGuard as any,
     {} as any, // mcpServers
     { isCloud: () => true } as any,
+    { recentEvents: jest.fn().mockResolvedValue([]) } as any, // webhookEvents
   );
   return { controller, prisma, licenseGuard };
 }
@@ -197,11 +202,47 @@ describe('GET :id/export', () => {
     },
   );
 
-  it('refuses a connector of another organization with 403', async () => {
+  it('masks secrets for an admin using a read-only management key', async () => {
     const { controller } = buildController();
+    const res = fakeRes();
+    const text = (await controller.exportOne(
+      { ...req('ADMIN', 'org1'), mcpKeyScope: 'MANAGEMENT_READ' } as any,
+      'c1',
+      'json',
+      res as any,
+    )) as string;
+    expect(JSON.parse(text).secretsIncluded).toBe(false);
+    expect(res.headers['X-Secrets-Included']).toBe('false');
+    expect(text).not.toContain(TOKEN);
+  });
+
+  it('does not find a connector of another organization (404, scoped query)', async () => {
+    const { controller, prisma } = buildController();
     await expect(
       controller.exportOne(req('ADMIN', 'org2'), 'c1', 'json', fakeRes() as any),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.connector.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'c1', organizationId: 'org2' } }),
+    );
+  });
+
+  it('refuses to export without a workspace instead of exporting every tenant', async () => {
+    const { controller, prisma } = buildController();
+    const noOrg = { user: { sub: 'u', role: 'ADMIN', organizationId: undefined } };
+    await expect(
+      controller.exportOne(noOrg as any, 'c1', 'json', fakeRes() as any),
     ).rejects.toThrow(ForbiddenException);
+    await expect(controller.exportAll(noOrg as any)).rejects.toThrow(ForbiddenException);
+    expect(prisma.connector.findFirst).not.toHaveBeenCalled();
+    expect(prisma.connector.findMany).not.toHaveBeenCalled();
+  });
+
+  it('export-all reads only the caller organization', async () => {
+    const { controller, prisma } = buildController();
+    await controller.exportAll(req('ADMIN', 'org1') as any);
+    expect(prisma.connector.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { organizationId: 'org1' } }),
+    );
   });
 
   it('returns 404 for an unknown connector', async () => {

@@ -1,6 +1,30 @@
 import { deriveErrorHint, hostFromAxiosConfig } from './error-hints';
 
 describe('deriveErrorHint', () => {
+  it('names the outbound address when a firewall in front of the API refuses the call', () => {
+    // 3 Nov 2026: a self-hosted Bitrix24 behind an IP allowlist answered every
+    // call with a 403 "Access Restricted" page; the model told the user the
+    // webhook was broken.
+    const hint = deriveErrorHint({
+      host: 'crm.example.com',
+      status: 403,
+      body: '<!DOCTYPE html><html lang="en"><head><title>Access Restricted</title></head></html>',
+      adapterSlug: 'bitrix24',
+      cloud: true,
+      egressIps: ['104.248.242.235'],
+    });
+    expect(hint).toMatch(/104\.248\.242\.235/);
+    expect(hint).toMatch(/Retrying will not help/);
+    // The vendor's own rule still wins: Bitrix24's HTML 404 is a wrong webhook URL.
+    expect(
+      deriveErrorHint({ status: 404, body: '<html><body>Not found</body></html>', adapterSlug: 'bitrix24', egressIps: ['1.2.3.4'] }),
+    ).toMatch(/inbound webhook/);
+    // A JSON permission error is not an allowlist.
+    expect(
+      deriveErrorHint({ host: 'crm.example.com', status: 403, body: { error: 'ACCESS_DENIED' }, egressIps: ['1.2.3.4'] }),
+    ).toBeUndefined();
+  });
+
   it('says nothing for an ordinary failure', () => {
     expect(
       deriveErrorHint({ host: 'api.example.com', status: 500, body: { message: 'boom' } }),
@@ -46,6 +70,28 @@ describe('deriveErrorHint', () => {
     // Another model's own mobile field keeps the generic advice.
     expect(
       deriveErrorHint({ status: 500, body: { message: "Invalid field 'mobile' on 'hr.employee'" } }),
+    ).toMatch(/fields_get/);
+  });
+
+  it('names is_company when Odoo saas-19.3+ refuses the dropped company_type field on contacts', () => {
+    // Nov 2026: 5 workspaces on saas-19.3, saas-19.4 and 20.0 (read, create, write).
+    const read = deriveErrorHint({
+      host: 'acme.odoo.com',
+      status: 500,
+      body: { name: 'builtins.ValueError', message: "Invalid field 'company_type' on 'res.partner'" },
+    });
+    expect(read).toMatch(/`is_company`/);
+    expect(
+      deriveErrorHint({ status: 500, body: { name: 'builtins.ValueError', message: "Invalid field 'company_type' in 'res.partner'" } }),
+    ).toMatch(/`is_company`/);
+    expect(
+      deriveErrorHint({ status: 500, body: { name: 'builtins.KeyError', message: 'company_type', arguments: ['company_type'] } }),
+    ).toMatch(/`is_company`/);
+  });
+
+  it('gives the field-list hint for the "in" wording of create and write', () => {
+    expect(
+      deriveErrorHint({ status: 500, body: { name: 'builtins.ValueError', message: "Invalid field 'x_foo' in 'sale.order'" } }),
     ).toMatch(/fields_get/);
   });
 
@@ -99,10 +145,10 @@ describe('deriveErrorHint', () => {
       }
     });
 
-    it('leaves an unrelated "Access Denied" page alone', () => {
-      expect(
-        deriveErrorHint({ host: 'example.com', status: 403, body: '<html><title>Access Denied</title></html>' }),
-      ).toBeUndefined();
+    it('leaves an unrelated "Access Denied" page to the firewall rule, not the Odoo one', () => {
+      const hint = deriveErrorHint({ host: 'example.com', status: 403, body: '<html><title>Access Denied</title></html>' });
+      expect(hint).not.toMatch(/Odoo/);
+      expect(hint).toMatch(/IP allowlist/);
     });
   });
 
@@ -326,6 +372,66 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     expect(hint).toMatch(/etsy_read_listing_inventory/);
   });
 
+  describe('Etsy tag limit', () => {
+    const refusal = { error: 'There was a problem with /tags : cannot be more than 20 characters' };
+
+    it('names each tag over the limit with its length, and nothing else from the call', () => {
+      const hint = deriveErrorHint({
+        host: 'openapi.etsy.com',
+        status: 400,
+        body: refusal,
+        args: { tags: 'mug, handmade ceramic coffee mug,blue,personalised gift for her', title: 'Secret title' },
+      });
+      expect(hint).toBe(
+        'tag "handmade ceramic coffee mug" has 27 characters; tag "personalised gift for her" has 25 characters; ' +
+          'Etsy allows at most 20 characters per tag on English listings. ' +
+          'Shorten or replace them and call again with the other tags unchanged.',
+      );
+      expect(hint).not.toMatch(/mug,|blue|Secret/);
+    });
+
+    it('takes the limit from Etsy\'s message and counts an emoji as one character', () => {
+      const hint = deriveErrorHint({
+        adapterSlug: 'etsy',
+        body: { error: 'There was a problem with /tags : cannot be more than 5 characters' },
+        args: { tags: ['🎁🎁🎁🎁🎁', 'gifts!'] },
+      });
+      expect(hint).toBe(
+        'tag "gifts!" has 6 characters; Etsy allows at most 5 characters per tag on English listings. ' +
+          'Shorten or replace it and call again with the other tags unchanged.',
+      );
+    });
+
+    it('reads the limit from the array-shaped refusal of a new draft listing', () => {
+      // etsy_create_listing_draft, Nov 2026.
+      const hint = deriveErrorHint({
+        host: 'openapi.etsy.com',
+        status: 400,
+        body: [{ path: '/tags', type: 'too_long', message: 'cannot be more than 20 characters', transformed: false }],
+        args: { tags: ['mug', 'handmade ceramic coffee mug'] },
+      });
+      expect(hint).toBe(
+        'tag "handmade ceramic coffee mug" has 27 characters; Etsy allows at most 20 characters per tag on English listings. ' +
+          'Shorten or replace it and call again with the other tags unchanged.',
+      );
+    });
+
+    it('still states the limit when the arguments hold no tag over it', () => {
+      expect(deriveErrorHint({ host: 'openapi.etsy.com', status: 400, body: refusal, args: {} })).toBe(
+        'Etsy allows at most 20 characters per tag on English listings. Shorten every longer tag (spaces count) and call again.',
+      );
+    });
+
+    it('cuts a very long tag when quoting it', () => {
+      const hint = deriveErrorHint({ host: 'openapi.etsy.com', body: refusal, args: { tags: 'x'.repeat(500) } });
+      expect(hint).toMatch(new RegExp(`^tag "${'x'.repeat(60)}…" has 500 characters;`));
+    });
+
+    it('says nothing for the same text from another API', () => {
+      expect(deriveErrorHint({ host: 'api.example.com', status: 400, body: refusal, args: { tags: 'x'.repeat(30) } })).toBeUndefined();
+    });
+  });
+
   it('still says nothing about an error it does not recognise', () => {
     expect(deriveErrorHint({ status: 500, body: { message: 'boom' } })).toBeUndefined();
   });
@@ -389,7 +495,7 @@ describe('deriveErrorHint: generative AI APIs', () => {
     ).toContain('aistudio.google.com/apikey');
     expect(
       deriveErrorHint({ host: gemini, status: 429, body: { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota' } } }),
-    ).toMatch(/free tier.*image models have no free tier/);
+    ).toMatch(/rate limit reached.*Do not retry in a loop/);
     expect(
       deriveErrorHint({ host: gemini, status: 404, body: { error: { message: 'models/gemini-9-ultra is not found for API version v1beta, or is not supported for generateContent.' } } }),
     ).toMatch(/gemini_list_models/);

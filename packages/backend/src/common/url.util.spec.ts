@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { connectorPageUrl, normalizeConnectorBaseUrl, resolveMcpEndpointUrl } from './url.util';
+import { connectorConnectUrl, connectorPageUrl, normalizeConnectorBaseUrl, resolveMcpEndpointUrl } from './url.util';
 
 describe('normalizeConnectorBaseUrl', () => {
   it('keeps a well-formed https URL untouched', () => {
@@ -173,5 +173,13 @@ describe('connectorPageUrl', () => {
     expect(connectorPageUrl('c1')).toBeUndefined();
     process.env.FRONTEND_URL = 'https://cloud.example.com';
     expect(connectorPageUrl(undefined)).toBeUndefined();
+  });
+
+  it("links a user's own credential to the page where that user connects", () => {
+    process.env.FRONTEND_URL = 'https://cloud.example.com';
+    expect(connectorPageUrl('c1:user:u1')).toBe('https://cloud.example.com/auth/connect/c1');
+    expect(connectorConnectUrl('c1')).toBe('https://cloud.example.com/auth/connect/c1');
+    delete process.env.FRONTEND_URL;
+    expect(connectorConnectUrl('c1')).toBeUndefined();
   });
 });

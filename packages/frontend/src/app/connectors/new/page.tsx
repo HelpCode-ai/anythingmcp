@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
-import { adapters, connectors, isMachineGrant, type CatalogUrlMatch, type OAuthGrant } from '@/lib/api';
+import { adapters, connectors, isMachineGrant, planLimitOf, type CatalogUrlMatch, type OAuthGrant, type PlanLimitError } from '@/lib/api';
+import { PlanLimitNotice } from '@/components/plan-swap-dialog';
 import { ConnectorLogo } from '@/components/connector-logo';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
@@ -13,16 +15,26 @@ import { AppSelect } from '@/components/ui/select';
 import { HeadersEditor, headerRowsToObject, type HeaderRow } from '@/components/headers-editor';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
+import {
+  EMPTY_EMAIL_FORM,
+  EmailSettingsFields,
+  emailBaseUrl,
+  emailFormToAuthConfig,
+  emailFormToConfig,
+  type EmailFormState,
+} from '@/components/email-settings-fields';
 
 const DEFAULT_LOGIN_BODY = '{\n  "username": "${username}",\n  "password": "${password}"\n}';
 
+/** Name and description of each type: `connectorNew.types.<id>`. */
 const CONNECTOR_TYPES = [
-  { id: 'REST', name: 'REST API', description: 'Connect to any REST API. Import from OpenAPI/Swagger spec or configure manually.', tone: 'bg-[var(--t-info-bg)] text-[var(--t-info-fg)]' },
-  { id: 'SOAP', name: 'SOAP Service', description: 'Connect to SOAP web services via WSDL.', tone: 'bg-[var(--t-warn-bg)] text-[var(--t-warn-fg)]' },
-  { id: 'GRAPHQL', name: 'GraphQL', description: 'Connect to GraphQL APIs with schema introspection.', tone: 'bg-[var(--t-pink-bg)] text-[var(--t-pink-fg)]' },
-  { id: 'ODATA', name: 'OData', description: 'Connect to OData V2/V4 services, including SAP S/4HANA and SAP Gateway. Services, fields and labels are read from $metadata.', tone: 'bg-[var(--t-success-bg)] text-[var(--t-success-fg)]' },
-  { id: 'MCP', name: 'MCP Server', description: 'Bridge to another MCP server — aggregate multiple MCP servers into one.', tone: 'bg-[var(--t-purple-bg)] text-[var(--t-purple-fg)]' },
-  { id: 'DATABASE', name: 'Database', description: 'Connect to PostgreSQL, MySQL, MariaDB, MSSQL, Oracle, SAP HANA, MongoDB, or SQLite. Supports read-only or read-write mode.', tone: 'bg-[var(--t-emerald-bg)] text-[var(--t-emerald-fg)]' },
+  { id: 'REST', tone: 'bg-[var(--t-info-bg)] text-[var(--t-info-fg)]' },
+  { id: 'SOAP', tone: 'bg-[var(--t-warn-bg)] text-[var(--t-warn-fg)]' },
+  { id: 'GRAPHQL', tone: 'bg-[var(--t-pink-bg)] text-[var(--t-pink-fg)]' },
+  { id: 'ODATA', tone: 'bg-[var(--t-success-bg)] text-[var(--t-success-fg)]' },
+  { id: 'MCP', tone: 'bg-[var(--t-purple-bg)] text-[var(--t-purple-fg)]' },
+  { id: 'DATABASE', tone: 'bg-[var(--t-emerald-bg)] text-[var(--t-emerald-fg)]' },
+  { id: 'EMAIL', tone: 'bg-[var(--brand-tint)] text-[var(--brand)]' },
 ];
 
 // Shared by the type buttons and the marketplace link. A native <button>
@@ -42,10 +54,14 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   ODATA: <ODataIcon />,
   MCP: <McpIcon />,
   DATABASE: <DatabaseIcon />,
+  EMAIL: <MailIcon />,
 };
 
 export default function NewConnectorPage() {
-  const { token } = useAuth();
+  const { token, deploymentMode } = useAuth();
+  const isCloud = deploymentMode === 'cloud';
+  const t = useTranslations('connectorNew');
+  const tfs = useTranslations('fileSearch');
   // What to register in the provider's app, as the server will send it.
   const [oauthRedirectUri, setOauthRedirectUri] = useState<string | null>(null);
   useEffect(() => {
@@ -93,7 +109,11 @@ export default function NewConnectorPage() {
   const [ltRefreshOn401, setLtRefreshOn401] = useState(true);
   const [headerRows, setHeaderRows] = useState<HeaderRow[]>([]);
   const [dbReadOnly, setDbReadOnly] = useState(true);
+  // EMAIL: servers, login and sender (IMAP + SMTP).
+  const [emailForm, setEmailForm] = useState<EmailFormState>(EMPTY_EMAIL_FORM);
   const [error, setError] = useState('');
+  // A create refused at the plan's limit (Cloud): "Pause one or upgrade".
+  const [planLimit, setPlanLimit] = useState<PlanLimitError | null>(null);
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -109,7 +129,7 @@ export default function NewConnectorPage() {
   const [catalogMatches, setCatalogMatches] = useState<CatalogUrlMatch[]>([]);
   useEffect(() => {
     const url = baseUrl.trim();
-    if (!token || !url || selectedType === 'DATABASE' || !url.includes('.')) {
+    if (!token || !url || selectedType === 'DATABASE' || selectedType === 'EMAIL' || !url.includes('.')) {
       setCatalogMatches([]);
       return;
     }
@@ -147,7 +167,7 @@ export default function NewConnectorPage() {
           try {
             loginBody = JSON.parse(raw);
           } catch {
-            throw new Error('Login body must be valid JSON.');
+            throw new Error(t('loginToken.invalidJson'));
           }
         }
         return {
@@ -205,33 +225,46 @@ export default function NewConnectorPage() {
       : {},
   });
 
+  const emailConnectorData = () => ({
+    name,
+    type: 'EMAIL',
+    baseUrl: emailBaseUrl(emailForm),
+    authType: 'BASIC_AUTH',
+    authConfig: emailFormToAuthConfig(emailForm),
+    config: { email: emailFormToConfig(emailForm) },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token || !selectedType) return;
     setError('');
+    setPlanLimit(null);
     if (
       authType === 'OAUTH2' &&
       selectedType !== 'MCP' &&
       oauthGrant === 'password' &&
       (!oauthUsername.trim() || !oauthPassword)
     ) {
-      setError('Enter the username and password the password grant sends to the token URL.');
+      setError(t('oauth.passwordRequired'));
       return;
     }
     setLoading(true);
 
     try {
-      const data: any = {
-        name,
-        type: selectedType,
-        baseUrl,
-        authType,
-      };
-      const authConfig = buildAuthConfig();
+      const data: any =
+        selectedType === 'EMAIL'
+          ? emailConnectorData()
+          : {
+              name,
+              type: selectedType,
+              baseUrl,
+              authType,
+            };
+      const authConfig = selectedType === 'EMAIL' ? data.authConfig : buildAuthConfig();
       if (authConfig) data.authConfig = authConfig;
       const headers = headerRowsToObject(headerRows);
-      if (Object.keys(headers).length > 0) data.headers = headers;
-      if (specUrl) data.specUrl = specUrl;
+      if (Object.keys(headers).length > 0 && selectedType !== 'EMAIL') data.headers = headers;
+      if (specUrl && selectedType !== 'EMAIL') data.specUrl = specUrl;
       if (selectedType === 'DATABASE') {
         data.config = { readOnly: dbReadOnly };
       }
@@ -270,6 +303,7 @@ export default function NewConnectorPage() {
         setCreatedConnector({ id: created.id, name: name || created.name });
       }
     } catch (err: any) {
+      setPlanLimit(planLimitOf(err));
       setError(err.message);
     } finally {
       setLoading(false);
@@ -282,12 +316,16 @@ export default function NewConnectorPage() {
     setLoading(true);
 
     try {
-      const data: any = { name: name || 'Test', type: selectedType, baseUrl, authType };
-      if (selectedType === 'ODATA') data.config = buildODataConfig();
-      const authConfig = buildAuthConfig();
-      if (authConfig) data.authConfig = authConfig;
-      const headers = headerRowsToObject(headerRows);
-      if (Object.keys(headers).length > 0) data.headers = headers;
+      let data: any = { name: name || 'Test', type: selectedType, baseUrl, authType };
+      if (selectedType === 'EMAIL') {
+        data = { ...emailConnectorData(), name: name || 'Test' };
+      } else {
+        if (selectedType === 'ODATA') data.config = buildODataConfig();
+        const authConfig = buildAuthConfig();
+        if (authConfig) data.authConfig = authConfig;
+        const headers = headerRowsToObject(headerRows);
+        if (Object.keys(headers).length > 0) data.headers = headers;
+      }
 
       const created = await connectors.create(data, token);
       const result = await connectors.test(created.id, token);
@@ -300,15 +338,38 @@ export default function NewConnectorPage() {
     }
   };
 
+
+  const fileSearchCard = (
+    <Link
+      key="FILE_SEARCH"
+      href="/connectors/new/file-search?from=connectors_new"
+      className={cn(
+        typeCardClass,
+        'group border-[var(--border)] hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]'
+      )}
+    >
+      <div className="mb-[9px] flex w-full items-center gap-[11px]">
+        <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-[var(--t-info-bg)] text-[var(--t-info-fg)]">
+          <FolderSearchIcon />
+        </span>
+        <span className="text-[14px] font-semibold text-[var(--text)]">{tfs('card.title')}</span>
+        <span className="ml-auto text-[var(--text-3)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--brand)]">
+          <ArrowRightIcon />
+        </span>
+      </div>
+      <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{tfs('card.description')}</p>
+    </Link>
+  );
+
   return (
     <AppShell
-      backTo={{ label: 'Connectors', href: '/connectors' }}
-      title="New connector"
+      backTo={{ label: t('back'), href: '/connectors' }}
+      title={t('title')}
       maxWidth={880}
     >
       <div className="mx-auto w-full max-w-[880px]">
-        <h2 className="mb-[3px] text-[15px] font-semibold text-[var(--text)]">Choose connector type</h2>
-        <p className="mb-4 text-[13px] text-[var(--text-3)]">Start from a ready-made connector, or connect your own API.</p>
+        <h2 className="mb-[3px] text-[15px] font-semibold text-[var(--text)]">{t('chooseType')}</h2>
+        <p className="mb-4 text-[13px] text-[var(--text-3)]">{t('chooseTypeHint')}</p>
 
         <div className="mb-6 grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
           {/* Most services people add already have a ready-made adapter, so the
@@ -326,16 +387,16 @@ export default function NewConnectorPage() {
               <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-[var(--t-success-bg)] text-[var(--t-success-fg)]">
                 <StoreIcon />
               </span>
-              <span className="text-[14px] font-semibold text-[var(--text)]">Marketplace</span>
+              <span className="text-[14px] font-semibold text-[var(--text)]">{t('marketplace.title')}</span>
               <span className="ml-auto text-[var(--text-3)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--brand)]">
                 <ArrowRightIcon />
               </span>
             </div>
             <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">
-              Pick a ready-made connector for a popular service. Auth and tools are pre-configured, just add your credentials.
+              {t('marketplace.description')}
             </p>
           </Link>
-          {CONNECTOR_TYPES.map((type) => (
+          {CONNECTOR_TYPES.map((type) => [
             <button
               key={type.id}
               type="button"
@@ -355,20 +416,28 @@ export default function NewConnectorPage() {
                 <span className={cn('flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px]', type.tone)}>
                   {TYPE_ICONS[type.id]}
                 </span>
-                <span className="text-[14px] font-semibold text-[var(--text)]">{type.name}</span>
+                <span className="text-[14px] font-semibold text-[var(--text)]">{t(`types.${type.id}.name`)}</span>
               </div>
-              <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{type.description}</p>
-            </button>
-          ))}
+              <p className="text-[12px] leading-[1.5] text-[var(--text-3)]">{t(`types.${type.id}.description`)}</p>
+            </button>,
+            // File Search sits next to Database, its closest relative. It runs its
+            // own guided setup (test, scan, describe), so it navigates away like
+            // the marketplace card instead of opening the form below.
+            type.id === 'DATABASE' ? fileSearchCard : null,
+          ])}
         </div>
 
         {selectedType && (
           <Card className="rounded-[14px] p-[22px] shadow-[var(--shadow-sm)]">
             <h3 className="mb-4 text-[14px] font-semibold text-[var(--text)]">
-              Configure {CONNECTOR_TYPES.find((t) => t.id === selectedType)?.name}
+              {t('configure', { type: t(`types.${selectedType}.name`) })}
             </h3>
 
-            {error && isTrialLimitMessage(error) ? (
+            {planLimit ? (
+              <div className="mb-4">
+                <PlanLimitNotice limit={planLimit} />
+              </div>
+            ) : error && isTrialLimitMessage(error) ? (
               <div className="mb-4">
                 <TrialLimitNotice message={error} />
               </div>
@@ -389,17 +458,18 @@ export default function NewConnectorPage() {
                 {testResult.kind && testResult.kind !== 'ok' && (
                   <span className="font-semibold mr-1">
                     {testResult.kind === 'auth_failed' &&
-                      `Credentials rejected${testResult.httpStatus ? ` (${testResult.httpStatus})` : ''}: `}
-                    {testResult.kind === 'not_found' && 'Not found: '}
-                    {testResult.kind === 'unreachable' && 'Unreachable: '}
-                    {testResult.kind === 'error' && 'Error: '}
+                      (testResult.httpStatus
+                        ? t('test.rejectedStatus', { status: testResult.httpStatus })
+                        : t('test.rejected'))}
+                    {testResult.kind === 'not_found' && t('test.notFound')}
+                    {testResult.kind === 'unreachable' && t('test.unreachable')}
+                    {testResult.kind === 'error' && t('test.error')}
                   </span>
                 )}
                 {testResult.message}
                 {testResult.kind === 'auth_failed' && (
                   <div className="mt-1 opacity-90">
-                    Double-check the API key / token / OAuth credentials for this
-                    connector, then test again.
+                    {t('test.checkCredentials')}
                   </div>
                 )}
                 {testResult.suggestedFix?.action === 'add-to-ssrf-allowlist' &&
@@ -409,8 +479,10 @@ export default function NewConnectorPage() {
                         href={testResult.suggestedFix.url || '/admin/settings#ssrf'}
                         className="underline text-sm font-medium hover:no-underline"
                       >
-                        → Add <code>{testResult.suggestedFix.hostname}</code> to the
-                        SSRF allowlist
+                        {t.rich('test.ssrf', {
+                          host: testResult.suggestedFix.hostname,
+                          code: (chunks) => <code>{chunks}</code>,
+                        })}
                       </a>
                     </div>
                   )}
@@ -419,20 +491,24 @@ export default function NewConnectorPage() {
 
             <form className="flex max-w-[560px] flex-col gap-[15px]" onSubmit={handleSubmit}>
               <div>
-                <label className={labelClass}>Connector name</label>
+                <label className={labelClass}>{t('fields.name')}</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g., My REST API"
+                  placeholder={t('fields.namePlaceholder')}
                   className={inputClass}
                   required
                 />
               </div>
 
+              {selectedType === 'EMAIL' ? (
+                <EmailSettingsFields value={emailForm} onChange={setEmailForm} isCloud={isCloud} />
+              ) : (
+              <>
               <div>
                 <label className={labelClass}>
-                  {selectedType === 'DATABASE' ? 'Connection String' : 'Base URL'}
+                  {selectedType === 'DATABASE' ? t('fields.connectionString') : t('fields.baseUrl')}
                 </label>
                 <input
                   type="text"
@@ -458,12 +534,10 @@ export default function NewConnectorPage() {
                     data-testid="catalog-url-match"
                   >
                     <p className="text-[12.5px] font-medium text-[var(--text)]">
-                      {catalogMatches.length === 1
-                        ? 'There is a ready-made connector for this API'
-                        : 'There are ready-made connectors for this API'}
+                      {t('catalogMatch.title', { count: catalogMatches.length })}
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--text-2)]">
-                      Its tools, descriptions and sign-in are already set up and tested, and it gets catalog updates.
+                      {t('catalogMatch.description')}
                     </p>
                     <ul className="mt-2 space-y-1.5">
                       {catalogMatches.map((m) => (
@@ -477,11 +551,11 @@ export default function NewConnectorPage() {
                               <span className="font-medium">{m.name}</span>
                               <span className="text-[var(--text-3)]">
                                 {' '}
-                                · {m.toolCount} {m.toolCount === 1 ? 'tool' : 'tools'}
+                                · {t('catalogMatch.tools', { count: m.toolCount })}
                               </span>
                             </span>
                             <span className="shrink-0 text-xs font-medium text-[var(--t-info-fg)]">
-                              Set it up instead →
+                              {t('catalogMatch.setUp')}
                             </span>
                           </Link>
                         </li>
@@ -491,13 +565,11 @@ export default function NewConnectorPage() {
                 )}
                 {selectedType === 'MCP' && (
                   <p className="mt-1 text-xs text-[var(--text-3)]">
-                    Paste the complete MCP endpoint URL including its path — e.g. a
-                    Snowflake managed server at{' '}
-                    <span className="font-mono">
-                      /api/v2/databases/db/schemas/public/mcp-servers/srv
-                    </span>
-                    . A bare host with no path defaults to{' '}
-                    <span className="font-mono">/mcp</span>.
+                    {t.rich('mcpUrlHint', {
+                      example: '/api/v2/databases/db/schemas/public/mcp-servers/srv',
+                      fallback: '/mcp',
+                      mono: (chunks) => <span className="font-mono">{chunks}</span>,
+                    })}
                   </p>
                 )}
               </div>
@@ -514,26 +586,25 @@ export default function NewConnectorPage() {
                     <span>
                       SAP Gateway (S/4HANA, ECC, BW)
                       <span className="block text-[11.5px] text-[var(--text-3)]">
-                        The base URL is the SAP host; services are found through SAP&apos;s service catalog. Leave
-                        unticked for a single OData service, with its service root as the base URL.
+                        {t('odata.sapHint')}
                       </span>
                     </span>
                   </label>
                   {odataSap && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className={labelClass}>SAP client</label>
+                        <label className={labelClass}>{t('odata.sapClient')}</label>
                         <input
                           type="text"
                           value={odataSapClient}
                           onChange={(e) => setOdataSapClient(e.target.value)}
-                          placeholder="e.g. 100"
+                          placeholder={t('odata.sapClientPlaceholder')}
                           maxLength={3}
                           className={cn(inputClass, 'font-mono')}
                         />
                       </div>
                       <div>
-                        <label className={labelClass}>SAP language</label>
+                        <label className={labelClass}>{t('odata.sapLanguage')}</label>
                         <input
                           type="text"
                           value={odataSapLanguage}
@@ -546,15 +617,14 @@ export default function NewConnectorPage() {
                     </div>
                   )}
                   <p className="text-[11.5px] text-[var(--text-3)]">
-                    The connector comes with tools to list services, read their fields and labels, query entity sets and
-                    read single entities. Specific tools per entity set can be imported from $metadata afterwards.
+                    {t('odata.toolsHint')}
                   </p>
                 </div>
               )}
 
               {selectedType === 'DATABASE' && (
                 <div>
-                  <label className={labelClass}>Access mode</label>
+                  <label className={labelClass}>{t('database.accessMode')}</label>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -566,7 +636,7 @@ export default function NewConnectorPage() {
                           : 'border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)]'
                       )}
                     >
-                      Read-only
+                      {t('database.readOnly')}
                     </button>
                     <button
                       type="button"
@@ -578,13 +648,13 @@ export default function NewConnectorPage() {
                           : 'border border-[var(--border)] text-[var(--text-2)] hover:border-[var(--border-strong)]'
                       )}
                     >
-                      Read &amp; Write
+                      {t('database.readWrite')}
                     </button>
                   </div>
                   <p className="mt-2 text-[11.5px] text-[var(--text-3)]">
                     {dbReadOnly
-                      ? 'Only SELECT queries will be allowed. Safe for analytics and reporting.'
-                      : 'All SQL operations (SELECT, INSERT, UPDATE, DELETE) will be allowed. Use with caution.'}
+                      ? t('database.readOnlyHint')
+                      : t('database.readWriteHint')}
                   </p>
                 </div>
               )}
@@ -593,10 +663,10 @@ export default function NewConnectorPage() {
                 <div>
                   <label className={labelClass}>
                     {selectedType === 'REST'
-                      ? 'OpenAPI Spec URL (optional)'
+                      ? t('spec.openapi')
                       : selectedType === 'GRAPHQL'
-                        ? 'GraphQL Introspection URL (optional)'
-                        : 'WSDL URL (optional)'}
+                        ? t('spec.graphql')
+                        : t('spec.wsdl')}
                   </label>
                   <input
                     type="text"
@@ -612,20 +682,20 @@ export default function NewConnectorPage() {
                     className={cn(inputClass, 'font-mono text-[13px]')}
                   />
                   <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
-                    Provide a spec URL to auto-generate MCP tools.
+                    {t('spec.hint')}
                   </p>
                 </div>
               )}
 
               <div>
-                <label className={labelClass}>Authentication</label>
+                <label className={labelClass}>{t('auth.label')}</label>
                 <AppSelect
                   value={authType}
                   onValueChange={setAuthType}
                   className={inputClass}
                   options={[
-                    { value: 'NONE', label: 'None' },
-                    { value: 'API_KEY', label: 'API Key' },
+                    { value: 'NONE', label: t('auth.none') },
+                    { value: 'API_KEY', label: t('auth.apiKey') },
                     { value: 'BEARER_TOKEN', label: 'Bearer Token' },
                     { value: 'BASIC_AUTH', label: 'Basic Auth' },
                     // A SOAP header: implemented by the SOAP engine only.
@@ -633,21 +703,21 @@ export default function NewConnectorPage() {
                       ? [{ value: 'WS_SECURITY', label: 'WS-Security (UsernameToken)' }]
                       : []),
                     { value: 'OAUTH2', label: 'OAuth 2.0' },
-                    { value: 'LOGIN_TOKEN', label: 'Login → Token (auto-refresh)' },
+                    { value: 'LOGIN_TOKEN', label: t('auth.loginToken') },
                   ]}
                 />
               </div>
 
               {selectedType === 'MCP' && authType === 'OAUTH2' && (
                 <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
-                  After creating the connector, you will be redirected to authorize with the remote MCP server via OAuth. Tools will be discovered automatically after authorization.
+                  {t('oauth.mcpHint')}
                 </div>
               )}
 
               {authType === 'OAUTH2' && selectedType !== 'MCP' && (
                 <div className="flex flex-col gap-3">
                   <div>
-                    <label htmlFor="oauth-grant" className={labelClass}>Grant type</label>
+                    <label htmlFor="oauth-grant" className={labelClass}>{t('oauth.grant')}</label>
                     <select
                       id="oauth-grant"
                       value={oauthGrant}
@@ -659,26 +729,24 @@ export default function NewConnectorPage() {
                       }}
                       className={inputClass}
                     >
-                      <option value="authorization_code">Authorization code (sign in at the provider)</option>
-                      <option value="client_credentials">Client credentials</option>
-                      <option value="password">Password (username and password)</option>
+                      <option value="authorization_code">{t('oauth.grantCode')}</option>
+                      <option value="client_credentials">{t('oauth.grantClient')}</option>
+                      <option value="password">{t('oauth.grantPassword')}</option>
                     </select>
                     {oauthGrant === 'password' && (
                       <p className="mt-1 text-xs text-[var(--text-3)]">
-                        For APIs that issue tokens with no refresh token: a new one is requested with the
-                        username and password whenever it expires. Datto RMM: username = API key,
-                        password = API secret, client ID public-client, secret public, HTTP Basic.
+                        {t('oauth.passwordHint')}
                       </p>
                     )}
                   </div>
                   {oauthGrant === 'password' && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label htmlFor="oauth-username" className={labelClass}>Username</label>
+                        <label htmlFor="oauth-username" className={labelClass}>{t('fields.username')}</label>
                         <input id="oauth-username" type="text" autoComplete="off" value={oauthUsername} onChange={(e) => setOauthUsername(e.target.value)} className={cn(inputClass, 'font-mono text-[13px]')} />
                       </div>
                       <div>
-                        <label htmlFor="oauth-password" className={labelClass}>Password</label>
+                        <label htmlFor="oauth-password" className={labelClass}>{t('fields.password')}</label>
                         <input id="oauth-password" type="password" autoComplete="new-password" value={oauthPassword} onChange={(e) => setOauthPassword(e.target.value)} className={cn(inputClass, 'font-mono text-[13px]')} />
                       </div>
                     </div>
@@ -690,12 +758,12 @@ export default function NewConnectorPage() {
                     </div>
                     <div>
                       <label className={labelClass}>Client Secret</label>
-                      <input type="password" value={oauthClientSecret} onChange={(e) => setOauthClientSecret(e.target.value)} placeholder="optional" className={cn(inputClass, 'font-mono text-[13px]')} />
+                      <input type="password" value={oauthClientSecret} onChange={(e) => setOauthClientSecret(e.target.value)} placeholder={t('fields.optional')} className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                   </div>
                   {!isMachineGrant(oauthGrant) && (
                     <div>
-                      <label className={labelClass}>Authorization URL</label>
+                      <label className={labelClass}>{t('oauth.authorizationUrl')}</label>
                       <input type="text" value={oauthAuthUrl} onChange={(e) => setOauthAuthUrl(e.target.value)} placeholder="https://provider.com/oauth/authorize" className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                   )}
@@ -705,33 +773,38 @@ export default function NewConnectorPage() {
                   </div>
                   <div>
                     <label className={labelClass}>Scopes</label>
-                    <input type="text" value={oauthScopes} onChange={(e) => setOauthScopes(e.target.value)} placeholder="read write (space-separated, optional)" className={cn(inputClass, 'font-mono text-[13px]')} />
+                    <input type="text" value={oauthScopes} onChange={(e) => setOauthScopes(e.target.value)} placeholder={t('oauth.scopesPlaceholder')} className={cn(inputClass, 'font-mono text-[13px]')} />
                   </div>
                   <div>
-                    <label className={labelClass}>Token endpoint authentication</label>
+                    <label className={labelClass}>{t('oauth.tokenAuth')}</label>
                     <select
                       value={oauthTokenAuthMethod}
                       onChange={(e) => setOauthTokenAuthMethod(e.target.value)}
                       className={inputClass}
                     >
-                      <option value="client_secret_post">Client secret in body{isMachineGrant(oauthGrant) ? '' : ' (default)'}</option>
-                      <option value="client_secret_basic">HTTP Basic header (client_secret_basic){isMachineGrant(oauthGrant) ? ' (default)' : ''}</option>
+                      <option value="client_secret_post">
+                        {isMachineGrant(oauthGrant) ? t('oauth.secretInBody') : t('oauth.secretInBodyDefault')}
+                      </option>
+                      <option value="client_secret_basic">
+                        {isMachineGrant(oauthGrant) ? t('oauth.basicHeaderDefault') : t('oauth.basicHeader')}
+                      </option>
                     </select>
                     <p className="mt-1 text-xs text-[var(--text-3)]">
                       {isMachineGrant(oauthGrant)
-                        ? 'How the client ID and secret reach the token URL.'
-                        : 'Switch to HTTP Basic if the provider returns 401 when exchanging the code — DATEV requires it. Applies to token refreshes too.'}
+                        ? t('oauth.tokenAuthMachineHint')
+                        : t('oauth.tokenAuthHint')}
                     </p>
                   </div>
                   {isMachineGrant(oauthGrant) ? (
                   <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
-                    <p>No sign-in needed: the connector requests its access token from the token URL, and a new one whenever it expires.</p>
+                    <p>{t('oauth.machineHint')}</p>
                   </div>
                   ) : (
                   <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-sm text-[var(--t-info-fg)]">
-                    <p>After creating the connector, you will be redirected to authorize via OAuth2. Tokens will be stored securely.</p>
+                    <p>{t('oauth.redirectHint')}</p>
                     <p className="mt-1.5 text-xs opacity-90">
-                      Set the <strong>Redirect / Callback URI</strong> in your OAuth provider to: <code className="rounded bg-[var(--surface-2)] px-1 py-0.5 font-mono">{oauthRedirectUri ?? '…'}</code>
+                      {t.rich('oauth.callback', { b: (chunks) => <strong>{chunks}</strong> })}{' '}
+                      <code className="rounded bg-[var(--surface-2)] px-1 py-0.5 font-mono">{oauthRedirectUri ?? '…'}</code>
                     </p>
                   </div>
                   )}
@@ -741,16 +814,16 @@ export default function NewConnectorPage() {
               {authType === 'API_KEY' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className={labelClass}>Header name</label>
+                    <label className={labelClass}>{t('apiKey.header')}</label>
                     <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} placeholder="X-API-Key" className={cn(inputClass, 'font-mono text-[13px]')} />
                     {authKey && !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(authKey) && (
                       <p className="mt-1 text-[12px]" style={{ color: 'var(--danger)' }}>
-                        The HTTP header the key is sent in, e.g. X-API-Key: letters, digits and - only, no spaces.
+                        {t('apiKey.headerInvalid')}
                       </p>
                     )}
                   </div>
                   <div>
-                    <label className={labelClass}>API key</label>
+                    <label className={labelClass}>{t('apiKey.key')}</label>
                     <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} placeholder="sk-..." className={cn(inputClass, 'font-mono text-[13px]')} />
                   </div>
                 </div>
@@ -764,11 +837,11 @@ export default function NewConnectorPage() {
               {authType === 'BASIC_AUTH' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className={labelClass}>Username</label>
+                    <label className={labelClass}>{t('fields.username')}</label>
                     <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} className={inputClass} />
                   </div>
                   <div>
-                    <label className={labelClass}>Password</label>
+                    <label className={labelClass}>{t('fields.password')}</label>
                     <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} className={inputClass} />
                   </div>
                 </div>
@@ -777,27 +850,27 @@ export default function NewConnectorPage() {
                 <div className="flex flex-col gap-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className={labelClass}>Username</label>
+                      <label className={labelClass}>{t('fields.username')}</label>
                       <input type="text" value={authKey} onChange={(e) => setAuthKey(e.target.value)} className={inputClass} />
                     </div>
                     <div>
-                      <label className={labelClass}>Password</label>
+                      <label className={labelClass}>{t('fields.password')}</label>
                       <input type="password" value={authValue} onChange={(e) => setAuthValue(e.target.value)} className={inputClass} />
                     </div>
                   </div>
                   <div>
-                    <label className={labelClass}>Password type</label>
+                    <label className={labelClass}>{t('wsSecurity.passwordType')}</label>
                     <AppSelect
                       value={wsPasswordType}
                       onValueChange={setWsPasswordType}
                       className={inputClass}
                       options={[
-                        { value: 'PasswordText', label: 'PasswordText (default)' },
+                        { value: 'PasswordText', label: t('wsSecurity.passwordTextDefault') },
                         { value: 'PasswordDigest', label: 'PasswordDigest' },
                       ]}
                     />
                     <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
-                      Sent as a wsse:Security UsernameToken in the SOAP header. PasswordDigest sends a hash of the password with a nonce and timestamp instead of the password itself.
+                      {t('wsSecurity.hint')}
                     </p>
                   </div>
                 </div>
@@ -805,32 +878,37 @@ export default function NewConnectorPage() {
               {authType === 'LOGIN_TOKEN' && (
                 <div className="flex flex-col gap-3">
                   <div className="rounded-[9px] border border-[var(--t-info-fg)]/20 bg-[var(--t-info-bg)] p-3 text-[12.5px] text-[var(--t-info-fg)]">
-                    For APIs with short-lived tokens (e.g. HRworks): we POST your credentials to the login endpoint, read the token from the response, send it as a Bearer token, and refresh it automatically before it expires.
+                    {t('loginToken.intro')}
                   </div>
                   <div>
-                    <label className={labelClass}>Login URL</label>
+                    <label className={labelClass}>{t('loginToken.url')}</label>
                     <input type="text" value={ltLoginUrl} onChange={(e) => setLtLoginUrl(e.target.value)} placeholder="https://api.hrworks.de/v2/authentication" className={cn(inputClass, 'font-mono text-[13px]')} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className={labelClass}>Username / Access key</label>
-                      <input type="text" value={ltUsername} onChange={(e) => setLtUsername(e.target.value)} placeholder="access key" className={cn(inputClass, 'font-mono text-[13px]')} />
+                      <label className={labelClass}>{t('loginToken.username')}</label>
+                      <input type="text" value={ltUsername} onChange={(e) => setLtUsername(e.target.value)} placeholder={t('loginToken.usernamePlaceholder')} className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                     <div>
-                      <label className={labelClass}>Password / Secret</label>
-                      <input type="password" value={ltPassword} onChange={(e) => setLtPassword(e.target.value)} placeholder="secret" className={cn(inputClass, 'font-mono text-[13px]')} />
+                      <label className={labelClass}>{t('loginToken.password')}</label>
+                      <input type="password" value={ltPassword} onChange={(e) => setLtPassword(e.target.value)} placeholder={t('loginToken.passwordPlaceholder')} className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                   </div>
                   <div>
-                    <label className={labelClass}>Login request body (JSON)</label>
+                    <label className={labelClass}>{t('loginToken.body')}</label>
                     <textarea value={ltLoginBody} onChange={(e) => setLtLoginBody(e.target.value)} rows={4} className={cn(inputClass, 'h-auto py-2 font-mono text-[13px]')} />
                     <p className="mt-1.5 text-[11.5px] text-[var(--text-3)]">
-                      Body sent to the login URL. Use <code>{'${username}'}</code> / <code>{'${password}'}</code> placeholders. HRworks uses <code>{'{ "accessKey": "${username}", "secretAccessKey": "${password}" }'}</code>.
+                      {t.rich('loginToken.bodyHint', {
+                        user: '${username}',
+                        pass: '${password}',
+                        example: '{ "accessKey": "${username}", "secretAccessKey": "${password}" }',
+                        code: (chunks) => <code>{chunks}</code>,
+                      })}
                     </p>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className={labelClass}>Method</label>
+                      <label className={labelClass}>{t('loginToken.method')}</label>
                       <AppSelect
                         value={ltMethod}
                         onValueChange={setLtMethod}
@@ -839,23 +917,25 @@ export default function NewConnectorPage() {
                       />
                     </div>
                     <div>
-                      <label className={labelClass}>Token JSON path</label>
+                      <label className={labelClass}>{t('loginToken.tokenPath')}</label>
                       <input type="text" value={ltTokenPath} onChange={(e) => setLtTokenPath(e.target.value)} placeholder="token" className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                     <div>
-                      <label className={labelClass}>Token TTL (s)</label>
+                      <label className={labelClass}>{t('loginToken.ttl')}</label>
                       <input type="number" value={ltTtl} onChange={(e) => setLtTtl(e.target.value)} placeholder="900" className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                   </div>
                   <label className="flex items-center gap-2 text-[12.5px] text-[var(--text-2)]">
                     <input type="checkbox" checked={ltRefreshOn401} onChange={(e) => setLtRefreshOn401(e.target.checked)} />
-                    Re-login and retry automatically on a 401 response
+                    {t('loginToken.refreshOn401')}
                   </label>
                 </div>
               )}
 
               {selectedType !== 'DATABASE' && selectedType !== 'MCP' && (
                 <HeadersEditor rows={headerRows} onChange={setHeaderRows} />
+              )}
+              </>
               )}
 
               <div className="flex gap-[10px] pt-1">
@@ -864,15 +944,15 @@ export default function NewConnectorPage() {
                   disabled={loading}
                   className="h-10 rounded-[9px] bg-[var(--brand)] px-[18px] text-[13px] font-semibold text-[var(--primary-foreground)] hover:bg-[var(--brand-strong)] disabled:opacity-50"
                 >
-                  {loading ? 'Creating...' : 'Create connector'}
+                  {loading ? t('creating') : t('create')}
                 </button>
                 <button
                   type="button"
                   onClick={handleTest}
-                  disabled={loading || !baseUrl}
+                  disabled={loading || (selectedType === 'EMAIL' ? !emailForm.imapHost.trim() : !baseUrl)}
                   className="h-10 rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-4 text-[13px] font-medium text-[var(--text-2)] hover:border-[var(--border-strong)] disabled:opacity-50"
                 >
-                  Test connection
+                  {t('testConnection')}
                 </button>
               </div>
             </form>
@@ -949,6 +1029,14 @@ function ODataIcon() {
     </svg>
   );
 }
+function MailIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-10 6L2 7" />
+    </svg>
+  );
+}
 function DatabaseIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -974,6 +1062,16 @@ function ArrowRightIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12h14" />
       <path d="m12 5 7 7-7 7" />
+    </svg>
+  );
+}
+
+function FolderSearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1" />
+      <circle cx="17" cy="17" r="3" />
+      <path d="m21 21-1.9-1.9" />
     </svg>
   );
 }

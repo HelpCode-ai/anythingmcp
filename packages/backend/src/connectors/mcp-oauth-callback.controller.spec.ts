@@ -1,3 +1,7 @@
+// `openid-client` v6 is ESM-only and Jest cannot parse it; the controller
+// imports SsoService (the connect page's sign-in), whose network half these
+// tests do not exercise.
+jest.mock('openid-client', () => ({}));
 import { BadGatewayException, BadRequestException } from '@nestjs/common';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 import { TokenExchangeError } from './mcp-oauth.service';
@@ -19,6 +23,7 @@ function makeController(overrides: {
   noFlow?: boolean;
   returnTo?: string;
   exchangeThrows?: Error;
+  credentialScope?: 'SHARED' | 'USER';
 } = {}) {
   const reloadConnectorTools = jest.fn().mockResolvedValue(undefined);
   const updateAuthConfigMerge = jest.fn().mockResolvedValue(undefined);
@@ -49,6 +54,9 @@ function makeController(overrides: {
   const connectorsService: any = {
     updateAuthConfigMerge,
     findByIdInternal: jest.fn().mockResolvedValue({
+      id: 'conn-1',
+      organizationId: 'org-1',
+      credentialScope: overrides.credentialScope ?? 'SHARED',
       type: overrides.connectorType ?? 'REST',
       baseUrl: 'https://accounting-clients.api.datev.de/platform-sandbox/v2',
       headers: {},
@@ -73,6 +81,7 @@ function makeController(overrides: {
   const productEvents: any = { log: jest.fn().mockResolvedValue(undefined) };
   const mcpServer: any = { reloadConnectorTools };
   const configService: any = { get: jest.fn().mockReturnValue('https://cloud.example.com') };
+  const userCredentials: any = { store: jest.fn().mockResolvedValue(undefined) };
 
   const controller = new McpOAuthCallbackController(
     mcpOAuthService,
@@ -82,9 +91,11 @@ function makeController(overrides: {
     mcpServer,
     configService,
     productEvents,
+    userCredentials,
   );
   return {
     controller,
+    userCredentials,
     productEvents,
     reloadConnectorTools,
     updateAuthConfigMerge,
@@ -101,6 +112,14 @@ function makeRes() {
 const asUser = (sub: string) => ({ user: { sub } });
 
 describe('McpOAuthCallbackController — provider redirect', () => {
+  it('acknowledges a POST (Mercado Libre notifications) and touches nothing', async () => {
+    const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
+    expect(controller.acknowledgeNotification()).toEqual({});
+    expect(mcpOAuthService.getPendingFlow).not.toHaveBeenCalled();
+    expect(mcpOAuthService.takePendingFlow).not.toHaveBeenCalled();
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+  });
+
   it('forwards code and state to the dashboard and exchanges nothing itself', async () => {
     const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
     const res = makeRes();
@@ -454,5 +473,43 @@ describe('McpOAuthCallbackController: MCP bridges', () => {
     expect(out.toolsImported).toBe(0);
     expect(prisma.mcpTool.update).not.toHaveBeenCalled();
     expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('McpOAuthCallbackController — per-user credentials', () => {
+  it("stores the user's own tokens on their row and only the client on the connector", async () => {
+    const { controller, updateAuthConfigMerge, userCredentials } = makeController({
+      credentialScope: 'USER',
+      flow: { forUser: true },
+    });
+    await controller.complete(asUser('user-1'), { state: 's', code: 'c' });
+
+    const written = updateAuthConfigMerge.mock.calls[0][1];
+    expect(written).not.toHaveProperty('accessToken');
+    expect(written).not.toHaveProperty('refreshToken');
+    expect(written.clientId).toBe('cid');
+
+    expect(userCredentials.store).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conn-1', organizationId: 'org-1' }),
+      'user-1',
+      expect.objectContaining({ accessToken: 'AT', refreshToken: 'RT' }),
+    );
+  });
+
+  it('stores nothing when the connector went per-user during a shared authorization', async () => {
+    const { controller, updateAuthConfigMerge, userCredentials } = makeController({ credentialScope: 'USER' });
+    await expect(controller.complete(asUser('user-1'), { state: 's', code: 'c' })).rejects.toThrow(/switched/);
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+    expect(userCredentials.store).not.toHaveBeenCalled();
+  });
+
+  it('stores nothing when the connector went back to shared during a user sign-in', async () => {
+    const { controller, updateAuthConfigMerge, userCredentials } = makeController({
+      credentialScope: 'SHARED',
+      flow: { forUser: true },
+    });
+    await expect(controller.complete(asUser('user-1'), { state: 's', code: 'c' })).rejects.toThrow(/switched/);
+    expect(updateAuthConfigMerge).not.toHaveBeenCalled();
+    expect(userCredentials.store).not.toHaveBeenCalled();
   });
 });

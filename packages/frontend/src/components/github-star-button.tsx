@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { useEdition } from '@/lib/use-edition';
 
 const STORAGE_KEY = 'amcp:hide-github-star';
 
 export function GithubStarButton() {
+  const t = useTranslations('nav.githubStar');
   const { edition } = useEdition();
   const [dismissed, setDismissed] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -51,13 +53,13 @@ export function GithubStarButton() {
         >
           <path d="m12 3 2.2 4.6 5 .7-3.6 3.5.9 5L12 14.9 7.5 16.8l.9-5L4.8 8.3l5-.7z" />
         </svg>
-        <span className="truncate font-medium">Star on GitHub</span>
+        <span className="truncate font-medium">{t('label')}</span>
       </a>
       <button
         type="button"
         onClick={handleDismiss}
-        title="Hide button"
-        aria-label="Hide Star on GitHub button"
+        title={t('hide')}
+        aria-label={t('hideAriaLabel')}
         className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-[var(--text-3)] hover:bg-[var(--surface-2)] hover:text-[var(--text)] transition-colors"
       >
         <svg

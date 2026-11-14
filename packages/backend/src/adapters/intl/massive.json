@@ -1,0 +1,1792 @@
+{
+  "slug": "massive",
+  "name": "Massive",
+  "aliases": [
+    "Polygon.io",
+    "Polygon io",
+    "Massive.com"
+  ],
+  "description": "Market data from Massive (formerly Polygon.io): US stock, option, index, forex and crypto price bars, trades, quotes and snapshots, ticker details, news with sentiment, financial statements and ratios, dividends, splits, technical indicators, market status, treasury yields and inflation. Read-only, API key (free Basic plan available).",
+  "instructions": "## Massive (formerly Polygon.io)\nThis connector reads the **Massive** market data REST API (`https://api.massive.com`; Polygon.io renamed itself Massive in October 2025, and `api.polygon.io` keeps answering with the same keys). It covers US stocks, options, indices, forex and crypto: price bars, trades and quotes, snapshots, reference data on tickers and exchanges, news with sentiment, company financials and ratios, dividends and splits, technical indicators, market status and holidays, and Federal Reserve treasury yields and inflation. Everything is read-only.\n\n**Setup**\n1. Sign up at https://massive.com (the free Basic plan needs no card) and open **Dashboard > API Keys** (https://massive.com/dashboard/keys).\n2. Paste the key into `MASSIVE_API_KEY`. It is sent as `Authorization: Bearer`.\n\n**What your plan allows** (stocks; options, indices and currencies have their own plans):\n- Basic (free): 5 requests per minute, end-of-day data, 2 years of history: aggregates, previous close, daily open and close, reference data, news, dividends, splits, technical indicators, market status, treasury yields and inflation.\n- Starter: unlimited requests, 15-minute delayed data, 5 years, plus snapshots and gainers and losers. Developer: adds trades, 10 years. Advanced: real-time, full history, quotes, financial statements and ratios.\n- A call outside the plan answers 403 NOT_AUTHORIZED with a message naming the plan; tell the user instead of retrying.\n\n**Tickers**: stocks plain (`AAPL`, `BRK.B`), options `O:AAPL271217C00250000` (underlying, expiry YYMMDD, C or P, strike times 1000 in 8 digits), forex `C:EURUSD`, crypto `X:BTCUSD`, indices `I:SPX`. Unknown symbol: `massive_list_tickers` with `search`.\n\n**Workflow**\n- Market open: `massive_get_market_status`; holidays: `massive_get_market_holidays`.\n- Price history: `massive_get_aggregates` (e.g. multiplier 1, timespan day, from and to as YYYY-MM-DD); latest bar: `massive_get_previous_close`; one day with pre and after hours: `massive_get_daily_open_close`.\n- Now: `massive_get_stock_snapshot` for one stock, `massive_get_snapshots` for up to 250 tickers of any asset class, `massive_get_gainers_losers` for movers, `massive_get_last_trade` and `massive_get_last_quote`.\n- Tick data: `massive_list_trades` and `massive_list_quotes` for one day (`timestamp` = YYYY-MM-DD) or a range.\n- Company: `massive_get_ticker_details` (profile, market cap, shares, SIC), `massive_get_related_companies`, `massive_list_news`, `massive_list_dividends`, `massive_list_splits`.\n- Financials: `massive_list_income_statements`, `massive_list_balance_sheets`, `massive_list_cash_flow_statements` with `tickers` and `timeframe`; `massive_list_financial_ratios` for valuation multiples and as a screener (e.g. `market_cap_gte`, `price_to_earnings_lte`, sort `market_cap.desc`).\n- Options: `massive_list_options_contracts` to find contracts, `massive_get_options_chain` for prices and greeks across a chain (filter expiration and strikes), `massive_get_option_contract_snapshot` for one contract.\n- Forex and crypto: `massive_convert_currency`, `massive_get_last_forex_quote`, `massive_get_last_crypto_trade`; history with `massive_get_aggregates` on `C:` or `X:` tickers.\n- Indicators: `massive_get_technical_indicator` (sma, ema, rsi, macd).\n- Economy: `massive_get_treasury_yields`, `massive_get_inflation`.\n- Reference lists: `massive_list_ticker_types`, `massive_list_exchanges`.\n\n**Reading the answers**: bars use short keys: `o` open, `h` high, `l` low, `c` close, `v` volume, `vw` volume-weighted average price, `n` number of trades, `t` start of the bar as a Unix timestamp in **milliseconds** (UTC). Trades and quotes carry nanosecond timestamps (`sip_timestamp`). Prices are in the quote currency; financial statement values are in full units of the reporting currency. Exchanges are numeric ids (see `massive_list_exchanges`).\n\n**Paging**: lists return `next_url` when more results exist. For the v3 lists (tickers, trades, quotes, news, snapshots, options) pass the value after `cursor=` in `next_url` as `cursor`. For the financials, dividends, splits and economy lists, narrow the date range or raise `limit` instead.\n\n**Limits and errors**: 401 means a missing or unknown key, 403 a plan that does not include the data, 429 too many requests (Basic: 5 per minute, wait a minute). An empty `results` with status OK means no data for the range (e.g. a holiday).\n\n**Out of scope**: WebSocket streams, flat files, futures, Benzinga partner data and SEC filing texts. Massive also runs an official MCP server at https://mcp.massive.com.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "massive",
+  "docsUrl": "https://massive.com/docs/rest/quickstart",
+  "requiredEnvVars": [
+    "MASSIVE_API_KEY"
+  ],
+  "envVarMeta": {
+    "MASSIVE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "massive.com > Dashboard > API Keys (the free Basic plan is enough to start). Keys created on polygon.io keep working. Sent as Authorization: Bearer.",
+      "link": "https://massive.com/dashboard/keys",
+      "pattern": "^[A-Za-z0-9_]{20,64}$",
+      "patternMessage": "Paste only the key from the dashboard, without apiKey= or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Massive refused the API key (\"Unknown API Key\"). Copy it again from https://massive.com/dashboard/keys.",
+    "403": "The key works, but your Massive plan does not include this data. Check the plan at https://massive.com/pricing.",
+    "429": "Massive rate limit reached: the free Basic plan allows 5 requests per minute. Wait a minute and verify again."
+  },
+  "probe": {
+    "tool": "massive_get_market_status"
+  },
+  "connector": {
+    "name": "Massive",
+    "type": "REST",
+    "baseUrl": "https://api.massive.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MASSIVE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "massive_get_market_status",
+      "description": "Get whether US stock, options and futures markets, forex, crypto and the main indices are open, closed, in pre-market or after-hours right now, with the server time. No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/marketstatus/now"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_market_holidays",
+      "description": "List upcoming US market holidays and early closes per exchange (NYSE, Nasdaq, OTC) with date, status (closed or early-close) and opening and closing times.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/marketstatus/upcoming"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_aggregates",
+      "description": "Get price bars (open, high, low, close, volume, VWAP, trade count) for a stock, option, forex pair, crypto pair or index over a date range, at any size from seconds to years, e.g. 1 day, 5 minute or 1 week bars.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive ticker. Stocks: AAPL. Options: O:SPY251219C00650000. Forex: C:EURUSD. Crypto: X:BTCUSD. Indices: I:SPX."
+          },
+          "multiplier": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Bar size multiplier, e.g. 1 with timespan day for daily bars, 5 with minute for 5-minute bars."
+          },
+          "timespan": {
+            "type": "string",
+            "enum": [
+              "second",
+              "minute",
+              "hour",
+              "day",
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "description": "Bar unit."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the window, YYYY-MM-DD or a Unix timestamp in milliseconds."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the window, YYYY-MM-DD or a Unix timestamp in milliseconds."
+          },
+          "adjusted": {
+            "type": "boolean",
+            "description": "false for prices not adjusted for splits; default true."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc (oldest first) or desc (newest first)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 5000,
+            "description": "Maximum base aggregates used to build the bars, up to 50000 (default 5000)."
+          }
+        },
+        "required": [
+          "ticker",
+          "multiplier",
+          "timespan",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from}/{to}",
+        "queryParams": {
+          "adjusted": "$adjusted",
+          "sort": "$sort",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_previous_close",
+      "description": "Get the previous trading day's bar (open, high, low, close, volume, VWAP) for a stock, option, forex pair, crypto pair or index.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive ticker. Stocks: AAPL. Options: O:SPY251219C00650000. Forex: C:EURUSD. Crypto: X:BTCUSD. Indices: I:SPX."
+          },
+          "adjusted": {
+            "type": "boolean",
+            "description": "false for prices not adjusted for splits; default true."
+          }
+        },
+        "required": [
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/aggs/ticker/{ticker}/prev",
+        "queryParams": {
+          "adjusted": "$adjusted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_daily_open_close",
+      "description": "Get the open, high, low, close, volume and pre-market and after-hours prices of a stock, option or index on one date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive ticker. Stocks: AAPL. Options: O:SPY251219C00650000. Forex: C:EURUSD. Crypto: X:BTCUSD. Indices: I:SPX."
+          },
+          "date": {
+            "type": "string",
+            "description": "Trading day, YYYY-MM-DD."
+          },
+          "adjusted": {
+            "type": "boolean",
+            "description": "false for prices not adjusted for splits; default true."
+          }
+        },
+        "required": [
+          "ticker",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/open-close/{ticker}/{date}",
+        "queryParams": {
+          "adjusted": "$adjusted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_trades",
+      "description": "List the individual trades (tick data) of a stock, option or crypto ticker for a day or time range: price, size, exchange, conditions and SIP, participant and TRF timestamps. Needs a Developer plan or higher.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive ticker. Stocks: AAPL. Options: O:SPY251219C00650000. Forex: C:EURUSD. Crypto: X:BTCUSD. Indices: I:SPX."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "One day (YYYY-MM-DD) or an exact nanosecond timestamp."
+          },
+          "timestamp_gte": {
+            "type": "string",
+            "description": "From this time on: YYYY-MM-DD or a nanosecond timestamp."
+          },
+          "timestamp_lte": {
+            "type": "string",
+            "description": "Up to this time: YYYY-MM-DD or a nanosecond timestamp."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 100,
+            "description": "Results per page, 1 to 50000."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the cursor value from next_url of the previous answer (the part after cursor=)."
+          }
+        },
+        "required": [
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/trades/{ticker}",
+        "queryParams": {
+          "timestamp": "$timestamp",
+          "timestamp.gte": "$timestamp_gte",
+          "timestamp.lte": "$timestamp_lte",
+          "order": "$order",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_quotes",
+      "description": "List the quotes (NBBO for stocks, BBO for forex) of a stock, option or forex ticker for a day or time range: bid and ask price and size, exchanges, conditions and timestamps. Needs an Advanced plan for stocks (Developer or higher for options).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive ticker. Stocks: AAPL. Options: O:SPY251219C00650000. Forex: C:EURUSD. Crypto: X:BTCUSD. Indices: I:SPX."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "One day (YYYY-MM-DD) or an exact nanosecond timestamp."
+          },
+          "timestamp_gte": {
+            "type": "string",
+            "description": "From this time on: YYYY-MM-DD or a nanosecond timestamp."
+          },
+          "timestamp_lte": {
+            "type": "string",
+            "description": "Up to this time: YYYY-MM-DD or a nanosecond timestamp."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 100,
+            "description": "Results per page, 1 to 50000."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the cursor value from next_url of the previous answer (the part after cursor=)."
+          }
+        },
+        "required": [
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/quotes/{ticker}",
+        "queryParams": {
+          "timestamp": "$timestamp",
+          "timestamp.gte": "$timestamp_gte",
+          "timestamp.lte": "$timestamp_lte",
+          "order": "$order",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_last_trade",
+      "description": "Get the most recent trade of a US stock or an option contract: price, size, exchange, conditions and timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Stock ticker such as AAPL, or option ticker such as O:SPY251219C00650000."
+          }
+        },
+        "required": [
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/last/trade/{ticker}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_last_quote",
+      "description": "Get the most recent NBBO quote of a US stock: bid and ask price, size, exchanges and timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive US stock ticker, e.g. AAPL, MSFT, BRK.B."
+          }
+        },
+        "required": [
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/last/nbbo/{ticker}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_snapshots",
+      "description": "Get current snapshots for up to 250 tickers of any asset class at once (universal snapshot): last trade and quote, today's session (open, high, low, close, change, volume), and for options the greeks, implied volatility and open interest. Needs a paid plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker_any_of": {
+            "type": "string",
+            "description": "Comma-separated tickers, up to 250, mixing asset classes, e.g. AAPL,NVDA,X:BTCUSD,C:EURUSD,I:SPX,O:SPY251219C00650000."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "stocks",
+              "options",
+              "crypto",
+              "fx",
+              "indices"
+            ],
+            "description": "Only this asset class."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 10,
+            "description": "Results per page, 1 to 250."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the cursor value from next_url of the previous answer (the part after cursor=)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/snapshot",
+        "queryParams": {
+          "ticker.any_of": "$ticker_any_of",
+          "type": "$type",
+          "order": "$order",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_stock_snapshot",
+      "description": "Get the current snapshot of one US stock: today's and the previous day's bars, the current minute bar, last trade, last quote, and today's change and change percent. Needs a Starter plan or higher.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive US stock ticker, e.g. AAPL, MSFT, BRK.B."
+          }
+        },
+        "required": [
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_gainers_losers",
+      "description": "Get the 20 US stocks with the largest percentage gain or loss today (minimum volume 10,000), with their snapshots. Needs a Starter plan or higher.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "gainers",
+              "losers"
+            ],
+            "description": "gainers or losers."
+          },
+          "include_otc": {
+            "type": "boolean",
+            "description": "true includes OTC securities; default false."
+          }
+        },
+        "required": [
+          "direction"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/snapshot/locale/us/markets/stocks/{direction}",
+        "queryParams": {
+          "include_otc": "$include_otc"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_tickers",
+      "description": "Search and list tickers of stocks, ETFs, indices, forex and crypto by name, type, market, exchange, CIK or CUSIP, active or delisted: ticker, name, market, locale, primary exchange, type, currency, CIK, FIGI codes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Words in the ticker or company name, e.g. apple."
+          },
+          "ticker": {
+            "type": "string",
+            "description": "One exact ticker."
+          },
+          "type": {
+            "type": "string",
+            "description": "Ticker type code, e.g. CS (common stock), ETF, ADRC, PFD, WARRANT, INDEX. All codes: massive_list_ticker_types."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "stocks",
+              "crypto",
+              "fx",
+              "otc",
+              "indices"
+            ],
+            "description": "Market."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Primary exchange MIC, e.g. XNAS (Nasdaq), XNYS (NYSE)."
+          },
+          "cusip": {
+            "type": "string",
+            "description": "CUSIP to look up (it is not returned in the answer)."
+          },
+          "cik": {
+            "type": "string",
+            "description": "SEC CIK, e.g. 0000320193."
+          },
+          "date": {
+            "type": "string",
+            "description": "Tickers as they were on this date, YYYY-MM-DD."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true (default) for actively traded tickers, false for delisted ones."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "ticker",
+              "name",
+              "market",
+              "locale",
+              "primary_exchange",
+              "type",
+              "cik",
+              "last_updated_utc",
+              "delisted_utc"
+            ],
+            "description": "Sort field, default ticker."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Results per page, 1 to 1000."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the cursor value from next_url of the previous answer (the part after cursor=)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/reference/tickers",
+        "queryParams": {
+          "search": "$search",
+          "ticker": "$ticker",
+          "type": "$type",
+          "market": "$market",
+          "exchange": "$exchange",
+          "cusip": "$cusip",
+          "cik": "$cik",
+          "date": "$date",
+          "active": "$active",
+          "order": "$order",
+          "sort": "$sort",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_ticker_details",
+      "description": "Get the details of one ticker: company name, description, homepage, address, phone, SIC code and industry, market capitalisation, shares outstanding, employees, listing date, primary exchange, CIK, FIGI and logo URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive US stock ticker, e.g. AAPL, MSFT, BRK.B."
+          },
+          "date": {
+            "type": "string",
+            "description": "Details as of this date, YYYY-MM-DD; default today."
+          }
+        },
+        "required": [
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/reference/tickers/{ticker}",
+        "queryParams": {
+          "date": "$date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_ticker_types",
+      "description": "List the ticker type codes with their descriptions (CS common stock, ETF, ADRC, PFD and more), optionally per asset class and locale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_class": {
+            "type": "string",
+            "enum": [
+              "stocks",
+              "options",
+              "crypto",
+              "fx",
+              "indices"
+            ],
+            "description": "Asset class."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "us",
+              "global"
+            ],
+            "description": "us or global."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/reference/tickers/types",
+        "queryParams": {
+          "asset_class": "$asset_class",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_exchanges",
+      "description": "List the exchanges, trading venues and reporting facilities Massive covers: id, name, MIC, operating MIC, type, asset class, locale and website.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_class": {
+            "type": "string",
+            "enum": [
+              "stocks",
+              "options",
+              "crypto",
+              "fx",
+              "futures"
+            ],
+            "description": "Asset class."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "us",
+              "global"
+            ],
+            "description": "us or global."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/reference/exchanges",
+        "queryParams": {
+          "asset_class": "$asset_class",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_related_companies",
+      "description": "List companies related to a stock (peers and competitors derived from news and returns), as tickers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive US stock ticker, e.g. AAPL, MSFT, BRK.B."
+          }
+        },
+        "required": [
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/related-companies/{ticker}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_news",
+      "description": "List recent news articles about a ticker or the market: title, author, publisher, publication time, URL, description, keywords, tickers mentioned and per-ticker sentiment with reasoning.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Only articles about this ticker, e.g. AAPL."
+          },
+          "published_utc_gte": {
+            "type": "string",
+            "description": "Published on or after, YYYY-MM-DD or an ISO 8601 time."
+          },
+          "published_utc_lte": {
+            "type": "string",
+            "description": "Published on or before, YYYY-MM-DD or an ISO 8601 time."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 10,
+            "description": "Results per page, 1 to 1000."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "published_utc"
+            ],
+            "description": "Sort field, published_utc."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the cursor value from next_url of the previous answer (the part after cursor=)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/reference/news",
+        "queryParams": {
+          "ticker": "$ticker",
+          "published_utc.gte": "$published_utc_gte",
+          "published_utc.lte": "$published_utc_lte",
+          "order": "$order",
+          "limit": "$limit",
+          "sort": "$sort",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_income_statements",
+      "description": "List a company's quarterly, annual or trailing-twelve-month income statements from SEC filings: revenue, cost of revenue, gross profit, operating expenses, R&D, SG&A, operating income, EBITDA, interest, taxes, net income, basic and diluted EPS and shares, with fiscal year and quarter, period end and filing date. Needs a Stocks Advanced plan or the Financials expansion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tickers": {
+            "type": "string",
+            "description": "Ticker of the company, e.g. AAPL."
+          },
+          "cik": {
+            "type": "string",
+            "description": "SEC CIK of the company, e.g. 0000320193."
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "quarterly",
+              "annual",
+              "trailing_twelve_months"
+            ],
+            "description": "quarterly, annual or trailing_twelve_months."
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "description": "Fiscal year, e.g. 2025."
+          },
+          "fiscal_quarter": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "description": "Fiscal quarter 1 to 4."
+          },
+          "period_end_gte": {
+            "type": "string",
+            "description": "Periods ending on or after, YYYY-MM-DD."
+          },
+          "period_end_lte": {
+            "type": "string",
+            "description": "Periods ending on or before, YYYY-MM-DD."
+          },
+          "filing_date_gte": {
+            "type": "string",
+            "description": "Filed on or after, YYYY-MM-DD."
+          },
+          "filing_date_lte": {
+            "type": "string",
+            "description": "Filed on or before, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 100,
+            "description": "Results per page, 1 to 50000."
+          },
+          "sort": {
+            "type": "string",
+            "default": "period_end.desc",
+            "description": "Comma-separated sort columns with .asc or .desc; default here period_end.desc (latest first)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stocks/financials/v1/income-statements",
+        "queryParams": {
+          "tickers": "$tickers",
+          "cik": "$cik",
+          "timeframe": "$timeframe",
+          "fiscal_year": "$fiscal_year",
+          "fiscal_quarter": "$fiscal_quarter",
+          "period_end.gte": "$period_end_gte",
+          "period_end.lte": "$period_end_lte",
+          "filing_date.gte": "$filing_date_gte",
+          "filing_date.lte": "$filing_date_lte",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_balance_sheets",
+      "description": "List a company's quarterly, annual or trailing-twelve-month balance sheets from SEC filings: cash, receivables, inventories, current and total assets, property, goodwill, payables, debt, current and total liabilities, equity, with fiscal year and quarter, period end and filing date. Needs a Stocks Advanced plan or the Financials expansion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tickers": {
+            "type": "string",
+            "description": "Ticker of the company, e.g. AAPL."
+          },
+          "cik": {
+            "type": "string",
+            "description": "SEC CIK of the company, e.g. 0000320193."
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "quarterly",
+              "annual",
+              "trailing_twelve_months"
+            ],
+            "description": "quarterly, annual or trailing_twelve_months."
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "description": "Fiscal year, e.g. 2025."
+          },
+          "fiscal_quarter": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "description": "Fiscal quarter 1 to 4."
+          },
+          "period_end_gte": {
+            "type": "string",
+            "description": "Periods ending on or after, YYYY-MM-DD."
+          },
+          "period_end_lte": {
+            "type": "string",
+            "description": "Periods ending on or before, YYYY-MM-DD."
+          },
+          "filing_date_gte": {
+            "type": "string",
+            "description": "Filed on or after, YYYY-MM-DD."
+          },
+          "filing_date_lte": {
+            "type": "string",
+            "description": "Filed on or before, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 100,
+            "description": "Results per page, 1 to 50000."
+          },
+          "sort": {
+            "type": "string",
+            "default": "period_end.desc",
+            "description": "Comma-separated sort columns with .asc or .desc; default here period_end.desc (latest first)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stocks/financials/v1/balance-sheets",
+        "queryParams": {
+          "tickers": "$tickers",
+          "cik": "$cik",
+          "timeframe": "$timeframe",
+          "fiscal_year": "$fiscal_year",
+          "fiscal_quarter": "$fiscal_quarter",
+          "period_end.gte": "$period_end_gte",
+          "period_end.lte": "$period_end_lte",
+          "filing_date.gte": "$filing_date_gte",
+          "filing_date.lte": "$filing_date_lte",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_cash_flow_statements",
+      "description": "List a company's quarterly, annual or trailing-twelve-month cash flow statements from SEC filings: operating, investing and financing cash flows, capital expenditures, depreciation, dividends, buybacks, net change in cash, with fiscal year and quarter, period end and filing date. Needs a Stocks Advanced plan or the Financials expansion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tickers": {
+            "type": "string",
+            "description": "Ticker of the company, e.g. AAPL."
+          },
+          "cik": {
+            "type": "string",
+            "description": "SEC CIK of the company, e.g. 0000320193."
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "quarterly",
+              "annual",
+              "trailing_twelve_months"
+            ],
+            "description": "quarterly, annual or trailing_twelve_months."
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "description": "Fiscal year, e.g. 2025."
+          },
+          "fiscal_quarter": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4,
+            "description": "Fiscal quarter 1 to 4."
+          },
+          "period_end_gte": {
+            "type": "string",
+            "description": "Periods ending on or after, YYYY-MM-DD."
+          },
+          "period_end_lte": {
+            "type": "string",
+            "description": "Periods ending on or before, YYYY-MM-DD."
+          },
+          "filing_date_gte": {
+            "type": "string",
+            "description": "Filed on or after, YYYY-MM-DD."
+          },
+          "filing_date_lte": {
+            "type": "string",
+            "description": "Filed on or before, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 100,
+            "description": "Results per page, 1 to 50000."
+          },
+          "sort": {
+            "type": "string",
+            "default": "period_end.desc",
+            "description": "Comma-separated sort columns with .asc or .desc; default here period_end.desc (latest first)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stocks/financials/v1/cash-flow-statements",
+        "queryParams": {
+          "tickers": "$tickers",
+          "cik": "$cik",
+          "timeframe": "$timeframe",
+          "fiscal_year": "$fiscal_year",
+          "fiscal_quarter": "$fiscal_quarter",
+          "period_end.gte": "$period_end_gte",
+          "period_end.lte": "$period_end_lte",
+          "filing_date.gte": "$filing_date_gte",
+          "filing_date.lte": "$filing_date_lte",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_financial_ratios",
+      "description": "Get current valuation, profitability, liquidity and leverage ratios per company (end of day): price, market cap, enterprise value, P/E, P/B, P/S, P/CF, EV/EBITDA, EV/sales, EPS, dividend yield, ROA, ROE, debt to equity, current and quick ratio, free cash flow. Filters make it a stock screener. Needs a Stocks Advanced plan or the Financials expansion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "One ticker, e.g. AAPL."
+          },
+          "ticker_any_of": {
+            "type": "string",
+            "description": "Comma-separated tickers to compare, e.g. AAPL,MSFT,GOOGL."
+          },
+          "cik": {
+            "type": "string",
+            "description": "SEC CIK."
+          },
+          "market_cap_gte": {
+            "type": "number",
+            "description": "Market capitalisation at least, in USD."
+          },
+          "market_cap_lte": {
+            "type": "number",
+            "description": "Market capitalisation at most, in USD."
+          },
+          "price_to_earnings_gte": {
+            "type": "number",
+            "description": "P/E ratio at least."
+          },
+          "price_to_earnings_lte": {
+            "type": "number",
+            "description": "P/E ratio at most."
+          },
+          "dividend_yield_gte": {
+            "type": "number",
+            "description": "Dividend yield at least, as a fraction (0.03 = 3%)."
+          },
+          "dividend_yield_lte": {
+            "type": "number",
+            "description": "Dividend yield at most, as a fraction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 100,
+            "description": "Results per page, 1 to 50000."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated sort columns with .asc or .desc, e.g. market_cap.desc; default ticker.asc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stocks/financials/v1/ratios",
+        "queryParams": {
+          "ticker": "$ticker",
+          "ticker.any_of": "$ticker_any_of",
+          "cik": "$cik",
+          "market_cap.gte": "$market_cap_gte",
+          "market_cap.lte": "$market_cap_lte",
+          "price_to_earnings.gte": "$price_to_earnings_gte",
+          "price_to_earnings.lte": "$price_to_earnings_lte",
+          "dividend_yield.gte": "$dividend_yield_gte",
+          "dividend_yield.lte": "$dividend_yield_lte",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_dividends",
+      "description": "List cash dividends of stocks: ex-dividend, record, payment and declaration dates, cash amount, currency, frequency per year and distribution type, past and declared.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Ticker, e.g. AAPL."
+          },
+          "ex_dividend_date_gte": {
+            "type": "string",
+            "description": "Ex-dividend date on or after, YYYY-MM-DD."
+          },
+          "ex_dividend_date_lte": {
+            "type": "string",
+            "description": "Ex-dividend date on or before, YYYY-MM-DD."
+          },
+          "distribution_type": {
+            "type": "string",
+            "enum": [
+              "recurring",
+              "special",
+              "supplemental",
+              "irregular",
+              "unknown"
+            ],
+            "description": "Kind of distribution."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 100,
+            "description": "Results per page, 1 to 5000."
+          },
+          "sort": {
+            "type": "string",
+            "default": "ex_dividend_date.desc",
+            "description": "Comma-separated sort columns with .asc or .desc; default here ex_dividend_date.desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stocks/v1/dividends",
+        "queryParams": {
+          "ticker": "$ticker",
+          "ex_dividend_date.gte": "$ex_dividend_date_gte",
+          "ex_dividend_date.lte": "$ex_dividend_date_lte",
+          "distribution_type": "$distribution_type",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_splits",
+      "description": "List stock splits and reverse splits: execution date, split from and split to, adjustment type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "description": "Ticker, e.g. NVDA."
+          },
+          "execution_date_gte": {
+            "type": "string",
+            "description": "Executed on or after, YYYY-MM-DD."
+          },
+          "execution_date_lte": {
+            "type": "string",
+            "description": "Executed on or before, YYYY-MM-DD."
+          },
+          "adjustment_type": {
+            "type": "string",
+            "enum": [
+              "forward_split",
+              "reverse_split",
+              "stock_dividend"
+            ],
+            "description": "Kind of split."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 100,
+            "description": "Results per page, 1 to 5000."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated sort columns with .asc or .desc; default execution_date.desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stocks/v1/splits",
+        "queryParams": {
+          "ticker": "$ticker",
+          "execution_date.gte": "$execution_date_gte",
+          "execution_date.lte": "$execution_date_lte",
+          "adjustment_type": "$adjustment_type",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_list_options_contracts",
+      "description": "List options contracts (reference data, no prices): option ticker, underlying, call or put, strike, expiration, exercise style and shares per contract; filter by underlying, type, expiration and strike range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "underlying_ticker": {
+            "type": "string",
+            "description": "Underlying stock, e.g. AAPL."
+          },
+          "contract_type": {
+            "type": "string",
+            "enum": [
+              "call",
+              "put"
+            ],
+            "description": "call or put."
+          },
+          "expiration_date": {
+            "type": "string",
+            "description": "Exact expiration date, YYYY-MM-DD."
+          },
+          "expiration_date_gte": {
+            "type": "string",
+            "description": "Expiring on or after, YYYY-MM-DD."
+          },
+          "expiration_date_lte": {
+            "type": "string",
+            "description": "Expiring on or before, YYYY-MM-DD."
+          },
+          "strike_price_gte": {
+            "type": "number",
+            "description": "Strike at least."
+          },
+          "strike_price_lte": {
+            "type": "number",
+            "description": "Strike at most."
+          },
+          "expired": {
+            "type": "boolean",
+            "description": "true for expired contracts; default false."
+          },
+          "as_of": {
+            "type": "string",
+            "description": "Contracts as they were on this date, YYYY-MM-DD."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "ticker",
+              "underlying_ticker",
+              "expiration_date",
+              "strike_price"
+            ],
+            "description": "Sort field, default ticker."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Results per page, 1 to 1000."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the cursor value from next_url of the previous answer (the part after cursor=)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/reference/options/contracts",
+        "queryParams": {
+          "underlying_ticker": "$underlying_ticker",
+          "contract_type": "$contract_type",
+          "expiration_date": "$expiration_date",
+          "expiration_date.gte": "$expiration_date_gte",
+          "expiration_date.lte": "$expiration_date_lte",
+          "strike_price.gte": "$strike_price_gte",
+          "strike_price.lte": "$strike_price_lte",
+          "expired": "$expired",
+          "as_of": "$as_of",
+          "order": "$order",
+          "sort": "$sort",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_options_chain",
+      "description": "Get the option chain of an underlying with prices: per contract the day bar, last quote and trade, greeks (delta, gamma, theta, vega), implied volatility, open interest, break-even price and the underlying price. Filter by expiration, strike range and type to keep it small. Needs an Options Starter plan or higher.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "underlying": {
+            "type": "string",
+            "description": "Underlying ticker, e.g. AAPL or I:SPX."
+          },
+          "contract_type": {
+            "type": "string",
+            "enum": [
+              "call",
+              "put"
+            ],
+            "description": "call or put."
+          },
+          "expiration_date": {
+            "type": "string",
+            "description": "Exact expiration date, YYYY-MM-DD."
+          },
+          "expiration_date_gte": {
+            "type": "string",
+            "description": "Expiring on or after, YYYY-MM-DD."
+          },
+          "expiration_date_lte": {
+            "type": "string",
+            "description": "Expiring on or before, YYYY-MM-DD."
+          },
+          "strike_price_gte": {
+            "type": "number",
+            "description": "Strike at least."
+          },
+          "strike_price_lte": {
+            "type": "number",
+            "description": "Strike at most."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "ticker",
+              "expiration_date",
+              "strike_price"
+            ],
+            "description": "Sort field, default ticker."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Results per page, 1 to 250."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next page: the cursor value from next_url of the previous answer (the part after cursor=)."
+          }
+        },
+        "required": [
+          "underlying"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/snapshot/options/{underlying}",
+        "queryParams": {
+          "contract_type": "$contract_type",
+          "expiration_date": "$expiration_date",
+          "expiration_date.gte": "$expiration_date_gte",
+          "expiration_date.lte": "$expiration_date_lte",
+          "strike_price.gte": "$strike_price_gte",
+          "strike_price.lte": "$strike_price_lte",
+          "order": "$order",
+          "sort": "$sort",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_option_contract_snapshot",
+      "description": "Get the snapshot of one option contract: day bar, last quote and trade, greeks, implied volatility, open interest, break-even price and underlying price. Needs an Options Starter plan or higher.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "underlying": {
+            "type": "string",
+            "description": "Underlying ticker, e.g. AAPL."
+          },
+          "contract": {
+            "type": "string",
+            "description": "Option ticker with the O: prefix, e.g. O:AAPL271217C00250000."
+          }
+        },
+        "required": [
+          "underlying",
+          "contract"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/snapshot/options/{underlying}/{contract}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_convert_currency",
+      "description": "Convert an amount between two currencies at the latest rate (forex or crypto), with the last quote used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Currency to convert from, e.g. EUR or BTC."
+          },
+          "to": {
+            "type": "string",
+            "description": "Currency to convert to, e.g. USD."
+          },
+          "amount": {
+            "type": "number",
+            "default": 1,
+            "description": "Amount to convert, default 1."
+          },
+          "precision": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "Decimal places of the result, 0 to 4 (default 2)."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/conversion/{from}/{to}",
+        "queryParams": {
+          "amount": "$amount",
+          "precision": "$precision"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_last_forex_quote",
+      "description": "Get the latest bid and ask quote of a currency pair, e.g. EUR to USD.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Base currency, e.g. EUR."
+          },
+          "to": {
+            "type": "string",
+            "description": "Quote currency, e.g. USD."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/last_quote/currencies/{from}/{to}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_last_crypto_trade",
+      "description": "Get the latest trade of a crypto pair, e.g. BTC to USD: price, size, exchange and timestamp.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Crypto symbol, e.g. BTC."
+          },
+          "to": {
+            "type": "string",
+            "description": "Quote currency, e.g. USD."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/last/crypto/{from}/{to}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_technical_indicator",
+      "description": "Get SMA, EMA, RSI or MACD values for a stock, option, forex, crypto or index ticker, newest first: one value per bar (MACD with signal and histogram).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "indicator": {
+            "type": "string",
+            "enum": [
+              "sma",
+              "ema",
+              "rsi",
+              "macd"
+            ],
+            "description": "sma, ema, rsi or macd."
+          },
+          "ticker": {
+            "type": "string",
+            "description": "Case-sensitive ticker. Stocks: AAPL. Options: O:SPY251219C00650000. Forex: C:EURUSD. Crypto: X:BTCUSD. Indices: I:SPX."
+          },
+          "timespan": {
+            "type": "string",
+            "enum": [
+              "minute",
+              "hour",
+              "day",
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "description": "Bar size the indicator is computed on, default day."
+          },
+          "window": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "sma, ema, rsi: window length (default 50 for sma and ema, 14 for rsi)."
+          },
+          "short_window": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "macd: short window (default 12)."
+          },
+          "long_window": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "macd: long window (default 26)."
+          },
+          "signal_window": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "macd: signal window (default 9)."
+          },
+          "series_type": {
+            "type": "string",
+            "enum": [
+              "close",
+              "open",
+              "high",
+              "low"
+            ],
+            "description": "Price used, default close."
+          },
+          "adjusted": {
+            "type": "boolean",
+            "description": "false for prices not adjusted for splits; default true."
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "One date, YYYY-MM-DD, or a millisecond timestamp."
+          },
+          "timestamp_gte": {
+            "type": "string",
+            "description": "From this date on, YYYY-MM-DD."
+          },
+          "timestamp_lte": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 10,
+            "description": "Results per page, 1 to 5000."
+          }
+        },
+        "required": [
+          "indicator",
+          "ticker"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/indicators/{indicator}/{ticker}",
+        "queryParams": {
+          "timespan": "$timespan",
+          "window": "$window",
+          "short_window": "$short_window",
+          "long_window": "$long_window",
+          "signal_window": "$signal_window",
+          "series_type": "$series_type",
+          "adjusted": "$adjusted",
+          "timestamp": "$timestamp",
+          "timestamp.gte": "$timestamp_gte",
+          "timestamp.lte": "$timestamp_lte",
+          "order": "$order",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_treasury_yields",
+      "description": "Get US Treasury yields per day for maturities from 1 month to 30 years (in percent), sourced from the Federal Reserve.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "One date, YYYY-MM-DD."
+          },
+          "date_gte": {
+            "type": "string",
+            "description": "From this date on, YYYY-MM-DD."
+          },
+          "date_lte": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 100,
+            "description": "Results per page, 1 to 50000."
+          },
+          "sort": {
+            "type": "string",
+            "default": "date.desc",
+            "description": "date.desc (default here, latest first) or date.asc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fed/v1/treasury-yields",
+        "queryParams": {
+          "date": "$date",
+          "date.gte": "$date_gte",
+          "date.lte": "$date_lte",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "massive_get_inflation",
+      "description": "Get US inflation indicators per month: CPI, core CPI and CPI year-over-year change, PCE and core PCE price indexes and PCE spending, sourced from the Federal Reserve.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "One date, YYYY-MM-DD."
+          },
+          "date_gte": {
+            "type": "string",
+            "description": "From this date on, YYYY-MM-DD."
+          },
+          "date_lte": {
+            "type": "string",
+            "description": "Up to this date, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50000,
+            "default": 100,
+            "description": "Results per page, 1 to 50000."
+          },
+          "sort": {
+            "type": "string",
+            "default": "date.desc",
+            "description": "date.desc (default here, latest first) or date.asc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fed/v1/inflation",
+        "queryParams": {
+          "date": "$date",
+          "date.gte": "$date_gte",
+          "date.lte": "$date_lte",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

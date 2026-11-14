@@ -1,0 +1,43 @@
+---
+title: "How to Connect SFTP / FTP File Shares to Claude — Search Your Documents via MCP"
+description: "Connect an SFTP, FTP or FTPS file share to Claude with AnythingMCP File Search. Your AI reads and searches inside the documents — PDF, Excel, Word, text — on the server, with semantic and keyword search, access rules and governance. No files leave your control."
+category: "connectors"
+keyword: "SFTP Claude, FTP Claude, connect SFTP to Claude, FTP MCP, file share AI search, document search AI, Claude read PDF from server, MCP file search, enterprise document AI"
+publishedAt: "2026-11-04"
+adapterSlug: "ftp"
+lang: "en"
+---
+
+## Connect your SFTP / FTP file share to Claude
+
+Your documents already live on a file server — contracts, price lists, spec sheets, reports. **AnythingMCP File Search** connects that **SFTP, FTP or FTPS** share to Claude so your AI can **find and read inside the files** — PDF, Excel, Word, text — and answer from them, instead of you hunting through folders.
+
+Unlike a raw tool call, File Search indexes the share and offers both **semantic** and **keyword (grep)** search, with per-connector **access rules** and workspace governance, so people and agents only reach what they're allowed to.
+
+### What you can do
+
+- "Find the clause about termination notice across the contracts folder."
+- "Which price list has the current figure for part number DF-UT601, and what is it?"
+- "Summarise the Q3 report PDF and list the three biggest risks."
+- "Search the supplier folder for anything mentioning 'lead time' over 6 weeks."
+
+### Set it up (no install)
+
+1. Sign in at **[cloud.anythingmcp.com](https://cloud.anythingmcp.com)**.
+2. **Connectors → File Search → FTP / FTPS** (or SFTP), and enter the host, credentials and the folders to index.
+3. Run the first scan; AnythingMCP indexes the documents and can auto-describe them.
+4. Set **access rules** (who and which agent may search which folders), mint an **MCP API key**, and add the endpoint to Claude.
+
+Prefer self-hosting? Run AnythingMCP from the [repo](https://github.com/HelpCode-ai/anythingmcp) — your files and the index stay on your own infrastructure.
+
+### Wire it into Claude
+
+Add your AnythingMCP MCP endpoint and key to **Claude Desktop** or **Claude Code**. Claude then searches the share and reads the matching pages on demand — grounded in your real documents, with citations back to the file.
+
+> 🔒 Nothing is copied out of your control: File Search reads from your share under the credentials you set, honours your access rules, and streams only the pages a query needs.
+
+### Also works with
+
+The same File Search connector serves **ChatGPT, GitHub Copilot, Cursor** and any MCP client, and it's fully scriptable from the terminal with the [`amcp` CLI](https://github.com/HelpCode-ai/anythingmcp/tree/main/packages/cli#readme).
+
+Start free on [cloud.anythingmcp.com](https://cloud.anythingmcp.com), or self-host AnythingMCP under AGPL-3.0.

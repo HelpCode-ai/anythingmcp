@@ -244,7 +244,7 @@
           },
           "domain": {
             "type": "array",
-            "description": "Extra Odoo domain, e.g. [[\"customer_rank\",\">\",0]] for customers only.",
+            "description": "Extra Odoo domain, e.g. [[\"customer_rank\",\">\",0]] for customers only. customer_rank and supplier_rank exist only when the Invoicing app is installed; without it that domain fails with Invalid field.",
             "items": {
               "type": "array"
             },
@@ -255,7 +255,7 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/jsonrpc",
-        "bodyTemplate": "{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"id\":1,\"params\":{\"service\":\"object\",\"method\":\"execute_kw\",\"args\":[\"{{ODOO_DB}}\",{{ODOO_UID}},\"{{ODOO_API_KEY}}\",\"res.partner\",\"search_read\",[${domain}],{\"fields\":[\"id\", \"name\", \"email\", \"phone\", \"city\", \"country_id\", \"customer_rank\", \"supplier_rank\", \"vat\"],\"limit\":${limit},\"offset\":${offset},\"order\":\"name asc\"}]}}"
+        "bodyTemplate": "{\"jsonrpc\":\"2.0\",\"method\":\"call\",\"id\":1,\"params\":{\"service\":\"object\",\"method\":\"execute_kw\",\"args\":[\"{{ODOO_DB}}\",{{ODOO_UID}},\"{{ODOO_API_KEY}}\",\"res.partner\",\"search_read\",[${domain}],{\"fields\":[\"id\", \"name\", \"email\", \"phone\", \"city\", \"country_id\", \"vat\"],\"limit\":${limit},\"offset\":${offset},\"order\":\"name asc\"}]}}"
       },
       "annotations": {
         "readOnlyHint": true

@@ -14,10 +14,10 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiSecurity, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { AdaptersService } from './adapters.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
@@ -55,9 +55,41 @@ export class AdaptersPublicController {
     description:
       'Returns metadata for all pre-configured adapters. This endpoint is public so the marketing website can render the marketplace dynamically. ' +
       'With `?fields=slim` each adapter carries only what a catalog page shows (no setup instructions, variable help or prerequisites), ' +
-      'plus an `enriched` flag; the instructions of one adapter are at `/api/adapters/:slug/instructions`.',
+      'plus an `enriched` flag; the instructions of one adapter are at `/api/adapters/:slug/instructions`.\n\n' +
+      'There is no server-side search: fetch the slim list once (it is cached with an ETag) and filter on `slug`, `name`, ' +
+      '`category`, `region` or `description`. Then read one adapter with `GET /api/adapters/{slug}` to see the variables ' +
+      'it needs (`requiredEnvVars`, `envVars`) before installing it with `POST /api/adapters/{slug}/import`.\n\n' +
+      '```bash\ncurl -s "$AMCP_URL/api/adapters?fields=slim" | jq \'.[] | select(.category == "crm") | .slug\'\n```',
   })
-  @ApiQuery({ name: 'fields', required: false, enum: ['slim'] })
+  @ApiQuery({
+    name: 'fields',
+    required: false,
+    enum: ['slim', 'full'],
+    description: '`slim` for the catalog-page view; omit (or `full`) for every field.',
+    example: 'slim',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'An array of adapters (slim view shown).',
+    schema: {
+      type: 'array',
+      items: { type: 'object' },
+      example: [
+        {
+          slug: 'hubspot',
+          name: 'HubSpot',
+          description: 'Let your AI work in HubSpot CRM: search and update contacts, companies, deals and tickets…',
+          region: 'intl',
+          category: 'crm',
+          icon: 'hubspot',
+          docsUrl: 'https://developers.hubspot.com/docs/api-reference/latest/overview',
+          requiredEnvVars: ['HUBSPOT_ACCESS_TOKEN'],
+          toolCount: 14,
+          enriched: true,
+        },
+      ],
+    },
+  })
   list(
     @Query('fields') fields: string | undefined,
     @Headers('if-none-match') ifNoneMatch: string | undefined,
@@ -118,7 +150,8 @@ export class AdaptersPublicController {
 // Authenticated endpoints
 @ApiTags('Adapters')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@ApiSecurity('api-key')
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/adapters')
 export class AdaptersController {
   constructor(
@@ -188,7 +221,51 @@ export class AdaptersController {
     summary: 'Install connectors from the starter pack',
     description:
       'Installs the chosen starter-pack connectors and puts them on your default MCP server. ' +
-      'Each one is reported separately, so one failure does not undo the others.',
+      'Each one is reported separately, so one failure does not undo the others.\n\n' +
+      'Pick the slugs from GET /api/adapters/starter-pack. A slug that is already installed is reported as ' +
+      '`already_installed`; one that hits the plan limit or fails to install is `failed`, with the reason in `error`. ' +
+      '`server` is the default MCP server the new connectors were put on (null when none was). ' +
+      `400 when \`slugs\` is not a list of 1 to ${STARTER_PACK_MAX_INSTALL} strings or names a connector outside the starter pack; ` +
+      '403 for VIEWERs.\n\n' +
+      '```bash\namcp api POST /api/adapters/starter-pack/install --data \'{"slugs":["hackernews","openplz"]}\' --yes\n```',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['slugs'],
+      properties: {
+        slugs: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          maxItems: STARTER_PACK_MAX_INSTALL,
+          description: 'Slugs of starter-pack connectors (`items[].slug` on GET /api/adapters/starter-pack).',
+        },
+      },
+    },
+    examples: {
+      two: { summary: 'Install two keyless connectors', value: { slugs: ['hackernews', 'openplz'] } },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'One result per requested slug.',
+    schema: {
+      type: 'object',
+      example: {
+        results: [
+          {
+            slug: 'hackernews',
+            status: 'installed',
+            connectorId: 'cmob60dvv00c01zrpeujwmnep',
+            toolsCreated: 8,
+            probeOk: true,
+          },
+          { slug: 'openplz', status: 'already_installed' },
+        ],
+        server: { id: 'cmo9x1k2a0001abcdpq7rs8tu', name: 'Default' },
+      },
+    },
   })
   async installStarterPack(@Req() req: any, @Body() body: { slugs?: unknown }) {
     if (req.user.role === 'VIEWER') {
@@ -258,7 +335,11 @@ export class AdaptersController {
   @ApiOperation({
     summary: 'Get adapter details including tool definitions',
     description:
-      'Returns the full adapter definition with connector config and all tool mappings.',
+      'Returns the full adapter definition with connector config and all tool mappings, plus what installing it takes: ' +
+      '`requiredEnvVars` (the variables to pass as `credentials` on import), `envVars` (each variable described: label, ' +
+      'kind, whether it is secret, help text), `setupKind` and `instructions` (Markdown setup guide). ' +
+      '404 when the slug is unknown or the adapter is not offered on this deployment.\n\n' +
+      '```bash\namcp api GET /api/adapters/hubspot\n```',
   })
   getBySlug(@Param('slug') slug: string) {
     return this.adaptersService.describe(slug);
@@ -270,12 +351,39 @@ export class AdaptersController {
     summary: 'Try an adapter with credentials before saving it',
     description:
       'Runs the adapter\'s safe read call against an in-memory connector. Nothing is stored. ' +
-      'ok=true: it worked; ok=false: a value is missing or the API refused; ok=null: nothing to try yet (needs a sign-in at the provider, or no safe call).',
+      'ok=true: it worked; ok=false: a value is missing or the API refused; ok=null: nothing to try yet (needs a sign-in at the provider, or no safe call).\n\n' +
+      'Pass `connectorId` to test new values for an existing connector of this adapter. Each try is a real call to the ' +
+      'provider: at most 20 tries a minute per user (429 beyond). VIEWERs get 403.',
+  })
+  @ApiBody({
+    required: false,
+    schema: {
+      type: 'object',
+      properties: {
+        credentials: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+          description: 'Values for the adapter variables (see `requiredEnvVars` on GET /api/adapters/{slug}).',
+        },
+        connectorId: { type: 'string', description: 'An existing connector of this adapter to test the values for.' },
+      },
+    },
+    examples: {
+      hubspot: { summary: 'Check a HubSpot key', value: { credentials: { HUBSPOT_ACCESS_TOKEN: 'pat-eu1-…' } } },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The outcome of the test call.',
+    schema: {
+      type: 'object',
+      example: { ok: true, toolName: 'hubspot_list_owners', durationMs: 412, sample: '{"results":[{"id":"…","email":"…"}],…}' },
+    },
   })
   async verify(
     @Req() req: any,
     @Param('slug') slug: string,
-    @Body() body: { credentials?: Record<string, string>; connectorId?: string },
+    @Body() body: { credentials?: Record<string, string>; connectorId?: string; source?: string },
   ) {
     if (req.user.role === 'VIEWER') {
       throw new ForbiddenException('Viewers cannot modify connectors');
@@ -301,6 +409,8 @@ export class AdaptersController {
         metadata: {
           adapterSlug: slug,
           kind: result.kind,
+          // Where the setup was opened from (the Odoo module: odoo_module), a short slug only.
+          ...(typeof body?.source === 'string' && /^[a-z0-9_]{1,32}$/.test(body.source) ? { source: body.source } : {}),
           ...(result.status != null ? { status: result.status } : {}),
           ...(result.toolName ? { toolName: result.toolName } : {}),
           ...(result.kind !== 'invalid_input'
@@ -308,6 +418,21 @@ export class AdaptersController {
             : {}),
         },
       });
+      // The app is waiting for the provider's approval (Etsy: Pending). The
+      // page keeps the keys on a connector, and AppApprovalWatcherService
+      // finds it through this event (app-approval-watch.ts).
+      if (result.appPending) {
+        void this.productEvents.log({
+          event: ProductEvents.ETSY_APP_PENDING_SEEN,
+          userId: req.user.sub,
+          organizationId: req.user.organizationId,
+          metadata: {
+            adapterSlug: slug,
+            via: 'setup',
+            ...(typeof body?.connectorId === 'string' ? { connectorId: body.connectorId } : {}),
+          },
+        });
+      }
     }
     return result;
   }
@@ -319,7 +444,46 @@ export class AdaptersController {
     summary: 'Import a built-in adapter as a new connector',
     description:
       'Creates a new connector and its tools from a pre-configured adapter recipe. ' +
-      'Optionally provide credentials in the request body to make the connector immediately functional.',
+      'Optionally provide credentials in the request body to make the connector immediately functional.\n\n' +
+      'The keys of `credentials` are the adapter\'s variable names (`requiredEnvVars` on GET /api/adapters/{slug}). ' +
+      'The new connector is added straight away to your default MCP server, the oldest active one you own (`attachedToServer`, null when you have none), ' +
+      'and `probe` reports the first test call made with the values given (null when none was made). ' +
+      '403 for VIEWERs or when the plan allows no more connectors.\n\n' +
+      '```bash\namcp api POST /api/adapters/hubspot/import --data \'{"credentials":{"HUBSPOT_ACCESS_TOKEN":"pat-eu1-…"}}\' --yes\n```',
+  })
+  @ApiBody({
+    required: false,
+    schema: {
+      type: 'object',
+      properties: {
+        credentials: {
+          type: 'object',
+          additionalProperties: { type: 'string' },
+          description: 'Values for the adapter variables, by name. Omit to install now and fill them in later.',
+        },
+      },
+    },
+    examples: {
+      hubspot: {
+        summary: 'Install HubSpot with its key',
+        value: { credentials: { HUBSPOT_ACCESS_TOKEN: 'pat-eu1-…' } },
+      },
+      keyless: { summary: 'Install an adapter that needs no values', value: {} },
+    },
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'The connector was created.',
+    schema: {
+      type: 'object',
+      example: {
+        message: 'Adapter "hubspot" imported successfully with 14 tools.',
+        connectorId: 'cmob60dvv00c01zrpeujwmnep',
+        toolsCreated: 14,
+        attachedToServer: { id: 'cmo9x1k2a0001abcdpq7rs8tu', name: 'Default' },
+        probe: { ok: true, toolName: 'hubspot_list_owners', durationMs: 388, sample: '{"results":[{"id":"…","email":"…"}],…}' },
+      },
+    },
   })
   async importAdapter(
     @Req() req: any,

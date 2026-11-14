@@ -23,7 +23,10 @@ async function mockApi(page: Page, complete: { status: number; body: unknown }) 
     const url = req.url();
     const json = (body: unknown, status = 200) =>
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-    if (url.includes('/api/mcp-oauth/complete') && req.method() === 'POST') {
+    if (
+      (url.includes('/api/mcp-oauth/complete') || url.includes('/api/tiktok-shop/install')) &&
+      req.method() === 'POST'
+    ) {
       posts.push({ body: req.postDataJSON(), auth: req.headers()['authorization'] });
       return json(complete.body, complete.status);
     }
@@ -85,5 +88,25 @@ test('sends a signed-out visitor to sign in first, keeping the code', async ({ p
   await expect(page).toHaveURL(/\/login\?redirect=/);
   const redirect = new URL(page.url()).searchParams.get('redirect');
   expect(redirect).toBe('/connectors/oauth/complete?state=st-1&code=co-1');
+  expect(posts).toHaveLength(0);
+});
+
+test('completes a TikTok Shop App Store install as the signed-in user, with only the state', async ({ page }) => {
+  await signIn(page);
+  const posts = await mockApi(page, { status: 200, body: { connectorId: 'c1', toolsImported: 0, created: true } });
+  await page.goto('/connectors/oauth/complete?provider=tiktok-shop-install&state=st-9');
+  await expect(page).toHaveURL(/\/connectors\/c1/);
+  expect(posts).toEqual([{ body: { state: 'st-9' }, auth: 'Bearer test-token' }]);
+});
+
+test('offers a signed-out TikTok Shop seller both sign-in and sign-up, coming back to the install', async ({ page }) => {
+  const posts = await mockApi(page, { status: 200, body: {} });
+  await page.goto('/connectors/oauth/complete?provider=tiktok-shop-install&state=st-9');
+  const back = encodeURIComponent('/connectors/oauth/complete?provider=tiktok-shop-install&state=st-9');
+  await expect(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', `/login?redirect=${back}`);
+  await expect(page.getByRole('link', { name: 'Create an account' })).toHaveAttribute(
+    'href',
+    `/login?mode=register&redirect=${back}`,
+  );
   expect(posts).toHaveLength(0);
 });

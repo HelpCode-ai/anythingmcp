@@ -8,10 +8,10 @@ import { mergeDiscoveredMcpTools } from '../mcp-adapter.util';
  * saas-19.4 and Odoo 20), authorised with an Odoo API key of scope MCP sent
  * as a Bearer token.
  *
- * Verified on 19 Oct 2026 against a customer's Odoo Online database with its
- * own key: tools/list answered with the five tools exposed there, and Search,
- * Get Fields, Get Models and Read group answered read-only calls. The live
- * check needs the customer's key and is not repeated here.
+ * Verified on 19 Oct 2026 against an Odoo Online database: tools/list
+ * answered with the five tools exposed there, and Search, Get Fields, Get
+ * Models and Read group answered read-only calls. The live check needs an
+ * Odoo key and is not repeated here.
  */
 
 type Tool = {

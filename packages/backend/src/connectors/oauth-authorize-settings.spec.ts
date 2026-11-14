@@ -1,4 +1,4 @@
-import { resolveRestAuthorizeSettings } from './oauth-authorize-settings';
+import { resolveProviderRedirectUri, resolveRestAuthorizeSettings } from './oauth-authorize-settings';
 import { getAdapter } from '../adapters/catalog';
 
 const etsyCatalog = getAdapter('etsy')!.connector.authConfig!;
@@ -71,6 +71,10 @@ describe('resolveRestAuthorizeSettings', () => {
     // Written back once the authorization succeeds, like every adopted value.
     expect(settings.adopted).toEqual({ scopes: etsyCatalog.scopes });
 
+    // The write set asked for before listings_d was added widens too.
+    const writeRow = { ...row, scopes: 'email_r shops_r listings_r listings_w transactions_r transactions_w' };
+    expect(resolveRestAuthorizeSettings(writeRow, null, etsyCatalog, previous).adopted).toEqual({ scopes: etsyCatalog.scopes });
+
     // A hand-picked subset is not one of the adapter's earlier sets: kept.
     const narrowed = resolveRestAuthorizeSettings({ ...row, scopes: 'listings_r' }, null, etsyCatalog, previous);
     expect(narrowed.scope).toBe('listings_r');
@@ -119,13 +123,13 @@ describe('resolveRestAuthorizeSettings', () => {
       etsyCatalog,
     );
     expect(settings.authorizationUrl).toBe('https://www.etsy.com/oauth/connect');
-    expect(settings.scope).toBe('email_r shops_r listings_r listings_w transactions_r transactions_w');
+    expect(settings.scope).toBe('email_r shops_r listings_r listings_w listings_d transactions_r transactions_w');
     expect(settings.tokenUrl).toBe('https://api.etsy.com/v3/public/oauth/token');
     // Etsy authenticates the client in the body: nothing to adopt there.
     expect(settings.tokenAuthMethod).toBeUndefined();
     expect(settings.adopted).toEqual({
       authorizationUrl: 'https://www.etsy.com/oauth/connect',
-      scopes: 'email_r shops_r listings_r listings_w transactions_r transactions_w',
+      scopes: 'email_r shops_r listings_r listings_w listings_d transactions_r transactions_w',
     });
   });
 
@@ -200,3 +204,61 @@ describe('resolveRestAuthorizeSettings', () => {
   });
 });
 
+
+describe('providerRedirectUri (eBay RuName)', () => {
+  const own = {
+    clientId: 'cid',
+    clientSecret: 'sec',
+    authorizationUrl: 'https://auth.ebay.com/oauth2/authorize',
+    tokenUrl: 'https://api.ebay.com/identity/v1/oauth2/token',
+  };
+
+  it('is absent when neither the row nor the catalog sets it', () => {
+    const settings = resolveRestAuthorizeSettings(own, null, etsyCatalog);
+    expect(settings.providerRedirectUri).toBeUndefined();
+    expect('providerRedirectUri' in settings.adopted).toBe(false);
+  });
+
+  it("resolves the row's own value from the env vars and adopts nothing", () => {
+    const settings = resolveRestAuthorizeSettings(
+      { ...own, providerRedirectUri: '{{RUNAME}}' },
+      { RUNAME: 'Jane_Doe-JaneDoe-MyApp-abcdef' },
+      { providerRedirectUri: '{{OTHER}}' },
+    );
+    expect(settings.providerRedirectUri).toBe('Jane_Doe-JaneDoe-MyApp-abcdef');
+    expect(settings.adopted).toEqual({});
+    expect(settings.missingVars).toEqual([]);
+  });
+
+  it("takes the catalog's when the row has none, and adopts it as written", () => {
+    const settings = resolveRestAuthorizeSettings(
+      own,
+      { RUNAME: 'Jane_Doe-JaneDoe-MyApp-abcdef' },
+      { providerRedirectUri: '{{RUNAME}}' },
+    );
+    expect(settings.providerRedirectUri).toBe('Jane_Doe-JaneDoe-MyApp-abcdef');
+    expect(settings.adopted.providerRedirectUri).toBe('{{RUNAME}}');
+  });
+
+  it('reports the variable as missing while it has no value', () => {
+    for (const env of [{}, { RUNAME: '' }, { RUNAME: '   ' }] as Record<string, string>[]) {
+      const settings = resolveRestAuthorizeSettings({ ...own, providerRedirectUri: '{{RUNAME}}' }, env);
+      expect(settings.providerRedirectUri).toBeUndefined();
+      expect(settings.missingVars).toEqual(['RUNAME']);
+    }
+  });
+
+  it('resolveProviderRedirectUri says where the value came from', () => {
+    expect(resolveProviderRedirectUri({ providerRedirectUri: 'Own_Name' }, { providerRedirectUri: 'Cat' }, {})).toEqual({
+      raw: 'Own_Name',
+      value: 'Own_Name',
+      fromCatalog: false,
+    });
+    expect(resolveProviderRedirectUri({}, { providerRedirectUri: '{{R}}' }, { R: 'X_Y' })).toEqual({
+      raw: '{{R}}',
+      value: 'X_Y',
+      fromCatalog: true,
+    });
+    expect(resolveProviderRedirectUri(null, null, null)).toEqual({ fromCatalog: false });
+  });
+});

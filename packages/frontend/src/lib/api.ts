@@ -10,6 +10,7 @@ interface RequestOptions {
   body?: unknown;
   token?: string;
   skipAutoLogout?: boolean;
+  headers?: Record<string, string>;
 }
 
 // Emitted when any authenticated request gets a 401 — auth-context listens for this.
@@ -49,6 +50,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...(options.headers ?? {}),
   };
 
   if (token) {
@@ -346,7 +348,36 @@ export const mcpConnections = {
  * `password` ask the token endpoint with stored credentials, again whenever
  * the token expires.
  */
+/** Whose credential a connector's calls carry: the connector's own, or each user's. */
+/** An Instagram professional account a Meta sign-in reaches (meta-auth.controller.ts). */
+export interface MetaInstagramAccount {
+  id: string;
+  username?: string;
+  /** The Facebook Page it is linked to (Facebook Login only). */
+  pageName?: string;
+}
+
+export type CredentialScope = 'SHARED' | 'USER';
+
+export interface MyConnectorCredential {
+  connected: boolean;
+  /** Whether the workspace may use per-user sign-in at all (Enterprise). */
+  available?: boolean;
+  authorizedAt?: string;
+  authStatus?: string | null;
+  authStatusMessage?: string | null;
+}
+
 export type OAuthGrant = 'authorization_code' | 'client_credentials' | 'password';
+
+/** GET :id/webhook/events' shape — metadata only; the controller leaves `payload` out. */
+export interface RecentWebhookEvent {
+  id: string;
+  provider: string;
+  eventType: string | null;
+  externalId: string | null;
+  receivedAt: string;
+}
 
 /** True for the grants that need no sign-in at the provider. */
 export function isMachineGrant(grant: string | undefined): boolean {
@@ -454,6 +485,8 @@ export interface Connector {
   tokenExpiresAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  webhookEnabled?: boolean;
+  webhookProvider?: string | null;
   [key: string]: unknown;
 }
 
@@ -461,7 +494,7 @@ export const connectors = {
   list: (token: string) =>
     request<Connector[]>('/api/connectors', { token }),
   proxyAvailability: (token: string) =>
-    request<{ available: boolean }>('/api/connectors/proxy-availability', { token }),
+    request<{ available: boolean; egressIps?: string[] }>('/api/connectors/proxy-availability', { token }),
   /**
    * `attachedToServer` is the MCP server the backend put the connector on, or
    * null when the workspace has none yet. Attaching used to be a separate step
@@ -592,6 +625,24 @@ export const connectors = {
       `/api/connectors/${id}/oauth/authorize`,
       { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
     ),
+  /**
+   * Shared credential or per-user sign-in (Enterprise, OAuth2 connectors).
+   * USER removes the connector's own tokens; SHARED removes every user's.
+   */
+  setCredentialScope: (id: string, credentialScope: CredentialScope, token: string) =>
+    request<{ credentialScope: CredentialScope }>(`/api/connectors/${encodeURIComponent(id)}/credential-scope`, {
+      method: 'PATCH',
+      token,
+      body: { credentialScope },
+    }),
+  /** The signed-in user's own sign-in to a per-user connector. No token is returned. */
+  getMyCredential: (id: string, token: string) =>
+    request<MyConnectorCredential>(`/api/connectors/${encodeURIComponent(id)}/my-credential`, { token }),
+  disconnectMyCredential: (id: string, token: string) =>
+    request<{ removed: boolean }>(`/api/connectors/${encodeURIComponent(id)}/my-credential`, {
+      method: 'DELETE',
+      token,
+    }),
   /** Second half of "Authorize with Provider": exchange the code the provider sent back. */
   oauthComplete: (state: string, code: string, token: string) =>
     request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
@@ -610,6 +661,78 @@ export const connectors = {
       '/api/shopee/complete',
       { method: 'POST', token, body: { state, code, shopId } },
     ),
+  /** "Authorize with Provider" for a TikTok shop: the seller authorization link. */
+  tiktokShopAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
+      `/api/tiktok-shop/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a TikTok Shop authorization: exchange the code TikTok sent back. */
+  tiktokShopComplete: (state: string, code: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/tiktok-shop/complete',
+      { method: 'POST', token, body: { state, code } },
+    ),
+  /** Whether this server has its own TikTok Shop app, and the Redirect URL for a seller's own app. */
+  tiktokShopPlatform: (token: string) =>
+    request<{ available: boolean; redirectUrl: string }>('/api/tiktok-shop/platform', { token }),
+  /** A TikTok Shop App Store install: add (or reuse) the connector and authorize it with the server's app. */
+  tiktokShopInstall: (state: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; created: boolean; returnTo?: string }>(
+      '/api/tiktok-shop/install',
+      { method: 'POST', token, body: { state } },
+    ),
+  /** Whether this server offers the WooCommerce one-click key (WOOCOMMERCE_ONE_CLICK and a public https server). */
+  woocommerceOneClick: (token: string) =>
+    request<{ available: boolean }>('/api/woocommerce/one-click', { token }),
+  /** The shop's authorize link for a WooCommerce one-click key on a connector whose shop address is saved. */
+  woocommerceAuthorize: (id: string, scope: 'read' | 'read_write', token: string, from?: string) =>
+    request<{ authorizationUrl: string }>(`/api/woocommerce/connectors/${id}/authorize`, {
+      method: 'POST',
+      token,
+      body: { scope, ...(from ? { from } : {}) },
+    }),
+  /** How a WooCommerce one-click key ended; `state` is the `user_id` WooCommerce adds to the return address. */
+  woocommerceOneClickStatus: (id: string, state: string, token: string) =>
+    request<{ status: 'pending' | 'working' | 'ready' | 'failed' | 'unknown'; message?: string }>(
+      `/api/woocommerce/connectors/${id}/one-click-status?state=${encodeURIComponent(state)}`,
+      { token },
+    ),
+  /** "Authorize with Facebook / Instagram" for an Instagram connector: the Meta login dialog. */
+  metaAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
+      `/api/meta/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a Meta sign-in; `accounts` when the user has to pick an Instagram account. */
+  metaComplete: (state: string, code: string, token: string) =>
+    request<{
+      connectorId: string;
+      toolsImported: number;
+      returnTo?: string;
+      account?: MetaInstagramAccount;
+      accounts?: MetaInstagramAccount[];
+      noAccount?: boolean;
+      reason?: 'no_assets';
+    }>('/api/meta/complete', { method: 'POST', token, body: { state, code } }),
+  /** Store the Instagram account a Facebook sign-in should use. */
+  /** The Instagram accounts an Instagram connector's Meta sign-in reaches, and the one in use. */
+  metaAccounts: (id: string, token: string) =>
+    request<{ connectorId: string; current?: string; accounts: MetaInstagramAccount[] }>(
+      `/api/meta/connectors/${id}/accounts`,
+      { token },
+    ),
+  metaChooseAccount: (id: string, accountId: string, token: string) =>
+    request<{ connectorId: string; account: MetaInstagramAccount }>(`/api/meta/connectors/${id}/account`, {
+      method: 'POST',
+      token,
+      body: { accountId },
+    }),
+  /** Whether this server has its own Meta apps, and the redirect URI for an app of your own. */
+  metaPlatform: (token: string) =>
+    request<{ facebook: boolean; unified?: boolean; instagram: boolean; redirectUrl: string }>('/api/meta/platform', {
+      token,
+    }),
   oauthRedirectUri: (token: string) =>
     request<{ redirectUri: string }>('/api/connectors/oauth/redirect-uri', { token }),
   discoverTools: (id: string, token: string) =>
@@ -617,15 +740,87 @@ export const connectors = {
       `/api/connectors/${id}/discover-tools`,
       { method: 'POST', token },
     ),
+  /** The URL to paste into the provider's webhook settings; built server-side from SERVER_URL. */
+  webhookUrl: (id: string, token: string) =>
+    request<{ url: string }>(`/api/connectors/${encodeURIComponent(id)}/webhook/url`, { token }),
+  webhookEvents: (id: string, token: string, opts?: { limit?: number; since?: string }) => {
+    const query = new URLSearchParams();
+    if (opts?.limit) query.set('limit', String(opts.limit));
+    if (opts?.since) query.set('since', opts.since);
+    const qs = query.toString();
+    return request<{ events: RecentWebhookEvent[] }>(
+      `/api/connectors/${encodeURIComponent(id)}/webhook/events${qs ? `?${qs}` : ''}`,
+      { token },
+    );
+  },
 };
 
 /** One-time links an AI client hands out to finish a connector's setup. */
+/** A dashboard session handed back with a setup link, for the link's workspace. */
+export interface SetupLinkSession {
+  accessToken: string;
+  user: { id: string; email: string; name: string | null; role: string; organizationId: string | null };
+}
+
+/**
+ * Sent on the requests that turn the recent sign-in cookie into a session:
+ * another origin cannot add it without a CORS preflight it does not pass.
+ */
+const DASHBOARD_HEADER = { 'X-AMCP-Dashboard': '1' };
+
+/**
+ * The account this browser signed in with on the authorization page a short
+ * while ago (connecting Claude, ChatGPT, …): the sign-in page offers
+ * "Continue as …" instead of asking for the password again.
+ */
+export const recentSignIn = {
+  who: async (): Promise<{ email: string; name: string | null } | null> => {
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/recent-sign-in`);
+      if (response.status !== 200) return null;
+      const body = await response.json();
+      return typeof body?.email === 'string' ? body : null;
+    } catch {
+      return null;
+    }
+  },
+  continue: () =>
+    request<SetupLinkSession>('/api/auth/recent-sign-in', { method: 'POST', headers: DASHBOARD_HEADER }),
+  /** On sign-out: the next sign-in page offers nothing. */
+  forget: () => fetch(`${API_BASE}/api/auth/recent-sign-in`, { method: 'DELETE' }).then(() => undefined, () => undefined),
+};
+
 export const setupLinks = {
+  /** Signed in: `session` is set when the link's connector is in another workspace. */
   resolve: (token: string, authToken: string, from?: string) =>
-    request<{ redirect: string }>('/api/setup-links/resolve', {
+    request<{ redirect: string; session?: SetupLinkSession }>('/api/setup-links/resolve', {
       method: 'POST',
       token: authToken,
       body: { token, ...(from ? { from } : {}) },
+    }),
+  /**
+   * Not signed in to the dashboard, right after signing in to connect an AI
+   * client: the backend checks the sign-in cookie that browser received.
+   */
+  open: (token: string, from?: string) =>
+    request<{ redirect: string; session: SetupLinkSession }>('/api/setup-links/open', {
+      method: 'POST',
+      headers: DASHBOARD_HEADER,
+      body: { token, ...(from ? { from } : {}) },
+    }),
+};
+
+/**
+ * The File Search plugin's folder setup, opened from its authorization page
+ * (login.controller.ts): the backend checks the sign-in just made there and
+ * returns a dashboard session on the granted workspace plus the wizard path.
+ */
+export const fileSearchSetup = {
+  openFromAuthorize: (csrf: string, option: string) =>
+    request<{ ok: true; redirect: string; session: SetupLinkSession }>('/auth/file-search/session', {
+      method: 'POST',
+      headers: DASHBOARD_HEADER,
+      body: { csrf, option },
     }),
 };
 
@@ -661,6 +856,10 @@ export interface AdapterSetupInfo {
   prerequisites?: string;
   /** A step-by-step setup, shown instead of the form (see backend setup-guide.ts). */
   setupGuide?: SetupGuide;
+  /** The provider refuses calls from addresses not registered with it. */
+  requiresIpAllowlist?: boolean;
+  /** The addresses this instance calls APIs from (EGRESS_IPS); empty when not configured. */
+  egressIps?: string[];
 }
 
 export type SetupEffortKind = 'none' | 'one_click' | 'api_key' | 'own_app' | 'admin_needed';
@@ -682,6 +881,10 @@ export interface SetupGuideStep {
   fields?: string[];
   problems?: Array<{ q: string; a: string }>;
   confirm?: string;
+  /** Continue saves the values on the connector and asks the provider whether it accepts the keys. */
+  saveAndCheck?: boolean;
+  /** Shown while the provider refuses the saved keys (an Etsy app awaiting approval); skipped once it accepts them. */
+  waitForProvider?: boolean;
 }
 
 export interface SetupGuide extends SetupEffort {
@@ -692,8 +895,44 @@ export interface SetupGuide extends SetupEffort {
 }
 
 export type VerifyResult =
-  | { ok: true; toolName: string; durationMs: number; sample: string }
-  | { ok: false; kind: string; message: string; missing?: string[]; status?: number | null; suggest?: string; suggestName?: string }
+  | {
+      ok: true;
+      toolName: string;
+      durationMs: number;
+      sample: string;
+      /**
+       * Values the check changed to get through (an Odoo database name the
+       * address names itself): filled into the form and saved.
+       */
+      corrected?: Record<string, string>;
+      /** What was changed, in a sentence. */
+      note?: string;
+    }
+  | {
+      ok: false;
+      kind: string;
+      message: string;
+      /** As on success: values to fill in although the check still failed (then a refused key). */
+      corrected?: Record<string, string>;
+      missing?: string[];
+      fields?: Record<string, string>;
+      status?: number | null;
+      suggest?: string;
+      suggestName?: string;
+      /**
+       * The same suggestion, ready to act on: the setup of `slug`, started
+       * with `prefill` (addresses and settings entered here, never a secret).
+       * An Odoo below 19 offers the JSON-RPC connector this way.
+       */
+      switchTo?: { slug: string; name: string; prefill: Record<string, string> };
+      /**
+       * The provider refused the app keys in a way that may be an app awaiting
+       * its approval (Etsy: Pending) or a wrong secret of an active app (Etsy
+       * answers both with the same 403): the page keeps the keys, and the owner
+       * is emailed once they are accepted.
+       */
+      appPending?: boolean;
+    }
   | { ok: null; skipped: 'authorization' | 'no_probe' };
 
 export type ConnectorSetupStatus = 'ready' | 'needs_input' | 'needs_authorization';
@@ -727,11 +966,12 @@ export const adapters = {
   describe: (slug: string, token: string) =>
     request<AdapterSetupInfo>(`/api/adapters/${slug}`, { token }),
   /** Try credentials before saving: nothing is stored. */
-  verify: (slug: string, token: string, credentials: Record<string, string>, connectorId?: string) =>
+  /** `source`: where the setup was opened from (setup page `?source=`), kept on a failed check's event. */
+  verify: (slug: string, token: string, credentials: Record<string, string>, connectorId?: string, source?: string) =>
     request<VerifyResult>(`/api/adapters/${slug}/verify`, {
       method: 'POST',
       token,
-      body: { credentials, ...(connectorId ? { connectorId } : {}) },
+      body: { credentials, ...(connectorId ? { connectorId } : {}), ...(source ? { source } : {}) },
     }),
   /** Catalog connectors for the API at a base URL, best first. */
   matchUrl: (url: string, token: string) =>
@@ -749,6 +989,18 @@ export const adapters = {
       server: { id: string; name: string } | null;
     }>('/api/adapters/starter-pack/install', { method: 'POST', token, body: { slugs } }),
 };
+
+/** Invoices by email for the workspace's subscription (Cloud). */
+export interface InvoiceEmailSettings {
+  /** False when there is no subscription to send invoices for. */
+  available: boolean;
+  enabled: boolean;
+  /** The Stripe customer's email: where invoices go unless another address is set. */
+  billingContact: string | null;
+  recipient: { kind: 'billing' | 'custom'; address: string | null };
+  /** The last invoice emailed; `to` is masked. */
+  lastSent: { number: string; at: string; to: string } | null;
+}
 
 /** A paid Cloud licence's Stripe subscription, as the server last saw it. */
 export interface LicenseBilling {
@@ -994,7 +1246,45 @@ export const audit = {
     }>(`/api/audit/analytics?days=${days}`, { token }),
   breakdowns: (token: string, days = 30) =>
     request<AuditBreakdowns>(`/api/audit/breakdowns?days=${days}`, { token }),
+  toolPerformance: (token: string, params: ToolPerformanceQuery = {}) => {
+    const query = new URLSearchParams({
+      hours: String(params.hours ?? 24),
+      limit: String(params.limit ?? 25),
+      offset: String(params.offset ?? 0),
+    });
+    if (params.connectorId) query.set('connectorId', params.connectorId);
+    if (params.mcpServerId) query.set('mcpServerId', params.mcpServerId);
+    return request<{ items: ToolPerformance[]; hasMore: boolean }>(
+      `/api/audit/tool-performance?${query}`, { token },
+    );
+  },
 };
+
+export interface ToolPerformanceQuery {
+  hours?: number;
+  limit?: number;
+  offset?: number;
+  connectorId?: string;
+  mcpServerId?: string;
+}
+
+export interface ToolPerformance {
+  toolId: string;
+  toolName: string;
+  connectorId: string;
+  connectorName: string;
+  mcpServerId: string | null;
+  mcpServerName: string | null;
+  calls: number;
+  errors: number;
+  errorRate: number;
+  latencySampleCount: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
 
 export interface BreakdownRow {
   id: string | null;
@@ -1229,6 +1519,21 @@ export const knowledgeGraph = {
   },
 };
 
+export interface KgCodeProposalPayload {
+  connectorId: string;
+  name: string;
+  description: string;
+  parameters: unknown;
+  endpointMapping: {
+    method: 'code';
+    path?: string;
+    code: string;
+    uses: Array<{ connectorId: string; tools?: string[] }>;
+    runAs: 'invoker' | 'definer';
+    allowWrites: boolean;
+  };
+}
+
 export interface KgSkill {
   id: string;
   connectorId: string | null;
@@ -1241,7 +1546,11 @@ export interface KgSkill {
   confidence: number;
   evidenceCount: number;
   status: string;
-  /** manual | llm | finder */
+  /** skill (default) | code (a candidate code tool awaiting admin approval). */
+  kind?: string;
+  /** For a `code` proposal: the candidate code tool an admin approves. */
+  payload?: KgCodeProposalPayload | null;
+  /** manual | llm | finder | agent */
   source?: string;
   /** Optional full procedure (markdown), served on demand by skill_get. */
   body?: string | null;
@@ -1417,6 +1726,60 @@ export interface PublicStats {
   updatedAt: string | null;
 }
 
+/**
+ * The no-login reactivation page (/reactivate/<token>): the link an AI client
+ * shows when a tool call is refused because the workspace's trial ended. The
+ * token is the credential; no session is sent.
+ */
+export interface ReactivationView {
+  state: 'trial-ended' | 'active' | 'payment-failed' | 'no-license';
+  workspaceName: string;
+  trialEndedAt: string | null;
+  /** The AI client whose chat showed the link (else the first one connected). */
+  client: 'Claude' | 'ChatGPT' | 'Cursor' | 'Copilot' | null;
+  usage: { connectors: number; mcpServers: number; users: number };
+  /**
+   * What the workspace keeps and loses on each plan, with no connector or
+   * server names (ids like `pause-0`, empty names): the page opens without a
+   * sign-in, so it gives counts only. Null or missing when it could not be read.
+   */
+  planFit?: Record<FitPlanId, PlanFit> | null;
+  /** The Telegram price test's arm, for a Telegram-only workspace that can buy; else null. */
+  offerArm?: 'personal' | 'list' | null;
+  /** The 'personal' arm's discounted Starter monthly price; null otherwise. */
+  offer?: { plan: 'starter'; billingPeriod: 'monthly'; monthlyEur: number; months: number } | null;
+}
+
+export const reactivation = {
+  get: (linkToken: string) =>
+    request<ReactivationView>(`/api/license/reactivate/${encodeURIComponent(linkToken)}`),
+  checkout: (linkToken: string, body: { plan: 'starter' | 'team'; billingPeriod: 'monthly' | 'yearly' }) =>
+    request<{ url: string }>(`/api/license/reactivate/${encodeURIComponent(linkToken)}/checkout`, {
+      method: 'POST',
+      body,
+    }),
+  /** A click on the page (paywall_action). Fire and forget; survives the page closing. */
+  track: (
+    linkToken: string,
+    body: {
+      action: string;
+      plan?: 'starter' | 'team';
+      period?: 'monthly' | 'yearly';
+      device?: 'mobile' | 'desktop';
+      offer?: 'personal' | 'list';
+    },
+  ) => {
+    try {
+      void fetch(`${API_BASE}/api/license/reactivate/${encodeURIComponent(linkToken)}/event`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  },
+};
+
 export const publicStats = {
   get: () => request<PublicStats>('/api/public/stats'),
 };
@@ -1428,6 +1791,26 @@ export const siteSettings = {
   /** The signed-in member's workspace links (instance-wide ones as fallback). */
   workspaceFooterLinks: (token: string) =>
     request<Array<{ label: string; url: string }>>('/api/settings/footer-links', { token }),
+};
+
+export type MemberVisibilityMode = 'open' | 'restricted';
+
+/**
+ * What members who are not admins see in the dashboard. `restrictedForMe` is
+ * true when the mode is `restricted` and the caller is not an admin.
+ */
+export interface MemberVisibilityState {
+  mode: MemberVisibilityMode;
+  restrictedForMe: boolean;
+}
+
+export const memberVisibility = {
+  /** Any member: the workspace's mode and whether it narrows the caller's view. */
+  get: (token: string) =>
+    request<MemberVisibilityState>('/api/settings/member-visibility', { token }),
+  /** Admin only. */
+  set: (mode: MemberVisibilityMode, token: string) =>
+    request<MemberVisibilityState>('/api/admin/settings/member-visibility', { method: 'PUT', body: { mode }, token }),
 };
 
 export const versionApi = {
@@ -1766,18 +2149,44 @@ export const roles = {
     request<any[]>(`/api/roles/${id}/tools`, { token }),
   setToolAccess: (id: string, toolIds: string[], token: string) =>
     request(`/api/roles/${id}/tools`, { method: 'PUT', body: { toolIds }, token }),
+  /** Per-tool limits on an existing grant; null clears a window (unlimited). */
+  setToolRateLimits: (
+    id: string,
+    toolId: string,
+    limits: { callsPerMinute: number | null; callsPerHour: number | null },
+    token: string,
+  ) => request(`/api/roles/${id}/tools/${toolId}/rate-limit`, { method: 'PUT', body: limits, token }),
   assignToUser: (userId: string, roleId: string | null, token: string) =>
     request(`/api/roles/assign/${userId}`, { method: 'PUT', body: { roleId }, token }),
 };
 
 // MCP API Keys
+/**
+ * Key scope. `MCP` keys call MCP tools on `/mcp` only (the default, and what
+ * the per-server key UI mints). `MANAGEMENT_READ` / `MANAGEMENT_ADMIN` keys
+ * drive the management API (`/api/*`) for the `amcp` CLI, read-only or full,
+ * always still capped by the owner's role (see jwt-or-management-key.guard).
+ */
+export type McpApiKeyScope = 'MCP' | 'MANAGEMENT_READ' | 'MANAGEMENT_ADMIN';
+
+export interface McpApiKeyInfo {
+  id: string;
+  name: string;
+  scope: McpApiKeyScope;
+  isActive: boolean;
+  mcpServerId?: string | null;
+  mcpServer?: { id: string; name: string } | null;
+  lastUsedAt?: string | null;
+  createdAt?: string;
+}
+
 export const mcpKeys = {
   list: (token: string) =>
-    request<any[]>('/api/mcp-keys', { token }),
-  generate: (name: string, token: string, mcpServerId?: string) =>
-    request<{ id: string; key: string; name: string; mcpServerId?: string }>('/api/mcp-keys', {
+    request<McpApiKeyInfo[]>('/api/mcp-keys', { token }),
+  generate: (name: string, token: string, mcpServerId?: string, scope?: McpApiKeyScope) =>
+    request<{ id: string; key: string; name: string; mcpServerId?: string; scope: McpApiKeyScope }>('/api/mcp-keys', {
       method: 'POST',
-      body: { name, ...(mcpServerId ? { mcpServerId } : {}) },
+      body: { name, ...(mcpServerId ? { mcpServerId } : {}), ...(scope && scope !== 'MCP' ? { scope } : {}) },
       token,
     }),
   revoke: (id: string, token: string) =>
@@ -1818,6 +2227,106 @@ export const support = {
       skipAutoLogout: true,
     }),
 };
+
+// ── Plan fit (Cloud) ───────────────────────────────────────────────────────
+// Mirrors packages/backend/src/license/plan-fit.ts.
+
+export type FitPlanId = 'starter' | 'team';
+
+export interface FitAxis {
+  current: number;
+  /** null = unlimited on that plan. */
+  max: number | null;
+  over: boolean;
+}
+
+export interface FitItem {
+  id: string;
+  name: string;
+  calls30d: number;
+}
+
+export interface FitRanked extends FitAxis {
+  /** Stay active on that plan, most used first. */
+  keep: FitItem[];
+  /** Would be paused (never deleted), least used last. */
+  pause: FitItem[];
+}
+
+/** What this workspace, as it is today, keeps and loses on a plan. */
+export interface PlanFit {
+  plan: FitPlanId;
+  /** Everything the workspace uses today fits the plan. */
+  fits: boolean;
+  connectors: FitRanked;
+  mcpServers: FitRanked;
+  users: FitAxis;
+  fileSearch: {
+    connectors: FitRanked;
+    files: FitAxis;
+    bytes: FitAxis;
+    fileShare: boolean;
+  };
+  code: {
+    tools: FitAxis;
+    inlineInUse: boolean;
+    inlineIncluded: boolean;
+    runsThisMonth: FitAxis;
+  };
+}
+
+export type PlanFits = Partial<Record<FitPlanId, PlanFit>>;
+
+/**
+ * A refusal because a plan limit is used up (HTTP 403, `code: 'PLAN_LIMIT'`):
+ * active connectors, MCP servers or File Search folders (activating or
+ * creating one more needs one paused first, or a bigger plan), or users (an
+ * invitation beyond the plan).
+ */
+export type PlanLimitAxis = 'connectors' | 'mcpServers' | 'users' | 'fileSearchConnectors';
+const PLAN_LIMIT_AXES: readonly string[] = ['connectors', 'mcpServers', 'users', 'fileSearchConnectors'];
+
+export interface PlanLimitError {
+  code: 'PLAN_LIMIT';
+  axis: PlanLimitAxis;
+  max: number;
+  current: number;
+  message: string;
+}
+
+/** The PLAN_LIMIT details of a refused request, or null for any other error. */
+export function planLimitOf(err: unknown): PlanLimitError | null {
+  if (!(err instanceof ApiError) || err.status !== 403) return null;
+  const b = err.body as Partial<PlanLimitError> | null | undefined;
+  if (!b || b.code !== 'PLAN_LIMIT') return null;
+  if (typeof b.axis !== 'string' || !PLAN_LIMIT_AXES.includes(b.axis)) return null;
+  return {
+    code: 'PLAN_LIMIT',
+    axis: b.axis as PlanLimitAxis,
+    max: typeof b.max === 'number' ? b.max : 0,
+    current: typeof b.current === 'number' ? b.current : 0,
+    message: typeof b.message === 'string' && b.message ? b.message : err.message,
+  };
+}
+
+export function isPlanLimitError(err: unknown): boolean {
+  return planLimitOf(err) !== null;
+}
+
+/** GET /api/license/usage. */
+export interface LicenseUsage {
+  plan: string | null;
+  connectors: { current: number; max: number | null; isOver: boolean };
+  mcpServers: { current: number; max: number | null; isOver: boolean };
+  users: { current: number; max: number | null; isOver: boolean };
+  isOverAny: boolean;
+  /**
+   * Cloud: the connectors (File Search folders included) and MCP servers the
+   * last automatic downgrade paused, still paused. Missing on servers that do
+   * not pause by plan.
+   */
+  pausedByPlan?: { connectors: string[]; mcpServers: string[] };
+}
 
 // License
 export const license = {
@@ -1866,6 +2375,21 @@ export const license = {
       method: 'POST',
       token,
     }),
+  /** Cloud only (ADMIN, paid plans): a one-hour link to accept the DPA on the licence site. */
+  dpaLink: (token: string, locale?: string) =>
+    request<{ url: string }>('/api/license/dpa-link', {
+      method: 'POST',
+      body: { ...(locale && { locale }) },
+      token,
+    }),
+  /** Cloud only (ADMIN): whether each paid invoice is emailed as a PDF, and to which address. */
+  invoiceEmail: (token: string) => request<InvoiceEmailSettings>('/api/license/invoice-email', { token }),
+  /**
+   * Cloud only (ADMIN): switch invoices by email on or off. `to`: an address,
+   * null for the billing contact, or leave it out to keep the current one.
+   */
+  setInvoiceEmail: (token: string, change: { enabled: boolean; to?: string | null }) =>
+    request<InvoiceEmailSettings>('/api/license/invoice-email', { method: 'PUT', body: change, token }),
   /** 'cancel' opens Stripe's cancellation page, 'payment_method_update' the page to add a card. */
   billingPortal: (token: string, returnUrl?: string, flow?: 'cancel' | 'payment_method_update') =>
     request<{ url: string }>('/api/license/billing-portal', {
@@ -1920,16 +2444,24 @@ export const license = {
       '/api/license/card-trial-offer',
       { token },
     ),
+  /**
+   * Cloud: the ended-trial wall of an admin: its variant ('trust', or the
+   * earlier 'control' wall for about 10% of workspaces) and the workspace's
+   * own numbers, null when it never made a successful call. `wall` is null
+   * for everyone else.
+   */
+  wall: (token: string) =>
+    request<{ wall: LicenseWallView | null }>('/api/license/wall', { token }),
   getInstanceId: () =>
     request<{ instanceId: string }>('/api/license/instance-id'),
   getUsage: (token?: string) =>
-    request<{
-      plan: string | null;
-      connectors: { current: number; max: number | null; isOver: boolean };
-      mcpServers: { current: number; max: number | null; isOver: boolean };
-      users: { current: number; max: number | null; isOver: boolean };
-      isOverAny: boolean;
-    }>('/api/license/usage', { token }),
+    request<LicenseUsage>('/api/license/usage', { token }),
+  /**
+   * Cloud: what this workspace keeps and loses on Starter and Team (or on
+   * `plan` only). 404 on self-hosted, where these limits do not apply.
+   */
+  getPlanFit: (token: string, plan?: FitPlanId) =>
+    request<{ plans?: PlanFits }>(`/api/license/plan-fit${plan ? `?plan=${plan}` : ''}`, { token }),
 };
 
 export interface McpServer {
@@ -1958,10 +2490,295 @@ export const mcpServers = {
     request<{ calls30d: number; lastCallAt: string | null }>(`/api/mcp-servers/${id}/activity`, { token }),
   create: (data: { name: string; slug?: string; description?: string; instructions?: string }, token: string) =>
     request<any>('/api/mcp-servers', { method: 'POST', body: data, token }),
-  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index' }, token: string) =>
+  update: (id: string, data: { name?: string; slug?: string; description?: string; instructions?: string; isActive?: boolean; skillsDelivery?: 'auto' | 'inline' | 'index'; codeMode?: 'off' | 'tools' | 'inline' }, token: string) =>
     request<any>(`/api/mcp-servers/${id}`, { method: 'PUT', body: data, token }),
   delete: (id: string, token: string) =>
     request(`/api/mcp-servers/${id}`, { method: 'DELETE', token }),
   assignConnectors: (id: string, connectorIds: string[], token: string) =>
     request(`/api/mcp-servers/${id}/connectors`, { method: 'PUT', body: { connectorIds }, token }),
 };
+
+// ── File Search and File Share (#1379) ─────────────────────────────────────
+
+export type FileSearchProtocol = 'sftp' | 'ftp' | 'ftps' | 'ftps-implicit' | 'webdav' | 'local' | 's3';
+
+export interface FileShareQuota {
+  maxTtlHours: number | null;
+  maxStoredBytes: number | null;
+  maxFileBytes: number;
+  maxLinksPerDay: number | null;
+  publicLinks: boolean;
+  internalWithoutExpiry: boolean;
+}
+
+export interface FileSearchQuota {
+  plan: string;
+  maxConnectors: number | null;
+  maxFiles: number | null;
+  maxSourceBytes: number | null;
+  maxTextChars: number | null;
+  maxFileBytes: number;
+  minIntervalMinutes: number;
+  manualSyncsPerDay: number | null;
+  share: FileShareQuota | null;
+  ocr: boolean;
+  folderRules: boolean;
+  policy: boolean;
+}
+
+export type FileSearchAccess =
+  | { allowed: true; plan: string; quota: FileSearchQuota; trialEndsAt?: string | null; next?: { plan: string; quota: FileSearchQuota } | null }
+  | {
+      allowed: false;
+      reason: 'no_licence' | 'expired' | 'community' | 'plan_without_feature';
+      message: string;
+      trialAvailable: boolean;
+      /** Self-hosted: File Search waits for a registered licence key (the free Community key counts). */
+      keyRequired?: 'to_start' | 'during_trial' | null;
+    };
+
+export interface FileSearchPolicy {
+  publicLinks: boolean;
+  maxTtlHours: number | null;
+  aiDrafting: boolean;
+  allowPlainFtp: boolean;
+}
+
+export interface FileSearchCapabilities {
+  cloud: boolean;
+  worker: { ok: boolean; extractor: boolean; ocr: boolean; error?: string };
+  access: FileSearchAccess;
+  protocols: FileSearchProtocol[];
+  localRoots: string[];
+  ai: { available: boolean; allowedByPolicy: boolean; provider: string | null; model: string | null };
+  policy: FileSearchPolicy;
+  intervals: number[];
+  usage: { connectors: number; files: number; bytes: number; textChars: number };
+}
+
+export interface FileSourceTestStep {
+  key: 'resolve' | 'connect' | 'handshake' | 'fingerprint' | 'login' | 'folder';
+  ok: boolean;
+  detail?: string;
+}
+
+export interface FileSourceTestResult {
+  ok: boolean;
+  steps: FileSourceTestStep[];
+  fingerprint?: { kind: 'ssh-host-key' | 'tls-certificate'; sha256: string };
+  rootEntries?: number;
+  sample?: string[];
+  errorKind?: string;
+  message?: string;
+}
+
+export interface FileTreeNode {
+  name: string;
+  path: string;
+  files: number;
+  bytes: number;
+  archive?: boolean;
+  children: FileTreeNode[];
+}
+
+export interface FileSearchBudget {
+  files: number;
+  bytes: number;
+  textFiles: number;
+  nameOnly: number;
+  tooLarge: number;
+  maxFiles: number | null;
+  maxBytes: number | null;
+  maxFileBytes: number;
+  usedByOtherConnectors: { files: number; bytes: number };
+  fits: boolean;
+  over: Array<{ limit: 'files' | 'bytes'; used: number; max: number }>;
+  plan: string;
+  next: { plan: string; quota: FileSearchQuota } | null;
+}
+
+export interface FileSearchSelection {
+  excludeFolders: string[];
+  extensions?: string[];
+  maxAgeYears?: number;
+}
+
+export interface FileSearchDescription {
+  source: 'ai' | 'rules';
+  summary: string;
+  instructions: string;
+  examplePrompts: string[];
+  terms: string[];
+  language: string | null;
+  model?: string;
+}
+
+export interface FileSearchScan {
+  id: string;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'describing' | 'describing_running';
+  progress: { phase?: string; files?: number; dirs?: number; useAi?: boolean } | null;
+  error: string | null;
+  truncated: boolean;
+  tree: FileTreeNode | null;
+  types: Record<string, { files: number; bytes: number }> | null;
+  totals: { files: number; dirs: number; bytes: number; oldest: string | null; newest: string | null; nameOnly: number; textFiles: number } | null;
+  suggestions: { excludeFolders: Array<{ path: string; files: number; reason: string }>; toolPrefix: string } | null;
+  description: FileSearchDescription | null;
+  samples: string[];
+  selection: FileSearchSelection;
+  budget: FileSearchBudget | null;
+}
+
+export interface FileSearchRun {
+  id: string;
+  trigger: string;
+  status: string;
+  counters: Record<string, number>;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface FileSearchOverview {
+  connector: { id: string; name: string; isActive: boolean; instructions: string | null; address: string };
+  config: Record<string, any> & { protocol: FileSearchProtocol; toolPrefix: string };
+  hasSecrets: boolean;
+  status: {
+    state: string;
+    pausedReason: string | null;
+    pausedAt: string | null;
+    summary: string | null;
+    lastSuccessAt: string | null;
+    nextSyncAt: string | null;
+    syncIntervalMinutes: number | null;
+    files: number;
+    bytes: number;
+    textChars: number;
+    byStatus: Record<string, number>;
+    runs: FileSearchRun[];
+  };
+  instructionsDraft: string | null;
+  manualSyncsToday: number;
+  lastScan: { id: string; status: string; createdAt: string } | null;
+  access: FileSearchAccess;
+  usage: { connectors: number; files: number; bytes: number; textChars: number };
+}
+
+export interface FileShareLink {
+  id: string;
+  filename: string;
+  bytes: number;
+  access: 'internal' | 'public';
+  source: 'upload' | 'connector';
+  entryPath: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  downloadCount: number;
+  state: 'active' | 'expired' | 'revoked' | 'exhausted';
+  createdBy: string | null;
+}
+
+export interface FileShareLimits {
+  plan: string;
+  maxTtlHours: number | null;
+  maxStoredBytes: number | null;
+  maxFileBytes: number;
+  maxLinksPerDay: number | null;
+  publicLinks: boolean;
+  internalWithoutExpiry: boolean;
+  cloud: boolean;
+}
+
+export const fileSearch = {
+  capabilities: (token: string) => request<FileSearchCapabilities>('/api/file-search/capabilities', { token }),
+  test: (body: { config: Record<string, unknown>; secrets?: Record<string, string>; connectorId?: string }, token: string) =>
+    request<FileSourceTestResult>('/api/file-search/test', { method: 'POST', body, token }),
+  createDraft: (body: { name: string; config: Record<string, unknown>; secrets?: Record<string, string> }, token: string) =>
+    request<{ id: string; name: string; config: Record<string, unknown> }>('/api/file-search/connectors', { method: 'POST', body, token }),
+  updateSource: (id: string, body: { name?: string; config?: Record<string, unknown>; secrets?: Record<string, string> }, token: string) =>
+    request<{ id: string }>(`/api/file-search/connectors/${id}/source`, { method: 'PUT', body, token }),
+  overview: (id: string, token: string) => request<FileSearchOverview>(`/api/file-search/connectors/${id}`, { token }),
+  startScan: (id: string, useAi: boolean, token: string) =>
+    request<{ id: string; status: string }>(`/api/file-search/connectors/${id}/scans`, { method: 'POST', body: { useAi }, token }),
+  scan: (id: string, scanId: string, token: string) => request<FileSearchScan>(`/api/file-search/connectors/${id}/scans/${scanId}`, { token }),
+  cancelScan: (id: string, scanId: string, token: string) =>
+    request(`/api/file-search/connectors/${id}/scans/${scanId}`, { method: 'DELETE', token }),
+  redescribe: (id: string, scanId: string, useAi: boolean, token: string) =>
+    request(`/api/file-search/connectors/${id}/scans/${scanId}/describe`, { method: 'POST', body: { useAi }, token }),
+  setSelection: (id: string, body: FileSearchSelection & { scanId?: string }, token: string) =>
+    request<{ selection: FileSearchSelection; budget: FileSearchBudget | null }>(`/api/file-search/connectors/${id}/selection`, { method: 'PUT', body, token }),
+  activate: (
+    id: string,
+    body: { instructions?: string; summary?: string; toolPrefix?: string; syncIntervalMinutes?: number; mcpServerIds?: string[] },
+    token: string,
+  ) => request<{ id: string; state: string; syncIntervalMinutes: number }>(`/api/file-search/connectors/${id}/activate`, { method: 'POST', body, token }),
+  tree: (id: string, token: string) => request<FileTreeNode>(`/api/file-search/connectors/${id}/tree`, { token }),
+  problems: (id: string, token: string, page = 1, pageSize = 20) =>
+    request<{
+      items: Array<{ path: string; status: string; lastError: string | null; size: number; attempts: number; updatedAt: string }>;
+      total: number;
+      page: number;
+      pageSize: number;
+    }>(`/api/file-search/connectors/${id}/problems?page=${page}&pageSize=${pageSize}`, { token }),
+  runs: (id: string, token: string) => request<FileSearchRun[]>(`/api/file-search/connectors/${id}/runs`, { token }),
+  syncNow: (id: string, token: string) => request<{ ok: boolean; state: string }>(`/api/file-search/connectors/${id}/sync`, { method: 'POST', token }),
+  pause: (id: string, token: string) => request(`/api/file-search/connectors/${id}/pause`, { method: 'POST', token }),
+  resume: (id: string, token: string) => request(`/api/file-search/connectors/${id}/resume`, { method: 'POST', token }),
+  setSchedule: (id: string, syncIntervalMinutes: number, token: string) =>
+    request<{ syncIntervalMinutes: number }>(`/api/file-search/connectors/${id}/schedule`, { method: 'PUT', body: { syncIntervalMinutes }, token }),
+  setDescription: (id: string, body: { instructions?: string; summary?: string }, token: string) =>
+    request(`/api/file-search/connectors/${id}/description`, { method: 'PUT', body, token }),
+  policy: (token: string) => request<{ policy: FileSearchPolicy; editable: boolean }>('/api/file-search/policy', { token }),
+  setPolicy: (body: Partial<FileSearchPolicy>, token: string) =>
+    request<{ policy: FileSearchPolicy }>('/api/file-search/policy', { method: 'PUT', body, token }),
+  accessRules: (id: string, token: string) =>
+    request<{ editable: boolean; roles: Array<{ id: string; name: string }>; rules: Array<{ id: string; roleId: string; pattern: string; effect: 'allow' | 'deny' }> }>(
+      `/api/file-search/connectors/${id}/access-rules`,
+      { token },
+    ),
+  setAccessRules: (id: string, rules: Array<{ roleId: string; pattern: string; effect: 'allow' | 'deny' }>, token: string) =>
+    request(`/api/file-search/connectors/${id}/access-rules`, { method: 'PUT', body: { rules }, token }),
+};
+
+export const fileShare = {
+  list: (token: string, opts: { page?: number; pageSize?: number; q?: string; access?: 'public' | 'internal'; mine?: boolean } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.page) qs.set('page', String(opts.page));
+    if (opts.pageSize) qs.set('pageSize', String(opts.pageSize));
+    if (opts.q?.trim()) qs.set('q', opts.q.trim());
+    if (opts.access) qs.set('access', opts.access);
+    if (opts.mine) qs.set('mine', '1');
+    const query = qs.toString();
+    return request<{
+      links: FileShareLink[];
+      total: number;
+      page: number;
+      pageSize: number;
+      limits: FileShareLimits | null;
+      usage: { storedBytes: number; activeLinks: number; linksToday: number };
+      connector: { id: string; name: string } | null;
+    }>(`/api/file-share${query ? `?${query}` : ''}`, { token });
+  },
+  revoke: (id: string, token: string) => request(`/api/file-share/${id}`, { method: 'DELETE', token }),
+  addConnector: (token: string) => request<{ id: string; name: string }>('/api/file-share/connector', { method: 'POST', token }),
+  describe: (shareToken: string) =>
+    request<{ filename: string; bytes: number; mimeType: string; access: 'internal' | 'public'; workspace: string; expiresAt: string | null; state: string }>(
+      `/api/file-share/s/${encodeURIComponent(shareToken)}`,
+    ),
+  download: (shareToken: string, authToken?: string | null) =>
+    request<{ url: string; expiresInSeconds: number }>(
+      `/api/file-share/s/${encodeURIComponent(shareToken)}/${authToken ? 'download-internal' : 'download'}`,
+      { method: 'POST', token: authToken ?? undefined, skipAutoLogout: true },
+    ),
+};
+
+/** GET /api/license/wall (see the backend's license-wall.service.ts). */
+export interface LicenseWallView {
+  variant: 'trust' | 'control';
+  recap: {
+    successfulCalls: number;
+    connectors: string[];
+    client: string | null;
+    blockedSinceEnd: boolean;
+  } | null;
+}

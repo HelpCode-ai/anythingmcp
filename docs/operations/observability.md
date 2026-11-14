@@ -34,7 +34,7 @@ Backend (`@sentry/nestjs`) auto-instruments http/express/prisma. `SentryGlobalFi
 
 Frontend (`@sentry/nextjs`) wires browser / server / edge runtimes; `error.tsx`, `global-error.tsx` and `onRequestError` report what reaches them. Browser events are sent to `/monitoring` on the same origin and forwarded to Sentry, so ad blockers do not drop them; put that path behind a reverse proxy that does not forward the client address (see `deploy/cloud/Caddyfile`).
 
-What leaves the process is an allowlist (`packages/backend/src/common/sentry-scrub.ts`, `packages/frontend/src/lib/sentry-scrub.ts`): request method, URL without query string or fragment, and the `user-agent` header. No request bodies (MCP tool arguments), cookies, query strings (OAuth codes, invitation and reset tokens), fragments (licence keys), IP addresses or user. Outgoing HTTP breadcrumbs and spans lose their query string, where some upstream APIs take their key; console breadcrumbs are dropped. Session replay is off.
+What leaves the process is an allowlist (`packages/backend/src/common/sentry-scrub.ts`, `packages/frontend/src/lib/sentry-scrub.ts`): request method, URL without query string or fragment, and the `user-agent` header. No request bodies (MCP tool arguments), cookies, query strings (OAuth codes, invitation and reset tokens), fragments (licence keys), IP addresses or user. Outgoing HTTP breadcrumbs and spans lose their query string, where some upstream APIs take their key; console breadcrumbs are dropped. Spans carry no MCP tool arguments or results and no AI prompts: the SDK's `dataCollection` option turns every such category off, and the scrubbers drop those span attributes as a second line of defence. Session replay is off.
 
 | Env | Default | Purpose |
 |---|---|---|
@@ -87,7 +87,7 @@ Two systemd timers run on the managed cloud host, installed by `.github/workflow
 | `anythingmcp-probe.timer` | `deploy/cloud/uptime-probe.sh` | every minute | `UPTIME_ALERT_TO`, on a change of state only (down, recovered) |
 | `anythingmcp-stuck-report.timer` | `deploy/cloud/stuck-users-report.sh` | Monday 07:00 Europe/Berlin | `REPORT_TO`, falling back to `UPTIME_ALERT_TO` |
 
-The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`); catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; and signups that never created a connector or never made a call. It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
+The weekly report lists, for the last 7 days with 30-day context: organizations whose tool calls have never succeeded (marked NEW or STILL STUCK against the previous report, whose list is kept in `/var/lib/anythingmcp-report/stuck-orgs`), grouped by the likely cause of their most frequent error (provider quota or billing, credentials, configuration, not reachable, other), with every "other" and every org whose admin has a company address listed and free-mail orgs in a known cause only counted; catalog connectors at 0 % success, or under 20 % with at least 5 calls, across all organizations; signups that never created a connector or never made a call; the funnel of the organizations created in the window (AI client connected, catalog searched from a chat or in the store, setup started and completed, has a connector, successful call) next to the previous week's cohort; and Etsy apps waiting for Etsy's approval (keys refused this week, approved this week, still pending). It only reads the database, never selects tool inputs, outputs or credentials, and scrubs error texts (one line, no URL query strings, e-mail addresses or long tokens, 150 characters). It does contain customer e-mail addresses, so send it to the team only.
 
 | Env (in the host `.env`) | Default | |
 |---|---|---|
@@ -213,6 +213,25 @@ scrape_configs:
 ### Cloud vs self-hosted
 
 On Cloud, metrics are instance-wide only: no series may carry an organization id, connector name, tool name or user, which is why `METRICS_TOOL_LABELS` has no effect there. Per-organization usage already exists in the database (`AuditService.getBreakdowns`) and is unaffected by this endpoint. On self-hosted, the operator who sets `METRICS_TOOL_LABELS=true` is the only consumer of their own instance's metrics, so per-connector/per-tool labels are allowed. `METRICS_TOKEN` is required on both: the listener's default bind host is `0.0.0.0`.
+
+## 7. Inbound webhook ingestion (opt-in per connector)
+
+Any connector may opt in (`webhookEnabled`, regardless of its type) to receive inbound webhook deliveries at `POST /api/webhooks/:connectorId`. Stripe is the only verified provider today (`Stripe-Signature`: HMAC-SHA256 over `timestamp.body`, with a 300 s replay tolerance); other providers each need their own verification scheme and are a follow-up. Nothing is stored before the signature checks out. An unknown connector id, a disabled hook, and a bad signature all answer identically, so the endpoint cannot be used to probe which connector ids exist.
+
+Stored payloads are returned to the model exactly as received by the connector's `<prefix>_recent_events` tool — including whatever personal data the provider's event carries (a Stripe payload can include a customer's name, e-mail and address). They are kept for `WEBHOOK_EVENT_RETENTION_DAYS` (7 days by default) and a single call returns at most 50 events, regardless of the `limit` requested.
+
+The same data is available outside an AI client, trimmed for a dashboard rather than a model: `GET /api/connectors/:id/webhook/events` (`limit`, `since`) returns the same rows as metadata only — `payload` is left out, so none of that personal data reaches this endpoint — and `GET /api/connectors/:id/webhook/url` returns the delivery URL to paste into the provider, built from `SERVER_URL` the same way `GET /api/connectors/oauth/redirect-uri` builds the OAuth callback. Both are gated like any other connector setting — the connector owner or an admin.
+
+The connector page's "Inbound webhooks" card (`webhook-card.tsx`) is this feature's UI, shown for a Stripe connector or any connector that already has `webhookEnabled` on: the owner or an admin flips the switch there, pastes the provider's signing secret (write-only, never read back), copies the delivery URL, and sees the last ten deliveries (type, id, time — no payload). It calls the same endpoints above, so it carries no logic of its own about retention or the per-connector cap.
+
+| Env | Default | |
+|---|---|---|
+| `WEBHOOK_EVENT_RETENTION_DAYS` | `7` | A periodic sweep (hourly, like the connector-auth-status sweep) deletes received events older than this. |
+| `WEBHOOK_EVENT_MAX_PER_CONNECTOR` | `500` | Enforced on every insert, deleting the oldest rows first — bounds storage for one connector even between sweeps, during a burst of deliveries. |
+
+### Cloud vs self-hosted
+
+Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch. The one difference: on Cloud, the plan caps how many active connectors may have webhooks turned on (Starter 1, Team and the trial 5, Business and Enterprise no limit; see [Cloud plan limits](../cloud-plans.md)). The cap follows `PLAN_CAPS_ENFORCE` like the other plan caps: `dry-run` only logs. Self-hosted has no cap.
 
 ## Fatal crash reports (always on in the Docker image)
 

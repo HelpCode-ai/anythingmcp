@@ -125,6 +125,49 @@ test.describe('sign-up from an AI client (Claude "Connect")', () => {
     expect(calls.some((c) => c.includes('checkout-link'))).toBe(false);
   });
 
+  test('Enter in the code field verifies, once there are six digits', async ({ page }) => {
+    const calls: string[] = [];
+    await page.route(/\/(api|health)\//, async (route) => {
+      const p = new URL(route.request().url()).pathname;
+      calls.push(p);
+      if (p === '/health/server-info') return route.fulfill({ json: CLOUD_INFO });
+      if (p === '/api/auth/register') return route.fulfill({ status: 201, json: NEUTRAL });
+      if (p === '/api/auth/login') {
+        return route.fulfill({
+          json: {
+            accessToken: 't',
+            user: { id: 'u1', email: 'claude@example.test', name: 'Jane', role: 'ADMIN', organizationId: 'o1', emailVerified: false },
+            needsLicenseSetup: true,
+          },
+        });
+      }
+      if (p === '/api/auth/verify-email') return route.fulfill({ json: { message: 'ok', emailVerified: true } });
+      if (p === '/api/license/activate-trial') {
+        return route.fulfill({ json: { trialStarted: false, trialDaysLeft: 7, plan: 'trial', expiresAt: null, licenseKey: 'k', message: '' } });
+      }
+      return route.fulfill({ json: {} });
+    });
+    // The backend-served authorization page, stubbed.
+    await page.route((url) => url.pathname === '/auth/login', (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Authorize AnythingMCP</h1>' }),
+    );
+
+    await fillSignup(page, 'claude@example.test', '&redirect=%2Fauth%2Flogin');
+    await expect(page.getByRole('heading', { name: 'Verify Your Email' })).toBeVisible();
+    const code = page.locator('input[inputmode="numeric"]');
+    // Five digits: Enter does nothing yet.
+    await code.fill('12345');
+    await code.press('Enter');
+    await code.fill('123456');
+    await code.press('Enter');
+
+    await expect(page).toHaveURL(/\/auth\/login$/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Authorize AnythingMCP' })).toBeVisible();
+    expect(calls.filter((c) => c === '/api/auth/verify-email')).toHaveLength(1);
+    // Not detoured through the trial offer or the welcome wizard.
+    expect(calls.some((c) => c.includes('checkout-link'))).toBe(false);
+  });
+
   test('an off-site redirect is ignored', async ({ page }) => {
     await page.route(/\/(api|health)\//, (route) => {
       const p = new URL(route.request().url()).pathname;

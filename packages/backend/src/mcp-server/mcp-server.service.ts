@@ -143,6 +143,7 @@ export class McpServerService implements OnModuleInit {
       headers: connector.headers,
       envVars: connector.envVars,
       config: connector.config,
+      credentialScope: connector.credentialScope,
       toolMappings: connector.tools.map((t) => t.endpointMapping),
     }).status;
     for (const tool of connector.tools) {
@@ -150,6 +151,7 @@ export class McpServerService implements OnModuleInit {
         id: tool.id,
         connectorId: connector.id,
         organizationId: connector.organizationId,
+        connectorName: connector.name,
         name: tool.name,
         description: tool.description,
         parameters: tool.parameters as Record<string, unknown>,
@@ -163,6 +165,7 @@ export class McpServerService implements OnModuleInit {
           envVars: connector.envVars as Record<string, string> | undefined,
           specUrl: connector.specUrl ?? undefined,
           config: connector.config as Record<string, unknown> | undefined,
+          credentialScope: connector.credentialScope,
         },
         setupStatus,
         endpointMapping: tool.endpointMapping as any,
@@ -375,7 +378,8 @@ export class McpServerService implements OnModuleInit {
    *
    * The handler checks role-based access: if the requesting user has a
    * custom MCP role, only tools assigned to that role are executable.
-   * ADMIN users and users without a custom role have unrestricted access.
+   * ADMIN users have unrestricted access. Users without a custom role have it
+   * only while the workspace has no tool whitelist (see RolesService.getAllowedToolIds).
    */
   private registerMcpTool(
     name: string,
@@ -426,6 +430,11 @@ export class McpServerService implements OnModuleInit {
           organizationId: user?.organizationId,
           authMethod: user?.authMethod || 'none',
           apiKeyName: user?.apiKeyName,
+          supportKeyId: user?.supportKeyId,
+          // The OAuth client the access token was issued to (`azp` on access
+          // tokens, `client_id` on refresh ones), for the blocked-trial event.
+          oauthClientId:
+            typeof (user?.azp ?? user?.client_id) === 'string' ? (user.azp ?? user.client_id) : undefined,
           mcpServerId: user?.mcpServerId,
           connectorIds: serverConnectorIds,
         };

@@ -1,3 +1,6 @@
+// `openid-client` v6 is ESM-only and Jest cannot parse it; the callback
+// controller imports SsoService, which these tests do not exercise.
+jest.mock('openid-client', () => ({}));
 import * as adapter from './xero.json';
 import { AdapterDefinition, getAdapter } from '../catalog';
 import { applySchemaDefaults } from '../../common/schema-defaults.util';

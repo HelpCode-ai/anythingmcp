@@ -9,6 +9,11 @@ import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { normalizeOpenApi31 } from './openapi-3.1-normalizer';
 import { outboundAxiosOptions } from '../../common/outbound-http';
 
+// Resolve only the $refs inside the document. Without these options
+// swagger-parser reads a string spec as a file path or URL, and follows
+// external $refs to local files or to any host, past assertSafeOutboundUrl.
+const SWAGGER_PARSER_OPTIONS = { resolve: { external: false, file: false, http: false } };
+
 export interface ParsedTool {
   name: string;
   /**
@@ -25,6 +30,7 @@ export interface ParsedTool {
     path: string;
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
+    bodyTemplate?: string;
     bodyEncoding?: string;
     headers?: Record<string, string>;
   };
@@ -74,6 +80,11 @@ export class OpenApiParser {
     this.logger.debug('Parsing OpenAPI specification...');
 
     const rawSpec = typeof spec === 'string' ? this.decodeSpecString(spec) : spec;
+    if (!rawSpec || typeof rawSpec !== 'object' || Array.isArray(rawSpec)) {
+      throw new Error(
+        'This is not an OpenAPI document. Paste the JSON or YAML of the spec, or import it from its URL.',
+      );
+    }
 
     // OpenAPI 3.1 isn't supported by swagger-parser's validator (the upstream
     // schema is OAS 3.0 only). Skip validation in that case — the dereference
@@ -102,8 +113,8 @@ export class OpenApiParser {
     let api: unknown;
     try {
       api = isOpenApi31
-        ? await SwaggerParser.dereference(rawSpec as any)
-        : await SwaggerParser.validate(rawSpec as any);
+        ? await SwaggerParser.dereference(rawSpec as any, SWAGGER_PARSER_OPTIONS)
+        : await SwaggerParser.validate(rawSpec as any, SWAGGER_PARSER_OPTIONS);
     } catch (err: any) {
       // swagger-parser's bundled validator only knows OAS 3.0.0–3.0.3, so newer
       // patch releases (e.g. 3.0.4, current as of 2024) are rejected as
@@ -111,7 +122,7 @@ export class OpenApiParser {
       // so fall back to it (same path as 3.1) to still extract tools.
       if (err?.message?.includes('Unsupported OpenAPI version')) {
         try {
-          api = await SwaggerParser.dereference(rawSpec as any);
+          api = await SwaggerParser.dereference(rawSpec as any, SWAGGER_PARSER_OPTIONS);
         } catch {
           throw new Error(
             'This OpenAPI document declares a version we don\'t fully support. ' +
@@ -395,13 +406,20 @@ export class OpenApiParser {
       headerMapping[param.name] = `$${param.name}`;
     }
 
-    // Request body
+    // Request body. OpenAPI 3 declares it as `requestBody`; Swagger 2.0 as a
+    // parameter `in: body` (Amazon SP-API models, many older APIs), which was
+    // dropped before, so those tools sent no body and no Content-Type.
     const requestBody = operation.requestBody;
-    if (requestBody) {
-      const content = requestBody.content;
-      const jsonContent =
-        content?.['application/json'] ||
-        content?.['application/x-www-form-urlencoded'];
+    const swaggerBody = allParams.find((p: any) => p.in === 'body' && p.schema);
+    let declaresJsonBody = false;
+    let bodyIsRequired = false;
+    if (requestBody || swaggerBody) {
+      const content = requestBody?.content;
+      const jsonContent = requestBody
+        ? content?.['application/json'] || content?.['application/x-www-form-urlencoded']
+        : { schema: swaggerBody.schema };
+      declaresJsonBody = !!jsonContent?.schema;
+      bodyIsRequired = !!(requestBody?.required || swaggerBody?.required);
       if (jsonContent?.schema) {
         const bodyProps = this.flattenSchema(jsonContent.schema, api);
         for (const [propName, propSchema] of Object.entries(bodyProps)) {
@@ -432,6 +450,10 @@ export class OpenApiParser {
     }
     if (Object.keys(bodyMapping).length > 0) {
       endpointMapping.bodyMapping = bodyMapping;
+    } else if (declaresJsonBody && bodyIsRequired) {
+      // A required body whose schema has no fields of its own: send `{}`, so
+      // the request still carries a JSON body and its Content-Type.
+      endpointMapping.bodyTemplate = '{}';
     }
     if (Object.keys(headerMapping).length > 0) {
       endpointMapping.headers = headerMapping;

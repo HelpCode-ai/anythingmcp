@@ -66,9 +66,11 @@ describe('support triage helpers', () => {
   });
 
   it('reads only the known contact attributes', () => {
-    const raw = JSON.parse('{"plan":"trial","__proto__":{"x":1},"constructor":"y","other":"z","connectors":3}');
+    const raw = JSON.parse(
+      '{"plan":"trial","__proto__":{"x":1},"constructor":"y","other":"z","connectors":3,"connector_links":"Etsy: u","mcp_server_urls":"Default: m"}',
+    );
     const out = normaliseAttrs(raw);
-    expect(out).toEqual({ plan: 'trial', connectors: '3' });
+    expect(out).toEqual({ plan: 'trial', connectors: '3', connector_links: 'Etsy: u', mcp_server_urls: 'Default: m' });
     expect(({} as any).x).toBeUndefined();
   });
 
@@ -80,12 +82,19 @@ describe('support triage helpers', () => {
   it('the note escapes model output', () => {
     const html = triageNote(
       { category: 'bug', priority: 'High', language: 'it', summary: '<script>x</script>', suggestedReply: 'a\nb' },
-      { plan: 'trial', connector_issues: 'Etsy: auth needs_reauth' },
+      {
+        plan: 'trial',
+        connector_issues: 'Etsy: auth needs_reauth',
+        connector_links: 'Etsy: https://cloud.test/connectors/setup/etsy?connector=c1',
+        mcp_server_urls: 'Default: https://cloud.test/mcp/s1',
+      },
     );
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;');
     expect(html).toContain('a<br>b');
     expect(html).toContain('Etsy: auth needs_reauth');
+    expect(html).toContain('Connector links');
+    expect(html).toContain('MCP server URL');
   });
 
   it('redacts credentials from error text', () => {
@@ -162,7 +171,7 @@ describe('SupportTriageService', () => {
     expect(desk.addTags).toHaveBeenCalledTimes(1);
   });
 
-  it('hands safe live chats to the AI assistant after the team, enterprise included, never billing', async () => {
+  it('hands safe live chats to the AI assistant after the team, enterprise included, never billing problems', async () => {
     const msgs = [{ private: false, sender_type: 'contact', text_content: 'help' }];
     const chat = jest.spyOn(llm, 'chatJson');
 
@@ -181,6 +190,18 @@ describe('SupportTriageService', () => {
     const billing = fakeDesk(msgs);
     await new TestTriage(billing, undefined, 5).triage({ uuid: 'a2', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'cloud' } } });
     expect(billing.assignUser).not.toHaveBeenCalled();
+
+    chat.mockResolvedValueOnce({ json: { category: 'billing-question', priority: 'Low' } });
+    const howTo = fakeDesk(msgs);
+    await new TestTriage(howTo, undefined, 5).triage({ uuid: 'a7', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'cloud', plan: 'starter' } } });
+    expect(howTo.addTags).toHaveBeenCalledWith('a7', ['billing-question', 'cloud', 'paid', 'ai-triaged', 'ai-assistant']);
+    expect(howTo.setPriority).toHaveBeenCalledWith('a7', 'Low');
+    expect(howTo.assignUser).toHaveBeenCalledWith('a7', 5);
+
+    chat.mockResolvedValueOnce({ json: { category: 'billing-question', priority: 'Low' } });
+    const entHowTo = fakeDesk(msgs);
+    await new TestTriage(entHowTo, undefined, 5).triage({ uuid: 'a8', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'dedicated' } } });
+    expect(entHowTo.assignUser).not.toHaveBeenCalled();
 
     chat.mockResolvedValueOnce({ json: { category: 'connector-setup', priority: 'Low' } });
     const ent = fakeDesk(msgs);

@@ -1,0 +1,1164 @@
+{
+  "slug": "retell-ai",
+  "name": "Retell AI",
+  "aliases": [
+    "Retell",
+    "RetellAI"
+  ],
+  "description": "Let your AI work with Retell AI voice agents: review calls with transcripts, recordings, analysis and costs, start and stop outbound calls, edit and publish agents and their prompts, route phone numbers, send SMS chats, and look up voices, knowledge bases, contacts and concurrency.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "retell-ai",
+  "docsUrl": "https://docs.retellai.com/api-references",
+  "instructions": "## Retell AI\nThis connector works with one **Retell AI** workspace through the Retell API (`https://api.retellai.com`): voice and chat agents with their versions, Retell LLM response engines and conversation flows, calls (history, transcripts, recordings, analysis and costs, outbound calls, hanging up, batch calls), phone numbers and their agents, voices, knowledge bases, chats and SMS, contacts and the concurrency limit.\n\n**Setup (2 minutes)**\n1. Sign in at https://dashboard.retellai.com and open **Settings**, **API Keys**.\n2. Create or copy an API key (it starts with `key_`) and paste it into `RETELL_API_KEY`. It is sent as `Authorization: Bearer <key>` and works for the whole workspace.\n3. Run `retell_ai_get_concurrency` to check the key; `retell_ai_get_api_key_info` names the workspace.\n\n**Calls and texts cost money and reach real people**: `retell_ai_create_phone_call`, `retell_ai_create_batch_call` and `retell_ai_create_sms_chat` contact real phone numbers and are billed per minute or message. Calling or texting people without consent can break telemarketing laws (TCPA in the US and similar rules elsewhere). Show the user who is contacted, from which number, by which agent and with which variables, and act only after a clear yes. `retell_ai_create_batch_call` installs switched off; an admin enables it on purpose. `retell_ai_stop_call` cuts off a live call. `retell_ai_update_agent`, `retell_ai_publish_agent_version`, `retell_ai_update_retell_llm` and `retell_ai_update_phone_number` change how real calls are handled; confirm them too.\n\n**Workflow**\n- Agents: `retell_ai_list_agents`, `retell_ai_get_agent` (its response_engine names the LLM or flow), `retell_ai_list_agent_versions`. Edit the draft with `retell_ai_update_agent`, then go live with `retell_ai_publish_agent_version`.\n- Prompts and tools: `retell_ai_list_retell_llms`, `retell_ai_get_retell_llm`, `retell_ai_update_retell_llm`; node-based agents: `retell_ai_list_conversation_flows`, `retell_ai_get_conversation_flow`.\n- Call history: `retell_ai_list_calls` with filter_criteria (agent, status, direction, number, time range, sentiment, batch), then `retell_ai_get_call` for the transcript, recording_url, call_analysis and call_cost.\n- Outbound: pick a number with `retell_ai_list_phone_numbers` / `retell_ai_get_phone_number`, check room with `retell_ai_get_concurrency`, then `retell_ai_create_phone_call`; follow it with `retell_ai_get_call` and hang up with `retell_ai_stop_call` if needed. Many calls at once: `retell_ai_create_batch_call`.\n- Routing: `retell_ai_update_phone_number` binds inbound and outbound agents to a number.\n- Voices: `retell_ai_list_voices`, `retell_ai_get_voice`. Knowledge: `retell_ai_list_knowledge_bases`, `retell_ai_get_knowledge_base`.\n- Text: `retell_ai_list_chats`, `retell_ai_get_chat`, `retell_ai_create_sms_chat`.\n- Contacts: `retell_ai_list_contacts` (search_query), `retell_ai_get_contact_by_phone`.\n\n**Reading the answers**: timestamps (`start_timestamp`, `end_timestamp`, `last_modification_timestamp`, `trigger_timestamp`) are Unix epoch **milliseconds**; `duration_ms` is milliseconds. In `call_cost`, `combined_cost` and the product costs are in **US cents**. Phone numbers are E.164 (`+14155550123`). `call_status` is registered, not_connected, ongoing, ended or error; `disconnection_reason` says why a call ended (user_hangup, agent_hangup, voicemail_reached, dial_no_answer, concurrency_limit_reached, ...). `call_analysis` holds call_summary, user_sentiment, call_successful and your custom_analysis_data.\n\n**Filters for lists** (`filter_criteria`): each field takes a typed filter. Enum: `{\"type\": \"enum\", \"op\": \"in\", \"value\": [\"ended\"]}`; string: `{\"type\": \"string\", \"op\": \"eq\", \"value\": \"+14155550123\"}` (ops eq, ne, sw, ew, co); number: `{\"type\": \"number\", \"op\": \"ge\", \"value\": 60000}`; range: `{\"type\": \"range\", \"op\": \"bt\", \"value\": [from_ms, to_ms]}`; agents: `{\"agent\": [{\"agent_id\": \"agent_...\"}]}`.\n\n**Paging**: list answers carry `items`, `has_more` and `pagination_key`; pass the key back as `pagination_key` until has_more is false. `retell_ai_list_voices` and `retell_ai_list_knowledge_bases` return everything at once.\n\n**Errors**: 401 a wrong or deleted key; 400 names the invalid field (often a number not in E.164, or a Retell-bought number calling outside the US); 402 the workspace has no credit; 404 an unknown id; 422 a request the agent setup cannot serve; 429 the concurrency or rate limit is reached (see `retell_ai_get_concurrency`).",
+  "prerequisites": "A Retell AI account (dashboard.retellai.com) and an API key from Settings, API Keys. Outbound calls need a number in Retell and credit on the account. About 2 minutes.",
+  "requiredEnvVars": [
+    "RETELL_API_KEY"
+  ],
+  "appRegistrationUrl": "https://dashboard.retellai.com",
+  "envVarMeta": {
+    "RETELL_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Retell Dashboard, Settings, API Keys: a key starting with key_. Paste it without the Bearer prefix.",
+      "link": "https://dashboard.retellai.com",
+      "pattern": "^key_[A-Za-z0-9]{8,}$",
+      "patternMessage": "A Retell API key starts with key_ followed by letters and digits, without spaces or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Retell refused the API key: it is wrong, deleted or was pasted with a Bearer prefix. Copy it again from Settings, API Keys.",
+    "402": "The Retell workspace has no credit left. Add a payment method or credit in the dashboard.",
+    "429": "Retell's concurrency or rate limit is reached. Wait a moment or check retell_ai_get_concurrency."
+  },
+  "probe": {
+    "tool": "retell_ai_get_concurrency"
+  },
+  "connector": {
+    "name": "Retell AI API",
+    "type": "REST",
+    "baseUrl": "https://api.retellai.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{RETELL_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/get-concurrency"
+  },
+  "tools": [
+    {
+      "name": "retell_ai_get_concurrency",
+      "description": "Concurrent calls of the organization right now and the limits: current_concurrency, concurrency_limit, base and purchased concurrency, reserved inbound concurrency and burst settings. A call beyond the limit is refused with 429.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-concurrency"
+      }
+    },
+    {
+      "name": "retell_ai_get_api_key_info",
+      "description": "Which organization the API key belongs to: org_id, org_name and the key's name. Useful to confirm the right workspace before changing anything.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-api-key-info"
+      }
+    },
+    {
+      "name": "retell_ai_list_agents",
+      "description": "List voice and chat agents (latest version of each): agent_id, agent_name, channel (voice or chat), tags, is_suspended, last change time. Read-only, though sent as POST. Paged with pagination_key while has_more is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Retell default 50, at most 1000)."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ascending or descending (default) by creation time.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "pagination_key": {
+            "type": "string",
+            "description": "The pagination_key of the previous page, to get the next one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/list-agents",
+        "queryParams": {
+          "limit": "$limit",
+          "sort_order": "$sort_order",
+          "pagination_key": "$pagination_key"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_get_agent",
+      "description": "One agent in full: response_engine (the Retell LLM id or conversation flow it uses), voice, language, webhook, voicemail and call-ending settings, post-call analysis fields, version and is_published.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "The agent id (agent_...)."
+          },
+          "version": {
+            "type": "integer",
+            "description": "A specific version number; default the latest."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-agent/{agent_id}",
+        "queryParams": {
+          "version": "$version"
+        }
+      }
+    },
+    {
+      "name": "retell_ai_list_agent_versions",
+      "description": "List the stored versions of an agent: version number, is_published, title and description, last change time. Paged with pagination_key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "The agent id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Retell default 50, at most 1000)."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ascending or descending (default) by creation time.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "pagination_key": {
+            "type": "string",
+            "description": "The pagination_key of the previous page, to get the next one."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/list-agent-versions/{agent_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "sort_order": "$sort_order",
+          "pagination_key": "$pagination_key"
+        }
+      }
+    },
+    {
+      "name": "retell_ai_update_agent",
+      "description": "Change the latest draft version of an agent: name, response engine, voice, language, timing, webhook, post-call analysis fields or voicemail handling. Only the fields you send change. Phone numbers bound to a published version keep using it until you publish with retell_ai_publish_agent_version. Confirm the change with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "The agent id."
+          },
+          "agent_name": {
+            "type": "string",
+            "description": "Name of the agent, for your own reference."
+          },
+          "response_engine": {
+            "type": "object",
+            "description": "The brain of the agent: {\"type\": \"retell-llm\", \"llm_id\": \"llm_...\"}, {\"type\": \"conversation-flow\", \"conversation_flow_id\": \"...\"} or {\"type\": \"custom-llm\", \"llm_websocket_url\": \"wss://...\"}."
+          },
+          "voice_id": {
+            "type": "string",
+            "description": "Voice id from retell_ai_list_voices, e.g. 11labs-Adrian."
+          },
+          "language": {
+            "type": "string",
+            "description": "Locale such as en-US, de-DE, es-ES, or multi for multilingual."
+          },
+          "voice_speed": {
+            "type": "number",
+            "description": "Speech speed from 0.5 to 2 (default 1)."
+          },
+          "responsiveness": {
+            "type": "number",
+            "description": "How quickly the agent answers, 0 to 1 (default 1)."
+          },
+          "interruption_sensitivity": {
+            "type": "number",
+            "description": "How easily the user can interrupt, 0 to 1 (default 1)."
+          },
+          "begin_message_delay_ms": {
+            "type": "integer",
+            "description": "Wait this long before the first message, in milliseconds."
+          },
+          "end_call_after_silence_ms": {
+            "type": "integer",
+            "description": "End the call after this much user silence, in milliseconds (at least 10000)."
+          },
+          "max_call_duration_ms": {
+            "type": "integer",
+            "description": "Maximum call length in milliseconds (at least 60000, default 3600000)."
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "URL that receives call_started, call_ended and call_analyzed events for this agent."
+          },
+          "post_call_analysis_data": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Fields to extract after each call, e.g. [{\"type\": \"string\", \"name\": \"reason\", \"description\": \"Why the customer called\"}]. Replaces the whole list."
+          },
+          "voicemail_option": {
+            "type": "object",
+            "description": "What to do on voicemail: {\"action\": {\"type\": \"static_text\", \"text\": \"Please call us back.\"}} or {\"action\": {\"type\": \"hangup\"}}."
+          },
+          "version_description": {
+            "type": "string",
+            "description": "Note for this draft version, for your own reference."
+          }
+        },
+        "required": [
+          "agent_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/update-agent/{agent_id}",
+        "bodyMapping": {
+          "agent_name": "$agent_name",
+          "response_engine": "$response_engine",
+          "voice_id": "$voice_id",
+          "language": "$language",
+          "voice_speed": "$voice_speed",
+          "responsiveness": "$responsiveness",
+          "interruption_sensitivity": "$interruption_sensitivity",
+          "begin_message_delay_ms": "$begin_message_delay_ms",
+          "end_call_after_silence_ms": "$end_call_after_silence_ms",
+          "max_call_duration_ms": "$max_call_duration_ms",
+          "webhook_url": "$webhook_url",
+          "post_call_analysis_data": "$post_call_analysis_data",
+          "voicemail_option": "$voicemail_option",
+          "version_description": "$version_description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_publish_agent_version",
+      "description": "Publish a draft version of an agent so that live traffic on numbers bound to the published agent uses it. This changes how real calls are handled: show the user the version and its changes and publish only after a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "The agent id."
+          },
+          "version": {
+            "type": "integer",
+            "description": "The draft version number to publish (from retell_ai_list_agent_versions)."
+          },
+          "version_title": {
+            "type": "string",
+            "description": "Title of the version, for your own reference."
+          },
+          "version_description": {
+            "type": "string",
+            "description": "Description of what changed."
+          }
+        },
+        "required": [
+          "agent_id",
+          "version"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/publish-agent-version/{agent_id}",
+        "bodyMapping": {
+          "version": "$version",
+          "version_title": "$version_title",
+          "version_description": "$version_description"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_list_retell_llms",
+      "description": "List Retell LLM response engines (the prompt, model and tools behind agents): llm_id, version, model_config, general_prompt, begin_message, tools, states. Paged with pagination_key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Retell default 50, at most 1000)."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ascending or descending (default) by creation time.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "pagination_key": {
+            "type": "string",
+            "description": "The pagination_key of the previous page, to get the next one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/list-retell-llms",
+        "queryParams": {
+          "limit": "$limit",
+          "sort_order": "$sort_order",
+          "pagination_key": "$pagination_key"
+        }
+      }
+    },
+    {
+      "name": "retell_ai_get_retell_llm",
+      "description": "One Retell LLM response engine: model_config, general_prompt, begin_message, start_speaker, general_tools, states, knowledge base ids and default dynamic variables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "llm_id": {
+            "type": "string",
+            "description": "The response engine id (llm_..., from an agent's response_engine)."
+          },
+          "version": {
+            "type": "integer",
+            "description": "A specific version; default the latest."
+          }
+        },
+        "required": [
+          "llm_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-retell-llm/{llm_id}",
+        "queryParams": {
+          "version": "$version"
+        }
+      }
+    },
+    {
+      "name": "retell_ai_update_retell_llm",
+      "description": "Change a Retell LLM response engine: prompt, first message, model, tools, states, knowledge bases or default variables. Only the fields you send change; a list (general_tools, states) is replaced as a whole, so read it first. Agents using this engine pick the change up as described for their version; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "llm_id": {
+            "type": "string",
+            "description": "The response engine id."
+          },
+          "version": {
+            "type": "integer",
+            "description": "Version to edit; default the latest."
+          },
+          "general_prompt": {
+            "type": "string",
+            "description": "The main prompt of the agent, used in every state."
+          },
+          "begin_message": {
+            "type": "string",
+            "description": "First sentence the agent says. Empty string: the agent waits for the user; leave out to let the model generate it."
+          },
+          "start_speaker": {
+            "type": "string",
+            "description": "Who speaks first.",
+            "enum": [
+              "agent",
+              "user"
+            ]
+          },
+          "model_config": {
+            "type": "object",
+            "description": "Model settings, e.g. {\"type\": \"llm\", \"primary\": {\"model\": \"gpt-4.1\"}, \"temperature\": 0.2}."
+          },
+          "general_tools": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Tools the model may call, e.g. [{\"type\": \"end_call\", \"name\": \"end_call\"}, {\"type\": \"transfer_call\", ...}, {\"type\": \"custom\", \"name\": \"...\", \"url\": \"https://...\"}]. Replaces the whole list."
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "States of a multi-prompt agent, each with name, state_prompt, edges and tools. Replaces the whole list."
+          },
+          "starting_state": {
+            "type": "string",
+            "description": "Name of the starting state (required when states is not empty)."
+          },
+          "knowledge_base_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Knowledge base ids the agent may search."
+          },
+          "default_dynamic_variables": {
+            "type": "object",
+            "description": "Default values for {{variables}} in the prompts, as string key/value pairs."
+          }
+        },
+        "required": [
+          "llm_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/update-retell-llm/{llm_id}",
+        "queryParams": {
+          "version": "$version"
+        },
+        "bodyMapping": {
+          "general_prompt": "$general_prompt",
+          "begin_message": "$begin_message",
+          "start_speaker": "$start_speaker",
+          "model_config": "$model_config",
+          "general_tools": "$general_tools",
+          "states": "$states",
+          "starting_state": "$starting_state",
+          "knowledge_base_ids": "$knowledge_base_ids",
+          "default_dynamic_variables": "$default_dynamic_variables"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_list_conversation_flows",
+      "description": "List conversation flows (node-based agents): conversation_flow_id, version, nodes, global prompt, model. Paged with pagination_key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Retell default 50, at most 1000)."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ascending or descending (default) by creation time.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "pagination_key": {
+            "type": "string",
+            "description": "The pagination_key of the previous page, to get the next one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/list-conversation-flows",
+        "queryParams": {
+          "limit": "$limit",
+          "sort_order": "$sort_order",
+          "pagination_key": "$pagination_key"
+        }
+      }
+    },
+    {
+      "name": "retell_ai_get_conversation_flow",
+      "description": "One conversation flow with its nodes, edges, global prompt, tools and model settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_flow_id": {
+            "type": "string",
+            "description": "The conversation flow id."
+          }
+        },
+        "required": [
+          "conversation_flow_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-conversation-flow/{conversation_flow_id}"
+      }
+    },
+    {
+      "name": "retell_ai_list_calls",
+      "description": "List calls, newest first by default: call_id, call_type, direction, from_number, to_number, agent_id and version, call_status, start and end timestamps (epoch ms), duration_ms, disconnection_reason, recording_url, call_analysis (summary, user_sentiment, call_successful, custom data) and call_cost. Read-only, though sent as POST. Paged with pagination_key while has_more is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_criteria": {
+            "type": "object",
+            "description": "Filters, combined with AND. Examples: {\"agent\": [{\"agent_id\": \"agent_...\"}]}, {\"call_status\": {\"type\": \"enum\", \"op\": \"in\", \"value\": [\"ended\"]}}, {\"direction\": {\"type\": \"enum\", \"op\": \"in\", \"value\": [\"outbound\"]}}, {\"to_number\": {\"type\": \"string\", \"op\": \"eq\", \"value\": \"+14155550123\"}}, {\"start_timestamp\": {\"type\": \"range\", \"op\": \"bt\", \"value\": [1761955200000, 1762041600000]}}, {\"user_sentiment\": {\"type\": \"enum\", \"op\": \"in\", \"value\": [\"Negative\"]}}, {\"batch_call_id\": {\"type\": \"string\", \"op\": \"eq\", \"value\": \"batch_...\"}}."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "By start time: descending (default) or ascending.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of calls (default 50, at most 1000)."
+          },
+          "pagination_key": {
+            "type": "string",
+            "description": "The pagination_key of the previous page."
+          },
+          "include_total": {
+            "type": "boolean",
+            "description": "Also return total, the number of all matching calls."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/list-calls",
+        "bodyMapping": {
+          "filter_criteria": "$filter_criteria",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "pagination_key": "$pagination_key",
+          "include_total": "$include_total"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_get_call",
+      "description": "One call in full: transcript (plain text), transcript_with_tool_calls (turns and tool calls), recording_url, public_log_url, call_analysis, call_cost with its product breakdown, collected dynamic variables, metadata, disconnection_reason and timings. Word-level timestamps and scrubbed duplicates are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "The call id."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/get-call/{call_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "access_token",
+            "transcript_object",
+            "transcript_with_tool_calls[*].words",
+            "scrubbed_transcript_with_tool_calls",
+            "pre_session_transcript_with_tool_calls",
+            "scrubbed_pre_session_transcript_with_tool_calls",
+            "post_session_transcript_with_tool_calls",
+            "scrubbed_post_session_transcript_with_tool_calls",
+            "latency"
+          ]
+        }
+      }
+    },
+    {
+      "name": "retell_ai_create_phone_call",
+      "description": "Start a real outbound phone call: Retell dials to_number from your number and the agent talks to the person. This reaches a real person and costs money (billed per minute for voice, model and telephony), so show the user the number called, the number called from, the agent and the dynamic variables, and call only after the user confirms. Retell-bought numbers can only call US numbers. Returns the call with call_id and call_status registered; follow it with retell_ai_get_call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_number": {
+            "type": "string",
+            "description": "Your Retell number to call from, in E.164 format, e.g. +14155550123 (from retell_ai_list_phone_numbers)."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "The number to call, in E.164 format, e.g. +14155550123."
+          },
+          "override_agent_id": {
+            "type": "string",
+            "description": "Use this agent for this call instead of the number's outbound agent."
+          },
+          "override_agent_version": {
+            "type": "integer",
+            "description": "Use this version of the agent."
+          },
+          "retell_llm_dynamic_variables": {
+            "type": "object",
+            "description": "Values for {{variables}} in the prompt, as string key/value pairs, e.g. {\"customer_name\": \"Joe\", \"appointment\": \"Tuesday 3 pm\"}."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Your own data stored with the call, e.g. a CRM id."
+          },
+          "honor_internal_dnc": {
+            "type": "boolean",
+            "description": "Refuse the call when the contact is marked do-not-call in Retell."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A key of your own: retrying with the same key within an hour does not place a second call."
+          }
+        },
+        "required": [
+          "from_number",
+          "to_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/create-phone-call",
+        "bodyMapping": {
+          "from_number": "$from_number",
+          "to_number": "$to_number",
+          "override_agent_id": "$override_agent_id",
+          "override_agent_version": "$override_agent_version",
+          "retell_llm_dynamic_variables": "$retell_llm_dynamic_variables",
+          "metadata": "$metadata",
+          "honor_internal_dnc": "$honor_internal_dnc",
+          "idempotency_key": "$idempotency_key"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "retell_ai_stop_call",
+      "description": "Hang up an ongoing call immediately. The person on the line is cut off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "description": "The id of the ongoing call."
+          }
+        },
+        "required": [
+          "call_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/stop-call/{call_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_create_batch_call",
+      "description": "Schedule a batch of outbound calls from one number, one task per person called. Each call reaches a real person and costs money, so this installs switched off: an admin turns it on deliberately. Show the user the list, the number, the time and the calling window and send only after a yes. Returns batch_call_id; the calls appear in retell_ai_list_calls with filter batch_call_id.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_number": {
+            "type": "string",
+            "description": "Your Retell number to call from, in E.164 format, e.g. +14155550123."
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "One entry per call: {\"to_number\": \"+14155550123\", \"retell_llm_dynamic_variables\": {\"name\": \"Joe\"}, \"override_agent_id\": \"agent_...\", \"metadata\": {...}}."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the batch, for your own reference."
+          },
+          "trigger_timestamp": {
+            "type": "number",
+            "description": "When to start, Unix time in milliseconds; default now."
+          },
+          "call_time_window": {
+            "type": "object",
+            "description": "Allowed calling windows in a time zone, e.g. {\"timezone\": \"America/New_York\", \"windows\": [{\"start\": 540, \"end\": 1080}]} (minutes after midnight)."
+          },
+          "reserved_concurrency": {
+            "type": "integer",
+            "description": "Concurrent calls kept free for inbound and other calls."
+          }
+        },
+        "required": [
+          "from_number",
+          "tasks"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/create-batch-call",
+        "bodyMapping": {
+          "from_number": "$from_number",
+          "tasks": "$tasks",
+          "name": "$name",
+          "trigger_timestamp": "$trigger_timestamp",
+          "call_time_window": "$call_time_window",
+          "reserved_concurrency": "$reserved_concurrency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "retell_ai_list_phone_numbers",
+      "description": "List the phone numbers in Retell (bought or imported): phone_number, nickname, type, area code, inbound and outbound agents (calls and SMS) with weights, inbound webhook, allowed countries. Paged with pagination_key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items to return (Retell default 50, at most 1000)."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ascending or descending (default) by creation time.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "pagination_key": {
+            "type": "string",
+            "description": "The pagination_key of the previous page, to get the next one."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/list-phone-numbers",
+        "queryParams": {
+          "limit": "$limit",
+          "sort_order": "$sort_order",
+          "pagination_key": "$pagination_key"
+        }
+      }
+    },
+    {
+      "name": "retell_ai_get_phone_number",
+      "description": "One phone number with its bound inbound and outbound agents (calls and SMS), webhooks, allowed countries and fallback number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "The number, in E.164 format, e.g. +14155550123."
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-phone-number/{phone_number}"
+      }
+    },
+    {
+      "name": "retell_ai_update_phone_number",
+      "description": "Change which agents answer or place calls and texts on a number, its nickname, inbound webhook or allowed countries. Live calls follow the change at once; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "The number, in E.164 format, e.g. +14155550123."
+          },
+          "inbound_agents": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Agents for inbound calls with weights, e.g. [{\"agent_id\": \"agent_...\", \"weight\": 1}]. An empty list leaves inbound calls unanswered."
+          },
+          "outbound_agents": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Agents for outbound calls with weights, same shape."
+          },
+          "inbound_sms_agents": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Agents for inbound SMS with weights."
+          },
+          "outbound_sms_agents": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Agents for outbound SMS with weights."
+          },
+          "nickname": {
+            "type": "string",
+            "description": "Nickname of the number."
+          },
+          "inbound_webhook_url": {
+            "type": "string",
+            "description": "Webhook called on inbound calls to choose the agent or set variables."
+          },
+          "allowed_inbound_country_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ISO 3166-1 alpha-2 codes allowed to call in, e.g. [\"US\", \"CA\"]."
+          },
+          "allowed_outbound_country_list": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ISO 3166-1 alpha-2 codes this number may call."
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/update-phone-number/{phone_number}",
+        "bodyMapping": {
+          "inbound_agents": "$inbound_agents",
+          "outbound_agents": "$outbound_agents",
+          "inbound_sms_agents": "$inbound_sms_agents",
+          "outbound_sms_agents": "$outbound_sms_agents",
+          "nickname": "$nickname",
+          "inbound_webhook_url": "$inbound_webhook_url",
+          "allowed_inbound_country_list": "$allowed_inbound_country_list",
+          "allowed_outbound_country_list": "$allowed_outbound_country_list"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_list_voices",
+      "description": "List the voices available to the organization: voice_id, voice_name, provider (elevenlabs, cartesia, openai, ...), accent, gender, age and a preview_audio_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/list-voices"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "[*].avatar_url"
+          ]
+        }
+      }
+    },
+    {
+      "name": "retell_ai_get_voice",
+      "description": "One voice with its provider, accent, gender, age and preview audio URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voice_id": {
+            "type": "string",
+            "description": "The voice id, e.g. 11labs-Adrian."
+          }
+        },
+        "required": [
+          "voice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-voice/{voice_id}"
+      }
+    },
+    {
+      "name": "retell_ai_list_knowledge_bases",
+      "description": "List knowledge bases: knowledge_base_id, name, status (in_progress, complete, error), sources (documents, URLs, texts) and auto-refresh settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/list-knowledge-bases"
+      }
+    },
+    {
+      "name": "retell_ai_get_knowledge_base",
+      "description": "One knowledge base with its status, chunk settings and every source with its id, type and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "knowledge_base_id": {
+            "type": "string",
+            "description": "The knowledge base id (knowledge_base_...)."
+          }
+        },
+        "required": [
+          "knowledge_base_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-knowledge-base/{knowledge_base_id}"
+      }
+    },
+    {
+      "name": "retell_ai_list_chats",
+      "description": "List chats (web chat and SMS conversations with chat agents): chat_id, agent_id, chat_type, chat_status, start and end timestamps, transcript, chat_analysis, cost. Read-only, though sent as POST. Paged with pagination_key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_criteria": {
+            "type": "object",
+            "description": "Filters combined with AND, same shapes as for calls, e.g. {\"agent\": [{\"agent_id\": \"agent_...\"}]}."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "By start time: descending (default) or ascending.",
+            "enum": [
+              "ascending",
+              "descending"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of chats (default 50)."
+          },
+          "pagination_key": {
+            "type": "string",
+            "description": "The pagination_key of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/list-chats",
+        "bodyMapping": {
+          "filter_criteria": "$filter_criteria",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "pagination_key": "$pagination_key"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_get_chat",
+      "description": "One chat with its transcript, messages with tool calls, collected variables, analysis and cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "The chat id."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-chat/{chat_id}"
+      }
+    },
+    {
+      "name": "retell_ai_create_sms_chat",
+      "description": "Start an outbound SMS conversation: the chat agent bound to from_number (or override_agent_id) writes the first text and then answers replies. This texts a real person and costs money, and US recipients must have agreed to receive texts; show the user the numbers and the agent and send only after a yes. Returns the chat with chat_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_number": {
+            "type": "string",
+            "description": "Your Retell number to text from, in E.164 format, e.g. +14155550123."
+          },
+          "to_number": {
+            "type": "string",
+            "description": "The recipient, in E.164 format, e.g. +14155550123."
+          },
+          "override_agent_id": {
+            "type": "string",
+            "description": "Use this chat agent instead of the number's outbound SMS agent."
+          },
+          "retell_llm_dynamic_variables": {
+            "type": "object",
+            "description": "Values for {{variables}} in the prompt, as string key/value pairs."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Your own data stored with the chat."
+          },
+          "honor_internal_dnc": {
+            "type": "boolean",
+            "description": "Refuse when the contact is marked do-not-contact."
+          }
+        },
+        "required": [
+          "from_number",
+          "to_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/create-sms-chat",
+        "bodyMapping": {
+          "from_number": "$from_number",
+          "to_number": "$to_number",
+          "override_agent_id": "$override_agent_id",
+          "retell_llm_dynamic_variables": "$retell_llm_dynamic_variables",
+          "metadata": "$metadata",
+          "honor_internal_dnc": "$honor_internal_dnc"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "retell_ai_list_contacts",
+      "description": "List or search the contacts Retell keeps per phone number: contact_id, phone_number, first and last name, do_not_call, tags, custom fields, conversation_count, last conversation time. Read-only, though sent as POST. Paged with pagination_key; total gives the number of matches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_query": {
+            "type": "string",
+            "description": "Case-insensitive text matched against phone number, names, external id and custom fields."
+          },
+          "filter_criteria": {
+            "type": "object",
+            "description": "Structured filters combined with AND."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "By creation time: desc (default) or asc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of contacts."
+          },
+          "pagination_key": {
+            "type": "string",
+            "description": "The pagination_key of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/list-contacts",
+        "bodyMapping": {
+          "search_query": "$search_query",
+          "filter_criteria": "$filter_criteria",
+          "sort_order": "$sort_order",
+          "limit": "$limit",
+          "pagination_key": "$pagination_key"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "retell_ai_get_contact_by_phone",
+      "description": "The contact for one phone number, with names, do_not_call, tags, custom fields, contact memory and conversation count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "The phone number, in E.164 format, e.g. +14155550123."
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/get-contact-by-phone/{phone_number}"
+      }
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { PlanCapsModule } from './plan-caps/plan-caps.module';
 import { Module, MiddlewareConsumer, NestModule, Logger, ClassSerializerInterceptor } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
@@ -16,11 +17,13 @@ import { UsersModule } from './users/users.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
 import { SettingsModule } from './settings/settings.module';
+import { MemberVisibilityModule } from './settings/member-visibility.module';
 import { RolesModule } from './roles/roles.module';
 import { KgModule } from './knowledge-graph/kg.module';
 import { MemoryModule } from './memory/memory.module';
 import { KnowledgeFoldersModule } from './knowledge-folders/knowledge-folders.module';
 import { McpServersModule } from './mcp-servers/mcp-servers.module';
+import { FileSearchModule } from './file-search/file-search.module';
 import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './common/prisma.module';
 import { RedisModule } from './common/redis.module';
@@ -174,12 +177,15 @@ if (useOAuth) {
     IdentityProvidersModule,
     HealthModule,
     SettingsModule,
+    MemberVisibilityModule,
     RolesModule,
     KgModule,
     MemoryModule,
     KnowledgeFoldersModule,
     McpServersModule,
+    FileSearchModule,
     LicenseModule,
+    PlanCapsModule,
     LicensingModule,
 
     // Cloud-specific modules (conditionally loaded)

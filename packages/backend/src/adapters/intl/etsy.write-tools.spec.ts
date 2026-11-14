@@ -150,6 +150,124 @@ describe('etsy adapter: write tools', () => {
    * etsy_create_draft_listing on Etsy connectors. A catalog tool with the same
    * name would be matched to theirs by the catalog update and overwrite it.
    */
+  it("states Etsy's 140-character title limit, so the model does not send longer titles", () => {
+    for (const name of ['etsy_create_listing_draft', 'etsy_edit_listing']) {
+      const title = tool(name).parameters.properties.title as { maxLength?: number; description?: string };
+      expect(title.maxLength).toBe(140);
+      expect(title.description).toContain('at most 140 characters');
+    }
+  });
+
+  it('sets a listing property with a JSON body of value ids and values', async () => {
+    await run('etsy_set_listing_property', {
+      shop_id: 123,
+      listing_id: 456,
+      property_id: 200,
+      value_ids: [1213],
+      values: ['Beige'],
+    });
+    expect(sent().method).toBe('PUT');
+    expect(sent().url).toBe('https://openapi.etsy.com/v3/application/shops/123/listings/456/properties/200');
+    expect(sent().data).toEqual({ value_ids: [1213], values: ['Beige'] });
+  });
+
+  it('adds a translation with POST and replaces one with PUT, form-urlencoded', async () => {
+    await run('etsy_add_listing_translation', {
+      shop_id: 123,
+      listing_id: 456,
+      language: 'de',
+      title: 'Blaue Keramiktasse',
+      description: 'Handgemacht.',
+      tags: 'tasse,keramik',
+    });
+    expect(sent().method).toBe('POST');
+    expect(sent().url).toBe('https://openapi.etsy.com/v3/application/shops/123/listings/456/translations/de');
+    const body = new URLSearchParams(sent().data);
+    expect(body.get('title')).toBe('Blaue Keramiktasse');
+    expect(body.get('tags')).toBe('tasse,keramik');
+    mockedAxios.mockClear();
+    await run('etsy_replace_listing_translation', {
+      shop_id: 123,
+      listing_id: 456,
+      language: 'fr',
+      title: 'Tasse',
+      description: 'Faite main.',
+    });
+    expect(sent().method).toBe('PUT');
+    expect(sent().url).toBe('https://openapi.etsy.com/v3/application/shops/123/listings/456/translations/fr');
+  });
+
+  it('assigns variation images with a JSON body', async () => {
+    const variation_images = [{ property_id: 200, value_id: 1213, image_id: 789 }];
+    await run('etsy_assign_variation_images', { shop_id: 123, listing_id: 456, variation_images });
+    expect(sent().method).toBe('POST');
+    expect(sent().url).toBe('https://openapi.etsy.com/v3/application/shops/123/listings/456/variation-images');
+    expect(sent().data).toEqual({ variation_images });
+  });
+
+  it('uploads a video and a digital file as multipart files fetched from the given URL', async () => {
+    for (const [name, params, field] of [
+      ['etsy_add_listing_video', { shop_id: 123, listing_id: 456, video_url: 'https://cdn.example.com/mug.mp4', name: 'mug.mp4' }, 'video'],
+      ['etsy_upload_listing_file', { shop_id: 123, listing_id: 456, file_url: 'https://cdn.example.com/p.pdf', name: 'p.pdf' }, 'file'],
+    ] as const) {
+      mockedAxios.mockClear();
+      mockedFetchOutbound.mockResolvedValueOnce({
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+        body: Buffer.from('bytes'),
+        finalUrl: Object.values(params)[2] as string,
+      } as any);
+      const append = jest.spyOn(FormData.prototype, 'append');
+      await run(name, params);
+      expect(append).toHaveBeenCalledWith(field, expect.any(Buffer), expect.any(Object));
+      expect(append).toHaveBeenCalledWith('name', params.name);
+      append.mockRestore();
+    }
+  });
+
+  it('deletes a listing on the listing route, and installs every delete switched off', async () => {
+    await run('etsy_delete_listing_permanently', { listing_id: 456 });
+    expect(sent().method).toBe('DELETE');
+    expect(sent().url).toBe('https://openapi.etsy.com/v3/application/listings/456');
+    const off = (tools as Array<Tool & { enabled?: boolean }>).filter((t) => t.enabled === false).map((t) => t.name);
+    expect(off.sort()).toEqual(['etsy_delete_listing_image', 'etsy_delete_listing_permanently', 'etsy_delete_listing_property']);
+    for (const t of tools) {
+      if (t.endpointMapping.method === 'DELETE') expect(off).toContain(t.name);
+    }
+  });
+
+  it('encodes path ids on the attribute, translation and media tools', () => {
+    for (const name of [
+      'etsy_get_listing_properties', 'etsy_set_listing_property', 'etsy_delete_listing_property',
+      'etsy_read_listing_translation', 'etsy_add_listing_translation', 'etsy_replace_listing_translation',
+      'etsy_list_listing_images', 'etsy_delete_listing_image', 'etsy_list_listing_variation_images',
+      'etsy_assign_variation_images', 'etsy_list_listing_files', 'etsy_upload_listing_file',
+      'etsy_list_listing_videos', 'etsy_add_listing_video', 'etsy_delete_listing_permanently',
+      'etsy_list_production_partners',
+    ]) {
+      expect(`${name}:${tool(name).endpointMapping.encodePathParams}`).toBe(`${name}:true`);
+    }
+  });
+
+  it('states the 20-character tag limit for English listings only, and enforces no length', () => {
+    // Etsy refused tags over 20 characters on en-US listings only; listings in
+    // other languages kept tags of up to 30 (read-only production check,
+    // 14 days to 6 Nov 2026).
+    const withTags = tools.filter((t) => 'tags' in t.parameters.properties);
+    expect(withTags.map((t) => t.name).sort()).toEqual([
+      'etsy_add_listing_translation',
+      'etsy_create_listing_draft',
+      'etsy_edit_listing',
+      'etsy_replace_listing_translation',
+    ]);
+    for (const t of withTags) {
+      const tags = t.parameters.properties.tags as Record<string, unknown>;
+      expect(tags.description).toMatch(/In English|On English listings/);
+      expect(tags.description).toMatch(/other languages may have longer tags/);
+      expect(tags.maxLength).toBeUndefined();
+    }
+  });
+
   it('does not reuse names customers gave their own Etsy tools', () => {
     const taken = ['etsy_update_listing', 'etsy_create_draft_listing', 'etsy_update_listing_inventory', 'etsy_upload_listing_image', 'etsy_get_listing_inventory', 'etsy_get_seller_taxonomy'];
     for (const name of taken) expect(tools.some((t) => t.name === name)).toBe(false);

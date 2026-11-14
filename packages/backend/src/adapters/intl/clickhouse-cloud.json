@@ -1,0 +1,906 @@
+{
+  "slug": "clickhouse-cloud",
+  "name": "ClickHouse Cloud",
+  "aliases": [
+    "ClickHouse Cloud API",
+    "ClickHouse control plane"
+  ],
+  "description": "Manage a ClickHouse Cloud organization: services (start, stop, scaling, IP access, metrics), backups, ClickPipes, usage costs and credits, audit log, notifications, members, invitations, roles and API keys.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "clickhouse",
+  "docsUrl": "https://clickhouse.com/docs/cloud/manage/api/swagger",
+  "instructions": "## ClickHouse Cloud\nThis connector manages a **ClickHouse Cloud** organization through the Cloud control-plane API (`https://api.clickhouse.cloud/v1`): organizations, services (start, stop, scaling, IP access, metrics), backups, ClickPipes, usage costs and credits, audit activities, notifications, members, invitations, roles and API keys. It does not run SQL: for queries install the **ClickHouse** connector, which talks to a service's HTTPS interface.\n\n**Setup (3 minutes)**\n1. In the ClickHouse Cloud console open **Organization**, **API keys** and click **New API key**.\n2. Give it a name, the role it needs (a read-only or developer role for the reads; admin or a custom role with service manage permissions for start, stop, scaling and updates), an expiry, and optionally an IP allow list.\n3. Copy the **Key ID** into `CLICKHOUSE_CLOUD_KEY_ID` and the **Key secret** into `CLICKHOUSE_CLOUD_KEY_SECRET`. The secret is shown only once. The API takes them as HTTP Basic auth (key id as user, secret as password).\n4. Run `clickhouse_cloud_list_organizations` to check the key.\n\n**Workflow**\n- Start here: `clickhouse_cloud_list_organizations` gives the `organization_id` every other tool needs; `clickhouse_cloud_whoami` shows the key and its roles; `clickhouse_cloud_get_organization` the details.\n- Services: `clickhouse_cloud_list_services` (filter by tags), `clickhouse_cloud_get_service`, `clickhouse_cloud_get_service_settings`, `clickhouse_cloud_get_service_metrics` (Prometheus text).\n- Operate a service: `clickhouse_cloud_change_service_state` (start, stop, awake), `clickhouse_cloud_update_service` (name, release channel, IP access list, tags), `clickhouse_cloud_update_replica_scaling` (memory per replica, replicas, idle scaling). Confirm a stop with the user: queries fail until the service is started again.\n- Backups: `clickhouse_cloud_list_backups`, `clickhouse_cloud_get_backup`, `clickhouse_cloud_get_backup_configuration`.\n- Ingestion: `clickhouse_cloud_list_clickpipes`, `clickhouse_cloud_get_clickpipe`, `clickhouse_cloud_change_clickpipe_state` (start, stop, resync; a resync copies the source again, so confirm it first).\n- Cost and health: `clickhouse_cloud_get_usage_cost` (per day and entity), `clickhouse_cloud_get_credit_balances`, `clickhouse_cloud_list_notifications`, `clickhouse_cloud_list_quotas`.\n- People and access: `clickhouse_cloud_list_members`, `clickhouse_cloud_list_invitations`, `clickhouse_cloud_list_roles`, `clickhouse_cloud_create_invitation`, `clickhouse_cloud_list_api_keys`, and `clickhouse_cloud_list_activities` for the audit log.\n\n**Reading the answers**: every answer is `{status, requestId, result}`; the data is in `result`. Ids are UUIDs. Times are ISO 8601 in UTC. Costs are in **ClickHouse Credits (CHC)**: `grandTotalCHC` for the period and `totalCHC` per record. Memory is in GB, backup size in bytes, durations in seconds. Service `state` moves through `starting` or `stopping` before `running` or `stopped`; `idle` means scaled to zero and wakes on the next query.\n\n**Paging**: `clickhouse_cloud_list_organizations`, `clickhouse_cloud_list_api_keys` and `clickhouse_cloud_list_notifications` return `nextCursor` when more items exist: pass it as `cursor`, stop when it is missing. The other lists return everything at once.\n\n**Limits and errors**: the usage cost report covers at most 31 days per call. The API is rate limited per key; on 429 wait a few seconds before retrying. 401 means a wrong key id or secret (or an expired key), 403 a key without the permission the call needs (the role decides: billing, ClickPipes and service management are separate permissions) or a caller IP outside the key's allow list, 404 a wrong organization or service id, 429 the rate limit.",
+  "prerequisites": "A ClickHouse Cloud API key (key id and secret) from the console, under Organization, API keys.",
+  "requiredEnvVars": [
+    "CLICKHOUSE_CLOUD_KEY_ID",
+    "CLICKHOUSE_CLOUD_KEY_SECRET"
+  ],
+  "envVarMeta": {
+    "CLICKHOUSE_CLOUD_KEY_ID": {
+      "label": "Key ID",
+      "kind": "credential",
+      "secret": false,
+      "help": "ClickHouse Cloud console, Organization, API keys: the Key ID of the key (sent as the Basic auth user name).",
+      "link": "https://console.clickhouse.cloud",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste only the Key ID, without spaces or quotes."
+    },
+    "CLICKHOUSE_CLOUD_KEY_SECRET": {
+      "label": "Key secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The secret shown once when the key was created (sent as the Basic auth password). Create a new key if it is lost.",
+      "link": "https://console.clickhouse.cloud",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the key secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "ClickHouse Cloud refused the key: check the Key ID and secret, and that the key is not expired or disabled.",
+    "403": "The key is valid but its role or IP allow list does not permit this call. Give the key a role with the needed permission, or add this server's IP to the key's allow list.",
+    "429": "ClickHouse Cloud is rate limiting this key. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "clickhouse_cloud_list_organizations"
+  },
+  "connector": {
+    "name": "ClickHouse Cloud API",
+    "type": "REST",
+    "baseUrl": "https://api.clickhouse.cloud",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CLICKHOUSE_CLOUD_KEY_ID}}",
+      "password": "{{CLICKHOUSE_CLOUD_KEY_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v1/organizations"
+  },
+  "tools": [
+    {
+      "name": "clickhouse_cloud_whoami",
+      "description": "Who the API key is: key id, name, organization and assigned roles (actorType tells a key from a user). Beta endpoint at ClickHouse; use it to check which organization and permissions the key has.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/whoami"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_organizations",
+      "description": "Organizations the API key belongs to (an organization key sees exactly one): id, name, creation date, private endpoints, BYOC configuration. The id is the organization_id every other tool needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 250 (default 250).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The nextCursor value of the previous page. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_organization",
+      "description": "Details of one organization: name, creation date, private endpoints and BYOC settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_services",
+      "description": "All ClickHouse services of the organization: id, name, cloud provider and region, state (running, idle, stopped, starting, stopping, provisioning, ...), ClickHouse version, tier, endpoints (host and port to connect to), replica memory and count, idle scaling, IP access list, tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only resources with these tags, e.g. [\"tag:Environment=Production\"] or [\"tag:isActive\"] for a key without value. Several entries must all match."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services",
+        "queryParams": {
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_service",
+      "description": "One service with its current state, endpoints, ClickHouse version, scaling settings (min and max replica memory in GB, replicas, idle scaling and timeout), IP access list, release channel and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_service_settings",
+      "description": "ClickHouse server settings changed on the service (the values that differ from the defaults).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/clickhouseSettings"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_service_metrics",
+      "description": "Current Prometheus metrics of a service as Prometheus text exposition (queries, inserts, memory, storage, merges, ...). Set filtered_metrics to true for the short curated list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          },
+          "filtered_metrics": {
+            "type": "string",
+            "description": "true returns only the curated metric list instead of every metric.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/prometheus",
+        "queryParams": {
+          "filtered_metrics": "$filtered_metrics"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_backups",
+      "description": "Backups of a service, newest first: id, status (done, error, in_progress), start and finish time, size in bytes, duration in seconds, type (full or incremental).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/backups"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_backup",
+      "description": "One backup of a service: status, start and finish time, size in bytes, duration and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          },
+          "backup_id": {
+            "type": "string",
+            "description": "Backup id from clickhouse_cloud_list_backups."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id",
+          "backup_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/backups/{backup_id}"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_backup_configuration",
+      "description": "Backup schedule of a service: backup period in hours, retention period in hours and the daily start time (UTC) when set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/backupConfiguration"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_clickpipes",
+      "description": "ClickPipes (managed ingestion from Kafka, S3, Postgres, MySQL, ...) of a service: id, name, state, source, destination table and scaling. Needs a key with the ClickPipes manage permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/clickpipes"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_clickpipe",
+      "description": "One ClickPipe with its state, source, destination, field mappings and settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          },
+          "clickpipe_id": {
+            "type": "string",
+            "description": "ClickPipe id from clickhouse_cloud_list_clickpipes."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id",
+          "clickpipe_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/clickpipes/{clickpipe_id}"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_usage_cost",
+      "description": "Usage cost of the organization per day and per entity (data warehouse, service, ClickPipe) in ClickHouse Credits (CHC), with the metrics behind it (compute, storage, backup, data transfer, ...) and the grand total. At most 31 days per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD (UTC)."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Last day, inclusive, YYYY-MM-DD; at most 30 days after from_date."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only resources with these tags, e.g. [\"tag:Environment=Production\"] or [\"tag:isActive\"] for a key without value. Several entries must all match."
+          }
+        },
+        "required": [
+          "organization_id",
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/usageCost",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_get_credit_balances",
+      "description": "Remaining prepaid credits of the organization, in total and per credit balance. Needs a key with the billing view permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/creditBalances"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_activities",
+      "description": "Audit log of the organization: who did what and when (service created, stopped, scaled, key created, member invited, ...), with actor, IP address and target ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "from_date": {
+            "type": "string",
+            "description": "Only activities from this time on, ISO 8601 date-time, e.g. 2026-10-01T00:00:00Z."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Only activities up to this time, ISO 8601 date-time."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/activities",
+        "queryParams": {
+          "from_date": "$from_date",
+          "to_date": "$to_date"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_notifications",
+      "description": "Notifications of the organization (billing, service health, ClickPipe failures, upgrades, ...), newest first, with severity, resource and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "severity": {
+            "type": "string",
+            "description": "info, warning or critical.",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Only this notification type."
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "Only notifications about this resource (a service also matches its ClickPipes)."
+          },
+          "resource_type": {
+            "type": "string",
+            "description": "Only this kind of resource.",
+            "enum": [
+              "service",
+              "organization",
+              "clickpipe",
+              "postgres"
+            ]
+          },
+          "from_date": {
+            "type": "string",
+            "description": "From this time, RFC 3339, e.g. 2026-10-01T00:00:00Z."
+          },
+          "to_date": {
+            "type": "string",
+            "description": "Up to this time, RFC 3339."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 250 (default 100).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The nextCursor value of the previous page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/notifications",
+        "queryParams": {
+          "severity": "$severity",
+          "type": "$type",
+          "resource_id": "$resource_id",
+          "resource_type": "$resource_type",
+          "from_date": "$from_date",
+          "to_date": "$to_date",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_quotas",
+      "description": "Quotas of the organization (for example the maximum number of services) with the current usage and whether they can be raised.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/quotas"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_members",
+      "description": "Members of the organization: user id, name, e-mail, role and assigned roles, join date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/members"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_invitations",
+      "description": "Open invitations to the organization: e-mail, role, creation and expiry date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/invitations"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_roles",
+      "description": "Roles defined in the organization (built-in and custom) with their permissions; the role ids are used by clickhouse_cloud_create_invitation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/roles"
+      }
+    },
+    {
+      "name": "clickhouse_cloud_list_api_keys",
+      "description": "API keys of the organization: id, name, state, roles, key suffix, creation, expiry and last use. Secrets are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 250 (default 250).",
+            "minimum": 1,
+            "maximum": 250
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The nextCursor value of the previous page. Leave out for the first page."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{organization_id}/keys",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_change_service_state",
+      "description": "Start, stop or wake a service. stop shuts the compute down (data is kept, billing for compute stops); start brings a stopped service back; awake wakes an idle service. Returns the service with its new state, which moves through starting or stopping first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          },
+          "command": {
+            "type": "string",
+            "description": "start, stop or awake.",
+            "enum": [
+              "start",
+              "stop",
+              "awake"
+            ]
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id",
+          "command"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/state",
+        "bodyMapping": {
+          "command": "$command"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_cloud_update_service",
+      "description": "Rename a service, change its release channel, add or remove IP access list entries or tags. Only the fields you pass change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name, letters, digits and spaces, up to 50 characters."
+          },
+          "release_channel": {
+            "type": "string",
+            "description": "slow, default or fast (fast gets new ClickHouse releases first).",
+            "enum": [
+              "slow",
+              "default",
+              "fast"
+            ]
+          },
+          "ip_access_list": {
+            "type": "object",
+            "description": "IP access changes: {\"add\": [{\"source\": \"203.0.113.0/24\", \"description\": \"office\"}], \"remove\": [{\"source\": \"0.0.0.0/0\"}]}. remove runs before add."
+          },
+          "tags": {
+            "type": "object",
+            "description": "Tag changes: {\"add\": [{\"key\": \"Environment\", \"value\": \"Production\"}], \"remove\": [{\"key\": \"Old\"}]}."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "releaseChannel": "$release_channel",
+          "ipAccessList": "$ip_access_list",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_update_replica_scaling",
+      "description": "Change the autoscaling of a service: memory per replica (min and max in GB, multiples of 4), number of replicas, idle scaling and idle timeout. Production tier only for memory limits. Only the fields you pass change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          },
+          "min_replica_memory_gb": {
+            "type": "number",
+            "description": "Minimum memory per replica in GB, a multiple of 4."
+          },
+          "max_replica_memory_gb": {
+            "type": "number",
+            "description": "Maximum memory per replica in GB, a multiple of 4."
+          },
+          "autoscaling_mode": {
+            "type": "string",
+            "description": "vertical (fixed replica count, memory scales) or horizontal (replica count scales). Leave out to keep the current mode.",
+            "enum": [
+              "vertical",
+              "horizontal"
+            ]
+          },
+          "num_replicas": {
+            "type": "integer",
+            "description": "Fixed replica count for vertical autoscaling."
+          },
+          "min_replicas": {
+            "type": "integer",
+            "description": "Minimum replica count for horizontal autoscaling."
+          },
+          "max_replicas": {
+            "type": "integer",
+            "description": "Maximum replica count for horizontal autoscaling."
+          },
+          "idle_scaling": {
+            "type": "boolean",
+            "description": "true lets the service scale to zero when idle."
+          },
+          "idle_timeout_minutes": {
+            "type": "number",
+            "description": "Minutes without queries before the service idles, at least 5."
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/replicaScaling",
+        "bodyMapping": {
+          "minReplicaMemoryGb": "$min_replica_memory_gb",
+          "maxReplicaMemoryGb": "$max_replica_memory_gb",
+          "autoscalingMode": "$autoscaling_mode",
+          "numReplicas": "$num_replicas",
+          "minReplicas": "$min_replicas",
+          "maxReplicas": "$max_replicas",
+          "idleScaling": "$idle_scaling",
+          "idleTimeoutMinutes": "$idle_timeout_minutes"
+        }
+      }
+    },
+    {
+      "name": "clickhouse_cloud_change_clickpipe_state",
+      "description": "Start or stop a ClickPipe, or resync it (a database CDC pipe copies the source tables again). Returns the ClickPipe with its new state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "service_id": {
+            "type": "string",
+            "description": "Service id (UUID) from clickhouse_cloud_list_services."
+          },
+          "clickpipe_id": {
+            "type": "string",
+            "description": "ClickPipe id from clickhouse_cloud_list_clickpipes."
+          },
+          "command": {
+            "type": "string",
+            "description": "start, stop or resync.",
+            "enum": [
+              "start",
+              "stop",
+              "resync"
+            ]
+          }
+        },
+        "required": [
+          "organization_id",
+          "service_id",
+          "clickpipe_id",
+          "command"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/organizations/{organization_id}/services/{service_id}/clickpipes/{clickpipe_id}/state",
+        "bodyMapping": {
+          "command": "$command"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_cloud_create_invitation",
+      "description": "Invite a person to the organization by e-mail. Only someone with this address can accept. Give the roles with assigned_role_ids from clickhouse_cloud_list_roles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Organization id (UUID) from clickhouse_cloud_list_organizations."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address of the person to invite."
+          },
+          "assigned_role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Role ids from clickhouse_cloud_list_roles to give the person."
+          }
+        },
+        "required": [
+          "organization_id",
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/organizations/{organization_id}/invitations",
+        "bodyMapping": {
+          "email": "$email",
+          "assignedRoleIds": "$assigned_role_ids"
+        }
+      }
+    }
+  ]
+}

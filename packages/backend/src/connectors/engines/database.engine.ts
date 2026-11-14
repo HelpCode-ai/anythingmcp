@@ -253,9 +253,33 @@ export class DatabaseEngine {
     const safeHost = connectionString.split('@')[1] ?? 'unknown';
     this.logger.debug(`PostgreSQL query → ${safeHost}`);
 
+    try {
+      return await this.runPostgres(connectionString, sql, values, true);
+    } catch (err) {
+      // PgBouncer refuses statement_timeout as a startup parameter
+      // ("unsupported startup parameter: statement_timeout"). Retry with
+      // a client-side timeout instead of failing every call.
+      if (!/unsupported startup parameter/i.test((err as Error)?.message ?? '')) {
+        throw err;
+      }
+      this.logger.debug(
+        `PostgreSQL ${safeHost} refused statement_timeout; using a client-side timeout`,
+      );
+      return this.runPostgres(connectionString, sql, values, false);
+    }
+  }
+
+  private async runPostgres(
+    connectionString: string,
+    sql: string,
+    values: unknown[],
+    serverTimeout: boolean,
+  ): Promise<unknown> {
     const pool = new Pool({
       connectionString,
-      statement_timeout: this.STATEMENT_TIMEOUT_MS,
+      ...(serverTimeout
+        ? { statement_timeout: this.STATEMENT_TIMEOUT_MS }
+        : { query_timeout: this.STATEMENT_TIMEOUT_MS }),
       connectionTimeoutMillis: this.CONNECT_TIMEOUT_MS,
     });
     try {

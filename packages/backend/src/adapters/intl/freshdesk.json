@@ -78,11 +78,11 @@
     },
     {
       "name": "freshdesk_search_tickets",
-      "description": "Search tickets with a query language. Example: 'status:2 AND priority:4'. Supports field operators like status, priority, agent_id, group_id, tag, type, source, created_at, due_by, fr_due_by.",
+      "description": "Search tickets with a query language. Example: \"status:2 AND priority:4\" (Freshdesk needs the double quotes). Supports field operators like status, priority, agent_id, group_id, tag, type, source, created_at, due_by, fr_due_by.",
       "parameters": {
         "type": "object",
         "properties": {
-          "query": { "type": "string", "description": "Search query in Freshdesk syntax. Wrap whole query in single quotes." },
+          "query": { "type": "string", "description": "Search query in Freshdesk syntax, wrapped in double quotes, e.g. \"status:2 AND priority:4\". Single quotes are rejected." },
           "page": { "type": "integer", "description": "Page (1-10 only — search is paginated to first 1000 results)." }
         },
         "required": ["query"]

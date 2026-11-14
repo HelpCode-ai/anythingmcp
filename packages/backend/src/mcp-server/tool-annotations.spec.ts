@@ -42,6 +42,22 @@ describe('deriveToolAnnotations', () => {
       });
     });
 
+    it('marks the webhook recent-events builtin read-only, whatever the connector type', () => {
+      // It reads WebhookEvent storage, never the upstream connector, so the
+      // connector's own type (REST, GRAPHQL, ...) must not matter here.
+      expect(
+        deriveToolAnnotations({
+          name: 'stripe_recent_events',
+          connectorType: 'REST',
+          endpointMapping: { method: 'webhook_recent_events', path: '' },
+        }),
+      ).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    });
+
     it('treats POST as an additive, non-idempotent write', () => {
       expect(deriveToolAnnotations(rest('POST', 'create_invoice'))).toMatchObject({
         readOnlyHint: false,
@@ -203,6 +219,31 @@ describe('deriveToolAnnotations', () => {
           connectorConfig: { config: { readOnly: false } },
         }).readOnlyHint,
       ).toBe(true);
+    });
+  });
+
+  describe('EMAIL built-ins', () => {
+    const email = (method: string) =>
+      deriveToolAnnotations({ name: `mail_${method}`, connectorType: 'EMAIL', endpointMapping: { method, path: '' } });
+
+    it('marks reads read-only on a closed domain', () => {
+      for (const m of ['email_list_folders', 'email_search', 'email_get_message', 'email_get_attachment']) {
+        expect(email(m)).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+      }
+    });
+
+    it('marks changes as writes, delete as destructive and send as open-world', () => {
+      for (const m of ['email_set_flags', 'email_move', 'email_save_draft']) {
+        expect(email(m)).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+      }
+      expect(email('email_delete')).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+      expect(email('email_send')).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true });
+    });
+
+    it('keeps the static guide read-only', () => {
+      expect(
+        deriveToolAnnotations({ name: 'imap_smtp_guide', connectorType: 'EMAIL', endpointMapping: { method: 'static', path: '' } }),
+      ).toMatchObject({ readOnlyHint: true });
     });
   });
 

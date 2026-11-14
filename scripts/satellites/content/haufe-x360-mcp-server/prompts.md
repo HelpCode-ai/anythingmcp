@@ -1,0 +1,14 @@
+- Which open sales orders have an order total above 5,000 EUR?
+- List all open A/R invoices with their due date, invoice amount and remaining open balance.
+- Which invoices are past their due date and still have an open balance?
+- Show customer C000142 with their main contact, contact persons and credit verification rules.
+- Show sales order SO004812 together with its line items.
+- Which shipments went out this week, and which sales orders do they fulfil?
+- List our active customers in customer class "HANDEL" with their payment terms.
+- Show the last ten invoices and credit memos for customer "Rheinmetall Werkzeuge GmbH".
+- Search the active stock items in item class "ELEKTRO" and list their inventory ID, base unit and default price.
+- Which shipments are still in status "Open" and waiting to be confirmed?
+- List our active vendors with their vendor class, payment terms and main contact details.
+- Show invoice AR009215 with all line item details.
+- Which customers have open sales orders created this month?
+- Compare the total amount of open invoices grouped by customer.

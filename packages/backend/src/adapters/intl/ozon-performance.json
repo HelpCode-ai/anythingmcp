@@ -1,0 +1,1046 @@
+{
+  "slug": "ozon-performance",
+  "name": "Ozon Performance (Ads)",
+  "description": "Ozon Performance API for the seller ad account: pay-per-click, pay-per-order and banner campaigns, their products and bids, competitive bids and bid limits, daily and spend statistics and the detailed campaign reports. Stop campaigns and change bids. One service account client ID and secret.",
+  "instructions": "## Ozon Performance (Ads)\nThis connector calls the **Ozon Performance API** (`https://api-performance.ozon.ru`), the advertising account of an Ozon seller: campaigns, the products they promote and their bids, and statistics. It is separate from the Seller API (the `ozon` connector) and has its own credentials.\n\n**Setup (about 3 minutes)**\n1. In the seller portal open **Settings > API keys > Performance API** (Настройки > API-ключи, https://seller.ozon.ru/app/settings/api-keys?currentTab=performanceApi).\n2. Create a service account if there is none (**Create new account**), click its name and **Add new key**.\n3. Copy the **client ID** (it ends in `@advertising.performance.ozon.ru`) into `OZON_PERFORMANCE_CLIENT_ID` and the **client secret** into `OZON_PERFORMANCE_CLIENT_SECRET`.\n\n**Authentication**: the connector exchanges the client ID and secret at `POST /api/client/token` (grant type `client_credentials`) for a bearer token valid 30 minutes, and gets a new one before it runs out or on a `401`. `401` at the token step means the client ID or secret is wrong or the key was deleted.\n\n**Where to start**: `ozon_performance_list_campaigns` (no arguments) gives the campaign ids. Campaign types: `SKU` = pay per click (Оплата за клик), `SEARCH_PROMO` = pay per order (Оплата за заказ), `BANNER`, `VIDEO_BANNER`. Products of a click campaign: `ozon_performance_list_campaign_products`; pay-per-order products: `ozon_performance_list_cpo_products`.\n\n**Statistics, quick**: `ozon_performance_get_daily_statistics`, `ozon_performance_get_expense_statistics` and `ozon_performance_get_cpc_campaign_statistics` answer at once with JSON rows; without dates they cover the last 7 days. Dates are days (`2026-10-01`) and Ozon groups them in Moscow time.\n\n**Statistics, detailed (asynchronous)**: `ozon_performance_request_campaign_report` (up to 10 campaigns, at most 62 days) returns a `UUID`. Poll `ozon_performance_get_report_status` every few seconds until `state` is `OK` (or `ERROR`), then `ozon_performance_download_report`: CSV text for one campaign, a ZIP file for several. Only one report runs at a time per account and at most 2000 a day; `ozon_performance_list_api_reports` finds reports ordered earlier.\n\n**Money**: campaign budgets are in millionths of a ruble (`1000000` = 1 ruble); bid limits are in rubles; pay-per-order bids are a percent of the product price. Ids are numeric strings.\n\n**Writes**: `ozon_performance_deactivate_campaign` stops a campaign; `ozon_performance_add_campaign_products` and `ozon_performance_update_campaign_bids` change what a click campaign promotes and bids, and so what it spends. Show the user exactly what will change and wait for confirmation before every write. `ozon_performance_activate_campaign` (starts spending) and `ozon_performance_remove_campaign_products` are installed switched off; an admin can enable them.\n\n**Limits**: at most 100,000 requests a day per account, plus limits on campaign changes (for example 500 budget or strategy changes per campaign a day) and on reports. On `429` wait and try again later.\n\n**Out of scope**: creating and copying campaigns, budgets and strategies, pay-per-order bid changes, banner and video statistics, order attribution reports and external traffic analytics.",
+  "region": "intl",
+  "category": "advertising",
+  "icon": "ozon",
+  "docsUrl": "https://docs.ozon.ru/api/performance/",
+  "aliases": [
+    "Ozon Ads",
+    "Ozon реклама",
+    "Ozon Performance API"
+  ],
+  "requiredEnvVars": [
+    "OZON_PERFORMANCE_CLIENT_ID",
+    "OZON_PERFORMANCE_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "OZON_PERFORMANCE_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Seller portal > Settings > API keys > Performance API: open the service account and add a key. The client ID ends in @advertising.performance.ozon.ru.",
+      "link": "https://seller.ozon.ru/app/settings/api-keys?currentTab=performanceApi",
+      "example": "12345678-1700000000000@advertising.performance.ozon.ru",
+      "pattern": "^[^\\s@]+@advertising\\.performance\\.ozon\\.ru$",
+      "patternMessage": "An Ozon Performance client ID ends in @advertising.performance.ozon.ru. Paste the whole client ID."
+    },
+    "OZON_PERFORMANCE_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown with the client ID when the key is added to the service account. Add a new key if it was lost.",
+      "link": "https://seller.ozon.ru/app/settings/api-keys?currentTab=performanceApi",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Ozon did not issue a token for this client ID and secret. Copy both again from Settings > API keys > Performance API, or add a new key to the service account.",
+    "403": "The service account has no access to this method or campaign.",
+    "rate_limited": "Ozon limits Performance API requests per account. Wait and try again later."
+  },
+  "probe": {
+    "tool": "ozon_performance_list_campaigns",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "prerequisites": "An Ozon seller account with the advertising account (Performance) and a service account key under Settings > API keys > Performance API. About 3 minutes.",
+  "connector": {
+    "name": "Ozon Performance API",
+    "type": "REST",
+    "baseUrl": "https://api-performance.ozon.ru",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api-performance.ozon.ru/api/client/token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "client_id": "${username}",
+        "client_secret": "${password}",
+        "grant_type": "client_credentials"
+      },
+      "username": "{{OZON_PERFORMANCE_CLIENT_ID}}",
+      "password": "{{OZON_PERFORMANCE_CLIENT_SECRET}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 1800,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/api/client/limits/list"
+  },
+  "tools": [
+    {
+      "name": "ozon_performance_list_campaigns",
+      "description": "List the advertising campaigns of the Ozon seller account: id, title, state (CAMPAIGN_STATE_RUNNING, _STOPPED, _PLANNED, _INACTIVE, _ARCHIVED and others), type (SKU = pay per click, SEARCH_PROMO = pay per order, BANNER, VIDEO_BANNER), payment type, placement, strategy, dates and budgets. Budgets are in millionths of a ruble (\"1000000\" = 1 ruble). Start here to get campaign ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "maxItems": 100,
+            "description": "Only these campaigns, for example [\"12345678\"]."
+          },
+          "adv_object_type": {
+            "type": "string",
+            "enum": [
+              "SKU",
+              "BANNER",
+              "SEARCH_PROMO",
+              "VIDEO_BANNER"
+            ],
+            "description": "Campaign type: SKU = pay per click (Оплата за клик), SEARCH_PROMO = pay per order (Оплата за заказ), BANNER, VIDEO_BANNER."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "CAMPAIGN_STATE_RUNNING",
+              "CAMPAIGN_STATE_PLANNED",
+              "CAMPAIGN_STATE_STOPPED",
+              "CAMPAIGN_STATE_INACTIVE",
+              "CAMPAIGN_STATE_ARCHIVED",
+              "CAMPAIGN_STATE_MODERATION_DRAFT",
+              "CAMPAIGN_STATE_MODERATION_IN_PROGRESS",
+              "CAMPAIGN_STATE_MODERATION_FAILED",
+              "CAMPAIGN_STATE_FINISHED"
+            ],
+            "description": "Only campaigns in this state."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page. Default 20."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/campaign",
+        "queryParams": {
+          "campaignIds": "$campaign_ids",
+          "advObjectType": "$adv_object_type",
+          "state": "$state",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "campaigns": {
+              "$from": "$.list[*]",
+              "$select": {
+                "id": "id",
+                "title": "title",
+                "state": "state",
+                "advObjectType": "advObjectType",
+                "paymentType": "paymentType",
+                "placement": "placement",
+                "productAutopilotStrategy": "productAutopilotStrategy",
+                "productCampaignMode": "productCampaignMode",
+                "fromDate": "fromDate",
+                "toDate": "toDate",
+                "budget": "budget",
+                "dailyBudget": "dailyBudget",
+                "weeklyBudget": "weeklyBudget",
+                "autostopStatus": "autostopStatus",
+                "isAutocreated": "isAutocreated",
+                "createdAt": "createdAt",
+                "updatedAt": "updatedAt"
+              }
+            },
+            "total": "$.total"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_list_campaign_objects",
+      "description": "List the promoted objects of a pay-per-click, banner or video banner campaign: the SKUs (or banner ids) it advertises. For pay-per-order products use ozon_performance_list_cpo_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Campaign id from ozon_performance_list_campaigns, for example \"12345678\"."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/campaign/{campaign_id}/objects"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "objects": "$.list[*].id"
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_list_campaign_products",
+      "description": "List the products of a pay-per-click campaign with their bids: SKU, title, bid per click (average click cost strategy), target ad cost share in percent (target cost strategy) or search position range (top promotion strategy). Pages with page and page_size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Campaign id from ozon_performance_list_campaigns, for example \"12345678\"."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page. Default 20."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/campaign/{campaign_id}/v2/products",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "products": {
+              "$from": "$.products[*]",
+              "$select": {
+                "sku": "sku",
+                "title": "title",
+                "bid": "bid",
+                "targetCir": "targetCir",
+                "topPosition": "topPosition"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_get_competitive_bids",
+      "description": "Get the competitive bids for up to 200 products of a pay-per-click campaign: the bid other sellers place, per SKU. A product not in the campaign shows bid 0. Use it before choosing a bid with ozon_performance_update_campaign_bids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Campaign id from ozon_performance_list_campaigns, for example \"12345678\"."
+          },
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Product SKUs, for example [\"987654321\"]."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/campaign/{campaign_id}/products/bids/competitive",
+        "queryParams": {
+          "skus": "$skus"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "campaignId": "$.campaignId",
+            "bids": {
+              "$from": "$.bids[*]",
+              "$select": {
+                "sku": "sku",
+                "bid": "bid"
+              }
+            }
+          },
+          "maxBytes": 40000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_get_bid_limits",
+      "description": "Get the minimum and maximum bids in rubles for each promotion tool (pay per click, pay per order) and placement, and the minimum bid of the product categories that have their own. No arguments.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/limits/list"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "limits": {
+              "$from": "$.limits[*]",
+              "$select": {
+                "objectType": "objectType",
+                "paymentMethod": "paymentMethod",
+                "placement": "placement",
+                "minBid": "minBid",
+                "maxBid": "maxBid",
+                "categories": "categories"
+              }
+            }
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_list_cpo_products",
+      "description": "List the products in pay-per-order promotion (Оплата за заказ, selected products): SKU, seller article, title, price, bid as a percent of the price and in rubles, the previous bid, whether promotion is on, visibility index and views this week and last week. Pages with page and page_size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page. Default 20."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/client/campaign/search_promo/v2/products",
+        "bodyMapping": {
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "products": {
+              "$from": "$.products[*]",
+              "$select": {
+                "sku": "sku",
+                "sourceSku": "sourceSku",
+                "title": "title",
+                "price": "price",
+                "bid": "bid",
+                "bidPrice": "bidPrice",
+                "previousBid": "previousBid",
+                "searchPromoStatus": "searchPromoStatus",
+                "isSearchPromoAvailable": "isSearchPromoAvailable",
+                "visibilityIndex": "visibilityIndex",
+                "views": "views",
+                "carrotsStatus": "carrotsStatus"
+              }
+            },
+            "total": "$.total"
+          },
+          "maxBytes": 60000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_performance_get_daily_statistics",
+      "description": "Get daily statistics per campaign as JSON rows: campaign id and title, date, views, clicks, spend in rubles, orders and order value. Without dates Ozon returns the last 7 days. Answers at once, no report to wait for.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "maxItems": 100,
+            "description": "Campaign ids, for example [\"12345678\"]. Leave out for every campaign."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day of the period, YYYY-MM-DD (Moscow time). Without both dates Ozon returns the last 7 days."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day of the period, YYYY-MM-DD (Moscow time). Without both dates Ozon returns the last 7 days."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/statistics/daily/json",
+        "queryParams": {
+          "campaignIds": "$campaign_ids",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "rows": "$.rows"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_get_expense_statistics",
+      "description": "Get campaign spend per day as JSON rows: campaign id, date, title, total spend, spend from the prepaid account and spend paid with bonuses. Without dates Ozon returns the last 7 days. Answers at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "maxItems": 100,
+            "description": "Campaign ids, for example [\"12345678\"]. Leave out for every campaign."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day of the period, YYYY-MM-DD (Moscow time). Without both dates Ozon returns the last 7 days."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day of the period, YYYY-MM-DD (Moscow time). Without both dates Ozon returns the last 7 days."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/statistics/expense/json",
+        "queryParams": {
+          "campaignIds": "$campaign_ids",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "rows": "$.rows"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_get_cpc_campaign_statistics",
+      "description": "Get the totals of pay-per-click campaigns for a period as JSON: per campaign its title, object type, status, budget, views, clicks, spend, orders and order value. Does not count against the Performance API report limits. Without dates Ozon returns the last 7 days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "maxItems": 100,
+            "description": "Campaign ids, for example [\"12345678\"]. Leave out for every campaign."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day of the period, YYYY-MM-DD (Moscow time). Without both dates Ozon returns the last 7 days."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day of the period, YYYY-MM-DD (Moscow time). Without both dates Ozon returns the last 7 days."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/statistics/campaign/product/json",
+        "queryParams": {
+          "campaignIds": "$campaign_ids",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "rows": "$.rows"
+          },
+          "maxBytes": 80000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_request_campaign_report",
+      "description": "Order a detailed statistics report for up to 10 campaigns over at most 62 days, per product and grouped by day, week or month. The report is built in the background: this returns a UUID; poll ozon_performance_get_report_status until state is OK, then fetch it with ozon_performance_download_report. Only one report runs at a time per account. Does not change any campaign.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaigns": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "Up to 10 campaign ids. One campaign gives a CSV file, several give a ZIP archive with one CSV per campaign."
+          },
+          "dateFrom": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day of the report, YYYY-MM-DD. The period may span at most 62 days."
+          },
+          "dateTo": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day of the report, YYYY-MM-DD."
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "NO_GROUP_BY",
+              "DATE",
+              "START_OF_WEEK",
+              "START_OF_MONTH"
+            ],
+            "description": "Group rows by day, week or month; NO_GROUP_BY gives totals for the period."
+          }
+        },
+        "required": [
+          "campaigns",
+          "dateFrom",
+          "dateTo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/client/statistics",
+        "bodyMapping": {
+          "campaigns": "$campaigns",
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "groupBy": "$groupBy"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "UUID": "$.UUID",
+            "vendor": "$.vendor"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_performance_request_search_phrases_report",
+      "description": "Order a report of the search phrases that showed the products of pay-per-click campaigns placed in top promotion (Ozon marks this method as being tested). Returns a UUID: poll ozon_performance_get_report_status, then fetch it with ozon_performance_download_report. Does not change any campaign.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaigns": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "Up to 10 campaign ids. One campaign gives a CSV file, several give a ZIP archive with one CSV per campaign."
+          },
+          "dateFrom": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "First day of the report, YYYY-MM-DD. The period may span at most 62 days."
+          },
+          "dateTo": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Last day of the report, YYYY-MM-DD."
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "NO_GROUP_BY",
+              "DATE",
+              "START_OF_WEEK",
+              "START_OF_MONTH"
+            ],
+            "description": "Group rows by day, week or month; NO_GROUP_BY gives totals for the period."
+          }
+        },
+        "required": [
+          "campaigns",
+          "dateFrom",
+          "dateTo"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/client/statistics/phrases",
+        "bodyMapping": {
+          "campaigns": "$campaigns",
+          "dateFrom": "$dateFrom",
+          "dateTo": "$dateTo",
+          "groupBy": "$groupBy"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "UUID": "$.UUID"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ozon_performance_get_report_status",
+      "description": "Get the status of an ordered report by its UUID: state NOT_STARTED, IN_PROGRESS, ERROR (with error) or OK (with link), the report kind and the request it was built from. Wait a few seconds between checks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "UUID returned when the report was ordered."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/statistics/{uuid}"
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "UUID": "UUID",
+            "state": "state",
+            "kind": "kind",
+            "createdAt": "createdAt",
+            "updatedAt": "updatedAt",
+            "request": "request",
+            "link": "link",
+            "error": "error"
+          }
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_download_report",
+      "description": "Download a finished report by its UUID once ozon_performance_get_report_status shows state OK. A report for one campaign comes back as CSV text (semicolon separated, Russian column names); one for several campaigns is a ZIP archive with one CSV per campaign, attached as a file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "UUID of the finished report."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/statistics/report",
+        "queryParams": {
+          "UUID": "$uuid"
+        }
+      },
+      "responseMapping": {
+        "binary": {
+          "maxBytes": 4194304
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_list_api_reports",
+      "description": "List the reports ordered through the API by this service account: UUID, state, kind, campaigns, request period and link. Use it to find a report ordered earlier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page. Default 20."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/client/statistics/externallist",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "reports": {
+              "$from": "$.items[*]",
+              "$select": {
+                "name": "name",
+                "campaigns": "campaigns",
+                "UUID": "meta.UUID",
+                "state": "meta.state",
+                "kind": "meta.kind",
+                "createdAt": "meta.createdAt",
+                "updatedAt": "meta.updatedAt",
+                "request": "meta.request",
+                "link": "meta.link",
+                "error": "meta.error"
+              }
+            },
+            "total": "$.total"
+          },
+          "maxBytes": 60000
+        }
+      }
+    },
+    {
+      "name": "ozon_performance_add_campaign_products",
+      "description": "Add products to a pay-per-click campaign (at most 500 products per campaign), each with an optional bid. In a campaign with an automatic strategy only products of its autopilot category can be added. Show the user the products and bids and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Campaign id from ozon_performance_list_campaigns, for example \"12345678\"."
+          },
+          "bids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$",
+                  "description": "Product SKU."
+                },
+                "bid": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$",
+                  "description": "Bid per click, used only with the average click cost strategy. Pass it in the same unit as the bids ozon_performance_list_campaign_products returns; without it Ozon sets the competitive bid."
+                },
+                "targetCir": {
+                  "type": "number",
+                  "description": "Target share of ad spend in percent, only with the target cost strategy."
+                },
+                "topPosition": {
+                  "type": "string",
+                  "description": "Search position range, only with the top promotion strategy: Топ-4, Топ-12, Топ-20 or Топ-30."
+                }
+              },
+              "required": [
+                "sku"
+              ]
+            },
+            "description": "For example [{\"sku\": \"987654321\"}]."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "bids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/client/campaign/{campaign_id}/products",
+        "bodyMapping": {
+          "bids": "$bids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "ozon_performance_update_campaign_bids",
+      "description": "Change the bids of products already in a pay-per-click campaign. Ozon replaces the stop words and phrase bids of the campaign with what is sent. Read the current bids with ozon_performance_list_campaign_products and the market with ozon_performance_get_competitive_bids, show the user old and new bids and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Campaign id from ozon_performance_list_campaigns, for example \"12345678\"."
+          },
+          "bids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$",
+                  "description": "Product SKU."
+                },
+                "bid": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$",
+                  "description": "Bid per click, used only with the average click cost strategy. Pass it in the same unit as the bids ozon_performance_list_campaign_products returns; without it Ozon sets the competitive bid."
+                },
+                "targetCir": {
+                  "type": "number",
+                  "description": "Target share of ad spend in percent, only with the target cost strategy."
+                },
+                "topPosition": {
+                  "type": "string",
+                  "description": "Search position range, only with the top promotion strategy: Топ-4, Топ-12, Топ-20 or Топ-30."
+                }
+              },
+              "required": [
+                "sku"
+              ]
+            },
+            "description": "For example [{\"sku\": \"987654321\", \"bid\": \"15000000\"}]."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "bids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/client/campaign/{campaign_id}/products",
+        "bodyMapping": {
+          "bids": "$bids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ozon_performance_remove_campaign_products",
+      "description": "Remove products from a pay-per-click campaign; their bids are lost. Installed switched off. Show the user the products and ask for confirmation before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Campaign id from ozon_performance_list_campaigns, for example \"12345678\"."
+          },
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "minItems": 1,
+            "description": "SKUs to remove."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/client/campaign/{campaign_id}/products/delete",
+        "bodyMapping": {
+          "sku": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "ozon_performance_deactivate_campaign",
+      "description": "Stop a running campaign (Выключить кампанию): it stops showing and spending until activated again. Show the user the campaign and ask for confirmation before calling. Returns the campaign with its new state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Campaign id from ozon_performance_list_campaigns, for example \"12345678\"."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/client/campaign/{campaign_id}/deactivate",
+        "bodyMapping": {}
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "title": "title",
+            "state": "state",
+            "advObjectType": "advObjectType",
+            "paymentType": "paymentType",
+            "placement": "placement",
+            "productAutopilotStrategy": "productAutopilotStrategy",
+            "productCampaignMode": "productCampaignMode",
+            "fromDate": "fromDate",
+            "toDate": "toDate",
+            "budget": "budget",
+            "dailyBudget": "dailyBudget",
+            "weeklyBudget": "weeklyBudget",
+            "autostopStatus": "autostopStatus",
+            "isAutocreated": "isAutocreated",
+            "createdAt": "createdAt",
+            "updatedAt": "updatedAt"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ozon_performance_activate_campaign",
+      "description": "Start a campaign (Активировать кампанию): it starts showing ads and spending the budget. Installed switched off. Show the user the campaign and its budget and ask for confirmation before calling. Returns the campaign with its new state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Campaign id from ozon_performance_list_campaigns, for example \"12345678\"."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/client/campaign/{campaign_id}/activate",
+        "bodyMapping": {}
+      },
+      "responseMapping": {
+        "transform": {
+          "select": {
+            "id": "id",
+            "title": "title",
+            "state": "state",
+            "advObjectType": "advObjectType",
+            "paymentType": "paymentType",
+            "placement": "placement",
+            "productAutopilotStrategy": "productAutopilotStrategy",
+            "productCampaignMode": "productCampaignMode",
+            "fromDate": "fromDate",
+            "toDate": "toDate",
+            "budget": "budget",
+            "dailyBudget": "dailyBudget",
+            "weeklyBudget": "weeklyBudget",
+            "autostopStatus": "autostopStatus",
+            "isAutocreated": "isAutocreated",
+            "createdAt": "createdAt",
+            "updatedAt": "updatedAt"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

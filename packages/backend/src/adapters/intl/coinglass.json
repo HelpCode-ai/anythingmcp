@@ -1,0 +1,983 @@
+{
+  "slug": "coinglass",
+  "name": "CoinGlass",
+  "aliases": [
+    "Coinglass API",
+    "CoinGlass futures data"
+  ],
+  "description": "Crypto derivatives data from CoinGlass: futures open interest across exchanges, funding rates (also open-interest weighted), long/short ratios of all and top traders, liquidations, options max pain, spot bitcoin and ether ETF flows, stablecoin market cap, Coinbase premium and the Fear & Greed Index. Read-only; needs a CoinGlass API plan.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "coinglass",
+  "docsUrl": "https://docs.coinglass.com/reference/endpoint-overview",
+  "instructions": "## CoinGlass\nThis connector reads crypto derivatives and market data from the **CoinGlass API v4** (`https://open-api-v4.coinglass.com`): futures open interest, funding rates, long/short ratios, liquidations, options max pain, spot ETF flows and market indicators such as the stablecoin market cap, the Fear & Greed Index and the Coinbase premium. Everything is read-only.\n\n**Setup (2 minutes)**\n1. CoinGlass API access needs a paid API plan (Hobbyist and up) at https://www.coinglass.com/pricing.\n2. Open your account's **API Key** page (https://www.coinglass.com/account), copy the key into `COINGLASS_API_KEY`. It is sent in the `CG-API-KEY` header.\n3. Run `coinglass_get_account_subscription` to check the key and see the plan.\n\n**Plans and limits**: requests per minute depend on the plan (Hobbyist 30, Startup 80, Standard 300, Professional 1200). History tools limit the interval on the smaller plans: Hobbyist only `4h` and longer, Startup `30m` and longer, Standard and up any interval. History depth per interval also grows with the plan; daily data goes back to the start on every plan. A call outside the plan answers with an error message in the body; switch to a longer interval rather than retrying.\n\n**Symbols: coin or pair**\n- Coin-level tools take a coin as `symbol` (`BTC`, `ETH`): `coinglass_get_aggregated_open_interest_history`, `coinglass_list_open_interest_by_exchange`, `coinglass_get_oi_weighted_funding_rate_history`, `coinglass_get_aggregated_liquidation_history`, `coinglass_get_pairs_markets`, `coinglass_get_option_max_pain`. `coinglass_list_supported_coins` lists the coins.\n- Pair-level tools take an `exchange` (`Binance`, `OKX`, `Bybit`, spelled as `coinglass_list_supported_exchanges` returns) and a pair as `symbol` (`BTCUSDT`): `coinglass_get_price_history`, `coinglass_get_open_interest_history`, `coinglass_get_funding_rate_history`, `coinglass_get_global_long_short_account_ratio`, `coinglass_get_top_long_short_account_ratio`, `coinglass_get_top_long_short_position_ratio`, `coinglass_get_liquidation_history`. `coinglass_list_exchange_pairs` lists the pairs of an exchange.\n\n**Workflow**\n- Positioning of a coin: `coinglass_get_aggregated_open_interest_history` (all exchanges) and `coinglass_list_open_interest_by_exchange` (where it sits now), `coinglass_get_oi_weighted_funding_rate_history` for crowding, `coinglass_list_funding_rates_by_exchange` for the current rates, `coinglass_get_global_long_short_account_ratio` and the two top-trader ratios on Binance, `coinglass_get_liquidation_history` or `coinglass_get_aggregated_liquidation_history` for forced closes.\n- Market overview: `coinglass_get_pairs_markets` for every pair of a coin with price, volume, open interest and funding.\n- Flows and sentiment: `coinglass_get_bitcoin_etf_flows`, `coinglass_get_ethereum_etf_flows`, `coinglass_list_bitcoin_etfs`, `coinglass_get_stablecoin_market_cap_history`, `coinglass_get_coinbase_premium_index`, `coinglass_get_fear_greed_history`.\n- Options: `coinglass_get_option_max_pain`.\n\n**History tools** take `interval` (required), `limit` (points, maximum 1000), and optionally `start_time` / `end_time` in **Unix milliseconds**. Ask for only what you need, e.g. `interval: 1d, limit: 30` for a month of daily points. Returned `time` values are milliseconds, except the Coinbase premium, the stablecoin market cap and the Fear & Greed lists, which use seconds. Funding rates are in percent per funding interval (0.01 means 0.01%).\n\n**Errors**: CoinGlass answers HTTP 200 with a `code` other than \"0\" when something is wrong: 401 or \"Invalid API key\" for a missing or wrong key, 429 when the per-minute limit is used up, 400 for a wrong parameter or a call the plan does not include.",
+  "prerequisites": "A CoinGlass account with a paid API plan (Hobbyist or higher) and its API key.",
+  "requiredEnvVars": [
+    "COINGLASS_API_KEY"
+  ],
+  "envVarMeta": {
+    "COINGLASS_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "CoinGlass, account, API Key: the key of your API plan. It is sent in the CG-API-KEY header.",
+      "link": "https://www.coinglass.com/account",
+      "pattern": "^[A-Za-z0-9_-]{16,}$",
+      "patternMessage": "Paste only the API key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "CoinGlass refused the API key. Copy it again from your CoinGlass account (API Key page); a key without an active API plan does not work.",
+    "429": "The per-minute request limit of your CoinGlass plan is used up. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "coinglass_get_account_subscription"
+  },
+  "connector": {
+    "name": "CoinGlass API v4",
+    "type": "REST",
+    "baseUrl": "https://open-api-v4.coinglass.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "CG-API-KEY",
+      "apiKey": "{{COINGLASS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/api/user/account/subscription",
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "equals": "401",
+          "messagePath": "msg",
+          "status": 401
+        },
+        {
+          "path": "code",
+          "equals": "400",
+          "messagePath": "msg",
+          "messageMatches": "api.?key",
+          "status": 401
+        },
+        {
+          "path": "code",
+          "equals": "429",
+          "messagePath": "msg",
+          "status": 429
+        },
+        {
+          "path": "code",
+          "matches": "^[1-9][0-9]*$",
+          "messagePath": "msg",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "coinglass_get_account_subscription",
+      "description": "Show the CoinGlass API plan of the key (level such as HOBBYIST, STARTUP, STANDARD, PROFESSIONAL), its expiry time and whether it has expired. Use it to check the key and to know which intervals the plan allows.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/user/account/subscription"
+      }
+    },
+    {
+      "name": "coinglass_list_supported_coins",
+      "description": "List the coins CoinGlass covers for futures data (BTC, ETH, SOL, ...). These are the values the coin-level tools take as symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/supported-coins"
+      }
+    },
+    {
+      "name": "coinglass_list_supported_exchanges",
+      "description": "List the futures exchanges CoinGlass covers (Binance, OKX, Bybit, Deribit, CME, Hyperliquid, ...), spelled as the exchange parameter expects.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/supported-exchanges"
+      }
+    },
+    {
+      "name": "coinglass_list_exchange_pairs",
+      "description": "List the futures trading pairs per exchange: instrument_id (the pair the pair-level tools take as symbol, e.g. BTCUSDT), base and quote asset. Filter by one exchange to keep the answer short.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Only pairs of this exchange, e.g. Binance."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/supported-exchange-pairs",
+        "queryParams": {
+          "exchange": "$exchange"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_pairs_markets",
+      "description": "Current market snapshot of every futures pair of a coin across exchanges: price, index price, 24 hour price change, volume, long and short volume, open interest, funding rate and 24 hour liquidations per pair.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Coin symbol, e.g. BTC or ETH. coinglass_list_supported_coins lists them."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/pairs-markets",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_price_history",
+      "description": "Price candles (open, high, low, close, volume_usd) of one futures pair on one exchange.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Futures exchange name as CoinGlass writes it, e.g. Binance, OKX, Bybit, Gate, HTX. coinglass_list_exchange_pairs lists the exchanges and their pairs."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Trading pair on that exchange, e.g. BTCUSDT or ETHUSDT (instrument_id from coinglass_list_exchange_pairs)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of candles; CoinGlass requires it, default here 100, maximum 1000.",
+            "default": 100
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/price/history",
+        "queryParams": {
+          "exchange": "$exchange",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_open_interest_history",
+      "description": "Open interest candles (open, high, low, close) of one futures pair on one exchange.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Futures exchange name as CoinGlass writes it, e.g. Binance, OKX, Bybit, Gate, HTX. coinglass_list_exchange_pairs lists the exchanges and their pairs."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Trading pair on that exchange, e.g. BTCUSDT or ETHUSDT (instrument_id from coinglass_list_exchange_pairs)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          },
+          "unit": {
+            "type": "string",
+            "description": "usd (default) for values in US dollars, coin for amounts in the coin.",
+            "enum": [
+              "usd",
+              "coin"
+            ]
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/open-interest/history",
+        "queryParams": {
+          "exchange": "$exchange",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "unit": "$unit"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_aggregated_open_interest_history",
+      "description": "Open interest of a coin aggregated across all exchanges, as candles (open, high, low, close in USD). Rising open interest with rising price means new longs; with falling price, new shorts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Coin symbol, e.g. BTC or ETH. coinglass_list_supported_coins lists them."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          },
+          "unit": {
+            "type": "string",
+            "description": "usd (default) for values in US dollars, coin for amounts in the coin.",
+            "enum": [
+              "usd",
+              "coin"
+            ]
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/open-interest/aggregated-history",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "unit": "$unit"
+        }
+      }
+    },
+    {
+      "name": "coinglass_list_open_interest_by_exchange",
+      "description": "Current open interest of a coin per exchange (the first row, exchange All, is the total): USD value, quantity, split into stablecoin- and coin-margined, and the change in percent over 5 minutes up to 24 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Coin symbol, e.g. BTC or ETH. coinglass_list_supported_coins lists them."
+          }
+        },
+        "required": [
+          "symbol"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/open-interest/exchange-list",
+        "queryParams": {
+          "symbol": "$symbol"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_funding_rate_history",
+      "description": "Funding rate candles (open, high, low, close) of one perpetual pair on one exchange. Rates are in percent per funding interval (0.01 = 0.01%).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Futures exchange name as CoinGlass writes it, e.g. Binance, OKX, Bybit, Gate, HTX. coinglass_list_exchange_pairs lists the exchanges and their pairs."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Trading pair on that exchange, e.g. BTCUSDT or ETHUSDT (instrument_id from coinglass_list_exchange_pairs)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/funding-rate/history",
+        "queryParams": {
+          "exchange": "$exchange",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_oi_weighted_funding_rate_history",
+      "description": "Funding rate of a coin across all exchanges, weighted by each exchange's open interest, as candles (open, high, low, close, in percent). Persistently positive funding means longs pay shorts (crowded longs).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Coin symbol, e.g. BTC or ETH. coinglass_list_supported_coins lists them."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/funding-rate/oi-weight-history",
+        "queryParams": {
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "coinglass_list_funding_rates_by_exchange",
+      "description": "Current funding rate of every coin on every exchange, split into stablecoin-margined and coin-margined contracts, with the funding interval in hours and the next funding time.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/funding-rate/exchange-list"
+      }
+    },
+    {
+      "name": "coinglass_get_global_long_short_account_ratio",
+      "description": "Long/short ratio of all trader accounts on one exchange for one pair: percent of accounts long, percent short and the ratio. Supported on Binance, OKX, Gate, HTX and Bybit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Futures exchange name as CoinGlass writes it, e.g. Binance, OKX, Bybit, Gate, HTX. coinglass_list_exchange_pairs lists the exchanges and their pairs."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Trading pair on that exchange, e.g. BTCUSDT or ETHUSDT (instrument_id from coinglass_list_exchange_pairs)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/global-long-short-account-ratio/history",
+        "queryParams": {
+          "exchange": "$exchange",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_top_long_short_account_ratio",
+      "description": "Long/short ratio of the top trader accounts on one exchange for one pair: percent of top accounts long and short and the ratio.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Futures exchange name as CoinGlass writes it, e.g. Binance, OKX, Bybit, Gate, HTX. coinglass_list_exchange_pairs lists the exchanges and their pairs."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Trading pair on that exchange, e.g. BTCUSDT or ETHUSDT (instrument_id from coinglass_list_exchange_pairs)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/top-long-short-account-ratio/history",
+        "queryParams": {
+          "exchange": "$exchange",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_top_long_short_position_ratio",
+      "description": "Long/short ratio of the positions of top traders on one exchange for one pair, weighted by position size rather than by account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Futures exchange name as CoinGlass writes it, e.g. Binance, OKX, Bybit, Gate, HTX. coinglass_list_exchange_pairs lists the exchanges and their pairs."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Trading pair on that exchange, e.g. BTCUSDT or ETHUSDT (instrument_id from coinglass_list_exchange_pairs)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/top-long-short-position-ratio/history",
+        "queryParams": {
+          "exchange": "$exchange",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_liquidation_history",
+      "description": "Liquidations of one futures pair on one exchange per interval: long_liquidation_usd and short_liquidation_usd.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "description": "Futures exchange name as CoinGlass writes it, e.g. Binance, OKX, Bybit, Gate, HTX. coinglass_list_exchange_pairs lists the exchanges and their pairs."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Trading pair on that exchange, e.g. BTCUSDT or ETHUSDT (instrument_id from coinglass_list_exchange_pairs)."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "exchange",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/liquidation/history",
+        "queryParams": {
+          "exchange": "$exchange",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_aggregated_liquidation_history",
+      "description": "Liquidations of a coin summed over the exchanges you name, per interval: aggregated long and short liquidations in USD.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "exchange_list": {
+            "type": "string",
+            "description": "Comma-separated exchanges to sum, e.g. Binance,OKX,Bybit."
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Coin symbol, e.g. BTC or ETH. coinglass_list_supported_coins lists them."
+          },
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "exchange_list",
+          "symbol",
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/futures/liquidation/aggregated-history",
+        "queryParams": {
+          "exchange_list": "$exchange_list",
+          "symbol": "$symbol",
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_option_max_pain",
+      "description": "Options max pain per expiry for a coin on one options exchange: max pain price, call and put open interest and their market value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Coin, e.g. BTC or ETH."
+          },
+          "exchange": {
+            "type": "string",
+            "description": "Options exchange, e.g. Deribit, Binance, OKX."
+          }
+        },
+        "required": [
+          "symbol",
+          "exchange"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/option/max-pain",
+        "queryParams": {
+          "symbol": "$symbol",
+          "exchange": "$exchange"
+        }
+      }
+    },
+    {
+      "name": "coinglass_get_bitcoin_etf_flows",
+      "description": "Daily net flows of the US spot bitcoin ETFs: total flow_usd per day, the BTC price, and the flow of each ETF (IBIT, FBTC, GBTC, ...). Positive is inflow. Covers every day since the ETFs launched.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/etf/bitcoin/flow-history"
+      }
+    },
+    {
+      "name": "coinglass_get_ethereum_etf_flows",
+      "description": "Daily net flows of the US spot ether ETFs: total flow_usd per day, the ETH price, and the flow of each ETF (ETHA, FETH, ...). Positive is inflow.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/etf/ethereum/flow-history"
+      }
+    },
+    {
+      "name": "coinglass_list_bitcoin_etfs",
+      "description": "List the spot bitcoin ETFs with ticker, fund name, region, primary exchange, market status, assets under management, management fee, volume, BTC holdings with 24 hour and 7 day change, net asset value and premium or discount.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/etf/bitcoin/list"
+      }
+    },
+    {
+      "name": "coinglass_get_stablecoin_market_cap_history",
+      "description": "History of the total stablecoin market capitalisation with the BTC price alongside: parallel lists data_list (market cap, USD), price_list and time_list (Unix seconds). A rising stablecoin supply means fresh cash entering crypto.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/index/stableCoin-marketCap-history"
+      }
+    },
+    {
+      "name": "coinglass_get_fear_greed_history",
+      "description": "History of the Crypto Fear & Greed Index (0 extreme fear to 100 extreme greed) with the BTC price alongside: parallel lists data_list, price_list and time_list (Unix seconds).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/index/fear-greed-history"
+      }
+    },
+    {
+      "name": "coinglass_get_coinbase_premium_index",
+      "description": "Coinbase premium index: the gap between the BTC price on Coinbase (USD) and on Binance (USDT), as premium in USD and premium_rate (0.0261 = 2.61%). Positive means US buyers pay more. time is in Unix seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "interval": {
+            "type": "string",
+            "description": "Candle interval: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 6h, 8h, 12h, 1d or 1w. The Hobbyist plan only allows 4h and longer, Startup 30m and longer.",
+            "enum": [
+              "1m",
+              "3m",
+              "5m",
+              "15m",
+              "30m",
+              "1h",
+              "4h",
+              "6h",
+              "8h",
+              "12h",
+              "1d",
+              "1w"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of points, newest last; default and maximum 1000. Ask for what the question needs, e.g. 30."
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the range, Unix milliseconds."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the range, Unix milliseconds."
+          }
+        },
+        "required": [
+          "interval"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/coinbase-premium-index",
+        "queryParams": {
+          "interval": "$interval",
+          "limit": "$limit",
+          "start_time": "$start_time",
+          "end_time": "$end_time"
+        }
+      }
+    }
+  ]
+}

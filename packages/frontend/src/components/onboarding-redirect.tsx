@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { connectors, license, users } from '@/lib/api';
 import { cardTrialEligible, readCardTrialPrompt, writeCardTrialPrompt } from '@/lib/card-trial';
 import { startTrialPath } from '@/lib/checkout-source';
+import { useMemberVisibility } from '@/lib/use-member-visibility';
 
 // Routes where we MUST NOT redirect, even if the wizard hasn't been
 // completed yet. Login + token-bound flows handle their own redirects,
@@ -21,6 +22,7 @@ const EXCLUDED_ROUTES = [
   '/settings/license',
   '/welcome',
   '/start-trial',
+  '/reactivate',
 ];
 
 function isExcluded(pathname: string | null): boolean {
@@ -49,9 +51,20 @@ function isExcluded(pathname: string | null): boolean {
  * Cloud only, ahead of the wizard: an admin on a running free trial who has
  * not yet been offered the card trial is sent to /start-trial, once per user
  * (remembered in localStorage). Self-hosted never gets there.
+ *
+ * Member visibility: a member whose workspace is set to restricted sees only
+ * the connectors their roles reach, so zero connectors says nothing about a
+ * new workspace and the wizard (which sets one up) is not theirs. They are
+ * never sent to /welcome, and a member who is not an admin is not evaluated
+ * at all until the setting has loaded, so they are not sent there for a
+ * moment either.
  */
 export function OnboardingRedirect() {
   const { token, user, isLoading, deploymentMode, deploymentModeLoaded } = useAuth();
+  const visibility = useMemberVisibility();
+  const restrictedForMe = visibility.restrictedForMe;
+  // Admins are never restricted, so only a member waits for the answer.
+  const visibilityPending = !!user && user.role !== 'ADMIN' && !visibility.loaded;
   const pathname = usePathname();
   const router = useRouter();
   // Avoid duplicate evaluations on rapid route changes / re-renders.
@@ -64,6 +77,7 @@ export function OnboardingRedirect() {
     // guess recorded the path as done and never looked again with the real
     // mode, so a cloud admin could miss the card-trial offer.
     if (!deploymentModeLoaded) return;
+    if (visibilityPending) return;
     if (isExcluded(pathname)) return;
 
     // Dedupe per (path, userId) to avoid hammering the API on every render.
@@ -133,7 +147,7 @@ export function OnboardingRedirect() {
           return;
         }
 
-        if (!wizardDone && !hasConnector && pathname === '/') {
+        if (!wizardDone && !hasConnector && pathname === '/' && !restrictedForMe) {
           router.replace('/welcome');
         }
       } catch {
@@ -147,7 +161,7 @@ export function OnboardingRedirect() {
     return () => {
       cancelled = true;
     };
-  }, [isLoading, token, user, pathname, deploymentMode, deploymentModeLoaded, router]);
+  }, [isLoading, token, user, pathname, deploymentMode, deploymentModeLoaded, visibilityPending, restrictedForMe, router]);
 
   return null;
 }

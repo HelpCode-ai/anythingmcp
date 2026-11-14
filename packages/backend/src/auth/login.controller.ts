@@ -11,22 +11,26 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomBytes, timingSafeEqual } from 'crypto';
-import {
-  AuthService,
-  DASHBOARD_TOKEN_USE,
-  isForeignIssuedToken,
-  isTokenRevoked,
-} from './auth.service';
+import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
+import { resolveDashboardSessionUser, type SessionUser } from './dashboard-session.util';
 import { DeploymentService } from '../common/deployment.service';
 import { findUserByEmail } from '../common/email.util';
 import type { User } from '../generated/prisma/client';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { SsoService } from '../identity-providers/sso.service';
-import { MCP_RESOURCE_COOKIE } from './resource-indicator.middleware';
+import {
+  MCP_APP_COOKIE,
+  MCP_DIRECTORY_COOKIE,
+  MCP_RESOURCE_COOKIE,
+  type DirectoryPluginEndpoint,
+} from './resource-indicator.middleware';
+import { serverReachability } from './server-reachability.util';
+import { markDirectorySignup } from '../audit/directory-signup';
 import { providerMarkSvg } from './provider-marks';
 import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
@@ -37,14 +41,21 @@ import { SOCIAL_BIND_COOKIE, SocialAuthError, SocialAuthService } from './social
 import { setSocialBindCookie } from './social/social-auth.controller';
 import {
   AMCP_MARK_SVG as AMCP_MARK,
-  claudeMark,
   clientTilePair,
   knownClientFor,
   renderAuthPage,
-  showsDirectoryBadge,
+  directoryBadgeHtml,
+  directoryBadgesFor,
   signupClientFor,
   type TrustRowOptions,
 } from './auth-page';
+import { maskEmail } from './mcp-email-verification';
+import { hasDashboardHeader, setRecentSignInCookie } from './recent-sign-in.util';
+import { RecentSignInService } from './recent-sign-in.service';
+import { EmailVerificationService, MAX_CODES_PER_HOUR, VERIFICATION_CODE_TTL_MS } from './email-verification.service';
+import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
+import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
+import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -54,25 +65,47 @@ import {
 const PENDING_GRANT_COOKIE = 'pending_grant';
 
 /**
+ * The social provider (Google, Microsoft, GitHub) the user signed in with on
+ * the login page, carried across the server picker so the first-connector
+ * page after it can link to the dashboard the same way. Signed, and checked
+ * against the enabled providers when read.
+ */
+const PENDING_SOCIAL_COOKIE = 'pending_grant_social';
+
+/**
+ * Cloud: the account that signed in with its password on this page but has
+ * not verified its email address yet, while the page asks for the code.
+ * Signed and httpOnly: the code step trusts it as "this browser proved the
+ * password of this account", for as long as a code is valid.
+ */
+const PENDING_VERIFY_COOKIE = 'pending_verify';
+
+/** CSRF token of the code step's form (double submit, like `login_csrf`). */
+const VERIFY_CSRF_COOKIE = 'verify_csrf';
+
+/** At most one code per minute from the code step (the dashboard sign-in waits as long). */
+const CODE_RESEND_INTERVAL_MS = 60 * 1000;
+
+/** The notice when the hourly cap of codes is reached. */
+const TOO_MANY_CODES =
+  'You asked for many codes in the last hour: use the newest email you received, or try again later.';
+
+/**
+ * Shown on the sign-in form when the account just used is not a member of the
+ * workspace that owns the MCP server the client asked for. The server is not
+ * named: the person may not belong to its workspace.
+ */
+export const WRONG_WORKSPACE_MESSAGE =
+  'The MCP server you are connecting belongs to another workspace, and this account is not a member of it. ' +
+  'Sign in with an account of that workspace, or ask its admin to invite you. ' +
+  'If you do not need this connection, remove it from your AI client.';
+
+/**
  * Context describing the OAuth client that initiated the current authorize
  * flow. Rendered on the login page so the user can see — and thereby approve —
  * exactly which client and callback destination they are authorizing before
  * they submit their credentials.
  */
-/**
- * The dashboard session cookie. Set by the frontend on sign-in (see
- * `auth-context.tsx`) on the same origin that proxies /auth/* here, so it
- * arrives with the top-level navigation from /authorize.
- */
-const DASHBOARD_SESSION_COOKIE = 'amcp_token';
-
-/** A user identified from a still-valid dashboard session. */
-interface SessionUser {
-  id: string;
-  email: string;
-  name: string | null;
-}
-
 interface ConsentContext {
   /** The OAuth client a connection grant would be keyed on. */
   clientId: string;
@@ -87,6 +120,94 @@ interface ConsentContext {
 /** The longest an authorization may stay paused on the first-connector page. */
 const FIRST_CONNECTOR_PAUSE_MAX_MS = 30 * 60 * 1000;
 
+/**
+ * CSRF token of the first-connector page's app picker (double submit: signed
+ * cookie + the value the page sends back). Its own cookie, so it never
+ * collides with the sign-in form's `login_csrf`, which is spent by then.
+ */
+const FIRST_APP_CSRF_COOKIE = 'first_app_csrf';
+
+/**
+ * The quick-setup apps the first-connector page offers: catalog connectors
+ * whose setups complete most often and that need no approval of an app by
+ * the provider (an Etsy app, for one, stays pending for days). Picking one
+ * only adds it as a connector waiting for its credentials; the user finishes
+ * it in the chat, through the link the setup tools hand out.
+ */
+export const QUICK_SETUP_APPS: ReadonlyArray<{ slug: string; name: string }> = [
+  // The app most people who arrive from the Claude directory ask for. It
+  // takes the user's own Etsy app and Etsy's approval: the picker only adds
+  // it, and the guided setup the chat links to walks through the rest.
+  { slug: 'etsy', name: 'Etsy' },
+  { slug: 'telegram-bot', name: 'Telegram' },
+  { slug: 'shopify', name: 'Shopify' },
+  { slug: 'woocommerce', name: 'WooCommerce' },
+  { slug: 'odoo', name: 'Odoo' },
+  { slug: 'printify', name: 'Printify' },
+];
+
+/** The request the first-connector page suggests typing into the chat. */
+export const FIRST_CONNECTOR_EXAMPLE = 'Connect my Telegram bot to AnythingMCP.';
+
+/** Its text once an app was picked on the page. */
+export function finishSetupRequest(appName: string): string {
+  return `Finish setting up my ${appName} connector.`;
+}
+
+/**
+ * CSRF token of the File Search setup page's links (see
+ * maybeOfferFileSearchSetup): a signed cookie, and the same value in each
+ * link to the dashboard hand-off.
+ */
+const FILE_SEARCH_SETUP_CSRF_COOKIE = 'file_search_setup_csrf';
+
+/**
+ * How a folder can be connected, as the File Search plugin's setup page
+ * offers it after "Approve": the wizard's protocols, and the products it has
+ * presets for. `local` (a folder mounted into the server) only exists on a
+ * self-hosted instance.
+ */
+export const FILE_SEARCH_SETUP_OPTIONS: ReadonlyArray<{
+  id: string;
+  label: string;
+  hint: string;
+  protocol: 'sftp' | 'ftps' | 'ftp' | 'webdav' | 's3' | 'local';
+  preset?: string;
+  selfHostedOnly?: boolean;
+}> = [
+  { id: 'sftp', label: 'SFTP', hint: 'Linux or Windows server, most NAS', protocol: 'sftp' },
+  { id: 'ftps', label: 'FTPS', hint: 'FTP with TLS encryption', protocol: 'ftps' },
+  { id: 'ftp', label: 'FTP', hint: 'Unencrypted, only when nothing else works', protocol: 'ftp' },
+  { id: 'webdav', label: 'WebDAV', hint: 'Any WebDAV share', protocol: 'webdav' },
+  { id: 'nextcloud', label: 'Nextcloud', hint: 'WebDAV', protocol: 'webdav', preset: 'nextcloud' },
+  { id: 'owncloud', label: 'ownCloud', hint: 'WebDAV', protocol: 'webdav', preset: 'owncloud' },
+  { id: 'synology', label: 'Synology NAS', hint: 'SFTP', protocol: 'sftp', preset: 'synology' },
+  { id: 'qnap', label: 'QNAP NAS', hint: 'SFTP', protocol: 'sftp', preset: 'qnap' },
+  { id: 'fritzbox', label: 'FRITZ!Box', hint: 'FTPS', protocol: 'ftps', preset: 'fritzbox' },
+  { id: 'hetzner', label: 'Hetzner Storage Box', hint: 'SFTP', protocol: 'sftp', preset: 'hetzner' },
+  { id: 's3', label: 'S3-compatible storage', hint: 'AWS S3, DigitalOcean Spaces, MinIO, Wasabi', protocol: 's3' },
+  { id: 'local', label: 'Network folder', hint: 'A folder mounted into this server', protocol: 'local', selfHostedOnly: true },
+];
+
+/**
+ * The File Search wizard for one setup option, in "back to the authorization"
+ * mode: preselects the protocol and preset, and the servers this connection
+ * was granted, so the new folder is reachable from the plugin at once. Built
+ * here from a fixed list, never from the request.
+ */
+export function fileSearchWizardPathFor(optionId: string, serverIds: readonly string[]): string | null {
+  const option = FILE_SEARCH_SETUP_OPTIONS.find((o) => o.id === optionId);
+  if (!option) return null;
+  const q = new URLSearchParams({ protocol: option.protocol });
+  if (option.preset) q.set('preset', option.preset);
+  q.set('from', 'authorize');
+  q.set('return', 'authorize');
+  const servers = serverIds.filter((id) => /^[a-z0-9]{20,40}$/i.test(id));
+  if (servers.length) q.set('servers', servers.join(','));
+  return `/connectors/new/file-search?${q.toString()}`;
+}
+
+@ApiTags('MCP client sign-in')
 @Controller('auth')
 export class LoginController {
   private readonly logger = new Logger(LoginController.name);
@@ -103,7 +224,22 @@ export class LoginController {
     @Optional() private readonly licenseGuard?: LicenseGuardService,
     @Optional() private readonly cardTrialEligibility?: CardTrialEligibilityService,
     @Optional() private readonly social?: SocialAuthService,
+    @Optional() private readonly moduleRef?: ModuleRef,
+    @Optional() private readonly recentSignIn?: RecentSignInService,
+    @Optional() private readonly emailVerification?: EmailVerificationService,
   ) {}
+
+  /**
+   * Connector setup (the provider behind the chat's setup tools), resolved
+   * lazily: it lives in the adapters' module, which this one does not import.
+   */
+  private setupProvider(): SharedSetupProvider | null {
+    try {
+      return this.moduleRef?.get(SharedSetupRegistry, { strict: false })?.get() ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   /** Cloud social sign-in buttons, when this deployment has any. */
   private socialProviders(): { id: string; name: string }[] {
@@ -148,6 +284,25 @@ export class LoginController {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * True when the client asked for one MCP server by URL (RFC 8707 `resource`)
+   * and the user cannot reach it: the server exists, and the user is neither
+   * in its workspace as primary organization nor an active member of it. The
+   * same rule as the per-server MCP endpoint, which would refuse every call
+   * of such a token, and as the refresh grant (server-reachability.util).
+   *
+   * The requested id is client input. It is used here only to refuse, never
+   * to grant: a forged value can only stop this user's own authorization.
+   * An unknown server or a lookup error is left to the existing flow (the
+   * endpoint answers 404 for an unknown server).
+   */
+  private async isRequestedServerUnreachable(req: Request, userId: string): Promise<boolean> {
+    const serverId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (typeof serverId !== 'string' || !serverId) return false;
+    return (await serverReachability(this.prisma, userId, serverId)) === 'unreachable';
   }
 
   @Get('login')
@@ -248,7 +403,7 @@ export class LoginController {
       );
       clearBinding();
       if (result.kind === 'MCP') {
-        this.logger.log(`Authorization signed in with ${provider}: ${result.user.email}`);
+        this.logger.log(`Authorization signed in with ${provider}: ${maskEmail(result.user.email)}`);
         return this.completeSignIn(req, res, result.user, result.provider);
       }
       if (result.kind === 'LINK') {
@@ -273,8 +428,10 @@ export class LoginController {
     }
   }
 
+  // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
   async handleLogin(
     @Req() req: Request,
     @Body()
@@ -333,24 +490,7 @@ export class LoginController {
     // "Continue with Google / Microsoft / GitHub" (Cloud). Also a submit button
     // on this form, so it too has passed the CSRF check.
     if (body.action?.startsWith('social:')) {
-      if (!this.social || this.socialProviders().length === 0) {
-        return res.redirect(`/auth/login?error=${encodeURIComponent('This sign-in option is not available.')}`);
-      }
-      try {
-        const { authorizationUrl, bindingToken } = await this.social.start({
-          provider: body.action.slice('social:'.length),
-          surface: 'MCP',
-          oauthSessionId: req.cookies?.oauth_session,
-        });
-        setSocialBindCookie(req, res, bindingToken);
-        res.clearCookie('login_csrf');
-        return res.redirect(authorizationUrl);
-      } catch (error: any) {
-        this.logger.warn(`MCP social sign-in start failed: ${error?.reason ?? error}`);
-        const message =
-          error instanceof SocialAuthError ? error.userMessage : 'This sign-in option is not available right now.';
-        return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
-      }
+      return this.startSocialSignIn(req, res, body.action.slice('social:'.length));
     }
 
     // "Approve as <signed-in user>". Nothing from the form is trusted: the
@@ -366,7 +506,7 @@ export class LoginController {
           `/auth/login?switch=1&error=${encodeURIComponent('Your session has expired. Please sign in.')}`,
         );
       }
-      this.logger.log(`Authorization approved from dashboard session: ${sessionUser.email}`);
+      this.logger.log(`Authorization approved from dashboard session: ${maskEmail(sessionUser.email)}`);
       return this.completeSignIn(req, res, sessionUser);
     }
 
@@ -383,7 +523,7 @@ export class LoginController {
     const user = await findUserByEmail<User>(this.prisma, email);
 
     if (!user) {
-      this.logger.warn(`Login attempt for non-existent user: ${email}`);
+      this.logger.warn(`Login attempt for non-existent user: ${maskEmail(email)}`);
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
       );
@@ -394,7 +534,7 @@ export class LoginController {
     // user could still authorize an AI client with a password — bypassing the
     // IdP's MFA and Conditional Access on exactly the surface that matters.
     if (user.passwordLoginDisabled) {
-      this.logger.warn(`Password login refused for SSO-only account: ${email}`);
+      this.logger.warn(`Password login refused for SSO-only account: ${maskEmail(email)}`);
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Password sign-in is disabled for this account. Use your organization sign-in.')}`,
       );
@@ -402,7 +542,7 @@ export class LoginController {
 
     // Nullable for IdP-provisioned users — never hand null to bcrypt.
     if (!user.passwordHash) {
-      this.logger.warn(`Login attempt for passwordless account: ${email}`);
+      this.logger.warn(`Login attempt for passwordless account: ${maskEmail(email)}`);
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
       );
@@ -415,15 +555,257 @@ export class LoginController {
     );
 
     if (!passwordValid) {
-      this.logger.warn(`Failed login attempt for user: ${email}`);
+      this.logger.warn(`Failed login attempt for user: ${maskEmail(email)}`);
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
       );
     }
 
-    this.logger.log(`Successful login for user: ${email}`);
+    // Cloud: an address nobody verified gets no access token. The client
+    // would hold a token that /mcp refuses on every call (EmailVerifiedGuard)
+    // and retry it for weeks: 36 accounts did between 28 Sep and 6 Nov 2026.
+    // Ask for the code here instead, then go on to "Approve".
+    if (this.deployment.isCloud() && !user.emailVerified) {
+      if (!this.emailVerification) {
+        return res.redirect(
+          `/auth/login?error=${encodeURIComponent('Verify your email address first: open the link in the email we sent you.')}`,
+        );
+      }
+      this.logger.log(`Authorization held for email verification: ${maskEmail(email)}`);
+      return this.askForEmailCode(req, res, user, { sendCode: true });
+    }
+
+    this.logger.log(`Successful login for user: ${maskEmail(email)}`);
 
     return this.completeSignIn(req, res, user);
+  }
+
+  /** "Continue with Google / Microsoft / GitHub" from a CSRF-checked form of this flow. */
+  private async startSocialSignIn(req: Request, res: Response, provider: string): Promise<void> {
+    if (!this.social || this.socialProviders().length === 0) {
+      return res.redirect(`/auth/login?error=${encodeURIComponent('This sign-in option is not available.')}`);
+    }
+    try {
+      const { authorizationUrl, bindingToken } = await this.social.start({
+        provider,
+        surface: 'MCP',
+        oauthSessionId: req.cookies?.oauth_session,
+      });
+      setSocialBindCookie(req, res, bindingToken);
+      res.clearCookie('login_csrf');
+      return res.redirect(authorizationUrl);
+    } catch (error: any) {
+      this.logger.warn(`MCP social sign-in start failed: ${error?.reason ?? error}`);
+      const message =
+        error instanceof SocialAuthError ? error.userMessage : 'This sign-in option is not available right now.';
+      return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+    }
+  }
+
+  /**
+   * Cloud: the code step for an account whose address is not verified yet.
+   *
+   * The password was right, but the authorization is not finished: no
+   * `login_user` cookie, so /callback cannot issue a code. The account id is
+   * held in a signed cookie while the person types the code from the email,
+   * asks for a new one, or continues with Google, Microsoft or GitHub (which
+   * verifies the address). A right code goes on to completeSignIn, exactly as
+   * a verified account would have from the password form.
+   */
+  private async askForEmailCode(
+    req: Request,
+    res: Response,
+    user: { id: string; email: string },
+    opts: { sendCode?: boolean; error?: string; notice?: string } = {},
+  ): Promise<void> {
+    let notice = opts.notice;
+    if (opts.sendCode && this.emailVerification) {
+      // The same rule as the dashboard sign-in: no second code within a
+      // minute (it would void the first one, which may be on its way).
+      const justSent = await this.emailVerification.codesSentWithin(user.id, CODE_RESEND_INTERVAL_MS);
+      if (justSent === 0) {
+        const lastHour = await this.emailVerification.codesSentWithin(user.id, 60 * 60 * 1000);
+        if (lastHour < MAX_CODES_PER_HOUR) {
+          await this.emailVerification.sendCode(user.id, user.email, { sendInBackground: true });
+        } else {
+          notice = TOO_MANY_CODES;
+        }
+      }
+    }
+
+    const isSecure = this.isSecureRequest(req);
+    const cookieOptions = {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: VERIFICATION_CODE_TTL_MS,
+      sameSite: isSecure ? ('none' as const) : ('lax' as const),
+      signed: true,
+    };
+    const csrfToken = randomBytes(32).toString('base64url');
+    res.cookie(PENDING_VERIFY_COOKIE, user.id, cookieOptions);
+    res.cookie(VERIFY_CSRF_COOKIE, csrfToken, cookieOptions);
+    // The password form is done with: its single-use token goes.
+    res.clearCookie('login_csrf');
+
+    const consent = await this.loadConsentContext(req);
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+    res.send(
+      this.renderEmailCodePage({
+        consent,
+        maskedEmail: maskEmail(user.email) ?? 'your address',
+        csrfToken,
+        // The round trip is bound to the pending authorization, as on the sign-in page.
+        socialProviders: consent ? this.socialProviders() : [],
+        error: opts.error,
+        notice,
+      }),
+    );
+  }
+
+  /** Ends the code step: its cookies go. */
+  private clearEmailCodeStep(res: Response): void {
+    res.clearCookie(PENDING_VERIFY_COOKIE);
+    res.clearCookie(VERIFY_CSRF_COOKIE);
+  }
+
+  /**
+   * What every route of the code step checks first (Cloud only): the step's
+   * CSRF token, then the pending sign-in cookie, then the account itself.
+   * Answers the request and returns null when one of them fails.
+   */
+  private async pendingCodeStep(
+    req: Request,
+    res: Response,
+    csrf: unknown,
+  ): Promise<{ id: string; email: string; name: string | null; emailVerified: boolean } | null> {
+    if (!this.deployment.isCloud() || !this.emailVerification) {
+      res.status(404).send('Not found');
+      return null;
+    }
+    const restart = (message: string) => {
+      this.clearEmailCodeStep(res);
+      res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+      return null;
+    };
+    if (!this.verifySignedToken(req, VERIFY_CSRF_COOKIE, csrf)) {
+      this.logger.warn('Rejected email code step with missing/invalid CSRF token');
+      return restart('Your session expired. Please sign in again.');
+    }
+    const userId = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[
+      PENDING_VERIFY_COOKIE
+    ];
+    if (typeof userId !== 'string' || !userId) {
+      return restart('Your session expired. Please sign in again.');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, name: true, emailVerified: true, passwordLoginDisabled: true },
+    });
+    // Gone, or made SSO-only meanwhile: the password that opened this step
+    // no longer counts.
+    if (!user || user.passwordLoginDisabled) {
+      return restart('Please sign in again.');
+    }
+    return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified };
+  }
+
+  /**
+   * Verified meanwhile (the link in the email, in another tab): nothing left
+   * to check, the password was proven when the step began. Returns true when
+   * it has completed the sign-in.
+   */
+  private async continueIfVerified(
+    req: Request,
+    res: Response,
+    user: { id: string; email: string; name: string | null; emailVerified: boolean },
+  ): Promise<boolean> {
+    if (!user.emailVerified) return false;
+    this.clearEmailCodeStep(res);
+    this.logger.log(`Authorization continues after email verification: ${maskEmail(user.email)}`);
+    await this.completeSignIn(req, res, user);
+    return true;
+  }
+
+  /**
+   * The code step's form (Cloud): checks the code. Its other buttons post to
+   * their own routes below (`formaction`), so no form field picks what runs.
+   */
+  @Post('verify-email')
+  // A code is 6 digits and lives 15 minutes: 10 tries a minute leaves no
+  // realistic guess, and a person never needs more.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async handleEmailCode(
+    @Req() req: Request,
+    @Body() body: { csrf?: string; code?: string },
+    @Res() res: Response,
+  ) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
+
+    // Spaces from a pasted code go; anything else simply matches no code.
+    const code = typeof body?.code === 'string' ? body.code.replace(/\s+/g, '').slice(0, 16) : '';
+    const verified = await this.emailVerification!.verifyCode(user.id, code);
+    if (!verified) {
+      return this.askForEmailCode(req, res, user, {
+        error: 'That code is wrong or has expired. Use the newest email, or send a new code.',
+      });
+    }
+
+    this.clearEmailCodeStep(res);
+    this.logger.log(`Email verified on the authorization page: ${maskEmail(user.email)}`);
+    return this.completeSignIn(req, res, user);
+  }
+
+  /** "Send a new code" of the code step: at most one a minute, five an hour. */
+  @Post('verify-email/resend')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async resendEmailCode(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
+    const verification = this.emailVerification!;
+    if ((await verification.codesSentWithin(user.id, CODE_RESEND_INTERVAL_MS)) > 0) {
+      return this.askForEmailCode(req, res, user, {
+        notice: 'A code was sent less than a minute ago. Check your inbox and spam folder, or ask again in a minute.',
+      });
+    }
+    if ((await verification.codesSentWithin(user.id, 60 * 60 * 1000)) >= MAX_CODES_PER_HOUR) {
+      return this.askForEmailCode(req, res, user, { notice: TOO_MANY_CODES });
+    }
+    await verification.sendCode(user.id, user.email, { sendInBackground: true });
+    return this.askForEmailCode(req, res, user, {
+      notice: 'A new code is on its way. Codes sent before it no longer work.',
+    });
+  }
+
+  /** "I opened the link in the email": continues once the link verified the address. */
+  @Post('verify-email/continue')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async continueAfterEmailLink(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user || (await this.continueIfVerified(req, res, user))) return;
+    return this.askForEmailCode(req, res, user, {
+      error: 'Your address is not verified yet. Enter the code from the email, or open its link first.',
+    });
+  }
+
+  /** "Continue with <provider>" of the code step: the provider verifies the address. */
+  @Post('verify-email/social/:provider')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async socialFromEmailCode(
+    @Param('provider') provider: string,
+    @Req() req: Request,
+    @Body() body: { csrf?: string },
+    @Res() res: Response,
+  ) {
+    const user = await this.pendingCodeStep(req, res, body?.csrf);
+    if (!user) return;
+    this.clearEmailCodeStep(res);
+    return this.startSocialSignIn(req, res, provider);
   }
 
   /**
@@ -437,6 +819,23 @@ export class LoginController {
     /** Set when the user signed in on this page with Google, Microsoft or GitHub. */
     socialProvider?: string,
   ): Promise<void> {
+    // The client asked for one server by URL, and this account cannot reach
+    // it: no token. It would be refused on every call, and clients do not
+    // sign in again after a 403, so the person could never fix it from the
+    // chat (#1609). Back to the sign-in form instead, without the dashboard
+    // session, to sign in with an account of that server's workspace.
+    if (await this.isRequestedServerUnreachable(req, user.id)) {
+      this.logger.warn(
+        `Authorization refused: the requested MCP server belongs to a workspace ${maskEmail(user.email)} is not a member of`,
+      );
+      res.clearCookie('login_csrf');
+      return res.redirect(
+        `/auth/login?switch=1&error=${encodeURIComponent(WRONG_WORKSPACE_MESSAGE)}`,
+      );
+    }
+    // Remembered for the setup links the AI client will hand out, so they open
+    // the dashboard without asking for this sign-in again (recent-sign-in.util).
+    setRecentSignInCookie(res, user.id, this.isSecureRequest(req));
     // Set a short-lived cookie with the user profile for the callback to read
     const profile = {
       id: user.id,
@@ -462,12 +861,267 @@ export class LoginController {
 
     // Between "who you are" and "what this client may reach". Returns true when
     // it has taken over the response with the picker.
-    if (await this.maybeAskWhichServers(req, res, user.id)) return;
+    if (await this.maybeAskWhichServers(req, res, user.id, socialProvider)) return;
 
     // Derive callback URL from the request origin (works behind proxy/tunnel)
     const baseUrl = this.getBaseUrl(req);
-    if (await this.maybeOfferFirstConnector(req, res, user.id, encoded, `${baseUrl}/callback`, socialProvider)) return;
+    if (await this.offerAfterApprove(req, res, user.id, encoded, `${baseUrl}/callback`, socialProvider)) return;
     res.redirect(`${baseUrl}/callback`);
+  }
+
+  /**
+   * The optional page between "Approve" and the AI client: the File Search
+   * plugin's folder setup for a client that asked for `/mcp/file-search`,
+   * otherwise the first-connector page (Cloud only, empty workspaces). The
+   * File Search plugin serves no catalog apps, so it never gets the latter.
+   */
+  private async offerAfterApprove(
+    req: Request,
+    res: Response,
+    userId: string,
+    encodedProfile: string,
+    callbackUrl: string,
+    socialProvider?: string,
+  ): Promise<boolean> {
+    if (this.requestedApp(req) === 'file-search') {
+      return this.maybeOfferFileSearchSetup(req, res, userId, encodedProfile, callbackUrl);
+    }
+    return this.maybeOfferFirstConnector(req, res, userId, encodedProfile, callbackUrl, socialProvider);
+  }
+
+  /** The directory plugin this authorization asked for (MCP_DIRECTORY_COOKIE), or null. */
+  private requestedDirectoryPlugin(req: Request): DirectoryPluginEndpoint | null {
+    const value = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[MCP_DIRECTORY_COOKIE];
+    return value === 'chatgpt-app' || value === 'file-search' ? value : null;
+  }
+
+  /** The fixed plugin endpoint this authorization asked for (MCP_APP_COOKIE), or null. */
+  private requestedApp(req: Request): 'file-search' | null {
+    const app = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[MCP_APP_COOKIE];
+    return app === 'file-search' ? app : null;
+  }
+
+  /**
+   * File Search plugin: a workspace admin whose workspace has no folder
+   * connected yet is offered to connect one before going back to the AI
+   * client, because the plugin has nothing else to work with. The page lists
+   * how a folder can be reached (SFTP, FTPS, FTP, WebDAV, Nextcloud, NAS
+   * presets, S3); each choice opens the File Search wizard in the dashboard,
+   * signed in as this user on the granted workspace, and the wizard comes back
+   * to /auth/file-search/continue when the folder is active. Passwords and
+   * keys are entered there, never in the chat.
+   *
+   * Same in Cloud and self-hosted. Non-admins, and workspaces that already
+   * have a folder, go straight on. The OAuth flow is only paused, as on the
+   * first-connector page: "Skip" and the wizard's return both reach the same
+   * callback. Returns true when it has rendered the page.
+   */
+  private async maybeOfferFileSearchSetup(
+    req: Request,
+    res: Response,
+    userId: string,
+    encodedProfile: string,
+    callbackUrl: string,
+  ): Promise<boolean> {
+    if (!this.recentSignIn) return false;
+    const consent = await this.loadConsentContext(req);
+    if (!consent) return false;
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizationId: true },
+    });
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return false;
+    const { organizationId } = workspace;
+    const [member, sources] = await Promise.all([
+      this.prisma.organizationMember.findFirst({
+        where: { userId, organizationId, deactivatedAt: null },
+        select: { role: true },
+      }),
+      this.prisma.connector.findMany({
+        where: { organizationId, type: 'FILE_SEARCH' as any, isActive: true },
+        select: { config: true },
+      }),
+    ]);
+    // Only admins set up File Search (FileSearchService.assertAdmin).
+    if (member?.role !== 'ADMIN') return false;
+    // The File Share connector is a FILE_SEARCH connector with no folder.
+    if (sources.some((c) => !(c.config as { fileShare?: unknown } | null)?.fileShare)) return false;
+
+    // The login cookie lives as long as the authorization it finishes, so the
+    // wizard's return still completes it (see maybeOfferFirstConnector).
+    const isSecure = this.isSecureRequest(req);
+    const pauseMs = consent.expiresAt
+      ? Math.min(FIRST_CONNECTOR_PAUSE_MAX_MS, Math.max(60 * 1000, consent.expiresAt - Date.now()))
+      : 15 * 60 * 1000;
+    res.cookie('login_user', encodedProfile, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: pauseMs,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+    const csrf = randomBytes(32).toString('base64url');
+    res.cookie(FILE_SEARCH_SETUP_CSRF_COOKIE, csrf, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: pauseMs,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+
+    await this.productEvents
+      ?.log({
+        event: ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,
+        userId,
+        organizationId,
+        metadata: { client: consent.clientName },
+      })
+      .catch(() => undefined);
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(
+      this.renderFileSearchSetupOffer({
+        clientName: consent.clientName,
+        redirectHost: consent.redirectHost,
+        callbackUrl,
+        csrf,
+        cloud: this.deployment.isCloud(),
+      }),
+    );
+    return true;
+  }
+
+  /**
+   * The File Search setup page's hand-off to the dashboard: a dashboard
+   * session for the user of the paused authorization, on the workspace that
+   * authorization was granted, and the wizard path for the chosen option.
+   *
+   * It needs everything at once: the page's CSRF token and its signed cookie,
+   * the dashboard's own header (a cross-site page cannot send it without a
+   * CORS preflight), the signed login cookie of a still-pending authorization
+   * that asked for the File Search plugin, and this browser's recent sign-in
+   * cookie for the same user. Admins only, as for the page itself.
+   */
+  // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
+  @Post('file-search/session')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async fileSearchSetupSession(
+    @Req() req: Request,
+    @Body() body: { csrf?: unknown; option?: unknown },
+    @Res() res: Response,
+  ) {
+    const expired = 'This page has expired. Go back to the chat and connect again, or set up the folder in the dashboard.';
+    if (!hasDashboardHeader(req) || !this.verifySignedToken(req, FILE_SEARCH_SETUP_CSRF_COOKIE, body?.csrf)) {
+      this.logger.warn('Rejected a File Search setup hand-off with a missing header or CSRF token');
+      return res.status(403).json({ ok: false, error: expired });
+    }
+    const userId = this.pendingLoginUserId(req);
+    const consent = await this.loadConsentContext(req);
+    if (!userId || !consent || this.requestedApp(req) !== 'file-search' || !this.recentSignIn) {
+      return res.status(403).json({ ok: false, error: expired });
+    }
+    const recent = await this.recentSignIn.user(req).catch(() => null);
+    if (!recent || recent.id !== userId) return res.status(403).json({ ok: false, error: expired });
+
+    const account = await this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return res.status(403).json({ ok: false, error: expired });
+    const member = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId: workspace.organizationId, deactivatedAt: null },
+      select: { role: true },
+    });
+    if (member?.role !== 'ADMIN') {
+      return res.status(403).json({ ok: false, error: 'Only workspace admins can connect a folder.' });
+    }
+    const option = typeof body?.option === 'string' ? body.option : '';
+    const allowed = FILE_SEARCH_SETUP_OPTIONS.find((o) => o.id === option && (!o.selfHostedOnly || !this.deployment.isCloud()));
+    const redirect = allowed ? fileSearchWizardPathFor(allowed.id, workspace.serverIds) : null;
+    if (!redirect) return res.status(400).json({ ok: false, error: 'Unknown option.' });
+
+    const session = await this.recentSignIn.session(userId, workspace.organizationId).catch(() => null);
+    if (!session) return res.status(403).json({ ok: false, error: expired });
+    this.logger.log(`File Search setup opened from the authorization page by user ${userId}`);
+    return res.json({ ok: true, redirect, session });
+  }
+
+  /**
+   * Where the File Search wizard returns to when it was opened from the
+   * authorization page: finishes the paused authorization (the AI client
+   * gets its code), or, when it has expired meanwhile, says how to go on.
+   * The folder is saved either way.
+   */
+  @Get('file-search/continue')
+  async fileSearchSetupContinue(@Req() req: Request, @Res() res: Response) {
+    const userId = this.pendingLoginUserId(req);
+    const consent = userId ? await this.loadConsentContext(req) : null;
+    if (userId && consent) {
+      res.clearCookie(FILE_SEARCH_SETUP_CSRF_COOKIE);
+      return res.redirect(`${this.getBaseUrl(req)}/callback`);
+    }
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(
+      renderAuthPage({
+        title: 'Your folder is connected',
+        card: `
+    <h1>Your folder is connected</h1>
+    <p class="sub">The connection request from the chat timed out while you set up the folder. The folder is saved and its first sync is running.</p>
+    <p class="sub">Go back to the chat and connect the plugin again. It takes a few seconds now.</p>`,
+        trust: this.trust(),
+      }),
+    );
+  }
+
+  private renderFileSearchSetupOffer(params: {
+    clientName: string;
+    redirectHost?: string;
+    callbackUrl: string;
+    csrf: string;
+    cloud: boolean;
+  }): string {
+    const client = this.escapeHtml(params.clientName);
+    const options = FILE_SEARCH_SETUP_OPTIONS.filter((o) => !o.selfHostedOnly || !params.cloud);
+    const tiles = options
+      .map((o) => {
+        // The dashboard's hand-off page, on the dashboard's own origin: the
+        // session it opens is the dashboard's (same site as this page).
+        const href = `${this.frontendUrl()}/setup/file-search?${new URLSearchParams({ option: o.id, t: params.csrf }).toString()}`;
+        return `
+        <a class="fs-option" href="${this.escapeHtml(href)}"><span class="fs-option-label">${this.escapeHtml(o.label)}</span><span class="fs-option-hint">${this.escapeHtml(o.hint)}</span></a>`;
+      })
+      .join('');
+    const card = `
+    ${clientTilePair(params.clientName, params.redirectHost ?? '')}
+    <h1>Connect a folder for ${client}</h1>
+    <p class="sub">${client} can search the documents on your file server once a folder is connected. Choose how AnythingMCP reaches it:</p>
+    <nav class="fs-options" aria-label="How to reach the folder">${tiles}
+    </nav>
+    <ol class="steps">
+      <li>Enter the server address and a read-only account, and test the connection.</li>
+      <li>Pick the folders and file types to search, and see how many files that is.</li>
+      <li>Check the description ${client} reads, then activate: the first sync starts.</li>
+    </ol>
+    <p class="body">It takes about five minutes. Passwords and keys are entered on the next page, never in the chat. When the folder is active you come back here and on to ${client}.</p>
+    <p class="links"><a id="skip" href="${this.escapeHtml(params.callbackUrl)}">Skip for now and continue to ${client}</a></p>`;
+    return renderAuthPage({
+      title: `Connect a folder for ${params.clientName}`,
+      card,
+      trust: this.trust(),
+      extraStyles: `
+  /* Not .tile: that class is the client icons at the top. */
+  .fs-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 18px; }
+  a.fs-option { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border-strong); border-radius: 10px;
+           padding: 10px 12px; text-decoration: none; color: var(--text); background: #fff; min-height: 44px; }
+  a.fs-option:hover { border-color: var(--brand); background: var(--surface-2); }
+  a.fs-option:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .fs-option-label { font-size: 14px; font-weight: 600; }
+  .fs-option-hint { font-size: 12.5px; color: var(--text-2); line-height: 1.35; }
+  @media (max-width: 360px) { .fs-options { grid-template-columns: 1fr; } }
+  .steps { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 14px; padding-left: 20px; }
+  .steps li { margin: 0 0 4px; }
+  .body { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }`,
+    });
   }
 
   /**
@@ -501,8 +1155,11 @@ export class LoginController {
       where: { id: userId },
       select: { organizationId: true, email: true },
     });
-    const organizationId = account?.organizationId;
-    if (!organizationId) return false;
+    // The workspace this connection was granted, which is not the user's
+    // primary one when they picked another on "Choose what to connect".
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return false;
+    const { organizationId } = workspace;
     const [member, connectors] = await Promise.all([
       this.prisma.organizationMember.findFirst({
         where: { userId, organizationId, deactivatedAt: null },
@@ -527,6 +1184,18 @@ export class LoginController {
       sameSite: isSecure ? 'none' : 'lax',
       signed: true,
     });
+    // The optional app picker, when this instance can install connectors: a
+    // CSRF token for its one request, valid as long as the pause.
+    const pickerCsrf = this.setupProvider() ? randomBytes(32).toString('base64url') : null;
+    if (pickerCsrf) {
+      res.cookie(FIRST_APP_CSRF_COOKIE, pickerCsrf, {
+        httpOnly: true,
+        secure: isSecure,
+        maxAge: pauseMs,
+        sameSite: isSecure ? 'none' : 'lax',
+        signed: true,
+      });
+    }
 
     // An admin on the free trial is told when it ends and that a card keeps
     // the workspace running, as a small line under "Continue". Never before
@@ -567,6 +1236,7 @@ export class LoginController {
         redirectHost: consent.redirectHost,
         callbackUrl,
         welcomeUrl: dashboardLink('/welcome'),
+        ...(pickerCsrf ? { pickerCsrf } : {}),
         ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}`) } } : {}),
       }),
     );
@@ -588,12 +1258,43 @@ export class LoginController {
     return answer === true;
   }
 
+  /**
+   * The one workspace this client reaches for this user, as the shared
+   * endpoint resolves it: the granted workspace, or the workspace of the
+   * granted servers (with their ids). Without any grant (a connection from
+   * before grants existed), the user's own organization, `fallback`. Null
+   * when the grant reaches nothing, or servers in more than one workspace:
+   * there is then no single workspace to add an app to.
+   */
+  private async grantedWorkspace(
+    clientId: string,
+    userId: string,
+    fallback: string | null | undefined,
+  ): Promise<{ organizationId: string; serverIds: string[] } | null> {
+    let grant: Awaited<ReturnType<McpConnectionGrantService['resolve']>> = null;
+    try {
+      grant = await this.grants.resolve(clientId, userId);
+    } catch {
+      grant = null;
+    }
+    if (!grant) return fallback ? { organizationId: fallback, serverIds: [] } : null;
+    if (grant.mode === 'organization') return { organizationId: grant.organizationId, serverIds: [] };
+    if (grant.mode === 'servers') {
+      const organizations = new Set(grant.servers.map((s) => s.organizationId));
+      if (organizations.size !== 1) return null;
+      return { organizationId: grant.servers[0].organizationId, serverIds: grant.servers.map((s) => s.id) };
+    }
+    return null;
+  }
+
   private renderFirstConnectorOffer(params: {
     clientName: string;
     redirectHost?: string;
     callbackUrl: string;
     welcomeUrl: string;
     cardTrial?: { endsAt: Date; url: string };
+    /** CSRF token of the optional app picker; no picker without it. */
+    pickerCsrf?: string;
   }): string {
     const client = this.escapeHtml(params.clientName);
     // "October 13", kept on one line.
@@ -602,26 +1303,152 @@ export class LoginController {
           params.cardTrial.endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
         ).replace(' ', '&nbsp;')
       : '';
+    // Back in Claude, a new chat opens with the request typed in. Only for a
+    // code sent to claude.ai itself, where /new?q= is known to work.
+    const host = (params.redirectHost ?? '').toLowerCase();
+    const opensChat = host === 'claude.ai';
+    // Hidden until the script shows it: without JavaScript the page is the
+    // same as before, and never more than one click from the chat.
+    const picker = params.pickerCsrf
+      ? `
+    <section class="quick" id="quick-apps" hidden data-csrf="${this.escapeHtml(params.pickerCsrf)}" aria-labelledby="quick-title">
+      <p class="quick-title" id="quick-title">Optional: add an app to start with</p>
+      <div class="chips" role="group" aria-labelledby="quick-title">${QUICK_SETUP_APPS.map(
+        (app) => `
+        <button type="button" class="chip" aria-pressed="false" data-adapter="${this.escapeHtml(app.slug)}" data-name="${this.escapeHtml(app.name)}">${this.escapeHtml(app.name)}</button>`,
+      ).join('')}
+      </div>
+      <label class="other-label" for="other-app">Another app</label>
+      <input type="text" id="other-app" class="other" maxlength="60" autocomplete="off" spellcheck="false" placeholder="e.g. HubSpot">
+      <p class="quick-status" id="quick-status" role="status" aria-live="polite"></p>
+    </section>`
+      : '';
     const card = `
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
     <h1>${client} is connected</h1>
     <p class="sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
-    <div class="example">“Connect my Etsy shop to AnythingMCP.”</div>
-    <p class="body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>
-    <a class="button" href="${this.escapeHtml(params.callbackUrl)}">Continue to ${client}</a>
+    <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
+    <p class="body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
+    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}"${opensChat ? ' data-open-chat="https://claude.ai/new"' : ''} data-client="${client}">Continue to ${client}</a>
     <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
       params.cardTrial
         ? `
     <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a card now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
         : ''
-    }`;
+    }
+    <script>
+    // Copy the example request, to paste into the chat after "Continue":
+    // easier than retyping it. The quotes are left out of the copy.
+    (function () {
+      var button = document.getElementById('copy-request');
+      var request = document.getElementById('example-request');
+      if (!button || !request || !navigator.clipboard) { if (button) button.hidden = true; return; }
+      button.addEventListener('click', function () {
+        navigator.clipboard.writeText(request.textContent || '').then(function () {
+          button.textContent = 'Copied';
+        }, function () {
+          button.hidden = true;
+        });
+      });
+    })();
+    // The optional app picker: one click adds the app (it waits for its
+    // credentials) and the example request becomes "finish setting it up".
+    // Any failure leaves the page as it was; Continue always works.
+    (function () {
+      var picker = document.getElementById('quick-apps');
+      var request = document.getElementById('example-request');
+      var status = document.getElementById('quick-status');
+      var other = document.getElementById('other-app');
+      var cont = document.getElementById('continue');
+      if (!picker || !request || !status || !other || !cont || !window.fetch || !window.JSON) return;
+      var fallback = request.textContent;
+      var clientName = cont.getAttribute('data-client') || 'the chat';
+      var chips = picker.querySelectorAll('button[data-adapter]');
+      var added = false;
+      var busy = false;
+      // aria-disabled rather than disabled: a disabled button drops the
+      // keyboard focus to the page, and the picked one must stay readable.
+      var setDisabled = function (on) {
+        for (var i = 0; i < chips.length; i++) chips[i].setAttribute('aria-disabled', on ? 'true' : 'false');
+        other.readOnly = on;
+      };
+      var failed = function (name, message) {
+        status.textContent = message || ('Could not add ' + name + ' right now. You can still continue and add it in the chat.');
+        busy = false;
+        setDisabled(false);
+      };
+      for (var i = 0; i < chips.length; i++) {
+        chips[i].addEventListener('click', function (event) {
+          var chip = event.currentTarget;
+          var name = chip.getAttribute('data-name') || '';
+          if (added || busy) return;
+          busy = true;
+          setDisabled(true);
+          status.textContent = 'Adding ' + name + '…';
+          fetch('/auth/first-app', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adapter: chip.getAttribute('data-adapter'), csrf: picker.getAttribute('data-csrf') }),
+          }).then(function (r) {
+            return r.json().catch(function () { return {}; });
+          }).then(function (out) {
+            if (!out || out.ok !== true) return failed(name, out && out.error);
+            added = true;
+            busy = false;
+            chip.setAttribute('aria-pressed', 'true');
+            request.textContent = out.request;
+            status.textContent = out.name + ' added — you’ll finish it in ' + clientName + '.';
+          }, function () { failed(name); });
+        });
+      }
+      other.addEventListener('input', function () {
+        if (added) return;
+        var app = other.value.replace(/\\s+/g, ' ').trim().slice(0, 60);
+        request.textContent = app ? 'Connect my ' + app + ' to AnythingMCP.' : fallback;
+      });
+      picker.hidden = false;
+    })();
+    // Continue still goes back through the authorization; for Claude, the
+    // same click also opens a new chat with the request typed in.
+    (function () {
+      var cont = document.getElementById('continue');
+      var request = document.getElementById('example-request');
+      var chat = cont && cont.getAttribute('data-open-chat');
+      if (!chat || !request) return;
+      cont.addEventListener('click', function () {
+        try {
+          window.open(chat + '?q=' + encodeURIComponent(request.textContent || ''), '_blank', 'noopener');
+        } catch (e) { /* the authorization goes on regardless */ }
+      });
+    })();
+    </script>`;
     return renderAuthPage({
       title: `${params.clientName} is connected`,
       card,
       trust: this.trust(),
       extraStyles: `
-  .example { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; font-size: 14px; margin: 0 0 14px; }
+  .example { background: var(--surface-2); border-radius: 10px; padding: 12px 14px; font-size: 14px; margin: 0 0 14px;
+             display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .example button.copy { width: auto; min-height: 30px; padding: 0 12px; font-size: 13px; font-weight: 500; flex: none;
+             background: #fff; color: var(--text); border-color: var(--border-strong); }
+  .example button.copy:hover { background: var(--surface); border-color: var(--brand); }
   .body { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+  .quick { border: 1px solid var(--border); border-radius: 12px; padding: 12px 12px 4px; margin: 0 0 18px; }
+  .quick-title { font-size: 13px; font-weight: 500; color: var(--text); margin: 0 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  .chips button.chip { width: auto; min-height: 34px; padding: 0 12px; font-size: 13.5px; font-weight: 500;
+             background: #fff; color: var(--text); border-color: var(--border-strong); }
+  .chips button.chip:hover { background: var(--surface-2); border-color: var(--brand); }
+  .chips button.chip:focus-visible, .example button.copy:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .chips button.chip[aria-pressed="true"] { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .chips button.chip[aria-disabled="true"] { cursor: default; }
+  .chips button.chip[aria-disabled="true"]:not([aria-pressed="true"]) { color: var(--text-3); background: #fff; border-color: var(--border); }
+  .other-label { font-size: 12.5px; color: var(--text-2); font-weight: 500; }
+  input.other { width: 100%; height: 38px; border: 1px solid var(--border); border-radius: 9px; padding: 0 12px;
+             font: inherit; font-size: 14px; background: #fff; color: var(--text); margin: 0 0 8px; }
+  .quick-status { font-size: 13px; color: var(--text-2); margin: 0 0 8px; line-height: 1.45; }
+  .quick-status:empty { margin: 0; }
   .trial { font-size: 13px; color: var(--text-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); line-height: 1.5; }
   .trial a { color: var(--brand); }`,
     });
@@ -645,10 +1472,16 @@ export class LoginController {
     req: Request,
     res: Response,
     userId: string,
+    socialProvider?: string,
   ): Promise<boolean> {
     const consent = await this.loadConsentContext(req);
     // Not an authorize flow — a bare visit to the login page. Nothing to grant.
     if (!consent) return false;
+
+    // A brand-new account authorizing a plugin from OpenAI's directory:
+    // record that the sign-up came from there (the sign-up itself looks 'direct').
+    const plugin = this.requestedDirectoryPlugin(req);
+    if (plugin) await markDirectorySignup(this.prisma, this.productEvents, userId, plugin);
 
     // The client asked for one specific server via RFC 8707. It has already
     // said what it wants; asking again would be noise. Still goes through
@@ -691,6 +1524,17 @@ export class LoginController {
       sameSite: isSecure ? 'none' : 'lax',
       signed: true,
     });
+    if (socialProvider) {
+      res.cookie(PENDING_SOCIAL_COOKIE, socialProvider, {
+        httpOnly: true,
+        secure: isSecure,
+        maxAge: 10 * 60 * 1000,
+        sameSite: isSecure ? 'none' : 'lax',
+        signed: true,
+      });
+    } else {
+      res.clearCookie(PENDING_SOCIAL_COOKIE);
+    }
     const csrfToken = randomBytes(32).toString('base64url');
     res.cookie('login_csrf', csrfToken, {
       httpOnly: true,
@@ -722,8 +1566,10 @@ export class LoginController {
    * only ever produce a NARROWER grant than the user was entitled to, never a
    * wider one.
    */
+  // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('select-servers')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
   async handleServerSelection(
     @Req() req: Request,
     @Body() body: { servers?: string | string[]; workspace?: string; csrf?: string },
@@ -792,61 +1638,139 @@ export class LoginController {
     });
     res.clearCookie('login_csrf');
     res.clearCookie(PENDING_GRANT_COOKIE);
+    const social = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[PENDING_SOCIAL_COOKIE];
+    res.clearCookie(PENDING_SOCIAL_COOKIE);
+    const socialProvider =
+      typeof social === 'string' && this.socialProviders().some((p) => p.id === social) ? social : undefined;
 
-    res.redirect(`${this.getBaseUrl(req)}/callback`);
+    // Picking an empty workspace gets the same first-connector page as
+    // signing in to one, for the workspace just granted (Cloud only).
+    const callbackUrl = `${this.getBaseUrl(req)}/callback`;
+    if (await this.offerAfterApprove(req, res, user.id, encoded, callbackUrl, socialProvider)) return;
+    res.redirect(callbackUrl);
   }
 
   /**
-   * The user behind this browser's dashboard session, or null.
+   * The first-connector page's optional app picker (Cloud only): adds one of
+   * QUICK_SETUP_APPS to the workspace as a connector waiting for its
+   * credentials, through the same setup service as the chat's
+   * setup_install_connector (role, plan limit, hourly cap, security event).
+   * Nothing secret is taken here; the user finishes the setup in the chat.
    *
-   * Applies what `JwtStrategy` + `EmailVerifiedGuard` apply to the dashboard
-   * API — signature and expiry, a dashboard-issued token (not an MCP token
-   * signed with the same secret), not revoked, at least one active membership,
-   * and a verified email in cloud — because approving here is no more than
-   * the dashboard itself already lets this session do. Anything off falls
-   * back to the password form rather than erroring.
+   * Nothing from the request is trusted: the CSRF token must match its
+   * signed cookie, the identity is the signed login cookie the paused
+   * authorization already relies on, the authorization must still be pending,
+   * and the app must be one of the page's own. The OAuth flow is untouched:
+   * this answers JSON, and "Continue" goes to the callback as before.
    */
-  private async resolveDashboardSession(
-    req: Request,
-  ): Promise<SessionUser | null> {
-    const token = req.cookies?.[DASHBOARD_SESSION_COOKIE];
-    if (typeof token !== 'string' || !token) return null;
+  // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
+  @Post('first-app')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async pickFirstApp(
+    @Req() req: Request,
+    @Body() body: { adapter?: unknown; csrf?: unknown },
+    @Res() res: Response,
+  ) {
+    if (!this.deployment.isCloud()) return res.status(404).json({ ok: false, error: 'Not found.' });
+    const expired = 'This page has expired. Continue, and add the app in the chat.';
+    if (!this.verifySignedToken(req, FIRST_APP_CSRF_COOKIE, body?.csrf)) {
+      this.logger.warn('Rejected a first-app pick with a missing/invalid CSRF token');
+      return res.status(403).json({ ok: false, error: expired });
+    }
+    const app = QUICK_SETUP_APPS.find((a) => a.slug === body?.adapter);
+    if (!app) return res.status(400).json({ ok: false, error: 'Unknown app.' });
 
-    let payload: ReturnType<AuthService['verifyToken']>;
+    const userId = this.pendingLoginUserId(req);
+    const consent = await this.loadConsentContext(req);
+    const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (!userId || !consent || (typeof requestedServerId === 'string' && requestedServerId)) {
+      return res.status(403).json({ ok: false, error: expired });
+    }
+    const provider = this.setupProvider();
+    if (!provider) {
+      return res
+        .status(503)
+        .json({ ok: false, error: `${app.name} cannot be added here right now. Continue, and add it in the chat.` });
+    }
+
+    // The workspace the connection was granted, the same one the page was
+    // offered for: a user in several workspaces may have picked another one
+    // than their own on "Choose what to connect".
+    const account = await this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return res.status(403).json({ ok: false, error: expired });
+    const { organizationId } = workspace;
+    const redirectUris = [consent.redirectUri];
+    const ctx: SetupContext = {
+      userId,
+      organizationId,
+      // So the connector lands on the server(s) this connection was granted.
+      serverIds: workspace.serverIds,
+      dashboardBase: this.frontendUrl(),
+      assistant: assistantForRedirectUris(redirectUris),
+      profile: profileForRedirectUris(redirectUris),
+    };
+    if (!(await provider.canSetUp(ctx).catch(() => false))) {
+      return res.status(403).json({
+        ok: false,
+        error: 'Only workspace admins and editors can add apps. Continue, and ask an admin to add it.',
+      });
+    }
+
+    let out: { body: unknown; isError?: boolean };
     try {
-      payload = this.authService.verifyToken(token);
+      // Recorded as via 'post_approve', apart from installs the chat makes.
+      out = await provider.install(ctx, { adapter: app.slug }, { via: 'post_approve' });
+    } catch (err: any) {
+      out = { isError: true, body: { error: String(err?.message ?? err) } };
+    }
+    const reason = out.isError ? (out.body as { error?: unknown } | null)?.error : undefined;
+    await this.productEvents
+      ?.log({
+        event: ProductEvents.POST_APPROVE_APP_PICKED,
+        userId,
+        organizationId,
+        metadata: {
+          adapterSlug: app.slug,
+          client: consent.clientName,
+          status: out.isError ? 'failed' : 'added',
+          ...(typeof reason === 'string' ? { error: reason.slice(0, 160) } : {}),
+        },
+      })
+      .catch(() => undefined);
+    if (out.isError) {
+      return res.json({
+        ok: false,
+        error: `${app.name} could not be added right now. You can still continue and add it in the chat.`,
+      });
+    }
+    return res.json({ ok: true, adapter: app.slug, name: app.name, request: finishSetupRequest(app.name) });
+  }
+
+  /** The user id in the signed login cookie of a paused authorization, or null. */
+  private pendingLoginUserId(req: Request): string | null {
+    const raw = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.login_user;
+    if (typeof raw !== 'string' || !raw) return null;
+    try {
+      const profile = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as { id?: unknown };
+      return typeof profile?.id === 'string' && profile.id ? profile.id : null;
     } catch {
       return null;
     }
-    if (
-      !payload?.sub ||
-      payload.tokenUse !== DASHBOARD_TOKEN_USE ||
-      isForeignIssuedToken(payload as unknown as Record<string, unknown>)
-    ) {
-      return null;
-    }
+  }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        emailVerified: true,
-        sessionsValidFrom: true,
-        memberships: {
-          where: { deactivatedAt: null },
-          select: { organizationId: true },
-          take: 1,
-        },
-      },
+  /** The user behind this browser's dashboard session, or null (see resolveDashboardSessionUser). */
+  private async resolveDashboardSession(
+    req: Request,
+  ): Promise<SessionUser | null> {
+    return resolveDashboardSessionUser(req, {
+      authService: this.authService,
+      prisma: this.prisma,
+      deployment: this.deployment,
     });
-    if (!user) return null;
-    if (isTokenRevoked(payload, user.sessionsValidFrom)) return null;
-    if (user.memberships.length === 0) return null;
-    if (this.deployment.isCloud() && !user.emailVerified) return null;
-
-    return { id: user.id, email: user.email, name: user.name };
   }
 
   /**
@@ -893,8 +1817,13 @@ export class LoginController {
   }
 
   private verifyCsrf(req: Request, formToken: unknown): boolean {
+    return this.verifySignedToken(req, 'login_csrf', formToken);
+  }
+
+  /** Double submit: the signed cookie `cookieName` must equal `formToken`. */
+  private verifySignedToken(req: Request, cookieName: string, formToken: unknown): boolean {
     const cookieToken = (req as Request & { signedCookies?: Record<string, unknown> })
-      .signedCookies?.login_csrf;
+      .signedCookies?.[cookieName];
     if (typeof cookieToken !== 'string' || typeof formToken !== 'string') {
       return false;
     }
@@ -1120,12 +2049,11 @@ export class LoginController {
         : `Sign in to let ${client} use your ${server} tools. You stay in control and can disconnect at any time.`
       : `Authorize access to ${server} MCP Server`;
 
-    // Claude's directory lists AnythingMCP Cloud, so the badge appears only
-    // there, and not to someone connecting ChatGPT or Muse.
+    // Claude's and ChatGPT's directories list AnythingMCP Cloud, so the
+    // badge appears only there. Each assistant's users see only its own
+    // listing (see directoryBadgesFor); any other client sees both.
     const directoryPill =
-      signupClient && showsDirectoryBadge(signupClient) && this.deployment.isCloud()
-        ? `<div class="verified">${claudeMark(12)}<span>Listed in Anthropic&#39;s Claude Directory</span></div>`
-        : '';
+      signupClient && this.deployment.isCloud() ? directoryBadgeHtml(directoryBadgesFor(signupClient)) : '';
 
     const DEFAULT_SCOPE = "Access to your organization's MCP tools and connected servers.";
     const toolsLine = requestedServer
@@ -1174,8 +2102,8 @@ export class LoginController {
     // phone. After a failed sign-in (that person has an account and is fixing a
     // typo) it shrinks back to the small link under the form.
     //
-    // `client` tells the sign-up page who sent them: it leaves the Claude
-    // Directory badge out for ChatGPT and Muse, as this page does.
+    // `client` tells the sign-up page who sent them: it picks the directory
+    // badges the same way this page does.
     const signupHref =
       '/login?mode=register&amp;redirect=%2Fauth%2Flogin' + (signupClient ? `&amp;client=${signupClient}` : '');
     const offerSignup = !sessionUser && this.deployment.isCloud();
@@ -1233,6 +2161,70 @@ export class LoginController {
       title: `${sessionUser ? 'Authorize' : 'Sign In'} — ${serverName}`,
       card,
       trust: this.trust(),
+    });
+  }
+
+  /** Cloud: the code step of the authorization (see askForEmailCode). */
+  private renderEmailCodePage(params: {
+    consent: ConsentContext | null;
+    maskedEmail: string;
+    csrfToken: string;
+    socialProviders: { id: string; name: string }[];
+    error?: string;
+    notice?: string;
+  }): string {
+    const { consent, maskedEmail, csrfToken, socialProviders, error, notice } = params;
+    const serverName = this.configService.get<string>('MCP_SERVER_NAME') || 'AnythingMCP';
+    const client = consent ? this.escapeHtml(consent.clientName) : '';
+    const top = consent
+      ? clientTilePair(consent.clientName, consent.redirectHost)
+      : `<div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK}</div></div>`;
+    const errorHtml = error ? `<div class="error" role="alert">${this.escapeHtml(error)}</div>` : '';
+    const noticeHtml = notice ? `<p class="note" role="status">${this.escapeHtml(notice)}</p>` : '';
+    const purpose = consent ? `to finish connecting <strong>${client}</strong>` : 'to finish signing in';
+
+    // Same buttons as on the sign-in page; here they verify the address at once.
+    const socialHtml = socialProviders.length
+      ? '<div class="divider"><span>or</span></div>' +
+        socialProviders
+          .map(
+            (p) =>
+              `<button type="submit" formaction="/auth/verify-email/social/${this.escapeHtml(encodeURIComponent(p.id))}" formnovalidate class="sso">` +
+              providerMarkSvg(p.id) +
+              `<span>Continue with ${this.escapeHtml(p.name)}</span>` +
+              `</button>`,
+          )
+          .join('') +
+        `<p class="links">If this address is a ${socialProviders.map((p) => this.escapeHtml(p.name)).join(' or ')} account, continuing with it verifies the address without a code. You then sign in that way instead of with your password.</p>`
+      : '';
+
+    // The code field and "Verify and continue" come first in the form, so
+    // Enter in the field verifies (the first submit button). Every other
+    // button posts the same CSRF field to its own route (`formaction`).
+    const card = `
+    ${top}
+    <h1>Check your email</h1>
+    <p class="sub">We sent a 6-digit code to <strong>${this.escapeHtml(maskedEmail)}</strong>. Enter it ${purpose}.</p>
+    ${errorHtml}${noticeHtml}
+    <form method="POST" action="/auth/verify-email">
+      <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">
+      <label for="code">Verification code</label>
+      <input type="text" id="code" name="code" required autofocus inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456">
+      <button type="submit">Verify and continue</button>
+      <button type="submit" formaction="/auth/verify-email/resend" formnovalidate class="secondary">Send a new code</button>
+      <button type="submit" formaction="/auth/verify-email/continue" formnovalidate class="secondary">I opened the link in the email</button>
+      ${socialHtml}
+    </form>
+    <p class="links">No email? Check the spam folder. <a href="/auth/login?switch=1">Use a different account</a></p>`;
+
+    return renderAuthPage({
+      title: `Verify your email — ${serverName}`,
+      card,
+      trust: this.trust(),
+      extraStyles: `
+  .sub strong { color: var(--text); font-weight: 600; }
+  form button.secondary { margin-top: 8px; }
+  #code { letter-spacing: .3em; font-variant-numeric: tabular-nums; }`,
     });
   }
 

@@ -39,6 +39,17 @@ export const CHECKOUT_SOURCES = [
    * signed in: /login sends them on to /start-trial instead of a sign-up.
    */
   'pricing_signed_in',
+  /** File Search: the setup scan found more files than the plan includes. */
+  'file_quota_setup',
+  /** File Search: a sync paused because the folder outgrew the plan. */
+  'file_quota',
+  /** File Search: the feature is locked (no plan includes it, trial over). */
+  'file_search_licence',
+  /**
+   * The no-login reactivation page (/reactivate/<token>) an AI client links
+   * to when a tool call is refused because the trial ended.
+   */
+  'mcp_reactivate',
   /** Any checkout the page did not name (the backend's default). */
   'app',
 ] as const;

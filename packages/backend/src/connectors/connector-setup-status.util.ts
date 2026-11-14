@@ -1,6 +1,7 @@
 import { getAdapter } from '../adapters/catalog';
 import { isMachineGrant } from './oauth-grant.util';
 import { shopeeNeedsAuthorization } from './engines/shopee-token.service';
+import { tiktokShopMissingAppVars, tiktokShopNeedsAuthorization } from './engines/tiktok-shop-token.service';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
 import {
@@ -37,6 +38,12 @@ export interface SetupStatusInput {
   headers?: unknown;
   envVars?: unknown;
   config?: unknown;
+  /**
+   * USER: every user authorizes on their own (user-credential.util), so the
+   * connector itself is never "authorized" and that is not a reason to hold
+   * it back. Each call checks the caller's own sign-in instead.
+   */
+  credentialScope?: string;
   /**
    * The endpoint mappings of the connector's tools. Some adapters use a
    * variable only there: Odoo's JSON-RPC adapter sends ODOO_API_KEY in the
@@ -148,18 +155,30 @@ export function computeSetupState(input: SetupStatusInput): SetupState {
         authConfig: checkedAuth,
       }),
       ...missingToolVariables(input, envVars),
+      // A TikTok Shop connector leaves its app variables empty to use the
+      // server's app; on a server without one they are still to fill in.
+      ...tiktokShopMissingAppVars(input.authType, authConfig),
     ]),
   ]
     .filter((name) => !name.startsWith(CALLER_CONTEXT_PREFIX))
     .sort();
   if (missing.length > 0) return { status: 'needs_input', missing };
 
-  if (isBrowserOAuth && !hasRealValue(authConfig.refreshToken) && !hasRealValue(authConfig.accessToken)) {
+  if (
+    isBrowserOAuth &&
+    input.credentialScope !== 'USER' &&
+    !hasRealValue(authConfig.refreshToken) &&
+    !hasRealValue(authConfig.accessToken)
+  ) {
     return { status: 'needs_authorization', missing: [] };
   }
   // A Shopee shop (HMAC with tokenProvider "shopee") is authorized from the
   // connector page too. False for every other connector.
   if (shopeeNeedsAuthorization(input.authType, authConfig)) {
+    return { status: 'needs_authorization', missing: [] };
+  }
+  // Same for a TikTok Shop shop (HMAC with tokenProvider "tiktok-shop").
+  if (tiktokShopNeedsAuthorization(input.authType, authConfig)) {
     return { status: 'needs_authorization', missing: [] };
   }
   return { status: 'ready', missing: [] };

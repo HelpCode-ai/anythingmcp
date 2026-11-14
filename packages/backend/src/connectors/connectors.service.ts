@@ -1,3 +1,4 @@
+import { withCatalogUserAgent } from './catalog-user-agent.util';
 import {
   BadRequestException,
   ConflictException,
@@ -10,6 +11,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
+import type { Prisma } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
 import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine, WsdlReadError } from './engines/soap.engine';
@@ -19,9 +21,14 @@ import { moveUrlCredentials } from './database-url-credentials.util';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
+import { UserCredentialError, UserCredentialsService } from './user-credentials.service';
+import { withoutUserTokens } from './user-credential.util';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
+import { FilesWorkerClient } from '../file-search/files-worker.client';
+import { localRootsFromEnv, parseFileSearchConfig, pickSecrets } from '../file-search/file-search-config';
 import { openEnvVarsStrict, sealEnvVars } from '../common/crypto/env-vars-at-rest';
 import { getRequiredSecret } from '../common/secrets.util';
+import { CASCADE_DELETE_TRANSACTION } from '../common/cascade-delete-transaction';
 import { describeInvalidHeaderNames, invalidConnectorHeaderNames } from '../common/http-header-name.util';
 import {
   interpolateConnectorConfig,
@@ -33,15 +40,18 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { connectorPageUrl, normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
-import { mcpPathOf } from './mcp-connector-config.util';
+import { envVarsForMcpTool, mcpPathOf } from './mcp-connector-config.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
+import { EmailEngine } from './engines/email.engine';
+import { EmailConnectorError } from './email/email-settings';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
 import { ConnectorAuthStatusService, authCredentialRef } from './engines/connector-auth-status.service';
 import { BearerTokenRenewalService, withTokenRenewal } from './engines/bearer-token-renewal.service';
 import { connectorErrorWhen } from './error-when.util';
 import { ResponseBodyError } from './engines/response-error.util';
+import { metaLoginFlavourOfSlug } from './engines/meta-login.util';
 
 /** Whether a URL has a query string (`?singleWsdl`), so `?wsdl` cannot simply be added. */
 function hasQueryString(url: string): boolean {
@@ -69,6 +79,9 @@ export class ConnectorsService {
     @Optional() private readonly oauth2TokenService?: OAuth2TokenService,
     @Optional() private readonly authStatus?: ConnectorAuthStatusService,
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
+    @Optional() private readonly userCredentials?: UserCredentialsService,
+    @Optional() private readonly emailEngine?: EmailEngine,
+    @Optional() private readonly filesWorker?: FilesWorkerClient,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -97,6 +110,28 @@ export class ConnectorsService {
   ): Promise<Array<Connector & { icon: string | null }>> {
     const rows = await this.prisma.connector.findMany({
       where: { organizationId },
+      include: { tools: true },
+      orderBy: { createdAt: 'desc' },
+      ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
+      ...(opts?.offset !== undefined ? { skip: opts.offset } : {}),
+    });
+    return rows.map((c) => ({ ...c, icon: resolveAdapterIcon(c) }));
+  }
+
+  /**
+   * `findByOrg` narrowed by an extra `where` (member visibility, see
+   * settings/member-visibility.service.ts `connectorWhere`). The filter is
+   * added to the workspace filter with AND, in the query, so `limit` and
+   * `offset` page over visible connectors only. Each row keeps all its tools;
+   * the caller filters them.
+   */
+  async findVisibleByOrg(
+    organizationId: string,
+    visibility: Prisma.ConnectorWhereInput,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<Array<Connector & { icon: string | null }>> {
+    const rows = await this.prisma.connector.findMany({
+      where: { AND: [{ organizationId }, visibility] },
       include: { tools: true },
       orderBy: { createdAt: 'desc' },
       ...(opts?.limit !== undefined ? { take: opts.limit } : {}),
@@ -141,6 +176,9 @@ export class ConnectorsService {
       config?: Record<string, unknown>;
       envVars?: Record<string, string>;
       instructions?: string;
+      webhookEnabled?: boolean;
+      webhookProvider?: string;
+      webhookSecret?: string;
     },
   ): Promise<Connector> {
     assertValidHeaderNames(data.headers, data.authConfig);
@@ -169,8 +207,23 @@ export class ConnectorsService {
         config: data.config as any,
         envVars: data.envVars as any,
         instructions: data.instructions,
+        webhookEnabled: data.webhookEnabled ?? false,
+        webhookProvider: data.webhookProvider,
+        webhookSecret: data.webhookSecret
+          ? encrypt(data.webhookSecret, this.encryptionKey)
+          : null,
       },
     });
+  }
+
+  /**
+   * The connector's decrypted webhook secret, or null when webhooks are not
+   * enabled for it. Internal use only (webhook-ingest.controller.ts): never
+   * return this value from any API or tool response.
+   */
+  decryptWebhookSecret(connector: Connector): string | null {
+    if (!connector.webhookSecret) return null;
+    return decrypt(connector.webhookSecret, this.encryptionKey);
   }
 
   async update(
@@ -185,9 +238,21 @@ export class ConnectorsService {
       config: Record<string, unknown>;
       envVars: Record<string, string>;
       instructions: string;
+      webhookEnabled: boolean;
+      webhookProvider: string;
+      webhookSecret: string;
     }>,
   ): Promise<Connector> {
-    const existing = await this.findById(id);
+    // Only the type (base URL normalisation) and the stored credential (auth
+    // status below) are needed: loading every tool, resource and prompt here
+    // made each save as heavy as the connector was large.
+    const existing = await this.prisma.connector.findUnique({
+      where: { id },
+      select: { type: true, authConfig: true },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Connector ${id} not found`);
+    }
     assertValidHeaderNames(data.headers, data.authConfig);
 
     if (existing.type === 'DATABASE' && data.baseUrl !== undefined) {
@@ -204,6 +269,15 @@ export class ConnectorsService {
         JSON.stringify(data.authConfig),
         this.encryptionKey,
       );
+    }
+    // webhookSecret is write-only, like authConfig: never returned by any
+    // API, so a client has nothing to echo back. Omit it entirely unless a
+    // real value is given, rather than let a falsy/absent one overwrite the
+    // stored secret with an empty value.
+    if (data.webhookSecret) {
+      updateData.webhookSecret = encrypt(data.webhookSecret, this.encryptionKey);
+    } else {
+      delete updateData.webhookSecret;
     }
     if (data.baseUrl !== undefined) {
       updateData.baseUrl = normalizeConnectorBaseUrl(data.baseUrl, existing.type);
@@ -267,6 +341,36 @@ export class ConnectorsService {
   }
 
   /**
+   * Switch whose credential the connector's calls carry (user-credential.util).
+   *
+   * To USER, the connector's own tokens are removed in the same write: they
+   * belong to whoever authorized it and would otherwise sit there, unused but
+   * one setting away from being sent for everyone. Back to SHARED, every
+   * user's own sign-in is removed: nothing uses it any more, and the
+   * connector needs one authorization of its own again.
+   */
+  async setCredentialScope(id: string, scope: 'SHARED' | 'USER'): Promise<Connector> {
+    const connector = await this.findByIdInternal(id);
+    if (connector.credentialScope === scope) return connector;
+    let authConfig = connector.authConfig;
+    if (scope === 'USER' && authConfig) {
+      const client = withoutUserTokens(JSON.parse(decrypt(authConfig, this.encryptionKey)));
+      authConfig = encrypt(JSON.stringify(client), this.encryptionKey);
+    }
+    const updated = await this.prisma.connector.update({
+      where: { id },
+      data: { credentialScope: scope, authConfig },
+    });
+    this.oauth2TokenService?.forget(id);
+    await this.authStatus?.clear(id);
+    if (scope === 'SHARED') {
+      await this.userCredentials?.removeAll(id, connector.organizationId);
+    }
+    this.logger.log(`Connector ${id}: credentials are now ${scope === 'USER' ? 'per user' : 'shared'}`);
+    return updated;
+  }
+
+  /**
    * Adds variables to a connector, keeping the ones it has. Used when a
    * secret typed into a URL, header or tool is moved into a variable; the
    * column is encrypted at rest (env-vars-at-rest.ts).
@@ -313,12 +417,30 @@ export class ConnectorsService {
   }
 
   async remove(id: string): Promise<void> {
-    await this.findById(id);
+    const connector = await this.findById(id);
+    const slug = (connector.config as { adapterSlug?: unknown } | null)?.adapterSlug;
+    if (metaLoginFlavourOfSlug(slug)) {
+      // Meta Platform Terms: Instagram data goes when the user deletes the
+      // connector. Its tool-call log rows (with tool outputs) would cascade
+      // with its tools anyway; delete them explicitly, in the same
+      // transaction, so that keeps holding if the relation ever changes.
+      // A busy connector has many log rows and its delete cascades further,
+      // which can take longer than Prisma's default 5 s transaction timeout.
+      await this.prisma.$transaction([
+        this.prisma.toolInvocation.deleteMany({
+          where: { connectorId: id, organizationId: connector.organizationId },
+        }),
+        this.prisma.connector.delete({ where: { id } }),
+      ], CASCADE_DELETE_TRANSACTION);
+      return;
+    }
     await this.prisma.connector.delete({ where: { id } });
   }
 
   async testConnection(
     id: string,
+    /** Who tests: a connector with per-user credentials is tested with that user's own sign-in. */
+    options: { userId?: string } = {},
   ): Promise<{
     ok: boolean;
     message: string;
@@ -346,26 +468,64 @@ export class ConnectorsService {
   }> {
     const connector = await this.findById(id);
 
+    // File Search: the worker connects and lists the folder; this process never does.
+    if ((connector.type as string) === 'FILE_SEARCH') {
+      const cfg = (connector.config as { fileSearch?: unknown; fileShare?: boolean } | null) ?? {};
+      if (cfg.fileShare) return { ok: true, kind: 'ok', message: 'File Share needs no connection.' };
+      if (!this.filesWorker?.configured) {
+        return { ok: false, kind: 'unsupported', message: 'The files worker is not configured (FILES_WORKER_URL).' };
+      }
+      try {
+        const config = parseFileSearchConfig(cfg.fileSearch, {
+          cloud: process.env.DEPLOYMENT_MODE === 'cloud',
+          localRoots: localRootsFromEnv(),
+          connectorName: connector.name,
+        });
+        const secrets = connector.authConfig ? pickSecrets(JSON.parse(decrypt(connector.authConfig, this.encryptionKey))) : {};
+        const r = await this.filesWorker.test(config, secrets, { cloud: process.env.DEPLOYMENT_MODE === 'cloud' });
+        return {
+          ok: r.ok,
+          kind: r.ok ? 'ok' : r.errorKind === 'auth' ? 'auth_failed' : r.errorKind === 'not_found' ? 'not_found' : 'unreachable',
+          message: r.ok ? `Connection successful — ${r.rootEntries ?? 0} entries in the folder` : (r.message ?? 'The connection failed.'),
+        };
+      } catch (err) {
+        return { ok: false, kind: 'error', message: (err as Error).message };
+      }
+    }
+
     try {
       // Same substitution the tool path does, so Test connection exercises the
       // credentials the workspace actually has rather than the placeholders the
       // adapter shipped with.
       const envVars = (connector.envVars as Record<string, string> | null) || {};
-      const authConfig = withTokenRenewal(
-        connector.authType,
-        connector.authConfig
-          ? interpolateDeep(
-              JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
-              envVars,
-            )
-          : undefined,
-        connector.config,
-        envVars,
-      );
+      let storedAuth: Record<string, unknown> | undefined = connector.authConfig
+        ? interpolateDeep(JSON.parse(decrypt(connector.authConfig, this.encryptionKey)), envVars)
+        : undefined;
+      let credentialKey = connector.id;
+      if (connector.credentialScope === 'USER') {
+        if (!this.userCredentials) {
+          return { ok: false, kind: 'auth_failed', message: 'Per-user sign-in is not available on this server.' };
+        }
+        try {
+          const resolved = await this.userCredentials.resolveForCall({
+            connectorId: credentialKey,
+            connectorName: connector.name,
+            organizationId: connector.organizationId,
+            userId: options.userId,
+            connectorAuthConfig: storedAuth,
+          });
+          storedAuth = resolved.authConfig;
+          credentialKey = resolved.credentialKey;
+        } catch (err: any) {
+          if (err instanceof UserCredentialError) return { ok: false, kind: 'auth_failed', message: err.message };
+          throw err;
+        }
+      }
+      const authConfig = withTokenRenewal(connector.authType, storedAuth, connector.config, envVars);
       const baseUrl = interpolateDeep(connector.baseUrl, envVars);
-      const headers = interpolateDeep(
-        (connector.headers as Record<string, string>) || undefined,
-        envVars,
+      const headers = withCatalogUserAgent(
+        interpolateDeep((connector.headers as Record<string, string>) || undefined, envVars),
+        connector.config,
       );
       // Masked in the engines' log lines.
       const logSecrets = connectorSecretValues(connector);
@@ -404,7 +564,7 @@ export class ConnectorsService {
               // Without it an OAuth2 refresh here was never saved: the
               // provider rotated the refresh token, the connector kept the
               // spent one, and its next refresh was refused as revoked.
-              connectorId: connector.id,
+              connectorId: credentialKey,
               errorWhen: connectorErrorWhen(connector.config),
               logSecrets,
             },
@@ -420,7 +580,7 @@ export class ConnectorsService {
               authType: connector.authType,
               authConfig,
               headers,
-              connectorId: connector.id,
+              connectorId: credentialKey,
               logSecrets,
             },
             { method: 'query', path: '{ __typename }' },
@@ -442,7 +602,7 @@ export class ConnectorsService {
           );
           const isSap = !!settings?.sap || !!settings?.sapClient;
           const out = (await this.odataEngine.execute(
-            { baseUrl, authType: connector.authType, authConfig, headers, connectorId: connector.id },
+            { baseUrl, authType: connector.authType, authConfig, headers, connectorId: credentialKey },
             { method: isSap ? 'odata_list_services' : 'odata_describe_service', path: '' },
             {},
             settings,
@@ -455,6 +615,33 @@ export class ConnectorsService {
               : `Connection successful — the service has ${out.entitySets?.length ?? 0} entity sets`,
           };
         }
+        case 'EMAIL': {
+          if (!this.emailEngine) throw new Error('The email engine is not available.');
+          try {
+            const out = await this.emailEngine.testConnection(
+              { authConfig, baseUrl },
+              interpolateDeep((connector.config as { email?: unknown } | null)?.email, envVars),
+            );
+            return {
+              ok: true,
+              kind: 'ok',
+              message:
+                `Connection successful — IMAP login accepted, ${out.folders} folders` +
+                (out.smtp === 'ok'
+                  ? '; SMTP login accepted'
+                  : out.smtp === 'blocked'
+                    ? `; SMTP not reachable: ${out.smtpMessage}`
+                    : '; no SMTP server set, so sending is off'),
+            };
+          } catch (err) {
+            if (!(err instanceof EmailConnectorError)) throw err;
+            const kind =
+              err.kind === 'auth_failed' || err.kind === 'unreachable' || err.kind === 'not_found'
+                ? err.kind
+                : 'error';
+            return { ok: false, kind, message: err.message };
+          }
+        }
         case 'SOAP':
           // specUrl is used as stored, as the engine uses it.
           return await this.testSoapConnection(connector.specUrl || undefined, baseUrl);
@@ -464,7 +651,7 @@ export class ConnectorsService {
             authType: connector.authType,
             authConfig,
             headers,
-            connectorId: connector.id,
+            connectorId: credentialKey,
             mcpPath: mcpPathOf(connector.config),
             logSecrets,
           });
@@ -752,14 +939,21 @@ export class ConnectorsService {
      * as an MCP call honours it. Without this the setup check and "Run Test"
      * went direct and failed for vendors that refuse our servers' address
      * (Uzum Market, 12 Oct 2026) while real calls would have worked.
+     *
+     * `userId`: who runs it. A connector with per-user credentials runs with
+     * that user's own sign-in, as their MCP calls do, and refuses without one.
      */
-    options: { useProxy?: boolean } = {},
+    options: { useProxy?: boolean; userId?: string } = {},
   ): Promise<unknown> {
     // Inject env vars as parameter defaults
     const envVars = connector.envVars as Record<string, string> | undefined;
-    const withEnv = envVars
+    // A remote MCP server gets them as tool arguments: only the names its
+    // schema lists, as on a real call (DynamicMcpTools).
+    const injected =
+      envVars && connector.type === 'MCP' ? envVarsForMcpTool(envVars, parameters) : envVars;
+    const withEnv = injected
       ? { ...params, ...Object.fromEntries(
-          Object.entries(envVars).filter(([k]) => params[k] === undefined),
+          Object.entries(injected).filter(([k]) => params[k] === undefined),
         ) }
       : params;
     const mergedParams = applySchemaDefaults(parameters, withEnv);
@@ -784,13 +978,28 @@ export class ConnectorsService {
     // variable nor the fix — and a variable filled in after install was
     // never picked up here at all.
     const resolveVars = { reservedPrefix: CALLER_CONTEXT_PREFIX };
-    const authConfig = connector.authConfig
+    let authConfig: Record<string, unknown> | undefined = connector.authConfig
       ? interpolateDeep(
           JSON.parse(decrypt(connector.authConfig, this.encryptionKey)),
           envVars ?? {},
           resolveVars,
         )
       : undefined;
+    let credentialKey: string | undefined;
+    if (connector.credentialScope === 'USER') {
+      if (!this.userCredentials) {
+        throw new Error('Per-user sign-in is not available on this server. No request was sent to the API.');
+      }
+      const resolved = await this.userCredentials.resolveForCall({
+        connectorId: connector.id,
+        connectorName: connector.name,
+        organizationId: connector.organizationId,
+        userId: options.userId,
+        connectorAuthConfig: authConfig,
+      });
+      authConfig = resolved.authConfig;
+      credentialKey = resolved.credentialKey;
+    }
     const { config: resolved, endpointMapping: resolvedMapping } =
       interpolateConnectorConfig(
         {
@@ -832,9 +1041,9 @@ export class ConnectorsService {
       baseUrl: resolved.baseUrl,
       authType: connector.authType,
       authConfig: withTokenRenewal(connector.authType, authConfig, connector.config, envVars),
-      headers: resolved.headers as Record<string, string>,
+      headers: withCatalogUserAgent(resolved.headers as Record<string, string>, connector.config) as Record<string, string>,
       specUrl: connector.specUrl ?? undefined,
-      connectorId: connector.id,
+      connectorId: credentialKey ?? connector.id,
       errorWhen: connectorErrorWhen(connector.config),
       logSecrets: connectorSecretValues(connector),
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
@@ -852,6 +1061,17 @@ export class ConnectorsService {
         endpointMapping,
         mergedParams,
         interpolateDeep((connector.config as any)?.odata, envVars ?? {}),
+      );
+    }
+
+    if ((connector.type as string) === 'EMAIL') {
+      if (!this.emailEngine) throw new Error('The email engine is not available.');
+      return this.emailEngine.execute(
+        { authConfig: config.authConfig, baseUrl: config.baseUrl },
+        endpointMapping,
+        mergedParams,
+        // Catalog installs keep {{VAR}} in config.email, resolved per call.
+        interpolateDeep((connector.config as { email?: unknown } | null)?.email, envVars ?? {}),
       );
     }
 

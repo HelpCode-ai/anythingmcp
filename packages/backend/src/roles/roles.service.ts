@@ -1,9 +1,23 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+
+export interface ToolRateLimits {
+  callsPerMinute: number | null;
+  callsPerHour: number | null;
+}
+
+interface LimitPresence {
+  expiresAt: number;
+  value: Promise<boolean>;
+}
+
+const LIMIT_PRESENCE_TTL_MS = 5_000;
+const MAX_LIMIT_PRESENCE_ENTRIES = 1_000;
 
 @Injectable()
 export class RolesService {
   private readonly logger = new Logger(RolesService.name);
+  private readonly limitPresence = new Map<string, LimitPresence>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -75,16 +89,20 @@ export class RolesService {
   }
 
   async create(data: { name: string; description?: string; organizationId?: string }) {
-    return this.prisma.role.create({
-      data: { name: data.name, description: data.description, organizationId: data.organizationId },
-    });
+    return this.prisma.role
+      .create({
+        data: { name: data.name, description: data.description, organizationId: data.organizationId },
+      })
+      .catch((err) => rethrowDuplicateName(err, data.name));
   }
 
   async update(id: string, organizationId: string, data: { name?: string; description?: string }) {
-    const result = await this.prisma.role.updateMany({
-      where: { id, organizationId },
-      data,
-    });
+    const result = await this.prisma.role
+      .updateMany({
+        where: { id, organizationId },
+        data,
+      })
+      .catch((err) => rethrowDuplicateName(err, data.name));
     if (result.count === 0) return null;
     return this.prisma.role.findUnique({ where: { id } });
   }
@@ -102,6 +120,7 @@ export class RolesService {
       data: { mcpRoleId: null },
     });
     await this.prisma.role.delete({ where: { id } });
+    this.limitPresence.delete(organizationId);
     return true;
   }
 
@@ -115,41 +134,134 @@ export class RolesService {
   }
 
   async setToolAccess(roleId: string, toolIds: string[], organizationId: string) {
-    // System roles are global (organizationId is null), and `findByIdForOrg`
-    // deliberately makes them visible to every org. `updateRole` and
-    // `deleteRole` both refuse them; this path did not, so any org admin could
-    // rewrite the tool whitelist of a role every other organization shares.
-    const role = await this.prisma.role.findUnique({
-      where: { id: roleId },
-      select: { isSystem: true },
-    });
-    if (role?.isSystem) {
-      throw new Error('Cannot modify tool access on a system role');
-    }
-
-    // Validate that every tool ID belongs to the given organization. This
-    // prevents an admin from assigning tools owned by another org to a role
-    // they control.
-    if (toolIds.length > 0) {
-      const validCount = await this.prisma.mcpTool.count({
-        where: {
-          id: { in: toolIds },
-          connector: { organizationId },
-        },
+    const uniqueIds = [...new Set(toolIds)];
+    await this.prisma.$transaction(async (tx) => {
+      const role = await tx.role.findFirst({
+        where: { id: roleId, OR: [{ organizationId }, { isSystem: true }] },
+        select: { isSystem: true },
       });
-      if (validCount !== toolIds.length) {
-        throw new Error('One or more toolIds are not in this organization');
+      if (!role) throw new NotFoundException('Role not found');
+      if (role.isSystem) throw new ForbiddenException('Cannot modify tool access on a system role');
+
+      if (uniqueIds.length > 0) {
+        const validCount = await tx.mcpTool.count({
+          where: { id: { in: uniqueIds }, connector: { organizationId } },
+        });
+        if (validCount !== uniqueIds.length) {
+          throw new BadRequestException('One or more toolIds are not in this organization');
+        }
       }
+
+      const existing = await tx.toolRoleAccess.findMany({
+        where: { roleId, role: { organizationId } },
+        select: { toolId: true },
+      });
+      const retained = new Set(existing.map((grant) => grant.toolId));
+      await tx.toolRoleAccess.deleteMany({
+        where: { roleId, role: { organizationId }, toolId: { notIn: uniqueIds } },
+      });
+      const added = uniqueIds.filter((id) => !retained.has(id));
+      if (added.length > 0) {
+        await tx.toolRoleAccess.createMany({
+          data: added.map((toolId) => ({ roleId, toolId })),
+          skipDuplicates: true,
+        });
+      }
+    });
+    this.limitPresence.delete(organizationId);
+  }
+
+  async setToolRateLimits(
+    roleId: string,
+    toolId: string,
+    organizationId: string,
+    limits: Partial<ToolRateLimits>,
+  ) {
+    const result = await this.prisma.toolRoleAccess.updateMany({
+      where: {
+        roleId,
+        toolId,
+        role: { organizationId, isSystem: false },
+        tool: { connector: { organizationId } },
+      },
+      data: limits,
+    });
+    if (result.count === 0) throw new NotFoundException('Tool grant not found');
+    this.limitPresence.delete(organizationId);
+    return { message: 'Tool rate limits updated' };
+  }
+
+  /**
+   * Most workspaces have no limits. Cache one cheap, tenant-scoped existence
+   * probe so cached absence skips membership and per-tool policy queries.
+   * Cache the pending promise too, to coalesce simultaneous first calls.
+   * Local edits invalidate immediately; other replicas refresh within 5s.
+   */
+  private hasToolRateLimits(organizationId: string): Promise<boolean> {
+    const cached = this.limitPresence.get(organizationId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (this.limitPresence.size >= MAX_LIMIT_PRESENCE_ENTRIES) {
+      const oldest = this.limitPresence.keys().next().value;
+      if (oldest !== undefined) this.limitPresence.delete(oldest);
     }
-    // Replace all tool access for this role
-    await this.prisma.$transaction([
-      this.prisma.toolRoleAccess.deleteMany({ where: { roleId } }),
-      ...toolIds.map((toolId) =>
-        this.prisma.toolRoleAccess.create({
-          data: { roleId, toolId },
-        }),
-      ),
-    ]);
+    const entry: LimitPresence = {
+      expiresAt: Date.now() + LIMIT_PRESENCE_TTL_MS,
+      value: this.prisma.toolRoleAccess.findFirst({
+        where: {
+          tool: { connector: { organizationId } },
+          role: { OR: [{ organizationId }, { isSystem: true }] },
+          OR: [{ callsPerMinute: { not: null } }, { callsPerHour: { not: null } }],
+        },
+        select: { id: true },
+      }).then((row) => row !== null).catch((error: unknown) => {
+        if (this.limitPresence.get(organizationId) === entry) this.limitPresence.delete(organizationId);
+        throw error;
+      }),
+    };
+    // A late response cannot repopulate this entry after an edit invalidates it.
+    this.limitPresence.set(organizationId, entry);
+    return entry.value;
+  }
+
+  /**
+   * Policy only; authorization remains with getAllowedToolIds and the caller.
+   * Resolve EACH window independently: max wins, null is unlimited. For example
+   * (100/min, 200/h) + (10/min, 10,000/h) becomes (100/min, 10,000/h).
+   */
+  async getToolRateLimits(
+    userId: string,
+    organizationId: string,
+    toolId: string,
+  ): Promise<ToolRateLimits | null> {
+    if (!(await this.hasToolRateLimits(organizationId))) return null;
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId } },
+      select: { role: true, deactivatedAt: true },
+    });
+    // In particular, org ADMINs are unrestricted, even if they hold MCP roles.
+    if (!membership || membership.deactivatedAt || membership.role === 'ADMIN') return null;
+
+    const grants = await this.prisma.toolRoleAccess.findMany({
+      where: {
+        toolId,
+        tool: { connector: { organizationId } },
+        role: {
+          OR: [{ organizationId }, { isSystem: true }],
+          assignments: {
+            some: { userId, OR: [{ organizationId }, { organizationId: null }] },
+          },
+        },
+      },
+      select: { callsPerMinute: true, callsPerHour: true },
+    });
+    // Includes legacy unrestricted members with no roles. Do not invent a
+    // per-tool budget for callers who get no policy from a granting role.
+    if (grants.length === 0) return null;
+    const resolve = (field: keyof ToolRateLimits): number | null =>
+      grants.some((grant) => grant[field] === null)
+        ? null
+        : Math.max(...grants.map((grant) => grant[field]!));
+    return { callsPerMinute: resolve('callsPerMinute'), callsPerHour: resolve('callsPerHour') };
   }
 
   async addToolAccess(roleId: string, toolId: string) {
@@ -164,6 +276,9 @@ export class RolesService {
     await this.prisma.toolRoleAccess.deleteMany({
       where: { roleId, toolId },
     });
+    // This legacy helper has no workspace argument; a cold presence probe is
+    // preferable to retaining a stale flag after revoking the last limit.
+    this.limitPresence.clear();
   }
 
   // ── Tool access query for MCP filtering ───────────────────────────────────
@@ -280,6 +395,53 @@ export class RolesService {
     });
 
     return [...new Set(access.map((a) => a.toolId))];
+  }
+
+  /**
+   * The capability flags a user has in an organization: the union of their
+   * roles' `capabilities` JSON, with any `true` winning. An ADMIN of the org
+   * holds every capability (consistent with getAllowedToolIds returning `null`
+   * for an admin). Resolves the authoritative per-org role from
+   * organization_members, never the JWT cache, and fails closed (no
+   * capabilities) for an unknown, non-member or deactivated principal.
+   */
+  async getCapabilities(
+    userId: string,
+    organizationId?: string,
+  ): Promise<Record<string, boolean>> {
+    if (!userId) return {};
+    const orgId = organizationId;
+    if (!orgId) return {};
+
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId: orgId } },
+      select: { role: true, deactivatedAt: true },
+    });
+    if (!membership || membership.deactivatedAt) return {};
+    // Admins hold every current capability.
+    if (membership.role === 'ADMIN') return { inlineCode: true };
+
+    const assignments = await this.prisma.userRoleAssignment.findMany({
+      where: { userId, OR: [{ organizationId: orgId }, { organizationId: null }] },
+      select: { roleId: true },
+    });
+    const roleIds = [...new Set(assignments.map((a) => a.roleId))];
+    if (roleIds.length === 0) return {};
+
+    const roles = await this.prisma.role.findMany({
+      where: { id: { in: roleIds } },
+      select: { capabilities: true },
+    });
+    const caps: Record<string, boolean> = {};
+    for (const role of roles) {
+      const c = role.capabilities as Record<string, unknown> | null;
+      if (c && typeof c === 'object') {
+        for (const [key, value] of Object.entries(c)) {
+          if (value === true) caps[key] = true;
+        }
+      }
+    }
+    return caps;
   }
 
   /**
@@ -438,4 +600,15 @@ export class RolesService {
       );
     }
   }
+}
+
+/**
+ * Role names are unique per organization (`@@unique([organizationId, name])`).
+ * Turn the Prisma unique violation into a 409 instead of a 500.
+ */
+function rethrowDuplicateName(err: unknown, name: string | undefined): never {
+  if ((err as { code?: string } | null)?.code === 'P2002') {
+    throw new ConflictException(`A role named "${name ?? ''}" already exists in this organization`);
+  }
+  throw err;
 }

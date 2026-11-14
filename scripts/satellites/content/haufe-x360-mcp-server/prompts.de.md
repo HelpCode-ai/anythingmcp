@@ -1,0 +1,12 @@
+- Welche offenen Verkaufsaufträge haben einen Auftragswert über 5.000 EUR?
+- Liste alle offenen Ausgangsrechnungen mit Fälligkeitsdatum, Rechnungsbetrag und offenem Restbetrag auf.
+- Welche Rechnungen sind überfällig und haben noch einen offenen Saldo?
+- Zeig mir den Kunden C000142 mit Hauptkontakt, Ansprechpartnern und Kreditprüfungsregeln.
+- Zeig den Verkaufsauftrag SO004812 inklusive aller Auftragspositionen.
+- Welche Lieferungen sind diese Woche rausgegangen, und welche Aufträge erfüllen sie?
+- Liste unsere aktiven Kunden der Kundenklasse „HANDEL" mit ihren Zahlungsbedingungen auf.
+- Zeig die letzten zehn Rechnungen und Gutschriften für „Rheinmetall Werkzeuge GmbH".
+- Welche aktiven Lagerartikel gibt es in der Artikelklasse „ELEKTRO", mit Artikelnummer, Basiseinheit und Standardpreis?
+- Welche Lieferungen stehen noch auf dem Status „Open"?
+- Liste unsere aktiven Lieferanten mit Lieferantenklasse, Zahlungsbedingungen und Hauptkontakt auf.
+- Zeig die Rechnung AR009215 mit sämtlichen Rechnungspositionen.

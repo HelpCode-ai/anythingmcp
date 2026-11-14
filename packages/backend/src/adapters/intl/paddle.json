@@ -1,0 +1,2925 @@
+{
+  "slug": "paddle",
+  "name": "Paddle Billing",
+  "aliases": [
+    "Paddle.com",
+    "Paddle payments"
+  ],
+  "description": "Paddle Billing, the merchant of record for software sales: products, prices and discounts, customers with addresses and businesses, subscriptions (update, pause, resume, cancel, previews), transactions and PDF invoices, refunds and credits, reports, revenue and MRR metrics, events and webhook notifications. Live or sandbox.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "paddle",
+  "docsUrl": "https://developer.paddle.com/api-reference/overview",
+  "instructions": "## Paddle Billing\nThis connector uses the **Paddle Billing API** (`https://api.paddle.com`, sandbox `https://sandbox-api.paddle.com`). Paddle is a merchant of record for software and digital products: it sells to the customer, handles tax and pays you out. The connector reads and manages the catalog (products, prices, discounts), customers with their addresses and businesses, subscriptions, transactions and invoices, refunds and credits, reports, dashboard metrics, events and webhook notifications. It covers Paddle Billing only, not Paddle Classic.\n\n**Setup (2 minutes)**\n1. In Paddle open **Developer tools**, **Authentication**, **API keys** and create a key. Give it the permissions the tools need: read for products, prices, discounts, customers, addresses, businesses, subscriptions, transactions, adjustments, reports, notifications and events; write for the ones you want the AI to change.\n2. Paste the key into `PADDLE_API_KEY`. It is sent as `Authorization: Bearer <key>`.\n3. Set `PADDLE_API_URL` to `https://api.paddle.com` for the live account or `https://sandbox-api.paddle.com` for a sandbox account. Sandbox and live keys only work on their own host.\n4. Run `paddle_list_event_types` to check the key.\n\n**Workflow**\n- Catalog: `paddle_list_products` (include prices), `paddle_get_product`, `paddle_create_product`, `paddle_update_product`; prices with `paddle_list_prices`, `paddle_get_price`, `paddle_create_price`, `paddle_update_price`; discounts with `paddle_list_discounts`, `paddle_get_discount`, `paddle_create_discount`, `paddle_update_discount`. Nothing is deleted in Paddle: set `status` to archived instead.\n- Customers: `paddle_list_customers` (search by email), `paddle_get_customer`, `paddle_create_customer`, `paddle_update_customer`. Addresses: `paddle_list_customer_addresses`, `paddle_create_customer_address`, `paddle_update_customer_address`. Businesses (VAT number, company): `paddle_list_customer_businesses`, `paddle_create_customer_business`, `paddle_update_customer_business`. `paddle_list_customer_credit_balances` shows credit, `paddle_create_customer_portal_session` gives the customer a link to manage payment methods and subscriptions.\n- Subscriptions: `paddle_list_subscriptions`, `paddle_get_subscription` (include next_transaction for the next charge). To change plan or quantity, run `paddle_preview_subscription_update` first and show the user the immediate charge, then `paddle_update_subscription` with the full new `items` list and a `proration_billing_mode`. Lifecycle: `paddle_pause_subscription`, `paddle_resume_subscription`, `paddle_cancel_subscription`, `paddle_activate_subscription` (ends a trial and bills now). A scheduled pause or cancel is removed with `paddle_update_subscription` and `scheduled_change: null`. `paddle_create_subscription_charge` bills a one-time charge on the saved payment method and `paddle_cancel_subscription` ends a subscription; both are installed switched off.\n- Transactions and invoices: `paddle_list_transactions` (by customer, subscription, status, invoice number, billed or created date range), `paddle_get_transaction`, `paddle_get_transaction_invoice` for the PDF link. `paddle_create_transaction` creates a checkout to pay (its `checkout.url`) or, with `collection_mode: manual` and `status: billed`, an invoice; `paddle_update_transaction` changes a draft or ready one. Quotes without saving: `paddle_preview_transaction`, `paddle_preview_prices`.\n- Refunds and credits: `paddle_list_adjustments`, `paddle_create_adjustment` (refunds are reviewed by Paddle and start as pending_approval), `paddle_get_adjustment_credit_note`.\n- Reports and numbers: `paddle_create_report`, then `paddle_get_report` until status is ready, then `paddle_get_report_csv`; `paddle_list_reports` lists earlier ones. Dashboard metrics per day: `paddle_get_revenue_metrics`, `paddle_get_mrr_metrics`, `paddle_get_active_subscribers_metrics`.\n- Events and webhooks: `paddle_list_event_types`, `paddle_list_events` (last 90 days), `paddle_list_notification_settings`, `paddle_list_notifications`, `paddle_get_notification`, `paddle_list_notification_logs`, `paddle_replay_notification`.\n\n**Before writing**: transactions billed, subscription updates, cancellations, refunds and one-time charges affect real money on the live host. Show the user what will change (use the preview tools) and wait for a yes.\n\n**Reading the answers**: every response has `data` and `meta.request_id`. Ids carry a prefix: `pro_` product, `pri_` price, `dsc_` discount, `ctm_` customer, `add_` address, `biz_` business, `sub_` subscription, `txn_` transaction, `adj_` adjustment, `rep_` report, `ntf_` notification. Amounts are strings in the lowest currency unit (`\"1999\"` USD = 19.99; JPY has no decimals). Totals of a transaction are in `details.totals` (subtotal, discount, tax, total, grand_total) and per item in `details.line_items`. Dates are RFC 3339 in UTC. Filters that take several values are comma-separated.\n\n**Paging**: list tools return up to `per_page` items (50 by default, 200 at most). When `meta.pagination.has_more` is true, take the `after` value from the `meta.pagination.next` URL and pass it as `after`.\n\n**Limits and errors**: 240 requests per minute per IP (429 above that). Errors come as `error.type`, `error.code` and `error.detail`, with `error.errors` listing invalid fields. 403 `forbidden` means the API key lacks the permission for that entity; 401 means a wrong key or a sandbox key on the live host (or the reverse); 404 `entity_not_found` a wrong id or the other environment.",
+  "prerequisites": "A Paddle Billing account (live or sandbox) and an API key from Developer tools, Authentication, with the permissions the tools need.",
+  "requiredEnvVars": [
+    "PADDLE_API_KEY",
+    "PADDLE_API_URL"
+  ],
+  "envVarMeta": {
+    "PADDLE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Paddle, Developer tools, Authentication, API keys: create a key with the permissions you need. Live keys start with pdl_live_apikey_, sandbox keys with pdl_sdbx_apikey_.",
+      "link": "https://vendors.paddle.com/authentication-v2",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste only the API key, without spaces, quotes or a Bearer prefix."
+    },
+    "PADDLE_API_URL": {
+      "label": "API environment",
+      "kind": "address",
+      "help": "https://api.paddle.com for the live account, https://sandbox-api.paddle.com for a sandbox account. The key must belong to the same environment.",
+      "example": "https://api.paddle.com",
+      "link": "https://developer.paddle.com/api-reference/about/paddle-api",
+      "pattern": "^https://(sandbox-)?api\\.paddle\\.com$",
+      "patternMessage": "Use https://api.paddle.com or https://sandbox-api.paddle.com, without a trailing slash."
+    }
+  },
+  "verifyHints": {
+    "401": "Paddle refused the API key. Check that it was copied whole and that it belongs to the environment in PADDLE_API_URL (sandbox keys only work on sandbox-api.paddle.com).",
+    "403": "The key works but lacks the permission for this entity. Edit the API key in Paddle, Developer tools, Authentication, and add the read or write permission.",
+    "429": "Paddle allows 240 requests per minute per IP address. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "paddle_list_event_types"
+  },
+  "connector": {
+    "name": "Paddle Billing API",
+    "type": "REST",
+    "baseUrl": "{{PADDLE_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{PADDLE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Paddle-Version": "1"
+    },
+    "healthcheckPath": "/event-types"
+  },
+  "tools": [
+    {
+      "name": "paddle_list_products",
+      "description": "List products in the catalog with name, tax category, type, status and custom data. Include prices to get each product's prices in the same call. Paged with after and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only these product ids (pro_...), comma-separated."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: active, archived (default active)."
+          },
+          "type": {
+            "type": "string",
+            "description": "standard (catalog) or custom (one-off, created for a single transaction).",
+            "enum": [
+              "standard",
+              "custom"
+            ]
+          },
+          "tax_category": {
+            "type": "string",
+            "description": "Only these tax categories, e.g. standard,saas, comma-separated."
+          },
+          "include": {
+            "type": "string",
+            "description": "prices: also return the product's prices.",
+            "enum": [
+              "prices"
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: created_at, custom_data, id, description, image_url, name, status, tax_category, updated_at."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "id": "$id",
+          "status": "$status",
+          "type": "$type",
+          "tax_category": "$tax_category",
+          "include": "$include",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_product",
+      "description": "Get one product by id (pro_...) with its name, description, tax category, image URL, status and custom data; include prices to list its prices too.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, starting with pro_."
+          },
+          "include": {
+            "type": "string",
+            "description": "prices: also return the product's prices.",
+            "enum": [
+              "prices"
+            ]
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "paddle_create_product",
+      "description": "Create a catalog product (what you sell). Add one or more prices to it with paddle_create_price before it can be bought. Returns the new product with its pro_ id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Product name shown to customers."
+          },
+          "tax_category": {
+            "type": "string",
+            "description": "Tax category: standard for most items, saas for software as a service, digital-goods, ebooks, implementation-services, professional-services, software-programming-services, training-services, website-hosting. Categories other than standard and saas need Paddle approval.",
+            "enum": [
+              "digital-goods",
+              "ebooks",
+              "implementation-services",
+              "professional-services",
+              "saas",
+              "software-programming-services",
+              "standard",
+              "training-services",
+              "website-hosting"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description shown at checkout and on invoices."
+          },
+          "type": {
+            "type": "string",
+            "description": "standard (default, part of the catalog) or custom.",
+            "enum": [
+              "standard",
+              "custom"
+            ]
+          },
+          "image_url": {
+            "type": "string",
+            "description": "HTTPS URL of a square product image."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "name",
+          "tax_category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "name": "$name",
+          "tax_category": "$tax_category",
+          "description": "$description",
+          "type": "$type",
+          "image_url": "$image_url",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_update_product",
+      "description": "Update a product: name, description, tax category, image, custom data, or archive it with status archived. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, starting with pro_."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "tax_category": {
+            "type": "string",
+            "description": "Tax category: standard for most items, saas for software as a service, digital-goods, ebooks, implementation-services, professional-services, software-programming-services, training-services, website-hosting. Categories other than standard and saas need Paddle approval.",
+            "enum": [
+              "digital-goods",
+              "ebooks",
+              "implementation-services",
+              "professional-services",
+              "saas",
+              "software-programming-services",
+              "standard",
+              "training-services",
+              "website-hosting"
+            ]
+          },
+          "image_url": {
+            "type": "string",
+            "description": "HTTPS URL of a square product image."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status: active or archived.",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{product_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "tax_category": "$tax_category",
+          "image_url": "$image_url",
+          "custom_data": "$custom_data",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_prices",
+      "description": "List prices with their product id, unit price (amount in the lowest currency unit), billing cycle, trial period, quantity limits and status. Filter by product or by recurring/one-time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only these price ids (pri_...), comma-separated."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only these product ids (pro_...), comma-separated."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: active, archived (default active)."
+          },
+          "recurring": {
+            "type": "boolean",
+            "description": "true: only prices with a billing cycle (subscriptions); false: only one-time prices."
+          },
+          "type": {
+            "type": "string",
+            "description": "standard or custom.",
+            "enum": [
+              "standard",
+              "custom"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "product: also return the related product.",
+            "enum": [
+              "product"
+            ]
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: billing_cycle.frequency, billing_cycle.interval, id, product_id, quantity.maximum, quantity.minimum, status, tax_mode, unit_price.amount, unit_price.currency_code."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/prices",
+        "queryParams": {
+          "id": "$id",
+          "product_id": "$product_id",
+          "status": "$status",
+          "recurring": "$recurring",
+          "type": "$type",
+          "include": "$include",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_price",
+      "description": "Get one price by id (pri_...): product, description, unit price and overrides per country, billing cycle, trial period, tax mode and quantity limits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "price_id": {
+            "type": "string",
+            "description": "Price id, starting with pri_."
+          },
+          "include": {
+            "type": "string",
+            "description": "product: also return the related product.",
+            "enum": [
+              "product"
+            ]
+          }
+        },
+        "required": [
+          "price_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/prices/{price_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "paddle_create_price",
+      "description": "Create a price for a product: amount and currency, optional billing cycle (subscription) and trial, country overrides and quantity limits. Returns the new pri_ id used in checkouts and transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (pro_...) the price belongs to."
+          },
+          "description": {
+            "type": "string",
+            "description": "Internal description, e.g. Monthly (per seat). Not shown to customers."
+          },
+          "unit_price": {
+            "type": "object",
+            "description": "Unit price: {\"amount\": \"1000\", \"currency_code\": \"USD\"}. amount is a string in the lowest currency unit (1000 = 10.00 USD)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name shown to customers at checkout and on invoices."
+          },
+          "billing_cycle": {
+            "type": "object",
+            "description": "Billing cycle for recurring prices: {\"interval\": \"month\", \"frequency\": 1}; interval is day, week, month or year. Leave out for a one-time price."
+          },
+          "trial_period": {
+            "type": "object",
+            "description": "Trial period: {\"interval\": \"day\", \"frequency\": 14}. Requires a billing cycle."
+          },
+          "tax_mode": {
+            "type": "string",
+            "description": "account_setting (default), external (prices exclude tax) or internal (prices include tax).",
+            "enum": [
+              "account_setting",
+              "external",
+              "internal"
+            ]
+          },
+          "unit_price_overrides": {
+            "type": "array",
+            "description": "Prices for specific countries: [{\"country_codes\": [\"DE\", \"AT\"], \"unit_price\": {\"amount\": \"900\", \"currency_code\": \"EUR\"}}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "quantity": {
+            "type": "object",
+            "description": "Allowed quantity per checkout: {\"minimum\": 1, \"maximum\": 100}."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "product_id",
+          "description",
+          "unit_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/prices",
+        "bodyMapping": {
+          "product_id": "$product_id",
+          "description": "$description",
+          "unit_price": "$unit_price",
+          "name": "$name",
+          "billing_cycle": "$billing_cycle",
+          "trial_period": "$trial_period",
+          "tax_mode": "$tax_mode",
+          "unit_price_overrides": "$unit_price_overrides",
+          "quantity": "$quantity",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_update_price",
+      "description": "Update a price: description, name, amount, billing cycle, trial, overrides, quantity limits, custom data, or archive it. Existing subscriptions keep their price until they are updated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "price_id": {
+            "type": "string",
+            "description": "Price id, starting with pri_."
+          },
+          "description": {
+            "type": "string",
+            "description": "New internal description."
+          },
+          "name": {
+            "type": "string",
+            "description": "New customer-facing name."
+          },
+          "unit_price": {
+            "type": "object",
+            "description": "Unit price: {\"amount\": \"1000\", \"currency_code\": \"USD\"}. amount is a string in the lowest currency unit (1000 = 10.00 USD)."
+          },
+          "billing_cycle": {
+            "type": "object",
+            "description": "Billing cycle for recurring prices: {\"interval\": \"month\", \"frequency\": 1}; interval is day, week, month or year. Leave out for a one-time price."
+          },
+          "trial_period": {
+            "type": "object",
+            "description": "Trial period: {\"interval\": \"day\", \"frequency\": 14}. Requires a billing cycle."
+          },
+          "tax_mode": {
+            "type": "string",
+            "description": "account_setting (default), external (prices exclude tax) or internal (prices include tax).",
+            "enum": [
+              "account_setting",
+              "external",
+              "internal"
+            ]
+          },
+          "unit_price_overrides": {
+            "type": "array",
+            "description": "Prices for specific countries: [{\"country_codes\": [\"DE\", \"AT\"], \"unit_price\": {\"amount\": \"900\", \"currency_code\": \"EUR\"}}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "quantity": {
+            "type": "object",
+            "description": "Allowed quantity per checkout: {\"minimum\": 1, \"maximum\": 100}."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status: active or archived.",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "price_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/prices/{price_id}",
+        "bodyMapping": {
+          "description": "$description",
+          "name": "$name",
+          "unit_price": "$unit_price",
+          "billing_cycle": "$billing_cycle",
+          "trial_period": "$trial_period",
+          "tax_mode": "$tax_mode",
+          "unit_price_overrides": "$unit_price_overrides",
+          "quantity": "$quantity",
+          "status": "$status",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_discounts",
+      "description": "List discounts with code, type (flat, flat_per_seat, percentage), amount, recurring settings, usage limit, times used, expiry and status. Filter by code or status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only these discount ids (dsc_...), comma-separated."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only these discount codes, comma-separated."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: active, archived, expired, used."
+          },
+          "mode": {
+            "type": "string",
+            "description": "standard (catalog) or custom.",
+            "enum": [
+              "standard",
+              "custom"
+            ]
+          },
+          "discount_group_id": {
+            "type": "string",
+            "description": "Only these discount group ids (dsg_...), comma-separated."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: created_at, id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/discounts",
+        "queryParams": {
+          "id": "$id",
+          "code": "$code",
+          "status": "$status",
+          "mode": "$mode",
+          "discount_group_id": "$discount_group_id",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_discount",
+      "description": "Get one discount by id (dsc_...): code, type, amount, currency, whether it recurs and for how many intervals, usage limit, times used, restrictions and expiry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discount_id": {
+            "type": "string",
+            "description": "Discount id, starting with dsc_."
+          }
+        },
+        "required": [
+          "discount_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/discounts/{discount_id}"
+      }
+    },
+    {
+      "name": "paddle_create_discount",
+      "description": "Create a discount: percentage or flat amount, optional checkout code, recurring behaviour, usage limit, product or price restrictions and expiry. Returns the new dsc_ id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Internal description, not shown to customers."
+          },
+          "type": {
+            "type": "string",
+            "description": "flat (fixed amount off the total), flat_per_seat (fixed amount per unit) or percentage.",
+            "enum": [
+              "flat",
+              "flat_per_seat",
+              "percentage"
+            ]
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount as a string: a percentage such as \"10\" or \"12.5\" for percentage, otherwise the lowest currency unit (500 = 5.00)."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency for flat and flat_per_seat discounts, e.g. USD or EUR."
+          },
+          "code": {
+            "type": "string",
+            "description": "Code customers enter at checkout (letters and numbers, up to 32). Leave out for a discount you only apply through the API."
+          },
+          "enabled_for_checkout": {
+            "type": "boolean",
+            "description": "Whether customers can enter the code at checkout."
+          },
+          "recur": {
+            "type": "boolean",
+            "description": "Whether the discount applies to recurring renewals as well as the first payment."
+          },
+          "maximum_recurring_intervals": {
+            "type": "integer",
+            "description": "With recur: on how many renewals it applies; leave out for forever."
+          },
+          "usage_limit": {
+            "type": "integer",
+            "description": "How many times the discount can be redeemed in total."
+          },
+          "restrict_to": {
+            "type": "array",
+            "description": "Only these product or price ids (pro_..., pri_...).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "Expiry as RFC 3339 date-time, e.g. 2026-12-31T23:59:59Z."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "description",
+          "type",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/discounts",
+        "bodyMapping": {
+          "description": "$description",
+          "type": "$type",
+          "amount": "$amount",
+          "currency_code": "$currency_code",
+          "code": "$code",
+          "enabled_for_checkout": "$enabled_for_checkout",
+          "recur": "$recur",
+          "maximum_recurring_intervals": "$maximum_recurring_intervals",
+          "usage_limit": "$usage_limit",
+          "restrict_to": "$restrict_to",
+          "expires_at": "$expires_at",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_update_discount",
+      "description": "Update a discount: amount, code, recurring settings, limits, restrictions, expiry, custom data, or archive it with status archived. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discount_id": {
+            "type": "string",
+            "description": "Discount id, starting with dsc_."
+          },
+          "description": {
+            "type": "string",
+            "description": "Internal description, not shown to customers."
+          },
+          "type": {
+            "type": "string",
+            "description": "flat (fixed amount off the total), flat_per_seat (fixed amount per unit) or percentage.",
+            "enum": [
+              "flat",
+              "flat_per_seat",
+              "percentage"
+            ]
+          },
+          "amount": {
+            "type": "string",
+            "description": "Amount as a string: a percentage such as \"10\" or \"12.5\" for percentage, otherwise the lowest currency unit (500 = 5.00)."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency for flat and flat_per_seat discounts, e.g. USD or EUR."
+          },
+          "code": {
+            "type": "string",
+            "description": "Code customers enter at checkout (letters and numbers, up to 32). Leave out for a discount you only apply through the API."
+          },
+          "enabled_for_checkout": {
+            "type": "boolean",
+            "description": "Whether customers can enter the code at checkout."
+          },
+          "recur": {
+            "type": "boolean",
+            "description": "Whether the discount applies to recurring renewals as well as the first payment."
+          },
+          "maximum_recurring_intervals": {
+            "type": "integer",
+            "description": "With recur: on how many renewals it applies; leave out for forever."
+          },
+          "usage_limit": {
+            "type": "integer",
+            "description": "How many times the discount can be redeemed in total."
+          },
+          "restrict_to": {
+            "type": "array",
+            "description": "Only these product or price ids (pro_..., pri_...).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "Expiry as RFC 3339 date-time, e.g. 2026-12-31T23:59:59Z."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status: active or archived.",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          }
+        },
+        "required": [
+          "discount_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/discounts/{discount_id}",
+        "bodyMapping": {
+          "description": "$description",
+          "type": "$type",
+          "amount": "$amount",
+          "currency_code": "$currency_code",
+          "code": "$code",
+          "enabled_for_checkout": "$enabled_for_checkout",
+          "recur": "$recur",
+          "maximum_recurring_intervals": "$maximum_recurring_intervals",
+          "usage_limit": "$usage_limit",
+          "restrict_to": "$restrict_to",
+          "expires_at": "$expires_at",
+          "custom_data": "$custom_data",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_customers",
+      "description": "List customers with name, email, locale, marketing consent and status. Search by email or text; ids start with ctm_. Paged with after and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only these customer ids (ctm_...), comma-separated."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only these email addresses (exact match), comma-separated."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search over id, name and email."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: active, archived (default active)."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "id": "$id",
+          "email": "$email",
+          "search": "$search",
+          "status": "$status",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_customer",
+      "description": "Get one customer by id (ctm_...): name, email, locale, marketing consent, status, custom data and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "paddle_create_customer",
+      "description": "Create a customer by email (unique per account) with optional name, locale and custom data. Add addresses and businesses afterwards. Returns the new ctm_ id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address, unique among your customers."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full name."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale for emails and invoices, e.g. en or de (default en)."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "email": "$email",
+          "name": "$name",
+          "locale": "$locale",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_update_customer",
+      "description": "Update a customer: email, name, locale, custom data, or archive it with status archived. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "email": {
+            "type": "string",
+            "description": "New email address."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Locale, e.g. en or de."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status: active or archived.",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/customers/{customer_id}",
+        "bodyMapping": {
+          "email": "$email",
+          "name": "$name",
+          "locale": "$locale",
+          "status": "$status",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_customer_addresses",
+      "description": "List the addresses saved for a customer (add_... ids): country, postal code, region, city and lines. Transactions and subscriptions point to an address for tax.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: active, archived (default active)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}/addresses",
+        "queryParams": {
+          "status": "$status",
+          "search": "$search",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_create_customer_address",
+      "description": "Add an address to a customer. Only the country is required, but US and CA need a postal code for tax. Returns the new add_ id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Two-letter ISO 3166 country code, e.g. US or DE."
+          },
+          "description": {
+            "type": "string",
+            "description": "Label for the address, e.g. Head office."
+          },
+          "first_line": {
+            "type": "string",
+            "description": "First address line."
+          },
+          "second_line": {
+            "type": "string",
+            "description": "Second address line."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "ZIP or postal code; required for some countries such as US and CA."
+          },
+          "region": {
+            "type": "string",
+            "description": "State, county or region."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "customer_id",
+          "country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/addresses",
+        "bodyMapping": {
+          "country_code": "$country_code",
+          "description": "$description",
+          "first_line": "$first_line",
+          "second_line": "$second_line",
+          "city": "$city",
+          "postal_code": "$postal_code",
+          "region": "$region",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_update_customer_address",
+      "description": "Update a customer address: lines, city, postal code, region, country, custom data, or archive it. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "Address id, starting with add_."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Two-letter ISO 3166 country code, e.g. US or DE."
+          },
+          "description": {
+            "type": "string",
+            "description": "Label for the address, e.g. Head office."
+          },
+          "first_line": {
+            "type": "string",
+            "description": "First address line."
+          },
+          "second_line": {
+            "type": "string",
+            "description": "Second address line."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "ZIP or postal code; required for some countries such as US and CA."
+          },
+          "region": {
+            "type": "string",
+            "description": "State, county or region."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status: active or archived.",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          }
+        },
+        "required": [
+          "address_id",
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/customers/{customer_id}/addresses/{address_id}",
+        "bodyMapping": {
+          "country_code": "$country_code",
+          "description": "$description",
+          "first_line": "$first_line",
+          "second_line": "$second_line",
+          "city": "$city",
+          "postal_code": "$postal_code",
+          "region": "$region",
+          "custom_data": "$custom_data",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_customer_businesses",
+      "description": "List the businesses saved for a customer (biz_... ids): company name, company number, tax identifier (VAT number) and contacts, used for B2B invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: active, archived (default active)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}/businesses",
+        "queryParams": {
+          "status": "$status",
+          "search": "$search",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_create_customer_business",
+      "description": "Add a business to a customer for B2B billing: name, company number, VAT or tax id and invoice contacts. Returns the new biz_ id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "company_number": {
+            "type": "string",
+            "description": "Company registration number."
+          },
+          "tax_identifier": {
+            "type": "string",
+            "description": "Tax or VAT number, e.g. DE123456789; Paddle validates it and applies reverse charge where it can."
+          },
+          "contacts": {
+            "type": "array",
+            "description": "Invoice contacts: [{\"name\": \"Ana\", \"email\": \"ana@example.com\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "customer_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/businesses",
+        "bodyMapping": {
+          "name": "$name",
+          "company_number": "$company_number",
+          "tax_identifier": "$tax_identifier",
+          "contacts": "$contacts",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_update_customer_business",
+      "description": "Update a customer business: name, company number, tax identifier, contacts, custom data, or archive it. Only the fields passed change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Business id, starting with biz_."
+          },
+          "name": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "company_number": {
+            "type": "string",
+            "description": "Company registration number."
+          },
+          "tax_identifier": {
+            "type": "string",
+            "description": "Tax or VAT number, e.g. DE123456789; Paddle validates it and applies reverse charge where it can."
+          },
+          "contacts": {
+            "type": "array",
+            "description": "Invoice contacts: [{\"name\": \"Ana\", \"email\": \"ana@example.com\"}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by status: active or archived.",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          }
+        },
+        "required": [
+          "business_id",
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/customers/{customer_id}/businesses/{business_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "company_number": "$company_number",
+          "tax_identifier": "$tax_identifier",
+          "contacts": "$contacts",
+          "custom_data": "$custom_data",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_customer_credit_balances",
+      "description": "Credit balances of a customer per currency: available, reserved and used credit created by adjustments (credits) on their subscriptions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Only this currency, e.g. USD."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}/credit-balances",
+        "queryParams": {
+          "currency_code": "$currency_code"
+        }
+      }
+    },
+    {
+      "name": "paddle_create_customer_portal_session",
+      "description": "Create authenticated links to the Paddle customer portal for a customer, where they can update payment methods, see invoices and cancel. Optionally deep links for given subscriptions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, starting with ctm_."
+          },
+          "subscription_ids": {
+            "type": "array",
+            "description": "Subscription ids (sub_...) to return deep links for (update payment method, cancel).",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers/{customer_id}/portal-sessions",
+        "bodyMapping": {
+          "subscription_ids": "$subscription_ids"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_subscriptions",
+      "description": "List subscriptions with status, customer, address, items (price and quantity), currency, billing period, next billing date and any scheduled change (pause, cancel, resume).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only these subscription ids (sub_...), comma-separated."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only these customer ids (ctm_...), comma-separated."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "Only these address ids (add_...), comma-separated."
+          },
+          "price_id": {
+            "type": "string",
+            "description": "Only these price ids (pri_...), comma-separated."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: active, canceled, past_due, paused, trialing."
+          },
+          "collection_mode": {
+            "type": "string",
+            "description": "automatic (card or wallet) or manual (invoiced).",
+            "enum": [
+              "automatic",
+              "manual"
+            ]
+          },
+          "scheduled_change_action": {
+            "type": "string",
+            "description": "Comma-separated scheduled change actions: cancel, pause, resume."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions",
+        "queryParams": {
+          "id": "$id",
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "price_id": "$price_id",
+          "status": "$status",
+          "collection_mode": "$collection_mode",
+          "scheduled_change_action": "$scheduled_change_action",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_subscription",
+      "description": "Get one subscription by id (sub_...): status, customer, items, discount, billing cycle and current period, next billing date, scheduled change and management URLs. include next_transaction previews the next charge.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id, starting with sub_."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated: next_transaction (preview of the next renewal) and/or recurring_transaction_details."
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions/{subscription_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "paddle_preview_subscription_update",
+      "description": "Preview what an update to a subscription would charge or credit, without changing it: immediate transaction, next transaction and the resulting subscription. Same fields as paddle_update_subscription.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id, starting with sub_."
+          },
+          "items": {
+            "type": "array",
+            "description": "The complete new list of items: [{\"price_id\": \"pri_...\", \"quantity\": 1}]. Items left out are removed.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "proration_billing_mode": {
+            "type": "string",
+            "description": "How to bill the change: prorated_immediately, prorated_next_billing_period, full_immediately, full_next_billing_period or do_not_bill. Required when items change.",
+            "enum": [
+              "prorated_immediately",
+              "prorated_next_billing_period",
+              "full_immediately",
+              "full_next_billing_period",
+              "do_not_bill"
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Move the subscription to this customer (ctm_...)."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "New address id (add_...)."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "New business id (biz_...); null removes it."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "New currency, e.g. EUR (manual collection allows USD, EUR, GBP)."
+          },
+          "next_billed_at": {
+            "type": "string",
+            "description": "New next billing date-time (RFC 3339)."
+          },
+          "discount": {
+            "type": "object",
+            "description": "Apply a discount: {\"id\": \"dsc_...\", \"effective_from\": \"next_billing_period\"}; null removes the discount."
+          },
+          "collection_mode": {
+            "type": "string",
+            "description": "automatic or manual.",
+            "enum": [
+              "automatic",
+              "manual"
+            ]
+          },
+          "billing_details": {
+            "type": "object",
+            "description": "Invoice settings for manual collection: {\"payment_terms\": {\"interval\": \"day\", \"frequency\": 14}, \"purchase_order_number\": \"PO-1\"}."
+          },
+          "scheduled_change": {
+            "type": "object",
+            "description": "Pass null to remove a scheduled pause, resume or cancellation; no other value is accepted."
+          },
+          "on_payment_failure": {
+            "type": "string",
+            "description": "prevent_change (default) or apply_change when the immediate charge fails.",
+            "enum": [
+              "prevent_change",
+              "apply_change"
+            ]
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/subscriptions/{subscription_id}/preview",
+        "bodyMapping": {
+          "items": "$items",
+          "proration_billing_mode": "$proration_billing_mode",
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "business_id": "$business_id",
+          "currency_code": "$currency_code",
+          "next_billed_at": "$next_billed_at",
+          "discount": "$discount",
+          "collection_mode": "$collection_mode",
+          "billing_details": "$billing_details",
+          "scheduled_change": "$scheduled_change",
+          "on_payment_failure": "$on_payment_failure",
+          "custom_data": "$custom_data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "paddle_update_subscription",
+      "description": "Update a subscription: change items or quantities (upgrade, downgrade, add-ons) with a proration mode, apply a discount, change billing date, address, collection mode or remove a scheduled change. May charge the customer at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id, starting with sub_."
+          },
+          "items": {
+            "type": "array",
+            "description": "The complete new list of items: [{\"price_id\": \"pri_...\", \"quantity\": 1}]. Items left out are removed.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "proration_billing_mode": {
+            "type": "string",
+            "description": "How to bill the change: prorated_immediately, prorated_next_billing_period, full_immediately, full_next_billing_period or do_not_bill. Required when items change.",
+            "enum": [
+              "prorated_immediately",
+              "prorated_next_billing_period",
+              "full_immediately",
+              "full_next_billing_period",
+              "do_not_bill"
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Move the subscription to this customer (ctm_...)."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "New address id (add_...)."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "New business id (biz_...); null removes it."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "New currency, e.g. EUR (manual collection allows USD, EUR, GBP)."
+          },
+          "next_billed_at": {
+            "type": "string",
+            "description": "New next billing date-time (RFC 3339)."
+          },
+          "discount": {
+            "type": "object",
+            "description": "Apply a discount: {\"id\": \"dsc_...\", \"effective_from\": \"next_billing_period\"}; null removes the discount."
+          },
+          "collection_mode": {
+            "type": "string",
+            "description": "automatic or manual.",
+            "enum": [
+              "automatic",
+              "manual"
+            ]
+          },
+          "billing_details": {
+            "type": "object",
+            "description": "Invoice settings for manual collection: {\"payment_terms\": {\"interval\": \"day\", \"frequency\": 14}, \"purchase_order_number\": \"PO-1\"}."
+          },
+          "scheduled_change": {
+            "type": "object",
+            "description": "Pass null to remove a scheduled pause, resume or cancellation; no other value is accepted."
+          },
+          "on_payment_failure": {
+            "type": "string",
+            "description": "prevent_change (default) or apply_change when the immediate charge fails.",
+            "enum": [
+              "prevent_change",
+              "apply_change"
+            ]
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/subscriptions/{subscription_id}",
+        "bodyMapping": {
+          "items": "$items",
+          "proration_billing_mode": "$proration_billing_mode",
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "business_id": "$business_id",
+          "currency_code": "$currency_code",
+          "next_billed_at": "$next_billed_at",
+          "discount": "$discount",
+          "collection_mode": "$collection_mode",
+          "billing_details": "$billing_details",
+          "scheduled_change": "$scheduled_change",
+          "on_payment_failure": "$on_payment_failure",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_pause_subscription",
+      "description": "Pause a subscription at the end of the billing period (default) or immediately, optionally with a date to resume automatically. While paused nothing is billed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id, starting with sub_."
+          },
+          "effective_from": {
+            "type": "string",
+            "description": "next_billing_period (default, at the end of the paid period) or immediately.",
+            "enum": [
+              "next_billing_period",
+              "immediately"
+            ]
+          },
+          "resume_at": {
+            "type": "string",
+            "description": "Resume automatically at this RFC 3339 date-time; leave out to pause until resumed."
+          },
+          "on_resume": {
+            "type": "string",
+            "description": "continue_existing_billing_period (default) or start_new_billing_period when it resumes.",
+            "enum": [
+              "continue_existing_billing_period",
+              "start_new_billing_period"
+            ]
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions/{subscription_id}/pause",
+        "bodyMapping": {
+          "effective_from": "$effective_from",
+          "resume_at": "$resume_at",
+          "on_resume": "$on_resume"
+        }
+      }
+    },
+    {
+      "name": "paddle_resume_subscription",
+      "description": "Resume a paused subscription now (effective_from immediately) or at a given date-time, or change the date of a scheduled resume. Resuming may start billing at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id, starting with sub_."
+          },
+          "effective_from": {
+            "type": "string",
+            "description": "immediately, or an RFC 3339 date-time in the future."
+          },
+          "on_resume": {
+            "type": "string",
+            "description": "continue_existing_billing_period (default) or start_new_billing_period.",
+            "enum": [
+              "continue_existing_billing_period",
+              "start_new_billing_period"
+            ]
+          }
+        },
+        "required": [
+          "subscription_id",
+          "effective_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions/{subscription_id}/resume",
+        "bodyMapping": {
+          "effective_from": "$effective_from",
+          "on_resume": "$on_resume"
+        }
+      }
+    },
+    {
+      "name": "paddle_cancel_subscription",
+      "description": "Cancel a subscription at the end of the billing period (default, can be undone by removing the scheduled change) or immediately (final). Show the user the subscription first and wait for a yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id, starting with sub_."
+          },
+          "effective_from": {
+            "type": "string",
+            "description": "next_billing_period (default, at the end of the paid period) or immediately.",
+            "enum": [
+              "next_billing_period",
+              "immediately"
+            ]
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions/{subscription_id}/cancel",
+        "bodyMapping": {
+          "effective_from": "$effective_from"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "paddle_activate_subscription",
+      "description": "End the trial of a trialing subscription now and start billing it: the first payment is collected immediately. Only for trialing subscriptions with automatic collection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id, starting with sub_."
+          }
+        },
+        "required": [
+          "subscription_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions/{subscription_id}/activate"
+      }
+    },
+    {
+      "name": "paddle_create_subscription_charge",
+      "description": "Bill a one-time charge on a subscription (e.g. extra seats or a setup fee), now or with the next renewal. Charges the saved payment method; installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription id, starting with sub_."
+          },
+          "effective_from": {
+            "type": "string",
+            "description": "next_billing_period (default, at the end of the paid period) or immediately.",
+            "enum": [
+              "next_billing_period",
+              "immediately"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "description": "Items to charge: [{\"price_id\": \"pri_...\", \"quantity\": 1}] (one-time prices or inline price objects).",
+            "items": {
+              "type": "object"
+            }
+          },
+          "on_payment_failure": {
+            "type": "string",
+            "description": "prevent_change (default) or apply_change.",
+            "enum": [
+              "prevent_change",
+              "apply_change"
+            ]
+          }
+        },
+        "required": [
+          "subscription_id",
+          "effective_from",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/subscriptions/{subscription_id}/charge",
+        "bodyMapping": {
+          "effective_from": "$effective_from",
+          "items": "$items",
+          "on_payment_failure": "$on_payment_failure"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_transactions",
+      "description": "List transactions (checkouts, renewals, invoices) with status, customer, subscription, items, totals in the lowest currency unit, invoice number and billed date. Filter by customer, subscription, status, invoice number or date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only these transaction ids (txn_...), comma-separated."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only these customer ids (ctm_...), comma-separated."
+          },
+          "subscription_id": {
+            "type": "string",
+            "description": "Only these subscription ids (sub_...), comma-separated."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Only these invoice numbers, comma-separated."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: draft, ready, billed, paid, completed, canceled, past_due."
+          },
+          "collection_mode": {
+            "type": "string",
+            "description": "automatic or manual.",
+            "enum": [
+              "automatic",
+              "manual"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "description": "Comma-separated origins: api, subscription_charge, subscription_payment_method_change, subscription_recurring, subscription_update, web."
+          },
+          "billed_from": {
+            "type": "string",
+            "description": "Billed at or after this RFC 3339 date-time."
+          },
+          "billed_to": {
+            "type": "string",
+            "description": "Billed before this RFC 3339 date-time."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created at or after this RFC 3339 date-time."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created before this RFC 3339 date-time."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Updated at or after this RFC 3339 date-time."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Updated before this RFC 3339 date-time."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related entities to include: address, adjustments, adjustments_totals, available_payment_methods, business, customer, discount."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: billed_at, created_at, id, updated_at."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "id": "$id",
+          "customer_id": "$customer_id",
+          "subscription_id": "$subscription_id",
+          "invoice_number": "$invoice_number",
+          "status": "$status",
+          "collection_mode": "$collection_mode",
+          "origin": "$origin",
+          "include": "$include",
+          "order_by": "$order_by",
+          "billed_at[GTE]": "$billed_from",
+          "billed_at[LT]": "$billed_to",
+          "created_at[GTE]": "$created_from",
+          "created_at[LT]": "$created_to",
+          "updated_at[GTE]": "$updated_from",
+          "updated_at[LT]": "$updated_to",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_transaction",
+      "description": "Get one transaction by id (txn_...): status, items, totals and tax breakdown (details.totals, amounts in the lowest currency unit), payments with method and error codes, invoice number and checkout URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction id, starting with txn_."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related entities to include: address, adjustments, adjustments_totals, available_payment_methods, business, customer, discount."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}",
+        "queryParams": {
+          "include": "$include"
+        }
+      }
+    },
+    {
+      "name": "paddle_create_transaction",
+      "description": "Create a transaction: a draft or ready checkout for a customer to pay (returns checkout.url), or an invoice for manual collection (status billed). Amounts follow the prices used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Items: [{\"price_id\": \"pri_...\", \"quantity\": 1}], or a non-catalog price object instead of price_id.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (ctm_...)."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "Address id (add_...) of that customer."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Business id (biz_...) of that customer."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency, e.g. USD or EUR."
+          },
+          "collection_mode": {
+            "type": "string",
+            "description": "automatic (the customer pays in a checkout) or manual (Paddle sends an invoice).",
+            "enum": [
+              "automatic",
+              "manual"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Leave out for draft or ready; billed issues an invoice for manual collection and cannot be undone.",
+            "enum": [
+              "billed",
+              "canceled"
+            ]
+          },
+          "discount_id": {
+            "type": "string",
+            "description": "Discount id (dsc_...) to apply."
+          },
+          "billing_details": {
+            "type": "object",
+            "description": "For manual collection: {\"enable_checkout\": true, \"payment_terms\": {\"interval\": \"day\", \"frequency\": 14}, \"purchase_order_number\": \"PO-1\"}."
+          },
+          "billing_period": {
+            "type": "object",
+            "description": "Service period shown on the invoice: {\"starts_at\": \"2026-11-01T00:00:00Z\", \"ends_at\": \"2026-12-01T00:00:00Z\"}."
+          },
+          "checkout": {
+            "type": "object",
+            "description": "{\"url\": \"https://example.com/pay\"}: your approved checkout page for the payment link."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related entities to include: address, adjustments, adjustments_totals, available_payment_methods, business, customer, discount."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions",
+        "queryParams": {
+          "include": "$include"
+        },
+        "bodyMapping": {
+          "items": "$items",
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "business_id": "$business_id",
+          "currency_code": "$currency_code",
+          "collection_mode": "$collection_mode",
+          "status": "$status",
+          "discount_id": "$discount_id",
+          "billing_details": "$billing_details",
+          "billing_period": "$billing_period",
+          "checkout": "$checkout",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_update_transaction",
+      "description": "Update a draft or ready transaction: items, customer, address, business, currency, discount, billing details, or set status billed or canceled. Billed and completed transactions can no longer change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction id, starting with txn_."
+          },
+          "items": {
+            "type": "array",
+            "description": "Items: [{\"price_id\": \"pri_...\", \"quantity\": 1}], or a non-catalog price object instead of price_id.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (ctm_...)."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "Address id (add_...) of that customer."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Business id (biz_...) of that customer."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency, e.g. USD or EUR."
+          },
+          "collection_mode": {
+            "type": "string",
+            "description": "automatic (the customer pays in a checkout) or manual (Paddle sends an invoice).",
+            "enum": [
+              "automatic",
+              "manual"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Leave out for draft or ready; billed issues an invoice for manual collection and cannot be undone.",
+            "enum": [
+              "billed",
+              "canceled"
+            ]
+          },
+          "discount_id": {
+            "type": "string",
+            "description": "Discount id (dsc_...) to apply."
+          },
+          "billing_details": {
+            "type": "object",
+            "description": "For manual collection: {\"enable_checkout\": true, \"payment_terms\": {\"interval\": \"day\", \"frequency\": 14}, \"purchase_order_number\": \"PO-1\"}."
+          },
+          "billing_period": {
+            "type": "object",
+            "description": "Service period shown on the invoice: {\"starts_at\": \"2026-11-01T00:00:00Z\", \"ends_at\": \"2026-12-01T00:00:00Z\"}."
+          },
+          "checkout": {
+            "type": "object",
+            "description": "{\"url\": \"https://example.com/pay\"}: your approved checkout page for the payment link."
+          },
+          "custom_data": {
+            "type": "object",
+            "description": "Your own key-value data stored on the entity, e.g. {\"crm_id\": \"123\"}."
+          },
+          "include": {
+            "type": "string",
+            "description": "Comma-separated related entities to include: address, adjustments, adjustments_totals, available_payment_methods, business, customer, discount."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/transactions/{transaction_id}",
+        "queryParams": {
+          "include": "$include"
+        },
+        "bodyMapping": {
+          "items": "$items",
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "business_id": "$business_id",
+          "currency_code": "$currency_code",
+          "collection_mode": "$collection_mode",
+          "status": "$status",
+          "discount_id": "$discount_id",
+          "billing_details": "$billing_details",
+          "billing_period": "$billing_period",
+          "checkout": "$checkout",
+          "custom_data": "$custom_data"
+        }
+      }
+    },
+    {
+      "name": "paddle_preview_transaction",
+      "description": "Preview a transaction without creating it: line items, tax, discounts and totals for given prices, customer or location. Nothing is saved; use it to quote a price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Items: [{\"price_id\": \"pri_...\", \"quantity\": 1}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (ctm_...)."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "Address id (add_...) for the tax location."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Business id (biz_...)."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency, e.g. EUR."
+          },
+          "discount_id": {
+            "type": "string",
+            "description": "Discount id (dsc_...)."
+          },
+          "address": {
+            "type": "object",
+            "description": "Tax location without a saved address: {\"country_code\": \"DE\", \"postal_code\": \"10115\"}."
+          },
+          "customer_ip_address": {
+            "type": "string",
+            "description": "Customer IP address, used to estimate the tax location."
+          },
+          "ignore_trials": {
+            "type": "boolean",
+            "description": "true: calculate as if trial periods did not apply."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/preview",
+        "bodyMapping": {
+          "items": "$items",
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "business_id": "$business_id",
+          "currency_code": "$currency_code",
+          "discount_id": "$discount_id",
+          "address": "$address",
+          "customer_ip_address": "$customer_ip_address",
+          "ignore_trials": "$ignore_trials"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "paddle_get_transaction_invoice",
+      "description": "Get a temporary link to the PDF invoice of a billed or completed transaction. The returned data.url expires after about an hour; share it right away.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction id, starting with txn_."
+          },
+          "disposition": {
+            "type": "string",
+            "description": "attachment (download, default) or inline (open in the browser).",
+            "enum": [
+              "attachment",
+              "inline"
+            ]
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{transaction_id}/invoice",
+        "queryParams": {
+          "disposition": "$disposition"
+        }
+      }
+    },
+    {
+      "name": "paddle_preview_prices",
+      "description": "Localized price preview for a list of prices: subtotal, tax, discount and total per item in the customer's currency and country, as on a pricing page. Nothing is saved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Items: [{\"price_id\": \"pri_...\", \"quantity\": 1}].",
+            "items": {
+              "type": "object"
+            }
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (ctm_...)."
+          },
+          "address_id": {
+            "type": "string",
+            "description": "Address id (add_...) for the tax location."
+          },
+          "business_id": {
+            "type": "string",
+            "description": "Business id (biz_...)."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency, e.g. EUR."
+          },
+          "discount_id": {
+            "type": "string",
+            "description": "Discount id (dsc_...)."
+          },
+          "address": {
+            "type": "object",
+            "description": "Tax location without a saved address: {\"country_code\": \"DE\", \"postal_code\": \"10115\"}."
+          },
+          "customer_ip_address": {
+            "type": "string",
+            "description": "Customer IP address, used to estimate the tax location."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pricing-preview",
+        "bodyMapping": {
+          "items": "$items",
+          "customer_id": "$customer_id",
+          "address_id": "$address_id",
+          "business_id": "$business_id",
+          "currency_code": "$currency_code",
+          "discount_id": "$discount_id",
+          "address": "$address",
+          "customer_ip_address": "$customer_ip_address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "paddle_list_adjustments",
+      "description": "List adjustments (refunds, credits, chargebacks) with action, status (pending_approval, approved, rejected, reversed), transaction, subscription, customer, reason and totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only these adjustment ids (adj_...), comma-separated."
+          },
+          "action": {
+            "type": "string",
+            "description": "Comma-separated actions: credit, refund, chargeback, chargeback_reverse, chargeback_warning, chargeback_warning_reverse, credit_reverse."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only these customer ids (ctm_...), comma-separated."
+          },
+          "subscription_id": {
+            "type": "string",
+            "description": "Only these subscription ids (sub_...), comma-separated."
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "Only these transaction ids (txn_...), comma-separated."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: pending_approval, approved, rejected, reversed."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adjustments",
+        "queryParams": {
+          "id": "$id",
+          "action": "$action",
+          "customer_id": "$customer_id",
+          "subscription_id": "$subscription_id",
+          "transaction_id": "$transaction_id",
+          "status": "$status",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_create_adjustment",
+      "description": "Refund or credit a billed or completed transaction, fully or for some items. Refunds go to Paddle for approval (status pending_approval) and return money to the customer; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "refund (money back to the customer) or credit (credit balance for manually collected transactions).",
+            "enum": [
+              "refund",
+              "credit"
+            ]
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction id (txn_...) to adjust."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why, e.g. Customer requested refund. Shown in Paddle."
+          },
+          "type": {
+            "type": "string",
+            "description": "full (the whole transaction, default when items are left out) or partial.",
+            "enum": [
+              "full",
+              "partial"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "description": "For partial: [{\"item_id\": \"txnitm_...\", \"type\": \"partial\", \"amount\": \"500\"}] or type full per item. item_id from the transaction details.line_items[].id.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tax_mode": {
+            "type": "string",
+            "description": "internal (default, amounts include tax) or external.",
+            "enum": [
+              "internal",
+              "external"
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "transaction_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/adjustments",
+        "bodyMapping": {
+          "action": "$action",
+          "transaction_id": "$transaction_id",
+          "reason": "$reason",
+          "type": "$type",
+          "items": "$items",
+          "tax_mode": "$tax_mode"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_adjustment_credit_note",
+      "description": "Get a temporary link to the PDF credit note of an approved adjustment. The returned data.url expires after about an hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "adjustment_id": {
+            "type": "string",
+            "description": "Adjustment id, starting with adj_."
+          },
+          "disposition": {
+            "type": "string",
+            "description": "attachment (default) or inline.",
+            "enum": [
+              "attachment",
+              "inline"
+            ]
+          }
+        },
+        "required": [
+          "adjustment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/adjustments/{adjustment_id}/credit-note",
+        "queryParams": {
+          "disposition": "$disposition"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_reports",
+      "description": "List reports you requested with type, status (pending, ready, failed, expired), filters, row count and expiry. Ready reports can be downloaded with paddle_get_report_csv.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: pending, ready, failed, expired."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports",
+        "queryParams": {
+          "status": "$status",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_create_report",
+      "description": "Request a CSV report: transactions, transaction_line_items, adjustments, adjustment_line_items, discounts, products_prices, balance, payout_reconciliation, checkouts or subscriptions, with filters such as a date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Report type.",
+            "enum": [
+              "transactions",
+              "transaction_line_items",
+              "adjustments",
+              "adjustment_line_items",
+              "discounts",
+              "products_prices",
+              "balance",
+              "payout_reconciliation",
+              "checkouts",
+              "subscriptions"
+            ]
+          },
+          "filters": {
+            "type": "array",
+            "description": "Filters: [{\"name\": \"updated_at\", \"operator\": \"gte\", \"value\": \"2026-10-01\"}, {\"name\": \"updated_at\", \"operator\": \"lt\", \"value\": \"2026-11-01\"}, {\"name\": \"status\", \"operator\": null, \"value\": [\"completed\"]}]. Names depend on the type (status, collection_mode, currency_code, origin, action, type, updated_at, ...).",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reports",
+        "bodyMapping": {
+          "type": "$type",
+          "filters": "$filters"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_report",
+      "description": "Get one report by id (rep_...): type, status, filters, number of rows and when it expires. Poll it until status is ready, then call paddle_get_report_csv.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "Report id, starting with rep_."
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report_id}"
+      }
+    },
+    {
+      "name": "paddle_get_report_csv",
+      "description": "Get a temporary download link for a ready report as CSV. The returned data.url expires after a few minutes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "Report id, starting with rep_."
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report_id}/download-url"
+      }
+    },
+    {
+      "name": "paddle_get_revenue_metrics",
+      "description": "Net revenue per day for a date range in the account balance currency, as shown in the Paddle dashboard (amounts in the lowest currency unit).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD (00:00 UTC)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Day after the last day, YYYY-MM-DD; must be on or after from."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metrics/revenue",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "paddle_get_mrr_metrics",
+      "description": "Monthly recurring revenue per day for a date range, as shown in the Paddle dashboard (amounts in the lowest currency unit).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD (00:00 UTC)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Day after the last day, YYYY-MM-DD; must be on or after from."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metrics/monthly-recurring-revenue",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "paddle_get_active_subscribers_metrics",
+      "description": "Number of active subscribers per day for a date range, as shown in the Paddle dashboard metrics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD (00:00 UTC)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Day after the last day, YYYY-MM-DD; must be on or after from."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metrics/active-subscribers",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "paddle_list_event_types",
+      "description": "List the event types Paddle can send (transaction.completed, subscription.canceled, ...) with a description and the API version of each. Needs no ids; useful to check the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/event-types"
+      }
+    },
+    {
+      "name": "paddle_list_events",
+      "description": "List events (what happened in the account): event_type, occurred_at and the full entity in data. Kept for 90 days. Filter by type or time range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "description": "Comma-separated event types, e.g. subscription.canceled,transaction.completed."
+          },
+          "from": {
+            "type": "string",
+            "description": "Occurred at or after this RFC 3339 date-time."
+          },
+          "to": {
+            "type": "string",
+            "description": "Occurred before this RFC 3339 date-time."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events",
+        "queryParams": {
+          "event_type": "$event_type",
+          "from": "$from",
+          "to": "$to",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_list_notification_settings",
+      "description": "List notification destinations (webhook URLs and emails) with their subscribed event types, active flag and API version. Ids start with ntfset_.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notification-settings"
+      }
+    },
+    {
+      "name": "paddle_list_notifications",
+      "description": "List webhook and email notifications sent for events, with status (delivered, failed, needs_retry, not_attempted), times attempted and the destination. Filter by status, destination or time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: delivered, failed, needs_retry, not_attempted."
+          },
+          "notification_setting_id": {
+            "type": "string",
+            "description": "Only these notification setting ids (ntfset_...), comma-separated."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search by event, notification or entity id."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Only notifications for this entity id or event type."
+          },
+          "from": {
+            "type": "string",
+            "description": "Created at or after this RFC 3339 date-time."
+          },
+          "to": {
+            "type": "string",
+            "description": "Created before this RFC 3339 date-time."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort, e.g. id[ASC] or id[DESC] (default id[ASC]). Sortable: id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications",
+        "queryParams": {
+          "status": "$status",
+          "notification_setting_id": "$notification_setting_id",
+          "search": "$search",
+          "filter": "$filter",
+          "from": "$from",
+          "to": "$to",
+          "order_by": "$order_by",
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_get_notification",
+      "description": "Get one notification by id (ntf_...): status, event payload, destination, attempts and last error. Use paddle_list_notification_logs for each delivery attempt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "notification_id": {
+            "type": "string",
+            "description": "Notification id, starting with ntf_."
+          }
+        },
+        "required": [
+          "notification_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications/{notification_id}"
+      }
+    },
+    {
+      "name": "paddle_list_notification_logs",
+      "description": "List the delivery attempts of a notification with the HTTP status and response body your endpoint returned, to debug failing webhooks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "notification_id": {
+            "type": "string",
+            "description": "Notification id, starting with ntf_."
+          },
+          "after": {
+            "type": "string",
+            "description": "Cursor for the next page: the id after which to continue, taken from meta.pagination.next (the after= value)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, 1 to 200 (default 50)."
+          }
+        },
+        "required": [
+          "notification_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/notifications/{notification_id}/logs",
+        "queryParams": {
+          "after": "$after",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "paddle_replay_notification",
+      "description": "Send a notification again to its destination, e.g. after fixing a failing webhook endpoint. Creates a new notification with origin replay.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "notification_id": {
+            "type": "string",
+            "description": "Notification id, starting with ntf_."
+          }
+        },
+        "required": [
+          "notification_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/notifications/{notification_id}/replay"
+      }
+    }
+  ]
+}

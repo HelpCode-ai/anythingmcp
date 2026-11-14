@@ -1,0 +1,1002 @@
+{
+  "slug": "zerion",
+  "name": "Zerion",
+  "aliases": [
+    "Zerion API",
+    "Zerion wallet API"
+  ],
+  "description": "Onchain wallet data from the Zerion API for EVM chains and Solana: portfolio value, token and DeFi positions, decoded transaction history, profit and loss, balance charts, NFTs, token prices and charts, supported chains and gas prices. Read-only.",
+  "region": "intl",
+  "category": "finance",
+  "icon": "zerion",
+  "docsUrl": "https://developers.zerion.io/introduction",
+  "instructions": "## Zerion\nThis connector reads onchain wallet data from the **Zerion API** (`https://api.zerion.io/v1`) for EVM chains and Solana: portfolio value, token and DeFi positions, decoded transactions, profit and loss, balance charts, NFTs, token prices and charts, chains and gas prices. Everything is read-only: nothing is signed or sent, and the swap, webhook-subscription and wallet-set endpoints are not part of this connector.\n\n**Setup (2 minutes)**\n1. Sign up at https://dashboard.zerion.io and create an API key (a free developer plan exists).\n2. Paste the key into `ZERION_API_KEY`. Zerion takes it as HTTP Basic auth: the key is the user name and the password stays empty.\n3. Run `zerion_list_chains` to check the key.\n\n**Workflow**\n- What a wallet holds: `zerion_get_wallet_portfolio` for the totals by type and chain, `zerion_list_wallet_positions` for each token (set `positions: no_filter` to include DeFi positions such as lending, staking and liquidity, or `only_complex` for DeFi only).\n- History: `zerion_list_wallet_transactions` (filter by chain, operation type, token or time), `zerion_get_wallet_chart` for the balance over time, `zerion_get_wallet_pnl` for realized and unrealized gains.\n- NFTs (EVM wallets): `zerion_list_wallet_nft_positions`, `zerion_list_wallet_nft_collections`, `zerion_get_wallet_nft_portfolio`.\n- Tokens: `zerion_list_fungibles` with `search_query` to find a token and its fungible id, then `zerion_get_fungible` or `zerion_get_fungible_chart`; `zerion_get_fungible_by_implementation` when you have a chain and contract address.\n- Chains and fees: `zerion_list_chains`, `zerion_get_chain`, `zerion_list_gas_prices`.\n\n**Reading the answers**: responses follow JSON:API: `data` holds the items, each with `id`, `attributes` and `relationships` (chain and fungible ids). Quantities come as `quantity.float` (human units) next to the raw integer. Values and prices are in the requested `currency` (USD by default). Times in `mined_at` and `updated_at` are ISO 8601; chart points are `[unix_seconds, value]`; time filters (`min_mined_at`, `since`, ...) take Unix milliseconds.\n\n**Paging**: list tools return `links.next` when more items exist. Take the `page[after]` value out of that URL and pass it as `page_after`; stop when `links.next` is missing.\n\n**Filters** that take several values (`chain_ids`, `fungible_ids`, `operation_types`, ...) are comma-separated, without spaces.\n\n**Limits**: requests per second, per day and per month depend on the plan (the free Developer plan allows 2,000 requests a day at 3 per second; see the Dashboard). Positions with `only_complex` or `no_filter`, wallet charts and PnL count toward an advanced quota of 25% of the monthly requests; when it is used up those calls answer 429 while the others keep working. The NFT tools may first answer 202 while a wallet's NFTs are being indexed: wait a few seconds and ask again.\n\n**Errors**: 401 means a wrong key, 400 an invalid address or filter (PnL and transactions also refuse contract and exchange hot-wallet addresses), 429 a rate limit or quota.",
+  "prerequisites": "A Zerion API key from dashboard.zerion.io (the developer plan is free).",
+  "requiredEnvVars": [
+    "ZERION_API_KEY"
+  ],
+  "envVarMeta": {
+    "ZERION_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "dashboard.zerion.io, API keys: the key of your project. It is sent as the Basic auth user name with an empty password.",
+      "link": "https://dashboard.zerion.io",
+      "pattern": "^[A-Za-z0-9_:-]{16,}$",
+      "patternMessage": "Paste only the API key, without spaces, quotes or a Basic prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Zerion refused the API key. Copy it again from dashboard.zerion.io; paste the key itself, not the Base64 Basic header.",
+    "429": "The rate limit or the monthly quota of your Zerion plan is used up. Check usage in the Zerion Dashboard."
+  },
+  "probe": {
+    "tool": "zerion_list_chains"
+  },
+  "connector": {
+    "name": "Zerion API",
+    "type": "REST",
+    "baseUrl": "https://api.zerion.io",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{ZERION_API_KEY}}",
+      "password": ""
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v1/chains/"
+  },
+  "tools": [
+    {
+      "name": "zerion_get_wallet_portfolio",
+      "description": "Total value of a wallet across all chains, split by position type (wallet, deposited, borrowed, locked, staked) and by chain, with the absolute and percent change over 24 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address: an EVM address (0x...) or a Solana address. ENS names are not resolved."
+          },
+          "positions": {
+            "type": "string",
+            "description": "only_simple (default): tokens held directly in the wallet; only_complex: DeFi protocol positions only; no_filter: both. only_complex and no_filter count toward Zerion's advanced-request quota.",
+            "enum": [
+              "only_simple",
+              "only_complex",
+              "no_filter"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/wallets/{address}/portfolio",
+        "queryParams": {
+          "filter[positions]": "$positions",
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "zerion_list_wallet_positions",
+      "description": "Every token and DeFi position of a wallet across chains: name, symbol, chain (relationships.chain.data.id), position type, quantity, price, value and 24 hour change, protocol and dapp for DeFi positions. Sorted by value, highest first. Spam tokens are left out by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address: an EVM address (0x...) or a Solana address. ENS names are not resolved."
+          },
+          "positions": {
+            "type": "string",
+            "description": "only_simple (default): tokens held directly in the wallet; only_complex: DeFi protocol positions only; no_filter: both. only_complex and no_filter count toward Zerion's advanced-request quota.",
+            "enum": [
+              "only_simple",
+              "only_complex",
+              "no_filter"
+            ]
+          },
+          "position_types": {
+            "type": "string",
+            "description": "Only these position types, comma-separated: wallet, deposit, loan, locked, staked, reward, investment."
+          },
+          "chain_ids": {
+            "type": "string",
+            "description": "Only these chains, comma-separated chain ids from zerion_list_chains, e.g. ethereum,base,arbitrum,solana."
+          },
+          "fungible_ids": {
+            "type": "string",
+            "description": "Only these fungible ids, comma-separated (the id from zerion_list_fungibles or a position's fungible_info.id)."
+          },
+          "dapp_ids": {
+            "type": "string",
+            "description": "Only positions in these dapps, comma-separated dapp ids (e.g. aave-v3, uniswap-v3)."
+          },
+          "trash": {
+            "type": "string",
+            "description": "Spam filter: only_non_trash (default) leaves spam out, only_trash shows only spam, no_filter shows both.",
+            "enum": [
+              "only_non_trash",
+              "only_trash",
+              "no_filter"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "value (default) for highest value first, -value for lowest first.",
+            "enum": [
+              "value",
+              "-value"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/wallets/{address}/positions/",
+        "queryParams": {
+          "filter[positions]": "$positions",
+          "filter[position_types]": "$position_types",
+          "filter[chain_ids]": "$chain_ids",
+          "filter[fungible_ids]": "$fungible_ids",
+          "filter[dapp_ids]": "$dapp_ids",
+          "filter[trash]": "$trash",
+          "sort": "$sort",
+          "currency": "$currency"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].attributes.fungible_info.description",
+            "data[*].attributes.fungible_info.icon",
+            "data[*].attributes.fungible_info.implementations",
+            "data[*].attributes.application_metadata.icon",
+            "data[*].attributes.receipt.fungible_info.description",
+            "data[*].attributes.receipt.fungible_info.icon",
+            "data[*].attributes.receipt.fungible_info.implementations"
+          ]
+        }
+      }
+    },
+    {
+      "name": "zerion_list_wallet_transactions",
+      "description": "Decoded transaction history of a wallet across chains, newest first: hash, chain, time (mined_at), operation type (send, receive, trade, deposit, withdraw, approve, mint, ...), status, fee, every transfer with token, direction, quantity and value, and the dapp. Page with page_after from links.next.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address: an EVM address (0x...) or a Solana address. ENS names are not resolved."
+          },
+          "operation_types": {
+            "type": "string",
+            "description": "Only these operation types, comma-separated: approve, bid, burn, claim, delegate, deploy, deposit, execute, mint, receive, revoke, revoke_delegation, send, trade, withdraw."
+          },
+          "asset_types": {
+            "type": "string",
+            "description": "Only transactions moving these asset types, comma-separated: fungible, nft."
+          },
+          "chain_ids": {
+            "type": "string",
+            "description": "Only these chains, comma-separated chain ids from zerion_list_chains, e.g. ethereum,base,arbitrum,solana."
+          },
+          "fungible_ids": {
+            "type": "string",
+            "description": "Only these fungible ids, comma-separated (the id from zerion_list_fungibles or a position's fungible_info.id)."
+          },
+          "fungible_implementations": {
+            "type": "string",
+            "description": "Only these tokens by chain and contract, comma-separated chain_id:address pairs, e.g. ethereum:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48."
+          },
+          "min_mined_at": {
+            "type": "string",
+            "description": "Only transactions mined at or after this time, Unix milliseconds."
+          },
+          "max_mined_at": {
+            "type": "string",
+            "description": "Only transactions mined at or before this time, Unix milliseconds."
+          },
+          "search_query": {
+            "type": "string",
+            "description": "Full-text search, 2 to 64 characters (token, dapp or address)."
+          },
+          "trash": {
+            "type": "string",
+            "description": "Spam filter: no_filter (default) returns all, only_non_trash leaves spam out, only_trash shows only spam.",
+            "enum": [
+              "no_filter",
+              "only_non_trash",
+              "only_trash"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, maximum 100 (default 100)."
+          },
+          "page_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the page[after] value inside links.next of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/wallets/{address}/transactions/",
+        "queryParams": {
+          "filter[operation_types]": "$operation_types",
+          "filter[asset_types]": "$asset_types",
+          "filter[chain_ids]": "$chain_ids",
+          "filter[fungible_ids]": "$fungible_ids",
+          "filter[fungible_implementations]": "$fungible_implementations",
+          "filter[min_mined_at]": "$min_mined_at",
+          "filter[max_mined_at]": "$max_mined_at",
+          "filter[search_query]": "$search_query",
+          "filter[trash]": "$trash",
+          "currency": "$currency",
+          "page[size]": "$page_size",
+          "page[after]": "$page_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].attributes.transfers[*].fungible_info.description",
+            "data[*].attributes.transfers[*].fungible_info.icon",
+            "data[*].attributes.transfers[*].fungible_info.implementations",
+            "data[*].attributes.fee.fungible_info.description",
+            "data[*].attributes.fee.fungible_info.icon",
+            "data[*].attributes.fee.fungible_info.implementations",
+            "data[*].attributes.approvals[*].fungible_info.description",
+            "data[*].attributes.approvals[*].fungible_info.icon",
+            "data[*].attributes.approvals[*].fungible_info.implementations",
+            "data[*].attributes.refund.fungible_info.description",
+            "data[*].attributes.refund.fungible_info.icon",
+            "data[*].attributes.refund.fungible_info.implementations",
+            "data[*].attributes.application_metadata.icon"
+          ]
+        }
+      }
+    },
+    {
+      "name": "zerion_get_wallet_pnl",
+      "description": "Profit and loss of a wallet (FIFO): realized and unrealized gain, total gain, net invested, cost basis, fees, and relative gains in percent. Optionally only some chains or tokens, or sales in a time window. Needs a wallet Zerion tracks (not a token contract or exchange hot wallet).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address: an EVM address (0x...) or a Solana address. ENS names are not resolved."
+          },
+          "chain_ids": {
+            "type": "string",
+            "description": "Only these chains, comma-separated chain ids from zerion_list_chains, e.g. ethereum,base,arbitrum,solana."
+          },
+          "fungible_ids": {
+            "type": "string",
+            "description": "Only these fungible ids, comma-separated (the id from zerion_list_fungibles or a position's fungible_info.id)."
+          },
+          "fungible_implementations": {
+            "type": "string",
+            "description": "Only these tokens by chain and contract, comma-separated chain_id:address pairs, e.g. ethereum:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48."
+          },
+          "since": {
+            "type": "string",
+            "description": "Count only sales since this time, Unix milliseconds."
+          },
+          "till": {
+            "type": "string",
+            "description": "Count only sales until this time, Unix milliseconds."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/wallets/{address}/pnl",
+        "queryParams": {
+          "filter[chain_ids]": "$chain_ids",
+          "filter[fungible_ids]": "$fungible_ids",
+          "filter[fungible_implementations]": "$fungible_implementations",
+          "since": "$since",
+          "till": "$till",
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "zerion_get_wallet_chart",
+      "description": "Balance of a wallet over time for a period: begin_at, end_at and points as [unix_seconds, value]. Optionally only some chains or tokens, or including DeFi positions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet address: an EVM address (0x...) or a Solana address. ENS names are not resolved."
+          },
+          "chart_period": {
+            "type": "string",
+            "description": "Chart period; it sets both the window and the spacing of the points.",
+            "enum": [
+              "hour",
+              "day",
+              "week",
+              "month",
+              "3months",
+              "6months",
+              "year",
+              "5years",
+              "max"
+            ]
+          },
+          "chain_ids": {
+            "type": "string",
+            "description": "Only these chains, comma-separated chain ids from zerion_list_chains, e.g. ethereum,base,arbitrum,solana."
+          },
+          "fungible_ids": {
+            "type": "string",
+            "description": "Only these fungible ids, comma-separated (the id from zerion_list_fungibles or a position's fungible_info.id)."
+          },
+          "exclude_fungible_ids": {
+            "type": "string",
+            "description": "Leave these fungible ids out, comma-separated. Not together with fungible_ids."
+          },
+          "positions": {
+            "type": "string",
+            "description": "only_simple (default): tokens held directly in the wallet; only_complex: DeFi protocol positions only; no_filter: both. only_complex and no_filter count toward Zerion's advanced-request quota.",
+            "enum": [
+              "only_simple",
+              "only_complex",
+              "no_filter"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "address",
+          "chart_period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/wallets/{address}/charts/{chart_period}",
+        "queryParams": {
+          "filter[chain_ids]": "$chain_ids",
+          "filter[fungible_ids]": "$fungible_ids",
+          "filter[exclude_fungible_ids]": "$exclude_fungible_ids",
+          "filter[positions]": "$positions",
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "zerion_list_wallet_nft_positions",
+      "description": "NFTs held by an EVM wallet: token id, collection, name, amount, media and floor price. Page with page_after from links.next.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "EVM wallet address (0x...)."
+          },
+          "chain_ids": {
+            "type": "string",
+            "description": "Only these chains, comma-separated chain ids from zerion_list_chains, e.g. ethereum,base,arbitrum,solana."
+          },
+          "collections_ids": {
+            "type": "string",
+            "description": "Only these collection ids, comma-separated."
+          },
+          "sort": {
+            "type": "string",
+            "description": "created_at or floor_price, with a leading minus for descending.",
+            "enum": [
+              "created_at",
+              "-created_at",
+              "floor_price",
+              "-floor_price"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "Related data to include, comma-separated: nfts, nft_collections, wallet_nft_collections."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, maximum 500 (default 50)."
+          },
+          "page_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the page[after] value inside links.next of the previous answer. Leave empty for the first page."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/wallets/{address}/nft-positions/",
+        "queryParams": {
+          "filter[chain_ids]": "$chain_ids",
+          "filter[collections_ids]": "$collections_ids",
+          "sort": "$sort",
+          "include": "$include",
+          "currency": "$currency",
+          "page[size]": "$page_size",
+          "page[after]": "$page_after"
+        }
+      }
+    },
+    {
+      "name": "zerion_list_wallet_nft_collections",
+      "description": "NFT collections held by an EVM wallet with the number of NFTs and the total floor price per collection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "EVM wallet address (0x...)."
+          },
+          "chain_ids": {
+            "type": "string",
+            "description": "Only these chains, comma-separated chain ids from zerion_list_chains, e.g. ethereum,base,arbitrum,solana."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Order: -max_changed_at, min_changed_at, total_floor_price or -total_floor_price.",
+            "enum": [
+              "-max_changed_at",
+              "min_changed_at",
+              "total_floor_price",
+              "-total_floor_price"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "nft_collections to include the collection details."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/wallets/{address}/nft-collections/",
+        "queryParams": {
+          "filter[chain_ids]": "$chain_ids",
+          "sort": "$sort",
+          "include": "$include",
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "zerion_get_wallet_nft_portfolio",
+      "description": "Total value of the NFTs of an EVM wallet, summed from floor prices across chains.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "EVM wallet address (0x...)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/wallets/{address}/nft-portfolio",
+        "queryParams": {
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "zerion_list_fungibles",
+      "description": "Search and list tokens: name, symbol, price, market cap, supply, price changes over 1, 30, 90 and 365 days, volume, asset class, and the contract per chain (implementations). Use search_query to find a token's fungible id. Page with page_after from links.next.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_query": {
+            "type": "string",
+            "description": "Name, symbol or address to search, 1 to 66 characters."
+          },
+          "implementation_chain_id": {
+            "type": "string",
+            "description": "Only tokens on this chain id."
+          },
+          "implementation_address": {
+            "type": "string",
+            "description": "Only tokens deployed at this contract address."
+          },
+          "fungible_implementations": {
+            "type": "string",
+            "description": "Only these tokens by chain and contract, comma-separated chain_id:address pairs, e.g. ethereum:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48."
+          },
+          "fungible_ids": {
+            "type": "string",
+            "description": "Only these fungible ids, comma-separated (the id from zerion_list_fungibles or a position's fungible_info.id)."
+          },
+          "asset_class": {
+            "type": "string",
+            "description": "Only these asset classes, comma-separated: stablecoin, tokenized_stock, tokenized_treasury, commodity, other_financial, other_non_financial, unknown."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, e.g. -market_data.market_cap (largest first), -market_data.price.percent_change_1d, -market_data.trading_volumes.volume_1d.",
+            "enum": [
+              "-market_data.market_cap",
+              "market_data.market_cap",
+              "-market_data.price.last",
+              "market_data.price.last",
+              "-market_data.price.percent_change_1d",
+              "market_data.price.percent_change_1d",
+              "-market_data.price.percent_change_30d",
+              "market_data.price.percent_change_30d",
+              "-market_data.price.percent_change_90d",
+              "market_data.price.percent_change_90d",
+              "-market_data.price.percent_change_365d",
+              "market_data.price.percent_change_365d",
+              "-market_data.trading_volumes.volume_1d",
+              "market_data.trading_volumes.volume_1d"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, maximum 100 (default 100)."
+          },
+          "page_after": {
+            "type": "string",
+            "description": "Cursor for the next page: the page[after] value inside links.next of the previous answer. Leave empty for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fungibles/",
+        "queryParams": {
+          "filter[search_query]": "$search_query",
+          "filter[implementation_chain_id]": "$implementation_chain_id",
+          "filter[implementation_address]": "$implementation_address",
+          "filter[fungible_implementations]": "$fungible_implementations",
+          "filter[fungible_ids]": "$fungible_ids",
+          "filter[asset_class]": "$asset_class",
+          "sort": "$sort",
+          "currency": "$currency",
+          "page[size]": "$page_size",
+          "page[after]": "$page_after"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].attributes.icon",
+            "data[*].attributes.description"
+          ]
+        }
+      }
+    },
+    {
+      "name": "zerion_get_fungible",
+      "description": "One token by its Zerion fungible id: name, symbol, description, price, market cap, supply, price changes, volume and contracts per chain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fungible_id": {
+            "type": "string",
+            "description": "Zerion fungible id, e.g. eth or the id from zerion_list_fungibles."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "fungible_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fungibles/{fungible_id}",
+        "queryParams": {
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "zerion_get_fungible_by_implementation",
+      "description": "One token by chain and contract address, without knowing its Zerion id: same data as zerion_get_fungible.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "implementation": {
+            "type": "string",
+            "description": "chain_id:address, e.g. ethereum:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48, or just the chain id for its native coin."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "implementation"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fungibles/by-implementation",
+        "queryParams": {
+          "implementation": "$implementation",
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "zerion_get_fungible_chart",
+      "description": "Price chart of a token for a period: begin_at, end_at, stats (first, min, avg, max, last) and points as [unix_seconds, price].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fungible_id": {
+            "type": "string",
+            "description": "Zerion fungible id."
+          },
+          "chart_period": {
+            "type": "string",
+            "description": "Chart period; it sets both the window and the spacing of the points.",
+            "enum": [
+              "hour",
+              "day",
+              "week",
+              "month",
+              "3months",
+              "6months",
+              "year",
+              "5years",
+              "max"
+            ]
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency for values and prices: usd (default), eur, gbp, chf, eth, btc, ...",
+            "enum": [
+              "usd",
+              "eur",
+              "gbp",
+              "chf",
+              "jpy",
+              "cad",
+              "aud",
+              "nzd",
+              "inr",
+              "krw",
+              "cny",
+              "try",
+              "zar",
+              "rub",
+              "eth",
+              "btc"
+            ]
+          }
+        },
+        "required": [
+          "fungible_id",
+          "chart_period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fungibles/{fungible_id}/charts/{chart_period}",
+        "queryParams": {
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "zerion_list_chains",
+      "description": "List the chains Zerion supports: chain id (the value other tools take in chain_ids), name, native token, explorer and flags telling which data (positions, transactions, NFTs) the chain supports.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/chains/"
+      }
+    },
+    {
+      "name": "zerion_get_chain",
+      "description": "One chain by its id: name, native token, explorer and supported features.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chain_id": {
+            "type": "string",
+            "description": "Chain id, e.g. ethereum, base, arbitrum, solana."
+          }
+        },
+        "required": [
+          "chain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/chains/{chain_id}"
+      }
+    },
+    {
+      "name": "zerion_list_gas_prices",
+      "description": "Current gas prices per chain at each speed (slow, standard, fast, ...), by gas type (classic, eip1559, optimistic).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chain_ids": {
+            "type": "string",
+            "description": "Only these chains, comma-separated chain ids from zerion_list_chains, e.g. ethereum,base,arbitrum,solana."
+          },
+          "gas_types": {
+            "type": "string",
+            "description": "Only these gas types, comma-separated: classic, eip1559, optimistic."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/gas-prices/",
+        "queryParams": {
+          "filter[chain_ids]": "$chain_ids",
+          "filter[gas_types]": "$gas_types"
+        }
+      }
+    }
+  ]
+}

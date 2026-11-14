@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { AttributionClickId, clickIdFromAttribution, sanitizeSignupAttribution } from './signup-attribution';
 import { CHECKOUT_SOURCES } from '../license/license-checkout';
+import { FILE_SEARCH_PROTOCOLS } from '../file-search/file-search.types';
 
 /**
  * Product-usage events the UI reports so the activation funnel can be read
@@ -76,24 +77,109 @@ export const ProductEvents = {
    */
   AI_CLIENT_CONNECTED: 'ai_client_connected',
   /**
+   * A new account (created minutes before) authorized one of AnythingMCP's
+   * plugins in OpenAI's plugin directory; metadata.directory = 'chatgpt',
+   * metadata.plugin = the plugin endpoint ('chatgpt-app', 'file-search').
+   * The account's signup_attributed gets the same two fields. Server-only.
+   * Answers: how many sign-ups the ChatGPT directory brings.
+   */
+  DIRECTORY_SIGNUP: 'directory_signup',
+  /**
    * Cloud: after approving an AI client, the user was told their workspace
    * is empty and shown how to add an app (chat or dashboard). Server-only.
    * Read against setup_completed: does the prompt lead to a first connector.
    */
   EMPTY_WORKSPACE_PROMPT: 'empty_workspace_prompt',
   /**
+   * File Search plugin (/mcp/file-search): after approving the AI client, an
+   * admin of a workspace with no folder was offered to connect one
+   * (login.controller.ts). metadata.client. Server-only. Read against
+   * file_search_wizard_opened with via 'authorize' and file_search_activated.
+   */
+  FILE_SEARCH_AUTHORIZE_OFFERED: 'file_search_authorize_offered',
+  /**
+   * Cloud: on that page the user picked one of the quick-setup apps, and it
+   * was added to the workspace as a connector waiting for its credentials
+   * (login.controller.ts). metadata.adapterSlug, metadata.client (the OAuth
+   * client's name), metadata.status = 'added' or 'failed' (then
+   * metadata.error says why). Server-only. Read against
+   * empty_workspace_prompt (how many pick). The install also writes
+   * setup_completed with via 'post_approve' (verified as the chat's), so it is not
+   * counted as a setup made in the chat (via 'mcp') or the dashboard.
+   */
+  POST_APPROVE_APP_PICKED: 'post_approve_app_picked',
+  /**
+   * A tool of the shared /mcp tool set was called (shared-tool-calls.ts):
+   * metadata.tool = the listed tool, metadata.profile = 'default' (Claude and
+   * other clients) or 'chatgpt', metadata.client = the OAuth client's name
+   * when known, and metadata.setupTool = the AnythingMCP Setup tool when a
+   * run tool ran one (setup_find_connectors…). At most one row per
+   * workspace, tool and setup tool per UTC day. Server-only. Answers whether
+   * a newly connected workspace ever calls us, and which step it stops at.
+   */
+  SHARED_TOOL_CALLED: 'shared_tool_called',
+  /**
    * A search of the connector catalog: metadata.query, metadata.results (how
-   * many connectors matched), metadata.via (where: 'store', 'welcome', or
-   * 'mcp' when the model searched from a chat), metadata.missing (the words no
+   * many connectors matched), metadata.via (where: 'store', 'welcome', 'mcp'
+   * when the model searched from a chat, or 'mcp_search_fallback' when
+   * anythingmcp_search_tools looked the app up in the catalog because nothing
+   * in the workspace matched), metadata.missing (the words no
    * connector matches) and, when there are results, metadata.match: 'direct',
    * or 'fuzzy' (found only with a typo forgiven, "telgram") or 'partial'
-   * (only some of the words matched). Answers: which apps people look for that
+   * (only some of the words matched) or 'suggested' (the first result is a
+   * File Search entry offered for a storage query, "Dateiserver", that the
+   * words did not match by themselves). Answers: which apps people look for that
    * we have no connector for (results = 0, or missing set), and which we have
    * but they did not take (read against catalog_search_picked).
    */
   CATALOG_SEARCH: 'catalog_search',
   /** A result was picked after a search. metadata.query, adapterSlug, via. */
   CATALOG_SEARCH_PICKED: 'catalog_search_picked',
+  /**
+   * The File Search wizard (/connectors/new/file-search), read in order:
+   * opened → connection test passed or failed → scan finished → activated.
+   * On all of them: metadata.protocol (sftp, ftps, webdav, s3, local…),
+   * metadata.preset (the product preset: synology, nextcloud…) and
+   * metadata.adapterSlug (the catalog entry it was opened from), when known.
+   * Never a host, path, file name or user name. Answers where File Search
+   * setups are abandoned, and with which kind of storage.
+   *
+   * Opened: once per page load; metadata.via = where from ('store',
+   * 'welcome', 'store_hint' / 'welcome_hint' for the File Search hint under
+   * the search box, 'connectors_new', 'chat', 'authorize' for the File Search
+   * plugin's setup page after "Approve").
+   */
+  FILE_SEARCH_WIZARD_OPENED: 'file_search_wizard_opened',
+  /**
+   * The connection test passed (fingerprint confirmed where there is one), or
+   * failed: metadata.kind = the test's error kind ('auth', 'unreachable',
+   * 'timeout', 'tls', 'not_found', 'permission'…; 'request_failed' when the
+   * test could not run). A first test that only asks to confirm the server
+   * fingerprint is neither.
+   */
+  FILE_SEARCH_TEST_PASSED: 'file_search_test_passed',
+  FILE_SEARCH_TEST_FAILED: 'file_search_test_failed',
+  /**
+   * A folder scan started on the page ended: metadata.kind = 'fits' (the
+   * folder fits the plan), 'over_plan' (it does not, the upgrade bar shows),
+   * 'done' (no plan check came back) or 'failed';
+   * metadata.files = the folder's file count as a bucket ('1-100',
+   * '101-500'…, see FILE_COUNT_BUCKETS), never the number.
+   */
+  FILE_SEARCH_SCAN_FINISHED: 'file_search_scan_finished',
+  /**
+   * The connector was activated (first sync queued); metadata.files = the
+   * selected file count as a bucket. Read against opened for the whole funnel.
+   */
+  FILE_SEARCH_ACTIVATED: 'file_search_activated',
+  /**
+   * The wizard showed a wall instead of the form: metadata.kind = why
+   * ('no_licence', 'expired', 'community', 'plan_without_feature' for File
+   * Search not in the plan, 'connector_limit' for the plan's File Search
+   * connectors used up). Once per page load and kind. Answers how many
+   * setups stop at the plan, read against opened.
+   */
+  FILE_SEARCH_LOCKED_SHOWN: 'file_search_locked_shown',
   /**
    * Cloud: the workspace's first successful tool call was handed to the
    * licence site, to be uploaded to Google Ads as an activation conversion
@@ -165,7 +251,124 @@ export const ProductEvents = {
    * finish (metadata.checkout_source, the same value).
    */
   CHECKOUT_LINK_CREATED: 'checkout_link_created',
+  /**
+   * Cloud: an AI client called a tool of a workspace whose free trial had
+   * ended, and was refused with the reactivation link (dynamic-mcp-tools.ts).
+   * metadata.toolName, adapterSlug (catalog connectors only), client (the
+   * OAuth client's name, when the call came through one) and variant (the
+   * reactivation link given: 'page' or 'pricing', reactivationLinkVariant;
+   * absent on rows from before 7 Nov 2026). At most one row per
+   * workspace and tool an hour, so a looping agent cannot flood the table.
+   * Server-only. Answers how many workspaces come back after their trial, and
+   * with which app.
+   */
+  TRIAL_EXPIRED_CALL_BLOCKED: 'trial_expired_call_blocked',
+  /**
+   * Cloud: a workspace took the one-click 7-day trial extension from the
+   * "your trial has ended" email (trial-extension.controller.ts).
+   * metadata.via = 'email'. Server-only. Read against the paid licences of
+   * those workspaces: does a week more lead to a purchase.
+   */
+  TRIAL_EXTENDED: 'trial_extended',
+  /**
+   * Etsy refused a new app's keys with 403 (the app is still Pending, or the
+   * shared secret is wrong). metadata.adapterSlug, metadata.via = 'setup'
+   * (the guided setup's key check; metadata.connectorId when it finishes an
+   * existing connector) or 'watcher' (AppApprovalWatcherService started
+   * watching a connector, metadata.connectorId). Server-only. Answers how many
+   * Etsy setups wait for Etsy, read against the next one.
+   */
+  ETSY_APP_PENDING_SEEN: 'etsy_app_pending_seen',
+  /**
+   * Etsy accepted keys it had refused, and the connector's owner was told
+   * once (app-approval-watch.ts). metadata.connectorId, metadata.adapterSlug,
+   * metadata.kind = 'emailed', or 'not_sent' (no SMTP configured, or the
+   * send failed; never retried). Server-only. Its presence is what stops a
+   * second email for that connector.
+   */
+  ETSY_APP_APPROVED_NOTIFIED: 'etsy_app_approved_notified',
+  /**
+   * Cloud: the onboarding cron sent a user with an empty workspace reminder 1
+   * or 2 (ee/cloud/onboarding-reminder.ts). metadata.reminder = 1 or 2,
+   * metadata.arm = the user's reminder-1 arm ('A', 'B' or 'holdout'),
+   * metadata.kind = 'generic' or 'ai_client' (the email for a user who already
+   * connected an AI client, the same in both arms). On reminder 2 of a user
+   * whose reminder 1 went out before the test (2 Nov 2026), the arm is the
+   * one they would have had: read arms from reminder 1. Server-only. Read with
+   * the holdout event and the connectors table: a connector within 7 days of
+   * sign-up, per arm.
+   */
+  ONBOARDING_REMINDER_SENT: 'onboarding_reminder_sent',
+  /**
+   * Cloud: the user is in the reminder-1 control group and got no reminder 1.
+   * metadata.reminder = 1, metadata.arm = 'holdout'. Once per user.
+   */
+  ONBOARDING_REMINDER_HOLDOUT: 'onboarding_reminder_holdout',
+  /**
+   * Cloud: an admin of a workspace whose free trial ended was shown the
+   * licence wall, with its buy-in-place plan picker (license-wall.service.ts).
+   * metadata.variant = 'trust' (the wall with the workspace's own numbers and
+   * the trust line) or 'control' (the earlier wall, about 10% of workspaces,
+   * fixed per workspace), metadata.calls = the successful tool calls shown
+   * (0 when none, then no numbers are shown). At most once per workspace a
+   * UTC day. Server-only. Read with Stripe's completed checkouts of
+   * checkout_source 'trial_ended_wall' by organizationId, per variant.
+   */
+  LICENSE_WALL_VIEWED: 'license_wall_viewed',
+  /**
+   * Cloud: the no-login reactivation page (/reactivate/<token>, the link an
+   * AI client gets in the 'page' arm when an ended trial blocks a tool call)
+   * was opened with a valid token (reactivation.controller.ts).
+   * metadata.state = what the page showed ('trial-ended', 'active',
+   * 'payment-failed', 'no-license'). At most once per workspace a UTC day.
+   * Server-only. Read with `trial_expired_call_blocked` (metadata.variant)
+   * and Stripe's checkouts of checkout_source 'mcp_reactivate'.
+   */
+  REACTIVATE_PAGE_VIEWED: 'reactivate_page_viewed',
+  /**
+   * Cloud: what someone did on a pay screen of an ended trial: the licence
+   * wall in the dashboard (metadata.source = 'trial_ended_wall', reported
+   * through POST /api/product-events) or the no-login reactivation page
+   * ('mcp_reactivate', reported through POST /api/license/reactivate/<token>/event).
+   * metadata.action = one of PAYWALL_ACTIONS ('shown' once per page load,
+   * then the clicks, 'left_without_subscribe' when the page is closed without
+   * a subscribe click); metadata.plan / metadata.period on plan, period and
+   * subscribe actions; metadata.device = 'mobile' or 'desktop';
+   * metadata.variant = the wall's variant ('trust' / 'control') or 'page'.
+   * Answers where people stop between seeing the plans and paying, per
+   * screen and device; read with checkout_link_created and Stripe.
+   */
+  PAYWALL_ACTION: 'paywall_action',
+  /**
+   * Cloud: a plan change paused items above the new plan's caps
+   * (metadata.kind 'downgrade') or brought them back ('restore');
+   * metadata.plan = the new plan, metadata.calls = how many items,
+   * metadata.status = 'dry-run' or 'on' (PLAN_CAPS_ENFORCE). PlanCapsService.
+   */
+  PLAN_CAPS_APPLIED: 'plan_caps_applied',
 } as const;
+
+/** The values of `action` on paywall_action (see PAYWALL_ACTION). */
+export const PAYWALL_ACTIONS = [
+  'shown',
+  'plan_selected',
+  'period_selected',
+  'subscribe_clicked',
+  'compare_plans_clicked',
+  'sign_in_clicked',
+  'open_workspace_clicked',
+  'switch_workspace_clicked',
+  'license_key_clicked',
+  'enterprise_clicked',
+  'support_clicked',
+  'delete_account_clicked',
+  'left_without_subscribe',
+  // The "What changes with <plan>" block was shown because the workspace is
+  // above that plan (metadata.plan), and its list of items was opened.
+  'plan_fit_shown',
+  'plan_fit_details_opened',
+] as const;
+export type PaywallAction = (typeof PAYWALL_ACTIONS)[number];
 
 export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents];
 
@@ -175,14 +378,27 @@ export type ProductEventName = (typeof ProductEvents)[keyof typeof ProductEvents
  */
 const SERVER_ONLY = new Set<string>([
   ProductEvents.SIGNUP_ATTRIBUTED,
+  ProductEvents.PLAN_CAPS_APPLIED,
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
+  ProductEvents.DIRECTORY_SIGNUP,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
+  ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,
+  ProductEvents.POST_APPROVE_APP_PICKED,
+  ProductEvents.SHARED_TOOL_CALLED,
   ProductEvents.ADS_ACTIVATION_REPORTED,
   ProductEvents.ADS_SIGNUP_REPORTED,
   ProductEvents.CARD_TRIAL_OFFER_ELIGIBLE,
   ProductEvents.CARD_TRIAL_OFFER_EMAILED,
   ProductEvents.CHECKOUT_LINK_CREATED,
+  ProductEvents.TRIAL_EXPIRED_CALL_BLOCKED,
+  ProductEvents.TRIAL_EXTENDED,
+  ProductEvents.ETSY_APP_PENDING_SEEN,
+  ProductEvents.ETSY_APP_APPROVED_NOTIFIED,
+  ProductEvents.ONBOARDING_REMINDER_SENT,
+  ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
+  ProductEvents.LICENSE_WALL_VIEWED,
+  ProductEvents.REACTIVATE_PAGE_VIEWED,
 ]);
 const CLIENT_REPORTABLE = new Set<string>(
   Object.values(ProductEvents).filter((e) => !SERVER_ONLY.has(e)),
@@ -287,15 +503,56 @@ export class ProductEventService {
 // start_trial_checkout_started); only the CHECKOUT_SOURCES values are kept.
 // `device`: 'mobile' (a touch screen) or 'desktop', on start_trial_viewed;
 // nothing finer, and any other value is dropped.
+// `tool`, `profile`, `setupTool`: shared_tool_called (a tool of the shared
+// /mcp set, the tool set's profile, the setup tool a run tool ran); the last
+// two only from a fixed set.
+// `action`, `plan`, `period`: paywall_action, each from a fixed set.
+// `offer`: the reactivation page's Telegram price test arm, on
+// reactivate_page_viewed, paywall_action and checkout_link_created.
+// `protocol`, `preset`, `files`: the File Search wizard (FILE_SEARCH_*):
+// a known protocol, a known product preset and a file count bucket; any
+// other value is dropped, so no host, path or exact count can be stored.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
-  'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device',
+  'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
+  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
+const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
+/** The File Search wizard's product presets. */
+const KNOWN_PRESETS = new Set(['nextcloud', 'owncloud', 'synology', 'qnap', 'fritzbox', 'hetzner']);
+/**
+ * File counts as the File Search events carry them; the frontend's
+ * fileCountBucket (lib/file-search-catalog.ts) produces exactly these.
+ */
+export const FILE_COUNT_BUCKETS: readonly string[] = [
+  '0', '1-100', '101-500', '501-2000', '2001-10000', '10001-100000', '100001+',
+];
+const KNOWN_FILE_BUCKETS = new Set(FILE_COUNT_BUCKETS);
+/** Keys whose value must be one of a fixed set; anything else is dropped. */
+const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<string>>> = {
+  device: DEVICE_KINDS,
+  profile: new Set(['default', 'chatgpt']),
+  setupTool: new Set(['setup_find_connectors', 'setup_install_connector', 'setup_get_status']),
+  protocol: KNOWN_PROTOCOLS,
+  preset: KNOWN_PRESETS,
+  files: KNOWN_FILE_BUCKETS,
+  // license_wall_viewed (license-wall.service.ts): trust / control;
+  // trial_expired_call_blocked (the reactivation-link test, license-checkout.ts): page / pricing.
+  variant: new Set(['trust', 'control', 'page', 'pricing']),
+  // reactivate_page_viewed (reactivation.controller.ts).
+  state: new Set(['trial-ended', 'active', 'payment-failed', 'no-license']),
+  // paywall_action.
+  action: new Set<string>(PAYWALL_ACTIONS),
+  plan: new Set(['starter', 'team']),
+  period: new Set(['monthly', 'yearly']),
+  // The reactivation page's Telegram price test (reactivationOfferArm).
+  offer: new Set(['personal', 'list']),
+};
 const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
 /** The values of `match` (see catalog-search.ts). */
-const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial']);
+const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial', 'suggested']);
 
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,
@@ -310,8 +567,8 @@ function boundMetadata(
           ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
           : key === 'source'
             ? (KNOWN_CHECKOUT_SOURCES.has(metadata[key] as string) ? metadata[key] : null)
-            : key === 'device'
-              ? (DEVICE_KINDS.has(metadata[key] as string) ? metadata[key] : null)
+            : ENUM_KEYS[key]
+              ? (ENUM_KEYS[key]!.has(metadata[key] as string) ? metadata[key] : null)
               : metadata[key];
     if (typeof v === 'string') entries.push([key, v.slice(0, 200)]);
     else if (typeof v === 'number' || typeof v === 'boolean') entries.push([key, v]);
@@ -350,6 +607,12 @@ export function sanitizeSearchQuery(value: unknown): string | null {
  * `http://` of `http://http://…` (CodeQL js/polynomial-redos).
  */
 const SCRUB_INPUT_LIMIT = 2000;
+/**
+ * Long enough to keep the provider's own words after our hint: a 500 from
+ * Odoo starts with the classifier's sentence, and its "Invalid field 'x'"
+ * came after the old 160-character cut.
+ */
+const PROVIDER_MESSAGE_MAX = 400;
 
 export function scrubProviderMessage(message: unknown, secrets: unknown[] = []): string | null {
   if (typeof message !== 'string' || !message.trim()) return null;
@@ -366,7 +629,7 @@ export function scrubProviderMessage(message: unknown, secrets: unknown[] = []):
   });
   out = out.replace(/[A-Za-z0-9_\-.+/=]{32,}/g, '***');
   out = out.replace(/\s+/g, ' ').trim();
-  return out.length > 160 ? `${out.slice(0, 159)}…` : out;
+  return out.length > PROVIDER_MESSAGE_MAX ? `${out.slice(0, PROVIDER_MESSAGE_MAX - 1)}…` : out;
 }
 
 /** The attribution pair, re-sanitized here so no caller can store anything else. */

@@ -42,6 +42,12 @@ describe('printify adapter: static spec conformance', () => {
     }
   });
 
+  it('caps the uploads page at 50, the most Printify accepts', () => {
+    const limit = tool('printify_list_uploads').parameters?.properties?.limit as { maximum?: number; description?: string };
+    expect(limit.maximum).toBe(50);
+    expect(limit.description).toContain('1-50');
+  });
+
   it('variant filter uses the documented hyphenated query name', () => {
     expect(tool('printify_list_variants').endpointMapping.queryParams).toEqual({ 'show-out-of-stock': '$show_out_of_stock' });
   });

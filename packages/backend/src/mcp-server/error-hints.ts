@@ -16,6 +16,16 @@
  * is appended, never substituted for the vendor's own message.
  */
 
+import { ipRefusalHint, looksLikeIpRefusal } from '../connectors/egress';
+import {
+  WOOCOMMERCE_CANNOT_VIEW_HINT,
+  WOOCOMMERCE_UNKNOWN_KEY_HINT,
+  wooCommerceAuthHint,
+} from '../adapters/woocommerce-setup';
+
+const WOOCOMMERCE_CANNOT_VIEW_TOOL_HINT = `${WOOCOMMERCE_CANNOT_VIEW_HINT} Retrying will not help.`;
+const WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT = `${WOOCOMMERCE_UNKNOWN_KEY_HINT} Retrying will not help.`;
+
 export interface ErrorHintInput {
   /** Upstream host the request went to, if known (e.g. `purora.weclapp.com`). */
   host?: string | null;
@@ -25,12 +35,55 @@ export interface ErrorHintInput {
   message?: string;
   /** The upstream response body, raw. */
   body?: unknown;
+  /**
+   * The catalog adapter the connector was installed from, if any. Lets a
+   * rule speak for an API that runs on the customer's own host (TallyPrime,
+   * JTL-Wawi, a Bitrix24 box), where the host says nothing.
+   */
+  adapterSlug?: string;
+  /**
+   * The adapter's `verifyHints`: what the setup check says when this status
+   * comes back. Used for a refused credential (401) that no rule here
+   * covers, so a connector saved without a passing check hears the same
+   * advice at its first call.
+   */
+  verifyHints?: Record<string, string | { hint: string; suggest?: string }>;
+  /** The connector's page in AnythingMCP, linked from a credential hint. */
+  connectorPage?: string;
+  /** AnythingMCP Cloud (DEPLOYMENT_MODE=cloud) rather than self-hosted. */
+  cloud?: boolean;
+  /** The addresses this instance calls out from (EGRESS_IPS), named when a server refuses them. */
+  egressIps?: string[];
+  /** The call went through the proxy / web-unblocker, whose addresses change. */
+  usedProxy?: boolean;
+  /**
+   * The tool arguments the caller sent. Only a rule that has to name the
+   * offending value reads them (Etsy's tag limit), and it quotes nothing
+   * but that value back.
+   */
+  args?: Record<string, unknown>;
 }
 
 const MISSING_SCOPE_HINT =
   'The connector was authorized without a permission this tool needs (the error names it). ' +
   'Retrying will not help: ask the user to open this connector in AnythingMCP and click ' +
   '"Authorize with Provider" again, which requests the missing permission, then retry.';
+
+// Atlassian's Rovo MCP server with a personal API token (Basic email:token).
+// Two setups the old form accepted failed every call this way on Cloud: a
+// token pasted twice (initialize answers 401 invalid_token) and a token
+// created without scopes (every tool says it cannot resolve the user scopes).
+const ATLASSIAN_TOKEN_REFUSED_HINT =
+  'Atlassian refused the email and token together. Retrying will not help: ask the user to check, ' +
+  "in this connector's settings in AnythingMCP, that the email is the token owner's, the token is " +
+  'pasted once and not revoked, and that an Atlassian organization admin has enabled API-token ' +
+  'authentication for the Rovo MCP server (Atlassian Administration > Rovo > Rovo MCP server settings).';
+const ATLASSIAN_UNSCOPED_TOKEN_HINT =
+  'This Atlassian API token has no scopes, so every Jira and Confluence tool is refused. Retrying will ' +
+  "not help: ask the user to create an 'API token with scopes' at id.atlassian.com > Security > API " +
+  'tokens with the agent-interface scopes (read:jira:agent-interface, search:jira:agent-interface, ' +
+  'read:confluence:agent-interface, search:confluence:agent-interface, and the write scopes they ' +
+  "want), and paste it into this connector's API token setting in AnythingMCP.";
 
 const ODOO_FIELD_HINT =
   'That field does not exist on this model in this Odoo database; field names differ between ' +
@@ -40,6 +93,14 @@ const ODOO_FIELD_HINT =
 // Odoo 18.3 dropped `mobile` from contacts (res.partner, and res.users through
 // it); one number field is left. On 10 Oct 2026 a scheduled job asked for it 28
 // times in a day on Odoo 19, and the generic field hint did not stop it.
+// Odoo saas-19.3 and later (20.0 included) dropped `company_type` from
+// contacts; Odoo 19.0 and older still have it. In the first week of Nov 2026
+// it failed in 5 workspaces (read, search_read, create, and a KeyError on write).
+const ODOO_PARTNER_COMPANY_TYPE_HINT =
+  'This Odoo database (saas-19.3 or later) has no `company_type` field on contacts. Use the ' +
+  'boolean `is_company` instead: true for a company, false for a person, in fields, domains ' +
+  'and values alike. Leave `company_type` out and call again.';
+
 const ODOO_PARTNER_MOBILE_HINT =
   'Odoo 18.3 and later (Odoo 19 included) have no `mobile` field on contacts: every number is ' +
   'in `phone`. Ask for `phone` instead and leave `mobile` out of fields and domains.';
@@ -65,6 +126,27 @@ const ODOO_ACCESS_DENIED_HINT =
   'New API Key) with Duration "Persistent Key" (administrators) or the longest duration ' +
   'offered, and paste it into ODOO_API_KEY.';
 
+// JSON-2 answers a request that names no database it serves with an HTML 404
+// "No database is selected". Seen when ODOO_DB was empty or wrong, and when
+// ODOO_URL was saved with /web after the host, so the calls went to
+// /web/json/2.
+const ODOO_NO_DATABASE_HINT =
+  'Odoo answered 404 "No database is selected": the request did not name a database this Odoo ' +
+  'serves. Retrying will not help. Tell the user to open the connector in AnythingMCP and check ' +
+  '(1) ODOO_URL: only the address up to the host, e.g. https://mycompany.odoo.com, with nothing ' +
+  'after it (no /web, no /odoo); (2) ODOO_DB: the database name, on Odoo Online usually the ' +
+  'subdomain, otherwise the name shown on /web/database/selector or after ?db= in the address bar.';
+
+// JSON-2 answers a request without a bearer token with werkzeug's 401 "User
+// not authenticated, use an API key". A wrong or expired key says "Invalid
+// apikey" instead (ODOO_EXPIRED_KEY_HINT).
+const ODOO_KEY_NOT_SENT_HINT =
+  'Odoo received no API key with this request ("User not authenticated"): ODOO_API_KEY is empty, ' +
+  'or the key is not sent as an "Authorization: Bearer <key>" header. Retrying will not help. Tell ' +
+  'the user to paste the key into ODOO_API_KEY in the connector settings in AnythingMCP (create one ' +
+  'in Odoo under My Profile → Account Security → New API Key, Duration "Persistent Key" or the ' +
+  'longest offered); a connector built by hand must send it as a Bearer token.';
+
 // The client_credentials token of a communication arrangement comes from the
 // tenant's own API host. A BTP token URL, a client that is not the
 // arrangement's communication user, a missing arrangement or a scope it does
@@ -87,6 +169,92 @@ const ODOO_MODEL_HINT =
   'That model does not exist in this Odoo database: it was renamed in newer versions or its ' +
   'app is not installed (for example stock.production.lot is stock.lot since Odoo 16). Check ' +
   'the model name before retrying, e.g. search ir.model by name.';
+
+const ETSY_NO_SHOP_HINT =
+  'The Etsy account that authorized this connector has no shop ("Could not find a shop for ' +
+  'User"). Retrying or trying other shop ids will not help. Tell the user to open the connector in ' +
+  'AnythingMCP, click Authorize with Provider again and sign in at Etsy with the Etsy account that ' +
+  'owns the shop (a buyer or second account has none).';
+
+// Etsy refuses a tag over 20 characters on English (en-US) listings with
+// "There was a problem with /tags : cannot be more than 20 characters", without
+// saying which tag. Listings in other languages take longer tags (up to 30 in
+// the calls Etsy accepted in Oct/Nov 2026), so nothing is refused before the
+// call: the hint names the tags over the limit once Etsy has refused them.
+// createDraftListing answers the same refusal as a JSON array instead:
+// [{"path":"/tags","type":"too_long","message":"cannot be more than 20 characters"}].
+const ETSY_TAG_LIMIT =
+  /\/tags\s*:\s*cannot be more than (\d+) characters|"path"\s*:\s*"\/tags"[^}]*?cannot be more than (\d+) characters/i;
+
+// A tag is quoted back to the model at most this long.
+const QUOTED_ITEM_MAX = 60;
+
+function etsyTagLengthHint(tags: unknown, max: number): string {
+  const rule = `Etsy allows at most ${max} characters per tag on English listings.`;
+  const long = overlongListItems(tags, max);
+  if (long.length === 0) {
+    return `${rule} Shorten every longer tag (spaces count) and call again.`;
+  }
+  const named = long
+    .map(({ item, length }) => {
+      const shown = [...item].length > QUOTED_ITEM_MAX ? `${[...item].slice(0, QUOTED_ITEM_MAX).join('')}…` : item;
+      return `tag ${JSON.stringify(shown)} has ${length} characters`;
+    })
+    .join('; ');
+  return `${named}; ${rule} Shorten or replace ${long.length === 1 ? 'it' : 'them'} and call again with the other tags unchanged.`;
+}
+
+/**
+ * The items of a list argument that are longer than `max` characters, with
+ * their lengths: a comma-separated string or an array of strings. Items are
+ * trimmed and counted in code points, so an emoji is one character.
+ */
+export function overlongListItems(
+  value: unknown,
+  max: number,
+): Array<{ item: string; length: number }> {
+  const items =
+    typeof value === 'string'
+      ? value.split(',')
+      : Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === 'string')
+        : [];
+  return items
+    .map((raw) => raw.trim())
+    .map((item) => ({ item, length: [...item].length }))
+    .filter(({ length }) => length > max);
+}
+
+// Zoho answers NO_PERMISSION naming Crm_Implied_Api_Access when the CRM user
+// may not use the API at all: the Free edition has no API access, and on paid
+// editions the user's profile needs the API Access permission.
+const ZOHO_CRM_API_ACCESS_HINT =
+  'Zoho CRM refused API access for this user (NO_PERMISSION, Crm_Implied_Api_Access). Retrying ' +
+  'will not help. The Zoho CRM Free edition has no API access; on a paid edition an administrator ' +
+  'must allow it for the user\'s profile (Setup → Users and Control → Security Control → Profiles → ' +
+  'the profile → Developer Permissions → API Access). Then authorize the connector again with that user.';
+
+const BITRIX24_WEBHOOK_URL_HINT =
+  'Bitrix24 answered with an HTML "not found" page, so the address is not an inbound webhook: the ' +
+  'connector\'s BITRIX24_WEBHOOK_URL is a page of the portal (a CRM or task page) or the webhook ' +
+  'was deleted. Retrying will not help. Tell the user to create an inbound webhook in Bitrix24 ' +
+  '(Developer resources → Other → Inbound webhook) and paste its URL, of the form ' +
+  'https://<portal>.bitrix24.com/rest/<user_id>/<code>/, into BITRIX24_WEBHOOK_URL.';
+
+const COMPANIES_HOUSE_KEY_HINT =
+  'Companies House did not accept the API key ("Invalid Authorization"). Retrying will not help. ' +
+  'Tell the user to create a REST API key (not a streaming key) for a Live application (not Test) ' +
+  'in the Companies House developer hub (https://developer.company-information.service.gov.uk/manage-applications) ' +
+  'and paste only the key into COMPANIES_HOUSE_API_KEY; AnythingMCP sends it as the HTTP Basic ' +
+  'username with an empty password, as Companies House requires.';
+
+// Google APIs that take a key in the query (YouTube Data, Maps, Custom Search,
+// ...) answer a wrong one with 400 "API key not valid".
+const GOOGLE_API_KEY_HINT =
+  'Google refused the API key ("API key not valid"): it is wrong, was deleted, or has extra ' +
+  'characters. Retrying will not help. Tell the user to copy the key again from the Google Cloud ' +
+  'console (APIs & Services → Credentials), check that the API this connector calls is enabled ' +
+  'in that project, and paste the key into the connector settings in AnythingMCP.';
 
 const ETSY_PROPERTY_NAME_HINT =
   'Etsy needs every entry of property_values complete: property_id, property_name, ' +
@@ -272,11 +440,27 @@ const GEMINI_MODEL_HINT =
   'another name: list the models (gemini_list_models, or GET /v1beta/models) and use a `name` ' +
   'it returns, without the `models/` prefix (for example gemini-3.1-flash-lite).';
 
-const GEMINI_QUOTA_HINT =
-  'Gemini quota or rate limit reached (429 RESOURCE_EXHAUSTED). The free tier limits requests ' +
-  'per minute and per day for each model, and image models have no free tier at all (limit 0). ' +
-  'Wait for the time in the RetryInfo detail before one retry, use a smaller model, or ask the ' +
-  'user to enable billing for the key\'s project in Google AI Studio. Do not retry in a loop.';
+// Seen on the very first call of new connectors: a model without a free tier
+// (the Pro and image models) on a project without billing answers 429 with
+// "limit: 0" on a free_tier metric. Waiting never helps there.
+const GEMINI_NO_FREE_TIER_HINT =
+  'This Gemini model has no free tier, and the key\'s project has no billing ("limit: 0" on a ' +
+  'free_tier quota), so every call is refused. Waiting or retrying will not help. Either use a ' +
+  'model with a free tier (for text: gemini-3.1-flash-lite, the connector\'s default), or ask the ' +
+  'user to enable billing for the key\'s project in Google AI Studio (https://aistudio.google.com, ' +
+  'Settings → Billing). Image models (Nano Banana) and the Pro models always need billing.';
+
+const GEMINI_RATE_HINT =
+  'Gemini rate limit reached (429 RESOURCE_EXHAUSTED): too many requests or tokens per minute, or ' +
+  'the day\'s free-tier requests for this model are used up. Wait for the time in the RetryInfo ' +
+  'detail before one retry, or use a smaller model. If it keeps failing, the daily quota is spent: ' +
+  'it resets the next day, or the user can enable billing for the key\'s project in Google AI ' +
+  'Studio. Do not retry in a loop.';
+
+const GEMINI_PREPAY_HINT =
+  'The prepaid credits of the key\'s Gemini project are used up (402). Retrying will not help: the ' +
+  'user has to top up the credits for the project in Google AI Studio (https://aistudio.google.com, ' +
+  'Settings → Billing), then retry.';
 
 const GEMINI_REGION_HINT =
   'Gemini refused the request for this account or region (FAILED_PRECONDITION), for example ' +
@@ -380,6 +564,65 @@ const SERPAPI_FORBIDDEN_HINT =
   'deleted or suspended. Retrying will not help: the user should check the account at ' +
   'https://serpapi.com/dashboard.';
 
+// Catalog adapters for software that runs in the customer's own network.
+const ON_PREMISES_ADAPTERS: Record<string, { product: string; field: string }> = {
+  tallyprime: { product: 'TallyPrime', field: 'TALLY_URL' },
+  'jtl-wawi': { product: 'the JTL-Wawi REST API', field: 'JTL_WAWI_URL' },
+};
+
+function onPremisesUnreachableHint(product: string, field: string, cloud: boolean | undefined): string {
+  const where = cloud
+    ? `AnythingMCP Cloud calls ${product} over the internet, so ${field} must be an address reachable ` +
+      'from the internet: publish it through a tunnel (for example Cloudflare Tunnel or ngrok) or a ' +
+      'port forwarding with HTTPS on the router, or install AnythingMCP self-hosted in the same ' +
+      'network. A LAN address (192.168.x.x, a PC name) cannot be reached from the Cloud.'
+    : `This AnythingMCP server must reach ${field} on the network: check that ${product} is running, ` +
+      'that the port is open in the firewall of that machine, and that the address works from the ' +
+      'server AnythingMCP runs on.';
+  return (
+    `${product} did not answer, so it is not reachable from AnythingMCP. Retrying will not ` +
+    `help until that changes. ${where}`
+  );
+}
+
+function tunnelOfflineHint(product: string, field: string): string {
+  return (
+    `The tunnel in ${field} answered instead of ${product}: the tunnel is offline or its address ` +
+    'changed (a free ngrok address changes on every restart). Retrying will not help. Tell the user to ' +
+    `start the tunnel on the machine running ${product} and, if the address changed, paste the new ` +
+    `one into ${field} in the connector settings in AnythingMCP.`
+  );
+}
+
+/**
+ * Hints about something the user fixes in the connector's settings: the
+ * connector's page is linked after them.
+ */
+const CREDENTIAL_HINTS = new Set<string>([
+  ODOO_EXPIRED_KEY_HINT,
+  ODOO_ACCESS_DENIED_HINT,
+  ODOO_KEY_NOT_SENT_HINT,
+  ODOO_NO_DATABASE_HINT,
+  TELEGRAM_BAD_TOKEN_HINT,
+  META_TOKEN_EXPIRED_HINT,
+  META_SESSION_ENDED_HINT,
+  META_TOKEN_INVALID_HINT,
+  GEMINI_KEY_HINT,
+  OPENAI_KEY_HINT,
+  TAVILY_KEY_HINT,
+  PERPLEXITY_KEY_HINT,
+  SERPAPI_KEY_HINT,
+  GOOGLE_API_KEY_HINT,
+  COMPANIES_HOUSE_KEY_HINT,
+  BITRIX24_WEBHOOK_URL_HINT,
+  ETSY_NO_SHOP_HINT,
+  MISSING_SCOPE_HINT,
+  ATLASSIAN_TOKEN_REFUSED_HINT,
+  ATLASSIAN_UNSCOPED_TOKEN_HINT,
+  WOOCOMMERCE_CANNOT_VIEW_TOOL_HINT,
+  WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT,
+]);
+
 function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
@@ -402,6 +645,26 @@ function hostMatches(host: string | null | undefined, suffix: string): boolean {
  */
 export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   const text = `${input.message ?? ''}\n${bodyText(input.body)}`;
+  let hint = ruleHint(input, text);
+  let credential = hint !== undefined && CREDENTIAL_HINTS.has(hint);
+  // A refused credential no rule covers: the adapter's own setup-check advice,
+  // so a connector saved without a passing check hears it at the first call.
+  if (!hint && input.status === 401) {
+    const own = input.verifyHints?.['401'] ?? input.verifyHints?.auth_failed;
+    const ownText = typeof own === 'string' ? own : own?.hint;
+    if (ownText) {
+      hint = `The API refused the connector's credentials (401). ${ownText.trim()} Retrying will not help.`;
+      credential = true;
+    }
+  }
+  if (hint && credential && input.connectorPage && !hint.includes(input.connectorPage)) {
+    hint = `${hint} The connector's settings are at ${input.connectorPage}`;
+  }
+  return hint;
+}
+
+/** The first rule that matches, without the connector-page link. */
+function ruleHint(input: ErrorHintInput, text: string): string | undefined {
 
   // Login-token flows: the vendor's refusal reason is folded into our message.
   if (/authenticate_from_new_country|new_country|unrecognized_device|new_device/i.test(text)) {
@@ -423,6 +686,28 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     return SQL_SYNTAX_HINT;
   }
 
+  // Atlassian's MCP server, before the generic scope rule below: its "missing
+  // the scope claim" is an API token without scopes, which no re-authorization
+  // fixes. Only the catalog adapter, which signs in with an API token: a
+  // hand-built connector to the same server may use OAuth, where it would.
+  // WooCommerce's two 401s mean different things: a key it does not know, and
+  // a call it treated as coming from a user who may not see the data (or from
+  // nobody: the key was not seen at all). Same texts as the setup check.
+  if (input.adapterSlug === 'woocommerce') {
+    const woo = wooCommerceAuthHint(input.status, text);
+    if (woo === WOOCOMMERCE_CANNOT_VIEW_HINT) return WOOCOMMERCE_CANNOT_VIEW_TOOL_HINT;
+    if (woo === WOOCOMMERCE_UNKNOWN_KEY_HINT) return WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT;
+  }
+
+  if (input.adapterSlug === 'atlassian') {
+    if (/missing the scope claim|Unable to resolve user scopes/i.test(text)) {
+      return ATLASSIAN_UNSCOPED_TOKEN_HINT;
+    }
+    if (input.status === 401 || /invalid_token/i.test(text)) {
+      return ATLASSIAN_TOKEN_REFUSED_HINT;
+    }
+  }
+
   // OAuth tokens granted before an adapter gained a scope (Etsy's listings_w
   // when its write tools arrived). Wording differs per vendor; the fix is the
   // same: re-authorize, which now asks for the catalog's current scopes.
@@ -438,7 +723,14 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   if (/Invalid field '?(?:res\.(?:partner|users)\.)?mobile'? (?:on '?res\.(?:partner|users)|in leaf)/i.test(text)) {
     return ODOO_PARTNER_MOBILE_HINT;
   }
-  if (/Invalid field '[^']+' on '[^']+'|Invalid field [\w.]+ in leaf|Invalid field '[^']+' on model/i.test(text)) {
+  if (
+    /Invalid field '?(?:res\.partner\.)?company_type'? (?:on|in) '?res\.partner|"builtins\.KeyError","message":"company_type"/i.test(
+      text,
+    )
+  ) {
+    return ODOO_PARTNER_COMPANY_TYPE_HINT;
+  }
+  if (/Invalid field '[^']+' (?:on|in) '[^']+'|Invalid field [\w.]+ in leaf|Invalid field '[^']+' on model/i.test(text)) {
     return ODOO_FIELD_HINT;
   }
   if (/Object [\w.]+ doesn't exist|Model not found: [\w.]+/i.test(text)) {
@@ -448,6 +740,12 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   // AccessDenied inside a 200.
   if (/Invalid apikey/i.test(text)) {
     return ODOO_EXPIRED_KEY_HINT;
+  }
+  if (/No database is selected/i.test(text)) {
+    return ODOO_NO_DATABASE_HINT;
+  }
+  if (/User not authenticated, use an API key/i.test(text)) {
+    return ODOO_KEY_NOT_SENT_HINT;
   }
   if (/Odoo Server Error: Access Denied|odoo\.exceptions\.AccessDenied/i.test(text)) {
     return ODOO_ACCESS_DENIED_HINT;
@@ -498,6 +796,45 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   if (hostMatches(input.host, 'etsy.com') && /Expected string value for 'property_name'/.test(text)) {
     return ETSY_PROPERTY_NAME_HINT;
   }
+  if (hostMatches(input.host, 'etsy.com') && /Could not find a shop for User/i.test(text)) {
+    return ETSY_NO_SHOP_HINT;
+  }
+  const tagLimit =
+    hostMatches(input.host, 'etsy.com') || input.adapterSlug === 'etsy' ? ETSY_TAG_LIMIT.exec(text) : null;
+  if (tagLimit) {
+    return etsyTagLengthHint(input.args?.tags, Number(tagLimit[1] ?? tagLimit[2]));
+  }
+
+  if (/Crm_Implied_Api_Access/.test(text)) {
+    return ZOHO_CRM_API_ACCESS_HINT;
+  }
+
+  // A Bitrix24 webhook URL answers JSON, even for an unknown method; an HTML
+  // 404 means the address is a page of the portal or the webhook is gone.
+  if (
+    input.status === 404 &&
+    (input.adapterSlug === 'bitrix24' || /(^|\.)bitrix24\.[a-z.]+$/i.test(input.host ?? '')) &&
+    /<(!doctype|html)/i.test(text)
+  ) {
+    return BITRIX24_WEBHOOK_URL_HINT;
+  }
+
+  if (hostMatches(input.host, 'api.company-information.service.gov.uk') && /Invalid Authorization/i.test(text)) {
+    return COMPANIES_HOUSE_KEY_HINT;
+  }
+
+  const onPremises = input.adapterSlug ? ON_PREMISES_ADAPTERS[input.adapterSlug] : undefined;
+  if (onPremises) {
+    if (input.status !== undefined && [404, 502, 503, 504].includes(input.status) && /ngrok/i.test(text)) {
+      return tunnelOfflineHint(onPremises.product, onPremises.field);
+    }
+    if (
+      input.status === undefined &&
+      /ECONNABORTED|ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|Could not reach the API/i.test(text)
+    ) {
+      return onPremisesUnreachableHint(onPremises.product, onPremises.field, input.cloud);
+    }
+  }
 
   if (hostMatches(input.host, 'myshopify.com') && /app_not_installed/.test(text)) {
     return SHOPIFY_NOT_INSTALLED_HINT;
@@ -538,6 +875,10 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
     if (hint) return hint;
   }
 
+  if (hostMatches(input.host, 'googleapis.com') && /API key not valid|API_KEY_INVALID/i.test(text)) {
+    return GOOGLE_API_KEY_HINT;
+  }
+
   if (hostMatches(input.host, 'api.openai.com')) {
     const hint = openaiHint(input.status, text);
     if (hint) return hint;
@@ -556,6 +897,13 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   if (hostMatches(input.host, 'serpapi.com')) {
     const hint = serpapiHint(input.status);
     if (hint) return hint;
+  }
+
+  // Last, so a vendor's own rule wins: a server that only accepts approved
+  // addresses (a self-hosted Bitrix24 behind a firewall answering 403
+  // "Access Restricted", Shopee's source_ip_undeclared). Name the address.
+  if (looksLikeIpRefusal({ status: input.status, text })) {
+    return ipRefusalHint({ ips: input.egressIps ?? [], cloud: input.cloud, usedProxy: input.usedProxy });
   }
 
   return undefined;
@@ -608,7 +956,11 @@ function geminiHint(status: number | undefined, text: string): string | undefine
   if (/\b(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|IMAGE_PROHIBITED_CONTENT|IMAGE_RECITATION)\b/.test(text)) {
     return GEMINI_SAFETY_HINT;
   }
-  if (status === 429 || /RESOURCE_EXHAUSTED/.test(text)) return GEMINI_QUOTA_HINT;
+  if (status === 402 || /prepayment credits are depleted/i.test(text)) return GEMINI_PREPAY_HINT;
+  if (status === 429 || /RESOURCE_EXHAUSTED/.test(text)) {
+    // "limit: 0" on a free_tier metric: the model has no free tier for this project.
+    return /free_tier[^\n]{0,200}limit: 0\b/i.test(text) ? GEMINI_NO_FREE_TIER_HINT : GEMINI_RATE_HINT;
+  }
   if (status === 404 && /models\/|is not found for API version|not supported for/i.test(text)) return GEMINI_MODEL_HINT;
   if (/User location is not supported|FAILED_PRECONDITION/i.test(text)) return GEMINI_REGION_HINT;
   if (status === 403 || /PERMISSION_DENIED/.test(text)) return GEMINI_PERMISSION_HINT;

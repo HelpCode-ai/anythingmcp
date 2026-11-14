@@ -31,7 +31,7 @@
       "Accept": "application/json"
     }
   },
-  "instructions": "easybill is a German cloud invoicing / accounting tool (100% Made in Germany, 20,000+ customers) with a clean REST API at https://api.easybill.de/rest/v1.\n\n## Authentication\nCreate the API key in easybill: click your user name at the bottom left, choose **Profil und Einstellungen** (profile and settings), scroll down to the **API Key** section, click **Neuen Schlüssel generieren** (generate a new key) and then **Speichern** (save) at the top right. These are the places in easybill's new menu; if your screen still shows the old layout, click your user name in the blue bar at the top right and switch on **Neues Menü**. On the PREMIUM plan every staff account (Mitarbeiterzugang) has its own key in the same place. easybill asks you to renew the key at least once a year: generate a new one there and update `EASYBILL_API_KEY`. Set the key as `EASYBILL_API_KEY`. The connector sends it as `Authorization: Bearer <key>`. (easybill also accepts HTTP Basic Auth with email:apikey, but Bearer is simpler and is what this connector uses.)\n\n## Core concepts\n- **Customers** (`/customers`) — your clients. Identified by numeric `id` and a human `number`.\n- **Documents** (`/documents`) — the single resource for every document kind, discriminated by `type`: `INVOICE`, `CREDIT`, `OFFER`, `REMINDER`, `DELIVERY`, etc. Filter a list with `type=INVOICE` (comma-separated for several types). Each document carries an `items` array of line items.\n- **Positions** (`/positions`) — your reusable product/article catalog (article number, description, unit price, VAT).\n\n## Pagination\nList endpoints are page-based: `page` (default 1) and `limit` (default 100, max 1000). List responses wrap the rows in a `documents`/`page`/`pages`/`total` envelope.\n\n## Dates & filters\nDate filters accept a single `YYYY-MM-DD` or a `from,to` range (e.g. `document_date=2026-01-01,2026-03-31`). `paid_at=null` returns unpaid invoices. Most ID filters accept comma-separated lists.\n\n## Tips\n- To list only open invoices: `easybill_list_documents` with `type=INVOICE` and `paid_at=null`.\n- Fetch a finished invoice as a PDF with `easybill_get_document_pdf` (returns the PDF base64-encoded in the `pdf` field).\n- Amounts are in the document currency; VAT is per line item (`vat_percent`).",
+  "instructions": "easybill is a German cloud invoicing / accounting tool (100% Made in Germany, 20,000+ customers) with a clean REST API at https://api.easybill.de/rest/v1.\n\n## Authentication\nCreate the API key in easybill: click your user name at the bottom left, choose **Profil und Einstellungen** (profile and settings), scroll down to the **API Key** section, click **Neuen Schlüssel generieren** (generate a new key) and then **Speichern** (save) at the top right. These are the places in easybill's new menu; if your screen still shows the old layout, click your user name in the blue bar at the top right and switch on **Neues Menü**. On the PREMIUM plan every staff account (Mitarbeiterzugang) has its own key in the same place. easybill asks you to renew the key at least once a year: generate a new one there and update `EASYBILL_API_KEY`. Set the key as `EASYBILL_API_KEY`. The connector sends it as `Authorization: Bearer <key>`. (easybill also accepts HTTP Basic Auth with email:apikey, but Bearer is simpler and is what this connector uses.)\n\n## Core concepts\n- **Customers** (`/customers`) — your clients. Identified by numeric `id` and a human `number`.\n- **Documents** (`/documents`) — the single resource for every document kind, discriminated by `type`: `INVOICE`, `CREDIT`, `OFFER`, `REMINDER`, `DELIVERY`, etc. Filter a list with `type=INVOICE` (comma-separated for several types). Each document carries an `items` array of line items.\n- **Positions** (`/positions`) — your reusable product/article catalog (article number, description, unit price, VAT).\n- **Document payments** (`/document-payments`): payments recorded on a document, amount in cents. `easybill_list_payments`, `easybill_get_document_payment`, `easybill_record_payment` (records a received payment, moves no money) and `easybill_remove_payment` (switched off at install).\n\n## Writing documents\n1. `easybill_draft_document` creates a draft (prices in **cents**: `single_price_net: 7500` = 75.00 EUR).\n2. `easybill_complete_document` finalizes it: the number is assigned and it can no longer be edited.\n3. `easybill_send_document` sends it by e-mail (or fax, or post, which costs postage).\n4. A completed invoice is corrected only with `easybill_create_storno`, which issues a cancellation document (switched off at install).\nEvery one of these changes the customer's books: show the user what will happen and wait for a yes.\n\n## Pagination\nList endpoints are page-based: `page` (default 1) and `limit` (default 100, max 1000). List responses wrap the rows in a `documents`/`page`/`pages`/`total` envelope.\n\n## Dates & filters\nDate filters accept a single `YYYY-MM-DD` or a `from,to` range (e.g. `document_date=2026-01-01,2026-03-31`). `paid_at=null` returns unpaid invoices. Most ID filters accept comma-separated lists.\n\n## Tips\n- To list only open invoices: `easybill_list_documents` with `type=INVOICE` and `paid_at=null`.\n- Fetch a finished invoice as a PDF with `easybill_get_document_pdf` (returns the PDF base64-encoded in the `pdf` field).\n- Amounts are in the document currency; VAT is per line item (`vat_percent`).",
   "tools": [
     {
       "name": "easybill_list_customers",
@@ -276,6 +276,409 @@
           "limit": "$limit",
           "number": "$number"
         }
+      }
+    },
+    {
+      "name": "easybill_list_payments",
+      "description": "List payments recorded on easybill documents: amount in cents, payment date, type, provider, reference, notice and whether it is an overdue fee. Filter by document to see what was paid on an invoice, or by date to reconcile a period. Paged with page and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Only payments of these documents (comma-separated document ids)."
+          },
+          "payment_at": {
+            "type": "string",
+            "description": "Payment date: a single YYYY-MM-DD or a range \"2026-01-01,2026-03-31\"."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Only payments with this reference (comma-separated for several)."
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number, 1-based (default 1)."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Results per page (default 100, max 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document-payments",
+        "queryParams": {
+          "document_id": "$document_id",
+          "payment_at": "$payment_at",
+          "reference": "$reference",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "easybill_get_document_payment",
+      "description": "Get one recorded document payment by its id: document, amount in cents, date, type, provider and reference.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The document payment id from easybill_list_payments."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document-payments/{id}"
+      }
+    },
+    {
+      "name": "easybill_record_payment",
+      "description": "Record a payment received on an easybill document (Zahlungseingang), e.g. a bank transfer that settles an invoice. Bookkeeping only: easybill stores the payment and updates the paid amount and status of the document; no money is collected or sent. Amounts are in cents. Check the open amount with easybill_get_document first and confirm amount and date with the user, because every call adds another payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "integer",
+            "description": "The easybill document id the payment belongs to."
+          },
+          "amount": {
+            "type": "integer",
+            "description": "Amount in cents, e.g. 11900 for 119.00 EUR."
+          },
+          "payment_at": {
+            "type": "string",
+            "description": "Payment date, YYYY-MM-DD; defaults to today."
+          },
+          "type": {
+            "type": "string",
+            "description": "Payment type as shown in easybill, e.g. \"Überweisung\", \"PayPal\", \"VISA\"."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Payment provider, e.g. \"Stripe\" or the bank."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Reference such as the bank statement purpose or transaction id."
+          },
+          "notice": {
+            "type": "string",
+            "description": "Internal note."
+          },
+          "is_overdue_fee": {
+            "type": "boolean",
+            "description": "true when the amount is a dunning or overdue fee rather than a payment of the invoice."
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "true marks the document as paid even when the amount is less than the open amount (e.g. a small shortfall written off)."
+          }
+        },
+        "required": [
+          "document_id",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/document-payments",
+        "queryParams": {
+          "paid": "$paid"
+        },
+        "bodyMapping": {
+          "document_id": "$document_id",
+          "amount": "$amount",
+          "payment_at": "$payment_at",
+          "type": "$type",
+          "provider": "$provider",
+          "reference": "$reference",
+          "notice": "$notice",
+          "is_overdue_fee": "$is_overdue_fee"
+        }
+      }
+    },
+    {
+      "name": "easybill_remove_payment",
+      "description": "Delete a recorded document payment, e.g. one booked on the wrong invoice; the document is open again for that amount. Cannot be undone. Name the payment (document, amount, date) and get a yes first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The document payment id from easybill_list_payments."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/document-payments/{id}"
+      }
+    },
+    {
+      "name": "easybill_draft_document",
+      "description": "Create a document in easybill as a draft: invoice, offer, order confirmation, delivery note, credit note, pro forma invoice or letter, for a customer, with its line items. easybill takes address, payment terms and texts from the customer and the template; the draft gets its number when it is completed with easybill_complete_document. Prices are in cents. Returns the new document with its id. Confirm customer, items, prices and VAT with the user before creating.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "INVOICE",
+              "OFFER",
+              "ORDER",
+              "DELIVERY",
+              "CREDIT",
+              "PROFORMA_INVOICE",
+              "CHARGE",
+              "LETTER"
+            ],
+            "description": "Document type; cannot be changed later. INVOICE by default."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "easybill customer id (easybill_list_customers). Fills the address and terms."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Line items: [{\"number\": \"ART-1\", \"description\": \"Webentwicklung\", \"quantity\": 2, \"unit\": \"Stunde\", \"single_price_net\": 7500, \"vat_percent\": 19}]. Prices in cents (7500 = 75.00 EUR). position_id copies an article from easybill_list_positions; type TEXT adds a text line."
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title, e.g. \"Invoice for order 1042\"."
+          },
+          "document_date": {
+            "type": "string",
+            "description": "Document date, YYYY-MM-DD; defaults to today."
+          },
+          "due_in_days": {
+            "type": "integer",
+            "description": "Payment term in days; defaults to the customer setting."
+          },
+          "order_number": {
+            "type": "string",
+            "description": "The customer's order number."
+          },
+          "buyer_reference": {
+            "type": "string",
+            "description": "Buyer reference (Leitweg-ID for XRechnung to public authorities)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO currency, default EUR."
+          },
+          "text_prefix": {
+            "type": "string",
+            "description": "Intro text above the items; defaults to the template text."
+          },
+          "text": {
+            "type": "string",
+            "description": "Closing text below the items; defaults to the template text."
+          },
+          "service_date": {
+            "type": "object",
+            "description": "Service date for INVOICE and CREDIT: {\"type\": \"DEFAULT\"} (invoice date is the date of supply), or type SERVICE or DELIVERY with exactly one of: date, date_from + date_to, or text, e.g. {\"type\": \"SERVICE\", \"date_from\": \"2026-10-01\", \"date_to\": \"2026-10-31\"}."
+          },
+          "ref_id": {
+            "type": "integer",
+            "description": "Id of a document this one refers to, e.g. the offer an invoice is based on."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Further document fields by their easybill names, e.g. {\"vat_option\": \"revc\", \"contact_id\": 12, \"pdf_template\": \"EN\", \"project_id\": 7}."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents",
+        "bodyMapping": {
+          "__merge": "$fields",
+          "type": "$type",
+          "customer_id": "$customer_id",
+          "items": "$items",
+          "title": "$title",
+          "document_date": "$document_date",
+          "due_in_days": "$due_in_days",
+          "order_number": "$order_number",
+          "buyer_reference": "$buyer_reference",
+          "currency": "$currency",
+          "text_prefix": "$text_prefix",
+          "text": "$text",
+          "service_date": "$service_date",
+          "ref_id": "$ref_id"
+        }
+      }
+    },
+    {
+      "name": "easybill_complete_document",
+      "description": "Complete (finalize) a draft document: easybill assigns the document number and the date and the document can no longer be edited. Needed before an invoice is sent. Not allowed for RECURRING documents. Returns the completed document. Show the user the draft (easybill_get_document) and confirm first: a completed invoice can only be corrected with a cancellation (easybill_create_storno).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The easybill document id (numeric), not the document number. easybill_list_documents finds it."
+          },
+          "reason_for_change": {
+            "type": "string",
+            "description": "Reason stored on the document version."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/documents/{id}/done",
+        "queryParams": {
+          "reason_for_change": "$reason_for_change"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "easybill_send_document",
+      "description": "Send a completed document to the customer by e-mail (or fax, or as a letter through easybill's postal service, which charges postage). For e-mail, to, subject and message default to the customer and the template; the PDF or e-invoice is attached. Returns nothing on success (HTTP 204). Confirm recipient and channel with the user first: the customer receives it at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The easybill document id (numeric), not the document number. easybill_list_documents finds it."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "email",
+              "fax",
+              "post"
+            ],
+            "description": "Channel: email, fax, or post (a paper letter sent by easybill, which costs postage)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient(s); several e-mail addresses separated by comma or semicolon. Defaults to the customer."
+          },
+          "cc": {
+            "type": "string",
+            "description": "Copy recipient(s) for e-mail."
+          },
+          "from": {
+            "type": "string",
+            "description": "Sender address, if different from the account default."
+          },
+          "subject": {
+            "type": "string",
+            "description": "E-mail subject; defaults to the template."
+          },
+          "message": {
+            "type": "string",
+            "description": "E-mail text; defaults to the template."
+          },
+          "send_with_attachment": {
+            "type": "boolean",
+            "description": "false sends a link instead of attaching the document."
+          },
+          "document_file_type": {
+            "type": "string",
+            "enum": [
+              "default",
+              "auto",
+              "zugferd1",
+              "zugferd2_2",
+              "zugferd2_4_en16931",
+              "zugferd2_4_extended",
+              "zugferd2_5_en16931",
+              "zugferd2_5_extended",
+              "xrechnung",
+              "xrechnung_xml",
+              "xrechnung2_2_xml",
+              "xrechnung3_0_xml"
+            ],
+            "description": "File format of the attachment; auto (or leave out) uses the customer setting, e.g. XRechnung for public authorities."
+          },
+          "post_send_type": {
+            "type": "string",
+            "enum": [
+              "post_send_type_standard",
+              "post_send_type_registered",
+              "post_send_type_registered_and_personal",
+              "post_send_type_registered_and_receipt",
+              "post_send_type_registered_throwin"
+            ],
+            "description": "Letter type for type=post."
+          }
+        },
+        "required": [
+          "id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/{id}/send/{type}",
+        "bodyMapping": {
+          "to": "$to",
+          "cc": "$cc",
+          "from": "$from",
+          "subject": "$subject",
+          "message": "$message",
+          "send_with_attachment": "$send_with_attachment",
+          "document_file_type": "$document_file_type",
+          "post_send_type": "$post_send_type"
+        }
+      }
+    },
+    {
+      "name": "easybill_create_storno",
+      "description": "Cancel a completed invoice or credit note: easybill creates a cancellation document (Stornorechnung) that reverses it, and links the two. The original stays in the books, as the law requires. Returns the cancellation document. Name the document (number, customer, amount) and get a yes first; the cancellation is final. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The easybill document id (numeric), not the document number. easybill_list_documents finds it."
+          },
+          "use_text_from_template": {
+            "type": "boolean",
+            "description": "true uses the standard texts of the cancellation template."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/documents/{id}/cancel",
+        "queryParams": {
+          "use_text_from_template": "$use_text_from_template"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
       }
     }
   ]

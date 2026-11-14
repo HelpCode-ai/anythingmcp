@@ -93,7 +93,11 @@ function isKeyless(a) {
 }
 
 const PROBED_AUTH = new Set(['NONE', 'LOGIN_TOKEN']);
-const USER_AGENT = 'anythingmcp/1.0 (+https://anythingmcp.com)';
+// The REST engine sets no User-Agent of its own, so the backend sends axios's
+// default; an adapter's own header still wins. Probe with the same, or a bot
+// filter that reacts to a crawler-style agent (ESPN, October 2026) fails here
+// while cloud calls work.
+const USER_AGENT = 'axios/1.20.0';
 
 /** Mirror of RestEngine.resolveValue for the subset a probe needs. */
 function resolveValue(value, params) {
@@ -256,8 +260,10 @@ async function loginTokenHeaders(cfg) {
   } else {
     let json;
     try { json = JSON.parse(text); } catch { /* not JSON */ }
-    token = jsonPath(json, cfg.tokenJsonPath || '');
-    if (!token || typeof token !== 'string') throw fail('login-failed', `no token at "${cfg.tokenJsonPath}" in login response`, res.status);
+    // tokenJsonPath may list several paths, tried in order (LoginTokenService).
+    const paths = Array.isArray(cfg.tokenJsonPath) ? cfg.tokenJsonPath : [cfg.tokenJsonPath || ''];
+    token = paths.map((p) => jsonPath(json, p)).find((v) => typeof v === 'string' && v.trim() !== '');
+    if (!token) throw fail('login-failed', `no token at ${paths.map((p) => `"${p}"`).join(', ')} in login response`, res.status);
   }
   const aud = cfg.audJsonPath ? undefined : cfg.aud;
   const fill = (s) => s.replace(/\$\{token\}/g, token).replace(/\$\{aud\}/g, aud || '');

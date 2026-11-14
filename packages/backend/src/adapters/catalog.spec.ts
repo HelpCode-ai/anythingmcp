@@ -1,6 +1,8 @@
 import { listAdapters, getAdapter } from './catalog';
 import { REQUEST_BODY_METHODS } from '../connectors/engines/rest.engine';
 import { localMcpToolName, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
+import { EMAIL_METHODS } from '../connectors/email/email-builtins';
+import { FILE_SEARCH_METHODS } from '../file-search/file-search-builtins';
 
 const VALID_AUTH_TYPES = new Set([
   'NONE',
@@ -46,6 +48,11 @@ const VALID_ODATA_BUILTIN_METHODS = new Set([
   'ODATA_GET',
 ]);
 
+// EMAIL adapters speak IMAP and SMTP: their tools are the email built-ins
+// (EmailEngine) plus `static` guides. No HTTP path, so no URL rules either.
+const VALID_EMAIL_METHODS = new Set([...EMAIL_METHODS.map((m) => m.toUpperCase()), 'STATIC']);
+const VALID_FILE_SEARCH_METHODS = new Set([...FILE_SEARCH_METHODS.map((m) => m.toUpperCase()), 'STATIC']);
+
 /**
  * Declared tool arguments that are deliberately not sent anywhere, as
  * `"<slug>/<tool>": ["arg", ...]`, each with the reason next to it. Empty on
@@ -72,7 +79,9 @@ const REST_HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 function argumentsSent(em: Record<string, unknown>): Set<string> {
   const sent = new Set<string>();
   for (const m of String(em.path ?? '').matchAll(/\{([^{}]+)\}/g)) sent.add(m[1]);
-  const fields: unknown[] = [em.queryParams, em.headers];
+  // `download` reads its paging and filter arguments on the server, after the
+  // call: they are used, just not sent upstream (download-follow.util.ts).
+  const fields: unknown[] = [em.queryParams, em.headers, em.download];
   const sendsBody = REQUEST_BODY_METHODS.has(String(em.method).toUpperCase());
   if (sendsBody) fields.push(em.bodyMapping);
   for (const field of fields) {
@@ -118,6 +127,16 @@ describe('adapter catalog', () => {
 
   it('registers at least one adapter', () => {
     expect(adapters.length).toBeGreaterThan(0);
+  });
+
+  it('gives every tool a parameters object, {} when the JSON leaves it out', () => {
+    for (const meta of listAdapters()) {
+      for (const tool of getAdapter(meta.slug)!.tools) {
+        expect(tool.parameters).toEqual(expect.any(Object));
+      }
+    }
+    const providers = getAdapter('openrouter')!.tools.find((t) => t.name === 'openrouter_list_providers');
+    expect(providers?.parameters).toEqual({});
   });
 
   it('has unique slugs', () => {
@@ -372,6 +391,10 @@ describe('adapter catalog', () => {
         // optional.
         if (cfg.tokenSource === 'cookie') {
           if (cfg.cookieMode !== 'all') expect(typeof cfg.cookieName).toBe('string');
+        } else if (Array.isArray(cfg.tokenJsonPath)) {
+          // Several candidate paths, tried in order (tokenJsonPaths()).
+          expect(cfg.tokenJsonPath.length).toBeGreaterThan(0);
+          for (const p of cfg.tokenJsonPath) expect(typeof p === 'string' && p.length > 0).toBe(true);
         } else {
           expect(typeof cfg.tokenJsonPath).toBe('string');
         }
@@ -386,6 +409,18 @@ describe('adapter catalog', () => {
           // does not use them.
           expect(typeof cfg.username).toBe('string');
           expect(typeof cfg.password).toBe('string');
+        }
+        if (cfg.loginBasicAuth !== undefined) {
+          // Same refusals as loginBasicAuthHeader(): the engine owns the
+          // login Authorization header and the password stays out of the body.
+          expect(typeof cfg.loginBasicAuth).toBe('boolean');
+          if (cfg.loginBasicAuth) {
+            expect(cfg.signedJwt).toBeUndefined();
+            expect((cfg.passwordHashing as { scheme?: string } | undefined)?.scheme ?? 'none').toBe('none');
+            const headers = Object.keys((cfg.loginHeaders as Record<string, string>) ?? {});
+            expect(headers.map((h) => h.toLowerCase())).not.toContain('authorization');
+            expect(JSON.stringify([cfg.loginBody ?? null, cfg.loginBodyTemplate ?? null, cfg.loginHeaders ?? null])).not.toMatch(/\$\{password(Hashed)?\}/);
+          }
         }
         if (cfg.passwordHashing) {
           const ph = cfg.passwordHashing as Record<string, unknown>;
@@ -442,6 +477,19 @@ describe('adapter catalog', () => {
           expect(tool.name).toBe(
             localMcpToolName(String(em.method), mcpToolPrefixOf(adapter.connector.config)),
           );
+          expect(typeof em.path).toBe('string');
+          return;
+        }
+
+        if (adapter.connector.type === 'EMAIL') {
+          expect(VALID_EMAIL_METHODS.has(String(em.method).toUpperCase())).toBe(true);
+          expect(typeof em.path).toBe('string');
+          return;
+        }
+
+        // File Search built-ins (file-search-builtins.ts): fixed methods, no HTTP.
+        if ((adapter.connector.type as string) === 'FILE_SEARCH') {
+          expect(VALID_FILE_SEARCH_METHODS.has(String(em.method).toUpperCase())).toBe(true);
           expect(typeof em.path).toBe('string');
           return;
         }
@@ -511,5 +559,23 @@ describe('adapter catalog', () => {
         }
       },
     );
+  });
+});
+
+describe('EMAIL adapters', () => {
+  it('imap-smtp carries its guide and the nine email built-ins under its prefix', () => {
+    const adapter = getAdapter('imap-smtp');
+    expect(adapter?.connector.type).toBe('EMAIL');
+    const methods = adapter!.tools.map((t) => (t.endpointMapping as { method: string }).method);
+    expect(methods.filter((m) => m !== 'static').sort()).toEqual([...EMAIL_METHODS].sort());
+    expect(adapter!.tools.every((t) => t.name.startsWith('imap_smtp_'))).toBe(true);
+    expect(adapter!.tools[0].name).toBe('imap_smtp_guide');
+    expect(adapter!.probe?.tool).toBe('imap_smtp_list_folders');
+    expect(adapter!.tools.some((t) => t.name === adapter!.probe?.tool)).toBe(true);
+    // Sending and deleting install switched off; drafts are the way to answer.
+    expect(adapter!.tools.filter((t) => t.enabled === false).map((t) => t.name).sort()).toEqual([
+      'imap_smtp_delete_messages',
+      'imap_smtp_send_message',
+    ]);
   });
 });

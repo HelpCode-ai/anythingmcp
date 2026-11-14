@@ -88,6 +88,25 @@ export function validateBaseUrl(
     return null;
   }
 
+  if (opts.type === 'EMAIL') {
+    // The IMAP server as a URL: imaps://imap.example.com:993 (SSL/TLS) or
+    // imap://imap.example.com:143 (STARTTLS). The settings in config.email
+    // are what the engine uses; this is the address the connector lists show.
+    let mail: URL | null = null;
+    try {
+      mail = new URL(raw);
+    } catch {
+      mail = null;
+    }
+    if (!mail || (mail.protocol !== 'imap:' && mail.protocol !== 'imaps:') || !mail.hostname) {
+      return `"${truncate(raw)}" is not an IMAP server address. Use imaps://imap.example.com:993.`;
+    }
+    if (opts.requirePublicHost && !looksLikeAHost(mail.hostname)) {
+      return `"${truncate(mail.hostname)}" is not a mail server name, e.g. imap.example.com.`;
+    }
+    return null;
+  }
+
   let url: URL;
   try {
     url = new URL(raw);

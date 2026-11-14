@@ -29,10 +29,10 @@ export interface TrustStatsDisplay {
 
 /**
  * The least each figure is shown as (Matteo, 8 Oct 2026): 200,000+ downloads
- * across all distribution channels, 1M+ AI tool calls last month. Docker Hub alone undercounts downloads, so the floor applies even
+ * across all distribution channels, 2M+ AI tool calls last month (raised from 1M+ on 9 Nov 2026, 2.08M in the last 30 days). Docker Hub alone undercounts downloads, so the floor applies even
  * when a live number is missing or lower.
  */
-export const TRUST_FLOORS = { dockerPulls: 200_000, toolCalls30d: 1_000_000 } as const;
+export const TRUST_FLOORS = { dockerPulls: 200_000, toolCalls30d: 2_000_000 } as const;
 
 const atLeast = (n: number | null | undefined, floor: number) => (usable(n) && n > floor ? n : floor);
 

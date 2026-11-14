@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Docker image tag to deploy (default: latest)"
+        description: "Docker image tag to deploy, e.g. a short sha (default: latest). This exact image goes live."
         required: false
         default: "latest"
         type: string
@@ -24,146 +24,218 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check the image tag
+        env:
+          DEPLOY_TAG: ${{ inputs.tag }}
+        run: |
+          # The tag is passed to a root shell on the droplet: allow only the
+          # characters a Docker tag can have.
+          if ! printf '%s' "$DEPLOY_TAG" | grep -Eq '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'; then
+            echo "::error::invalid image tag: $DEPLOY_TAG"
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
 
+      # Plain OpenSSH from the runner. Until 2026-11-08 the two steps below
+      # were appleboy/scp-action and appleboy/ssh-action, which download their
+      # binary (drone-scp/drone-ssh) from GitHub releases on every run: when
+      # those downloads answered 504 for over an hour, no deploy could start.
+      # OpenSSH is on the runner already, and no third-party code receives the
+      # root key. The host key is pinned: a changed key stops the deploy.
+      - name: Set up SSH
+        env:
+          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          CLOUD_SSH_KEY: ${{ secrets.CLOUD_SSH_KEY }}
+          # /etc/ssh/ssh_host_ed25519_key.pub on the droplet,
+          # SHA256:R6jzmq+dyI5/yJu9fCtlSQn72daKJQwgOs+Ia+UDpZU
+          CLOUD_HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFqwRlQt3fjfSXKcJPysExPVtbJjAsv6R2Kxbm7XOyxE
+        run: |
+          install -d -m 700 ~/.ssh
+          umask 077
+          printf '%s\n' "$CLOUD_SSH_KEY" > ~/.ssh/cloud_key
+          printf '%s %s\n' "$CLOUD_HOST" "$CLOUD_HOST_KEY" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host cloud
+            HostName $CLOUD_HOST
+            User root
+            IdentityFile ~/.ssh/cloud_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+            ServerAliveCountMax 6
+          EOF
+
       - name: Copy config files to server
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.CLOUD_HOST }}
-          username: root
-          key: ${{ secrets.CLOUD_SSH_KEY }}
-          source: "docker-compose.cloud.yml,deploy/cloud/Caddyfile,deploy/cloud/release.sh,deploy/cloud/uptime-probe.sh,deploy/cloud/systemd/anythingmcp-probe.service,deploy/cloud/systemd/anythingmcp-probe.timer,deploy/cloud/stuck-users-report.sh,deploy/cloud/systemd/anythingmcp-stuck-report.service,deploy/cloud/systemd/anythingmcp-stuck-report.timer,deploy/cloud/trial-report.sh,deploy/cloud/systemd/anythingmcp-trial-report.service,deploy/cloud/systemd/anythingmcp-trial-report.timer,deploy/motis/Dockerfile,deploy/motis/config.yml,deploy/motis/entrypoint.sh"
-          target: /tmp/anythingmcp-deploy
-          overwrite: true
+        run: |
+          # Same files and layout under /tmp/anythingmcp-deploy as before.
+          tar -cf - docker-compose.cloud.yml deploy/cloud/Caddyfile deploy/cloud/release.sh deploy/cloud/uptime-probe.sh deploy/cloud/systemd/anythingmcp-probe.service deploy/cloud/systemd/anythingmcp-probe.timer deploy/cloud/stuck-users-report.sh deploy/cloud/systemd/anythingmcp-stuck-report.service deploy/cloud/systemd/anythingmcp-stuck-report.timer deploy/cloud/trial-report.sh deploy/cloud/systemd/anythingmcp-trial-report.service deploy/cloud/systemd/anythingmcp-trial-report.timer deploy/motis/Dockerfile deploy/motis/config.yml deploy/motis/entrypoint.sh deploy/cloud/certs/extra-ca.pem deploy/ee/LICENSE deploy/ee/file-extractor \
+            | ssh cloud 'rm -rf /tmp/anythingmcp-deploy && mkdir -p /tmp/anythingmcp-deploy && tar -xf - -C /tmp/anythingmcp-deploy'
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
+        # A release can take up to ~10 min (new containers, site checks,
+        # draining the old ones); a timeout mid-release would leave it half
+        # done, so allow 30 min like the old command_timeout.
+        timeout-minutes: 30
         env:
           CRON_SECRET: ${{ secrets.ONBOARDING_CRON_SECRET }}
           LICENSE_SERVICE_TOKEN: ${{ secrets.LICENSE_SERVICE_TOKEN }}
-        with:
-          host: ${{ secrets.CLOUD_HOST }}
-          username: root
-          key: ${{ secrets.CLOUD_SSH_KEY }}
-          envs: CRON_SECRET,LICENSE_SERVICE_TOKEN
-          # The action's default is 10m. A release can take longer (up to
-          # 5 min waiting for the new containers, the site checks, up to
-          # 2 min draining the old ones), and a timeout mid-release would
-          # leave it half done — the old colour still serving, but the job
-          # unable to say so.
-          command_timeout: 30m
-          script: |
-            set -e
-            cd /opt/anythingmcp-cloud
+          DEPLOY_TAG: ${{ inputs.tag }}
+        run: |
+          # The script goes to the droplet as a root-only file and runs from
+          # there with stdin closed: piped into `bash -s`, any command in
+          # release.sh that reads stdin would swallow the rest of the script.
+          # The three values travel inside it as exports (what ssh-action's
+          # `envs` did), never on a command line where `ps` would show them;
+          # its first line deletes the file (bash keeps reading the open file).
+          {
+            echo 'rm -f -- "$0"'
+            printf 'export CRON_SECRET=%q LICENSE_SERVICE_TOKEN=%q DEPLOY_TAG=%q\n' \
+              "$CRON_SECRET" "$LICENSE_SERVICE_TOKEN" "$DEPLOY_TAG"
+            cat <<'REMOTE'
+          set -e
+          cd /opt/anythingmcp-cloud
 
-            # Pull the requested tag AND refresh :latest, since
-            # docker-compose.cloud.yml references :latest. Without this
-            # the local :latest tag can point to an older image.
-            docker pull helpcodeai/anythingmcp:${{ inputs.tag }}
-            docker pull helpcodeai/anythingmcp:latest
+          # docker-compose.cloud.yml runs the local :latest, so point it at
+          # the requested image. Until 2026-11-03 this step pulled the tag
+          # AND :latest from Docker Hub, so the tag was ignored: a rollback
+          # to a short sha deployed whatever :latest was on Docker Hub
+          # (main, after a release). The local :latest now means "the image
+          # this deploy chose"; release.sh puts back the previous one if the
+          # release fails.
+          DEPLOY_TAG="${DEPLOY_TAG:-latest}"
+          docker pull "helpcodeai/anythingmcp:${DEPLOY_TAG}"
+          if [ "$DEPLOY_TAG" != "latest" ]; then
+            docker tag "helpcodeai/anythingmcp:${DEPLOY_TAG}" helpcodeai/anythingmcp:latest
+          fi
+          echo "deploying helpcodeai/anythingmcp:${DEPLOY_TAG} ($(docker inspect -f '{{.Id}}' helpcodeai/anythingmcp:latest))"
 
-            # docker-compose.cloud.yml and the Caddyfile are NOT copied here:
-            # release.sh installs them, after saving the ones in use, so a
-            # failed release can put them back. The MOTIS build context is
-            # copied below; `docker compose up` builds it if the pinned image
-            # tag is missing (fresh droplet or a bumped tag), otherwise the
-            # existing image is reused.
+          # docker-compose.cloud.yml and the Caddyfile are NOT copied here:
+          # release.sh installs them, after saving the ones in use, so a
+          # failed release can put them back. The MOTIS build context is
+          # copied below; `docker compose up` builds it if the pinned image
+          # tag is missing (fresh droplet or a bumped tag), otherwise the
+          # existing image is reused.
 
-            # Uptime probe: a systemd timer on this host, every minute, mailing
-            # on a change of state. It is here and not only in GitHub Actions
-            # because the scheduled workflow ran three times in its first ten
-            # hours — GitHub's cron is best-effort — and the failure mode we
-            # have is the backend dying while the host stays up, which a timer
-            # on the host sees within a minute. Reads DOMAIN, SMTP_* and
-            # UPTIME_ALERT_TO from this directory's .env; with no
-            # UPTIME_ALERT_TO it only logs to the journal.
-            install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/uptime-probe.sh ./uptime-probe.sh
-            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-probe.service /etc/systemd/system/
-            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-probe.timer /etc/systemd/system/
-            systemctl daemon-reload
-            systemctl enable --now anythingmcp-probe.timer
-            systemctl is-active anythingmcp-probe.timer
+          # Extra CA intermediates for the backend's NODE_EXTRA_CA_CERTS
+          # (see docker-compose.cloud.yml). Installed before release.sh so
+          # the new colour starts with them.
+          mkdir -p ./certs
+          install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/certs/extra-ca.pem ./certs/extra-ca.pem
 
-            # Weekly stuck-users report, Monday 07:00 Europe/Berlin: orgs whose
-            # tool calls have never succeeded, connectors failing for everyone,
-            # signups that never got going. Read-only on the database. Mails
-            # REPORT_TO (else UPTIME_ALERT_TO) through this directory's SMTP_*;
-            # with neither set it writes to the journal. The timer does not fire
-            # on install, only on the next Monday.
-            install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/stuck-users-report.sh ./stuck-users-report.sh
-            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-stuck-report.service /etc/systemd/system/
-            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-stuck-report.timer /etc/systemd/system/
-            systemctl daemon-reload
-            systemctl enable --now anythingmcp-stuck-report.timer
-            systemctl is-active anythingmcp-stuck-report.timer
+          # Uptime probe: a systemd timer on this host, every minute, mailing
+          # on a change of state. It is here and not only in GitHub Actions
+          # because the scheduled workflow ran three times in its first ten
+          # hours — GitHub's cron is best-effort — and the failure mode we
+          # have is the backend dying while the host stays up, which a timer
+          # on the host sees within a minute. Reads DOMAIN, SMTP_* and
+          # UPTIME_ALERT_TO from this directory's .env; with no
+          # UPTIME_ALERT_TO it only logs to the journal.
+          install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/uptime-probe.sh ./uptime-probe.sh
+          install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-probe.service /etc/systemd/system/
+          install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-probe.timer /etc/systemd/system/
+          systemctl daemon-reload
+          systemctl enable --now anythingmcp-probe.timer
+          systemctl is-active anythingmcp-probe.timer
 
-            # Daily trial report, 08:05 Europe/Berlin: licences that became paid,
-            # trials ending in the next 3 days and how far each workspace got,
-            # trials that ended yesterday. Read-only, same mail route as above.
-            install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/trial-report.sh ./trial-report.sh
-            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-trial-report.service /etc/systemd/system/
-            install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-trial-report.timer /etc/systemd/system/
-            systemctl daemon-reload
-            systemctl enable --now anythingmcp-trial-report.timer
-            systemctl is-active anythingmcp-trial-report.timer
+          # Weekly stuck-users report, Monday 07:00 Europe/Berlin: orgs whose
+          # tool calls have never succeeded, connectors failing for everyone,
+          # signups that never got going. Read-only on the database. Mails
+          # REPORT_TO (else UPTIME_ALERT_TO) through this directory's SMTP_*;
+          # with neither set it writes to the journal. The timer does not fire
+          # on install, only on the next Monday.
+          install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/stuck-users-report.sh ./stuck-users-report.sh
+          install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-stuck-report.service /etc/systemd/system/
+          install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-stuck-report.timer /etc/systemd/system/
+          systemctl daemon-reload
+          systemctl enable --now anythingmcp-stuck-report.timer
+          systemctl is-active anythingmcp-stuck-report.timer
 
-            mkdir -p ./deploy/motis
-            cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
-            rm -rf ./deploy/cloud/db-rest
+          # Daily trial report, 08:05 Europe/Berlin: licences that became paid,
+          # trials ending in the next 3 days and how far each workspace got,
+          # trials that ended yesterday. Read-only, same mail route as above.
+          install -m 755 /tmp/anythingmcp-deploy/deploy/cloud/trial-report.sh ./trial-report.sh
+          install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-trial-report.service /etc/systemd/system/
+          install -m 644 /tmp/anythingmcp-deploy/deploy/cloud/systemd/anythingmcp-trial-report.timer /etc/systemd/system/
+          systemctl daemon-reload
+          systemctl enable --now anythingmcp-trial-report.timer
+          systemctl is-active anythingmcp-trial-report.timer
 
-            # Keep CRON_SECRET in the server .env in sync with the repo
-            # secret so the onboarding-reminders cron can authenticate.
-            # Upsert (replace-or-append) without disturbing other vars.
-            touch .env
-            if grep -q '^CRON_SECRET=' .env; then
-              sed -i "s#^CRON_SECRET=.*#CRON_SECRET=${CRON_SECRET}#" .env
+          mkdir -p ./deploy/motis
+          cp /tmp/anythingmcp-deploy/deploy/motis/* ./deploy/motis/
+
+          # Build context of the File Search text extractor (ee/, Compose
+          # profile `files`). Like MOTIS, `docker compose up` builds it only
+          # when the pinned FILE_EXTRACTOR_IMAGE tag is missing, so a change
+          # to the extractor needs a new tag. Nothing runs unless .env sets
+          # COMPOSE_PROFILES=files.
+          mkdir -p ./deploy/ee
+          rm -rf ./deploy/ee/file-extractor
+          cp -r /tmp/anythingmcp-deploy/deploy/ee/file-extractor ./deploy/ee/
+          install -m 644 /tmp/anythingmcp-deploy/deploy/ee/LICENSE ./deploy/ee/LICENSE
+          rm -rf ./deploy/cloud/db-rest
+
+          # Keep CRON_SECRET in the server .env in sync with the repo
+          # secret so the onboarding-reminders cron can authenticate.
+          # Upsert (replace-or-append) without disturbing other vars.
+          touch .env
+          if grep -q '^CRON_SECRET=' .env; then
+            sed -i "s#^CRON_SECRET=.*#CRON_SECRET=${CRON_SECRET}#" .env
+          else
+            echo "CRON_SECRET=${CRON_SECRET}" >> .env
+          fi
+
+          # Same for the licence service token, which anythingmcp.com checks
+          # to tell this backend apart from the public when it asks for a
+          # trial. Must match LICENSE_SERVICE_TOKEN on the website droplet.
+          if [ -n "${LICENSE_SERVICE_TOKEN}" ]; then
+            if grep -q '^LICENSE_SERVICE_TOKEN=' .env; then
+              sed -i "s#^LICENSE_SERVICE_TOKEN=.*#LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN}#" .env
             else
-              echo "CRON_SECRET=${CRON_SECRET}" >> .env
+              echo "LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN}" >> .env
             fi
+          fi
 
-            # Same for the licence service token, which anythingmcp.com checks
-            # to tell this backend apart from the public when it asks for a
-            # trial. Must match LICENSE_SERVICE_TOKEN on the website droplet.
-            if [ -n "${LICENSE_SERVICE_TOKEN}" ]; then
-              if grep -q '^LICENSE_SERVICE_TOKEN=' .env; then
-                sed -i "s#^LICENSE_SERVICE_TOKEN=.*#LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN}#" .env
-              else
-                echo "LICENSE_SERVICE_TOKEN=${LICENSE_SERVICE_TOKEN}" >> .env
-              fi
-            fi
+          trap 'rm -rf /tmp/anythingmcp-deploy' EXIT
 
-            trap 'rm -rf /tmp/anythingmcp-deploy' EXIT
+          # Blue/green: start the new release next to the one serving, check
+          # it privately and then publicly, switch Caddy, stop the old one —
+          # see deploy/cloud/release.sh. A release that fails its checks is
+          # removed before it serves anything and this job goes red with the
+          # previous release still serving. The uptime probe is no longer
+          # silenced for the deploy: a healthy one has no downtime to hide.
+          # release.sh silences it itself only when it has to fall back to
+          # stop-then-start (no room on the host for two backends).
+          bash /tmp/anythingmcp-deploy/deploy/cloud/release.sh
 
-            # Blue/green: start the new release next to the one serving, check
-            # it privately and then publicly, switch Caddy, stop the old one —
-            # see deploy/cloud/release.sh. A release that fails its checks is
-            # removed before it serves anything and this job goes red with the
-            # previous release still serving. The uptime probe is no longer
-            # silenced for the deploy: a healthy one has no downtime to hide.
-            # release.sh silences it itself only when it has to fall back to
-            # stop-then-start (no room on the host for two backends).
-            bash /tmp/anythingmcp-deploy/deploy/cloud/release.sh
+          docker image prune -f
 
-            docker image prune -f
+          # Keep the eight most recent app images and drop the rest. On
+          # 2026-09-19 the droplet held 35 of them going back four months,
+          # ~1.3 GB each — the bulk of the 34 GB under /var/lib/containerd,
+          # growing by one image per deploy.
+          #
+          # Safe because these are a local cache, not an archive: every tag
+          # is still on Docker Hub, so an older rollback target comes back
+          # with `docker pull helpcodeai/anythingmcp:<tag>`. Eight covers
+          # roughly six weeks of builds. An image a container is using
+          # cannot be removed — docker refuses, and the `|| true` keeps the
+          # deploy green when it does.
+          docker images helpcodeai/anythingmcp \
+            --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
+            | sort -r | tail -n +9 | cut -f2 \
+            | while read -r img; do
+                [ "$img" = "helpcodeai/anythingmcp:latest" ] && continue
+                echo "pruning cached image $img"
+                docker rmi "$img" >/dev/null 2>&1 || true
+              done
 
-            # Keep the eight most recent app images and drop the rest. On
-            # 2026-09-19 the droplet held 35 of them going back four months,
-            # ~1.3 GB each — the bulk of the 34 GB under /var/lib/containerd,
-            # growing by one image per deploy.
-            #
-            # Safe because these are a local cache, not an archive: every tag
-            # is still on Docker Hub, so an older rollback target comes back
-            # with `docker pull helpcodeai/anythingmcp:<tag>`. Eight covers
-            # roughly six weeks of builds. An image a container is using
-            # cannot be removed — docker refuses, and the `|| true` keeps the
-            # deploy green when it does.
-            docker images helpcodeai/anythingmcp \
-              --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
-              | sort -r | tail -n +9 | cut -f2 \
-              | while read -r img; do
-                  [ "$img" = "helpcodeai/anythingmcp:latest" ] && continue
-                  echo "pruning cached image $img"
-                  docker rmi "$img" >/dev/null 2>&1 || true
-                done
+          echo "Deployment complete"
+          REMOTE
+          } | ssh cloud 'umask 077 && cat > /tmp/anythingmcp-deploy/deploy.sh'
+          ssh cloud 'bash /tmp/anythingmcp-deploy/deploy.sh' < /dev/null
 
-            echo "Deployment complete"
+      - name: Remove the SSH key
+        if: always()
+        run: rm -f ~/.ssh/cloud_key

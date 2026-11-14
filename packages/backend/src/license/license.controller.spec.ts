@@ -1,3 +1,4 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { LicenseController } from './license.controller';
 import { readEmailLinkToken } from '../common/email-link-token';
 
@@ -201,5 +202,117 @@ describe('LicenseController — pricing-link token', () => {
     expect(make(true).pricingLinkToken(req)).toEqual({ token: null });
     process.env.EMAIL_LINK_SECRET = 'shared-with-the-licence-site';
     expect(make(false).pricingLinkToken(req)).toEqual({ token: null });
+  });
+});
+
+/**
+ * The licence site calls POST /api/license/sync from its Stripe webhook when a
+ * licence changes, so a plan bought in the billing portal reaches the
+ * workspace at once instead of at the next daily re-verification (6 Nov 2026:
+ * a Team upgrade stayed on Starter limits on Cloud while the site had it).
+ */
+describe('LicenseController — the licence site reports a changed licence', () => {
+  const OLD = process.env.LICENSE_SERVICE_TOKEN;
+  const TOKEN = 'svc-token-0123456789abcdef';
+  const KEY = 'AMCP-AAAA-BBBB-CCCC-DDDD';
+  afterEach(() => {
+    process.env.LICENSE_SERVICE_TOKEN = OLD;
+  });
+
+  function make(isCloud = true, syncFromSite = jest.fn(async () => true)) {
+    const controller = new LicenseController(
+      { syncFromSite } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { isCloud: () => isCloud } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    return { controller, syncFromSite };
+  }
+  const req = (token?: string) => ({ headers: token === undefined ? {} : { 'x-amcp-service-token': token } });
+
+  it('re-verifies the licence when the site presents its service token', async () => {
+    process.env.LICENSE_SERVICE_TOKEN = TOKEN;
+    const { controller, syncFromSite } = make();
+    await expect(controller.syncFromSite(req(TOKEN), { licenseKey: KEY })).resolves.toEqual({ synced: true });
+    expect(syncFromSite).toHaveBeenCalledWith(KEY);
+  });
+
+  it.each([
+    ['no token', undefined],
+    ['a wrong token', 'svc-token-0123456789abcdeX'],
+    ['a token of another length', 'short'],
+  ])('answers 404 to a caller with %s', async (_label, token) => {
+    process.env.LICENSE_SERVICE_TOKEN = TOKEN;
+    const { controller, syncFromSite } = make();
+    await expect(controller.syncFromSite(req(token), { licenseKey: KEY })).rejects.toBeInstanceOf(NotFoundException);
+    expect(syncFromSite).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 when this server has no service token configured', async () => {
+    delete process.env.LICENSE_SERVICE_TOKEN;
+    const { controller } = make();
+    await expect(controller.syncFromSite(req(''), { licenseKey: KEY })).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('answers 404 on self-hosted', async () => {
+    process.env.LICENSE_SERVICE_TOKEN = TOKEN;
+    const { controller, syncFromSite } = make(false);
+    await expect(controller.syncFromSite(req(TOKEN), { licenseKey: KEY })).rejects.toBeInstanceOf(NotFoundException);
+    expect(syncFromSite).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed verification without failing the webhook', async () => {
+    process.env.LICENSE_SERVICE_TOKEN = TOKEN;
+    const { controller } = make(true, jest.fn(async () => { throw new Error('site down'); }));
+    await expect(controller.syncFromSite(req(TOKEN), { licenseKey: KEY })).resolves.toEqual({ synced: false });
+  });
+});
+
+describe('LicenseController — plan fit', () => {
+  function make(cloud = true) {
+    const planFit = {
+      fit: jest.fn(async (_org: string, plan: string) => ({ plan, fits: true })),
+      fitAll: jest.fn(async () => ({ starter: { plan: 'starter', fits: false }, team: { plan: 'team', fits: true } })),
+    };
+    const controller = new LicenseController(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { isCloud: () => cloud } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      undefined,
+      undefined,
+      undefined,
+      planFit as any,
+    );
+    return { controller, planFit };
+  }
+  const req = { user: { organizationId: 'org-1', sub: 'u1', role: 'MEMBER' } };
+
+  it('returns both plans for the caller\'s workspace', async () => {
+    const { controller, planFit } = make();
+    await expect(controller.planFitForUser(req)).resolves.toEqual({
+      plans: { starter: { plan: 'starter', fits: false }, team: { plan: 'team', fits: true } },
+    });
+    expect(planFit.fitAll).toHaveBeenCalledWith('org-1');
+  });
+
+  it('returns one plan on request and refuses others', async () => {
+    const { controller, planFit } = make();
+    await expect(controller.planFitForUser(req, 'team')).resolves.toEqual({ plans: { team: { plan: 'team', fits: true } } });
+    expect(planFit.fit).toHaveBeenCalledWith('org-1', 'team');
+    await expect(controller.planFitForUser(req, 'enterprise')).rejects.toThrow(BadRequestException);
+  });
+
+  it('is Cloud only and needs a workspace', async () => {
+    await expect(make(false).controller.planFitForUser(req)).rejects.toThrow(NotFoundException);
+    await expect(make().controller.planFitForUser({ user: {} })).rejects.toThrow(NotFoundException);
   });
 });

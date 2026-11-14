@@ -360,6 +360,23 @@ describe('gemini adapter: static spec conformance', () => {
     });
   });
 
+  it('gives generation 120 s and the image tools room for base64 pictures; the rest keep the defaults', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    const limits = async (name: string, params: Record<string, unknown>) => {
+      mockedAxios.mockClear();
+      await call(name, params);
+      return { timeout: sent().timeout, maxContentLength: sent().maxContentLength };
+    };
+    const image = { timeout: 120_000, maxContentLength: 40 * 1024 * 1024 };
+    expect(await limits('gemini_generate_image', { prompt: 'A red bicycle', image_size: '4K' })).toEqual(image);
+    expect(await limits('gemini_edit_image', { prompt: 'Make it blue', image_url: 'https://example.com/a.png', image_mime_type: 'image/png' })).toEqual(image);
+    const text = { timeout: 120_000, maxContentLength: 10 * 1024 * 1024 };
+    expect(await limits('gemini_generate_text', { prompt: 'Hi' })).toEqual(text);
+    expect(await limits('gemini_generate_content', { contents: [{ role: 'user', parts: [{ text: 'Hi' }] }] })).toEqual(text);
+    expect(await limits('gemini_analyze_file_url', { prompt: 'What is this?', file_url: 'https://example.com/a.pdf', mime_type: 'application/pdf' })).toEqual(text);
+    expect(await limits('gemini_list_models', {})).toEqual({ timeout: 30_000, maxContentLength: 10 * 1024 * 1024 });
+  });
+
   it('turns a safety block into an error the model does not retry, and lets normal answers through', async () => {
     mockedAxios.mockResolvedValue({ data: { promptFeedback: { blockReason: 'SAFETY' } } });
     await expect(call('gemini_generate_text', { prompt: 'x' })).rejects.toMatchObject({ status: 400, message: expect.stringContaining('SAFETY') });
@@ -399,6 +416,22 @@ describe('gemini adapter: static spec conformance', () => {
       usage: raw.usageMetadata,
       grounding: null,
     });
+  });
+
+  it('still shapes an answer whose candidate has no parts (safety stop, empty answer)', () => {
+    // A blocked or empty answer comes without content.parts; join() on null
+    // failed and the raw response went back unshaped.
+    for (const raw of [
+      { candidates: [{ finishReason: 'SAFETY' }], modelVersion: 'm', responseId: 'r2' },
+      { candidates: [{ content: { role: 'model' }, finishReason: 'MAX_TOKENS' }], modelVersion: 'm', responseId: 'r3' },
+      { promptFeedback: { blockReason: 'SAFETY' }, modelVersion: 'm', responseId: 'r4' },
+    ]) {
+      for (const name of ['gemini_generate_text', 'gemini_generate_content', 'gemini_analyze_file_url']) {
+        const out = applyResponseTransform(raw, tool(name).responseMapping as any);
+        expect(out.error).toBeUndefined();
+        expect((out.value as { text: string }).text).toBe('');
+      }
+    }
   });
 
   it('hands generated pictures to the client as images and keeps the text small', () => {

@@ -1,4 +1,17 @@
+import axios from 'axios';
 import * as adapter from './magento.json';
+import { RestEngine } from '../../connectors/engines/rest.engine';
+import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
+import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { applySchemaDefaults } from '../../common/schema-defaults.util';
+import { interpolateConnectorConfig, interpolateDeep } from '../../common/env-interpolation.util';
+
+jest.mock('axios', () => {
+  const actual = jest.requireActual('axios');
+  const mocked = jest.fn();
+  return { __esModule: true, default: Object.assign(mocked, actual.default, { __actual: actual.default }), AxiosError: actual.AxiosError };
+});
+const mockedAxios = axios as unknown as jest.Mock;
 const a = adapter as unknown as { connector: { baseUrl: string; authType: string; authConfig: Record<string,string> } };
 describe('magento adapter — static spec conformance', () => {
   it('per-store templated base URL ending /rest/default/V1', () => {
@@ -82,5 +95,98 @@ describe('magento adapter: low stock and guest checkout', () => {
       expect(`${t.name}:${m.instructions.includes(t.name)}`).toBe(`${t.name}:true`);
     }
     expect(JSON.stringify(adapter)).not.toMatch(/\u2014/);
+  });
+});
+
+// Routes and bodies from Adobe's admin OpenAPI schema (AdobeDocs/commerce-webapi, admin-schema-2.4.8.yaml, 5 Nov 2026).
+describe('magento adapter: carts, promotions, special prices, credit memos, attributes and sources', () => {
+  const ENV = { MAGENTO_BASE_URL: 'https://shop.example.org', MAGENTO_ACCESS_TOKEN: 'tok123' };
+  const conn = adapter as unknown as { connector: { baseUrl: string; authType: string; authConfig: Record<string, string>; headers?: Record<string, string> } };
+  const send = async (name: string, params: Record<string, unknown>) => {
+    mockedAxios.mockReset();
+    mockedAxios.mockResolvedValue({ data: {} });
+    const { config: cfg, endpointMapping } = interpolateConnectorConfig({ baseUrl: conn.connector.baseUrl, headers: conn.connector.headers }, mt(name).endpointMapping as never, ENV);
+    await new RestEngine({} as OAuth2TokenService, {} as LoginTokenService).execute(
+      { baseUrl: cfg.baseUrl, authType: conn.connector.authType, authConfig: interpolateDeep(conn.connector.authConfig, ENV), headers: cfg.headers } as never,
+      endpointMapping,
+      applySchemaDefaults(mt(name).parameters as never, params),
+    );
+    return mockedAxios.mock.calls[0][0];
+  };
+  const V1 = 'https://shop.example.org/rest/default/V1';
+
+  it('points the docs link at developer.adobe.com', () => {
+    expect((adapter as unknown as { docsUrl: string }).docsUrl).toBe('https://developer.adobe.com/commerce/webapi/rest/');
+  });
+
+  it('maps every new tool to its documented route', async () => {
+    const cases: Array<[string, Record<string, unknown>, string, string]> = [
+      ['magento_update_product_in_scope', { sku: 'MUG-1', product: { name: 'Mug' } }, 'PUT', 'https://shop.example.org/rest/all/V1/products/MUG-1'],
+      ['magento_find_carts', {}, 'GET', `${V1}/carts/search`],
+      ['magento_find_cart_price_rules', {}, 'GET', `${V1}/salesRules/search`],
+      ['magento_get_cart_price_rule', { ruleId: 7 }, 'GET', `${V1}/salesRules/7`],
+      ['magento_find_coupons', {}, 'GET', `${V1}/coupons/search`],
+      ['magento_get_special_prices', { skus: ['MUG-1'] }, 'POST', `${V1}/products/special-price-information`],
+      ['magento_list_credit_memos', {}, 'GET', `${V1}/creditmemos`],
+      ['magento_get_credit_memo', { creditmemoId: 3 }, 'GET', `${V1}/creditmemo/3`],
+      ['magento_list_attribute_options', { attributeCode: 'color' }, 'GET', `${V1}/products/attributes/color/options`],
+      ['magento_list_source_items', {}, 'GET', `${V1}/inventory/source-items`],
+      ['magento_create_cart_price_rule', { rule: { name: 'x' } }, 'POST', `${V1}/salesRules`],
+      ['magento_update_cart_price_rule', { ruleId: 7, rule: { rule_id: 7 } }, 'PUT', `${V1}/salesRules/7`],
+      ['magento_add_coupon_code', { rule_id: 7, code: 'AUTUMN' }, 'POST', `${V1}/coupons`],
+      ['magento_generate_coupon_codes', { rule_id: 7, quantity: 5 }, 'POST', `${V1}/coupons/generate`],
+      ['magento_schedule_special_prices', { prices: [] }, 'POST', `${V1}/products/special-price`],
+      ['magento_add_attribute_option', { attributeCode: 'color', label: 'Red' }, 'POST', `${V1}/products/attributes/color/options`],
+      ['magento_set_source_items', { sourceItems: [] }, 'POST', `${V1}/inventory/source-items`],
+    ];
+    for (const [name, params, method, url] of cases) {
+      const req = await send(name, params);
+      expect(`${name}:${req.method} ${req.url}`).toBe(`${name}:${method} ${url}`);
+      expect(req.headers.Authorization).toBe('Bearer tok123');
+    }
+  });
+
+  it('writes a product in the global scope by default, or in the store view given', async () => {
+    expect((await send('magento_update_product_in_scope', { sku: 'MUG-1', product: { price: 9 } })).data).toEqual({ product: { price: 9 } });
+    expect((await send('magento_update_product_in_scope', { storeCode: 'de', sku: 'MUG-1', product: { name: 'Tasse' } })).url).toBe('https://shop.example.org/rest/de/V1/products/MUG-1');
+  });
+
+  it('turns the generic filters into search criteria and leaves out the ones not given', async () => {
+    const req = await send('magento_find_carts', { filter1_field: 'is_active', filter1_value: '1', filter2_field: 'items_count', filter2_value: '0', filter2_condition: 'gt', fields: 'items[id,items_count],total_count' });
+    expect(req.params).toEqual({
+      'searchCriteria[filter_groups][0][filters][0][field]': 'is_active',
+      'searchCriteria[filter_groups][0][filters][0][value]': '1',
+      'searchCriteria[filter_groups][1][filters][0][field]': 'items_count',
+      'searchCriteria[filter_groups][1][filters][0][value]': '0',
+      'searchCriteria[filter_groups][1][filters][0][condition_type]': 'gt',
+      fields: 'items[id,items_count],total_count',
+      'searchCriteria[pageSize]': 20,
+      'searchCriteria[currentPage]': 1,
+    });
+    expect((await send('magento_find_coupons', {})).params).toEqual({ 'searchCriteria[pageSize]': 20, 'searchCriteria[currentPage]': 1 });
+  });
+
+  it('builds the documented bodies', async () => {
+    expect((await send('magento_add_coupon_code', { rule_id: 7, code: 'AUTUMN', usage_limit: 100 })).data).toEqual({ coupon: { rule_id: 7, code: 'AUTUMN', usage_limit: 100, times_used: 0, is_primary: false } });
+    expect((await send('magento_generate_coupon_codes', { rule_id: 7, quantity: 5, prefix: 'X-' })).data).toEqual({ couponSpec: { rule_id: 7, quantity: 5, length: 12, format: 'alphanum', prefix: 'X-' } });
+    const prices = [{ sku: 'MUG-1', price: 9.9, store_id: 0, price_from: '2026-11-20 00:00:00', price_to: '2026-11-30 23:59:59' }];
+    expect((await send('magento_schedule_special_prices', { prices })).data).toEqual({ prices });
+    expect((await send('magento_get_special_prices', { skus: ['MUG-1'] })).data).toEqual({ skus: ['MUG-1'] });
+    expect((await send('magento_add_attribute_option', { attributeCode: 'color', label: 'Red', store_labels: [{ store_id: 2, label: 'Rot' }] })).data).toEqual({ option: { label: 'Red', value: '', store_labels: [{ store_id: 2, label: 'Rot' }] } });
+    const items = [{ sku: 'MUG-1', source_code: 'default', quantity: 25, status: 1 }];
+    expect((await send('magento_set_source_items', { sourceItems: items })).data).toEqual({ sourceItems: items });
+    expect((await send('magento_create_cart_price_rule', { rule: { name: 'Autumn' } })).data).toEqual({ rule: { name: 'Autumn' } });
+  });
+
+  it('POST reads are read-only, writes are annotated and ask for confirmation, refunds are not offered', () => {
+    expect(mt('magento_get_special_prices').annotations?.readOnlyHint).toBe(true);
+    for (const n of ['magento_update_product_in_scope', 'magento_create_cart_price_rule', 'magento_update_cart_price_rule', 'magento_add_coupon_code', 'magento_generate_coupon_codes', 'magento_schedule_special_prices', 'magento_add_attribute_option', 'magento_set_source_items']) {
+      expect(mt(n).annotations?.readOnlyHint).toBe(false);
+      expect(`${n}:${/confirm/.test((mt(n) as unknown as { description: string }).description)}`).toBe(`${n}:true`);
+    }
+    for (const t of m.tools) {
+      expect(t.endpointMapping.path).not.toMatch(/refund/);
+      expect(t.endpointMapping.path).not.toMatch(/creditmemo$/);
+    }
   });
 });

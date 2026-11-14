@@ -24,6 +24,9 @@ import {
 } from '@modelcontextprotocol/node';
 import { McpCombinedAuthGuard } from '../auth/mcp-combined-auth.guard';
 import { McpPrincipalRateLimitGuard } from '../auth/mcp-principal-rate-limit.guard';
+import { mcpWwwAuthenticate } from '../auth/mcp-www-authenticate.util';
+import { CrossWorkspaceRefusalStore } from '../auth/cross-workspace-refusal.store';
+import { userReachesOrganization } from '../auth/server-reachability.util';
 import { mcpHttpTransport } from './mcp-strategy';
 import { createQuietMcpHandler } from './mcp-handler.util';
 import { toolVisibilityRole } from './mcp-server.service';
@@ -31,7 +34,11 @@ import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
 import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
-import { SharedSetupRegistry } from './shared-setup';
+import { slugifyForPrefix } from '../connectors/graphql-builtins';
+import { SharedSetupRegistry, type SetupCallOptions } from './shared-setup';
+import { SharedToolCallRecorder } from './shared-tool-calls';
+import { ProductEventService } from '../audit/product-event.service';
+import { PrismaService } from '../common/prisma.service';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
@@ -49,6 +56,10 @@ import {
   CHATGPT_APP_INSTRUCTIONS,
   registerChatgptAppToolset,
 } from './chatgpt-app-toolset';
+import {
+  FILE_SEARCH_APP_INSTRUCTIONS,
+  registerFileSearchAppToolset,
+} from './file-search-app-toolset';
 
 /**
  * The OAuth client an access token was issued to.
@@ -101,6 +112,7 @@ import {
   planServerResources,
 } from './mcp-resources';
 import { flattenToolSchema, jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
+import { ApiTags } from '@nestjs/swagger';
 
 function trimSlash(url: string | undefined): string {
   return (url || '').trim().replace(/\/+$/, '');
@@ -133,6 +145,30 @@ export function listenOnlyServer(
   capabilities: { tools?: { listChanged: boolean }; resources?: { listChanged: boolean } },
 ): McpServer {
   return new McpServer({ name, version }, { capabilities });
+}
+
+/** A single request whose method is one of `methods`. */
+export function isHandshakeRequest(body: unknown, methods: readonly string[]): boolean {
+  return (
+    !!body &&
+    typeof body === 'object' &&
+    !Array.isArray(body) &&
+    methods.includes((body as { method?: unknown }).method as string)
+  );
+}
+
+/**
+ * The server a `server/discover` is answered from: name, version,
+ * capabilities and instructions, no tools. The answer carries only those, so
+ * registering every tool for it was work nobody read, repeated on every probe.
+ */
+export function handshakeServer(
+  name: string,
+  version: string,
+  capabilities: { tools?: { listChanged: boolean }; resources?: { listChanged: boolean } },
+  instructions?: string,
+): McpServer {
+  return new McpServer({ name, version }, { capabilities, ...(instructions ? { instructions } : {}) });
 }
 
 /** Trailer appended to every live demo tool result. */
@@ -177,6 +213,10 @@ interface ToolSetParams {
   memory?: MemoryCaller;
   /** Which knowledge folders the caller may see in the server's workspace. */
   folders?: FolderAccess | null;
+  /** Set when the caller may run inline code on this server (codeMode 'inline'
+   *  + the inlineCode role capability + a configured runner): offers
+   *  code_execute over these connectors. */
+  inlineCode?: { connectorIds: string[] };
 }
 
 interface InvocationContext {
@@ -185,6 +225,8 @@ interface InvocationContext {
   organizationId?: string;
   authMethod: string;
   apiKeyName?: string;
+  /** The OAuth client the access token was issued to (oauthClientId), if any. */
+  oauthClientId?: string;
   mcpServerId: string;
   mcpServerName: string;
   connectorIds: string[];
@@ -209,6 +251,10 @@ const INTENT_DESCRIPTION =
 
 /** Built-in companion of the Agent Skills Finder adapter. */
 const SKILLS_SAVE_TOOL = 'skills_save_to_workspace';
+/** Built-in inline code execution tool (per-server endpoint, codeMode 'inline'). */
+const CODE_EXECUTE_TOOL = 'code_execute';
+/** Built-in tool to propose a saved code tool for admin approval (codeMode 'inline'). */
+const CODE_PROPOSE_TOOL = 'code_propose_tool';
 /** Built-in workspace memory tools (per-server endpoint, Enterprise). */
 const MEMORY_SEARCH_TOOL = 'memory_search';
 const MEMORY_SAVE_TOOL = 'memory_save';
@@ -216,6 +262,37 @@ const MEMORY_FORGET_TOOL = 'memory_forget';
 // Workspace skills are stored up to 2000 characters; leave room for the
 // source line appended to every saved skill.
 const SKILL_INSTRUCTION_MAX = 1800;
+
+/**
+ * Decrements `mcpRequestsInFlight` when the response's socket closes (the
+ * caller has already incremented it) and counts aborted requests.
+ *
+ * Auth, tenant checks and tool planning run before the response is served, so
+ * a client can hang up first. Its 'close' has then already fired and a
+ * listener added now never runs: the gauge used to drift by ~540 a day on
+ * Cloud (bursts of 70-150 requests a node client aborted within 1 s). A
+ * response that is already closed is settled right away instead.
+ *
+ * `res.once` is guarded because unit tests hand the controller bare mocks.
+ */
+export function trackMcpRequestClose(res: Response, startedAt = Date.now()): void {
+  const onClose = () => {
+    processGauges.dec('mcpRequestsInFlight');
+    if (!res.writableFinished) {
+      processGauges.inc('mcpAbortedTotal');
+      if (Date.now() - startedAt > 60_000) processGauges.inc('mcpAbortedLongTotal');
+    }
+  };
+  if (typeof (res as { once?: unknown }).once !== 'function') {
+    processGauges.dec('mcpRequestsInFlight');
+    return;
+  }
+  if ((res as { closed?: boolean }).closed || res.destroyed) {
+    onClose();
+    return;
+  }
+  res.once('close', onClose);
+}
 
 /**
  * Per-server MCP endpoint controller.
@@ -227,6 +304,7 @@ const SKILL_INSTRUCTION_MAX = 1800;
  * each MCP server its own unique URL that clients like Claude Desktop
  * can connect to independently (via OAuth or API key).
  */
+@ApiTags('MCP Endpoint')
 @Controller('mcp')
 @SkipThrottle()
 // Auth first, then the per-caller ceiling (it needs to know who is calling).
@@ -256,11 +334,45 @@ export class McpEndpointController {
     @Optional() private readonly sharedSetup?: SharedSetupRegistry,
     @Optional() private readonly memory?: MemoryService,
     @Optional() private readonly folders?: KnowledgeFoldersService,
-  ) {}
+    @Optional() productEvents?: ProductEventService,
+    @Optional() prisma?: PrismaService,
+    @Optional() private readonly refusals?: CrossWorkspaceRefusalStore,
+  ) {
+    this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
+  }
+
+  /** Records which shared /mcp tools a workspace calls (once a day per tool). */
+  private readonly sharedCalls: SharedToolCallRecorder | null;
 
   /** The caller's knowledge-folder access in a workspace (null without the module). */
   private async folderAccessFor(organizationId: string, userId?: string | null) {
     return this.folders ? this.folders.accessFor(organizationId, userId) : null;
+  }
+
+  /**
+   * Whether this caller may run inline code on this server, and over which
+   * connectors. All four must hold: the server opts in (codeMode 'inline'), a
+   * runner is configured, the caller is an identified user whose role carries
+   * the inlineCode capability, and at least one connector is in reach. Returns
+   * the connector scope for code_execute, or undefined to not offer it.
+   */
+  private async resolveInlineCode(
+    mcpServerConfig: { organizationId: string; codeMode?: string },
+    userId: string | undefined,
+    visibleConnectorIds: string[],
+  ): Promise<{ connectorIds: string[] } | undefined> {
+    if (mcpServerConfig.codeMode !== 'inline') return undefined;
+    if (!userId) return undefined;
+    if (!this.toolExecutor.codeModeAvailable()) return undefined;
+    if (!visibleConnectorIds || visibleConnectorIds.length === 0) return undefined;
+    const caps = await this.rolesService.getCapabilities(userId, mcpServerConfig.organizationId);
+    if (!caps.inlineCode) return undefined;
+    // Plan gate: inline code (code_execute / code_propose_tool) is Team and
+    // above. Saved code tools are gated separately at creation time.
+    if (!(await this.toolExecutor.inlineCodeAllowedForOrg(mcpServerConfig.organizationId))) {
+      return undefined;
+    }
+    return { connectorIds: visibleConnectorIds };
   }
 
   // Streamable-HTTP response framing. Default: SSE-framed responses
@@ -300,6 +412,29 @@ export class McpEndpointController {
         (req as any).body,
         () => listenOnlyServer('AnythingMCP', APP_VERSION, { tools: { listChanged: true } }),
         'shared /mcp listen',
+      );
+      return;
+    }
+    // server/discover reads the name, capabilities and instructions only, and
+    // the fixed tool set's instructions depend on the OAuth client alone.
+    // Building the caller's tool set for it (registry, grants, roles, setup
+    // permission) is part of what a burst of directory handshakes made
+    // expensive on 3 Nov 2026.
+    if (this.servesSharedToolset(req) && isHandshakeRequest((req as any).body, ['server/discover'])) {
+      const redirectUris = await this.grants.clientRedirectUris(oauthClientId((req as any).user));
+      const profile = profileForRedirectUris(redirectUris);
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () =>
+          handshakeServer(
+            'AnythingMCP',
+            APP_VERSION,
+            { tools: { listChanged: true } },
+            sharedToolsetInstructions(profile),
+          ),
+        'shared /mcp handshake',
       );
       return;
     }
@@ -385,17 +520,60 @@ export class McpEndpointController {
     this.statelessOnly(res);
   }
 
+  // ── /mcp/file-search: the endpoint of the File Search directory plugin ────
+  //
+  // Fixed single-operation tools over the workspace's File Search sources only
+  // (see file-search-app-toolset.ts). Same auth, grant and role scope as /mcp,
+  // same in Cloud and self-hosted. Declared before the ':serverId' routes so
+  // the static segment wins route matching.
+
+  @Post('file-search')
+  async handleFileSearchAppPost(@Req() req: Request, @Res() res: Response) {
+    if (!(req as any).user?.sub) {
+      // Operator credentials (a static key) name no user and no workspace.
+      res.status(403).json({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'This endpoint needs a signed-in AnythingMCP user.' },
+        id: null,
+      });
+      return;
+    }
+    if (isListenRequest((req as any).body)) {
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () => listenOnlyServer('AnythingMCP File Search', APP_VERSION, { tools: { listChanged: true } }),
+        'file-search listen',
+      );
+      return;
+    }
+    await this.attachVisibleTools(req);
+    await this.serveSharedToolset(req, res, 'file-search');
+  }
+
+  @Get('file-search')
+  handleFileSearchAppGet(@Res() res: Response) {
+    this.statelessOnly(res);
+  }
+
+  @Delete('file-search')
+  handleFileSearchAppDelete(@Res() res: Response) {
+    this.statelessOnly(res);
+  }
+
   /**
    * Serves a fixed tool set, statelessly, over exactly the tools
    * `attachVisibleTools` resolved for this caller: the shared endpoint's
-   * (`shared`) or the OpenAI directory plugin's (`chatgpt-app`). Every run is
+   * (`shared`), the OpenAI directory database plugin's (`chatgpt-app`) or the
+   * File Search plugin's (`file-search`). Every run is
    * executed in the one connector that owns the tool, so a same-named tool
    * elsewhere can never be reached.
    */
   private async serveSharedToolset(
     req: Request,
     res: Response,
-    variant: 'shared' | 'chatgpt-app' = 'shared',
+    variant: 'shared' | 'chatgpt-app' | 'file-search' = 'shared',
   ): Promise<void> {
     const user = (req as any).user;
     // Already narrowed to a pinned credential's server by attachVisibleTools.
@@ -428,9 +606,12 @@ export class McpEndpointController {
     // setup link sends the user back to. API keys have none.
     const redirectUris = await this.grants.clientRedirectUris(oauthClientId(user));
     const assistant = assistantForRedirectUris(redirectUris);
+    // Which assistant's tool set this connection gets. API keys and anything
+    // unidentified get the default set, the one the Claude directory reviewed.
+    const profile = profileForRedirectUris(redirectUris);
     const setupProvider = this.sharedSetup?.get() ?? null;
     const setupCtx = setupOrg
-      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase, assistant }
+      ? { userId: user.sub, organizationId: setupOrg, serverIds, dashboardBase, assistant, profile }
       : null;
     // The plugin endpoint has no setup tools: don't resolve the permission.
     const canSetUp =
@@ -452,6 +633,7 @@ export class McpEndpointController {
             organizationId: tool.organizationId,
             authMethod: user.authMethod || 'none',
             apiKeyName: user.apiKeyName,
+            supportKeyId: user.supportKeyId,
             mcpServerId: user.mcpServerId,
             connectorIds: [tool.connectorId],
           });
@@ -459,15 +641,36 @@ export class McpEndpointController {
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
       connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      // The workspace this connection mainly reaches: an ended trial is said
+      // up front in anythingmcp_list_connectors, with the reactivation link.
+      trialEnded: () => this.toolExecutor.trialEndedNotice(setupOrg || organizationId || undefined, user.sub),
+      pausedByPlan: async () => {
+        const names = await this.toolExecutor.pausedByPlanConnectorNames(setupOrg || organizationId || undefined);
+        return names ? { connectors: names, manageUrl: `${dashboardBase}/connectors` } : null;
+      },
+      ...(this.sharedCalls && (setupOrg || organizationId) && variant === 'shared'
+        ? {
+            called: ({ tool, setupTool }) => {
+              void this.sharedCalls!.record({
+                organizationId: (setupOrg || organizationId) as string,
+                userId: user.sub,
+                tool,
+                ...(setupTool ? { setupTool } : {}),
+                profile,
+                oauthClientId: oauthClientId(user),
+              });
+            },
+          }
+        : {}),
       ...(canSetUp && setupProvider && setupCtx
         ? {
             setup: {
               organizationId: setupCtx.organizationId,
-              run: (name: string, args: Record<string, unknown>) =>
+              run: (name: string, args: Record<string, unknown>, opts?: SetupCallOptions) =>
                 name === 'setup_find_connectors'
-                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number })
+                  ? setupProvider.find(setupCtx, args as { query?: string; limit?: number }, opts)
                   : name === 'setup_install_connector'
-                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> })
+                    ? setupProvider.install(setupCtx, args as { adapter?: string; settings?: Record<string, unknown> }, opts)
                     : setupProvider.status(setupCtx),
             },
           }
@@ -513,6 +716,29 @@ export class McpEndpointController {
       },
     };
 
+    if (variant === 'file-search') {
+      await this.serveStateless(
+        req,
+        res,
+        (req as any).body,
+        () => {
+          const mcpServer = new McpServer(
+            { name: 'AnythingMCP File Search', version: APP_VERSION },
+            { instructions: FILE_SEARCH_APP_INSTRUCTIONS },
+          );
+          registerFileSearchAppToolset(mcpServer, scopeTools, {
+            execute: deps.execute,
+            connectors: deps.connectors,
+            guide: deps.guide,
+            setupUrl: `${dashboardBase}/connectors/new/file-search?from=chat`,
+          });
+          return mcpServer;
+        },
+        'file-search',
+      );
+      return;
+    }
+
     if (variant === 'chatgpt-app') {
       await this.serveStateless(
         req,
@@ -533,11 +759,6 @@ export class McpEndpointController {
       );
       return;
     }
-
-    // Which assistant this connection belongs to, from the OAuth client the
-    // token was issued to. API keys and anything unidentified get the default
-    // set, the one the Claude directory reviewed.
-    const profile = profileForRedirectUris(redirectUris);
 
     await this.serveStateless(
       req,
@@ -629,13 +850,9 @@ export class McpEndpointController {
 
     let reachable: RegisteredTool[];
     if (!grant) {
-      reachable = this.toolRegistry
-        .getAllTools()
-        .filter((t) => t.organizationId === user.organizationId);
+      reachable = this.toolRegistry.getToolsForOrganization(user.organizationId);
     } else if (grant.mode === 'organization') {
-      reachable = this.toolRegistry
-        .getAllTools()
-        .filter((t) => t.organizationId === grant.organizationId);
+      reachable = this.toolRegistry.getToolsForOrganization(grant.organizationId);
     } else if (grant.mode === 'servers') {
       const connectorIds = new Set(
         (
@@ -646,9 +863,7 @@ export class McpEndpointController {
           )
         ).flat(),
       );
-      reachable = this.toolRegistry
-        .getAllTools()
-        .filter((t) => connectorIds.has(t.connectorId));
+      reachable = this.toolRegistry.getToolsForConnectors(connectorIds);
     } else {
       reachable = [];
     }
@@ -666,19 +881,17 @@ export class McpEndpointController {
 
     // Roles are per organization, and a grant may span more than one, so the
     // allow-list is fetched once per organization actually in reach.
-    const allowedByOrg = new Map<string, string[] | null>();
+    const allowedByOrg = new Map<string, Set<string> | null>();
     for (const orgId of new Set(reachable.map((t) => t.organizationId))) {
-      allowedByOrg.set(
-        orgId,
-        await this.rolesService.getAllowedToolIds(user.sub, orgId),
-      );
+      const ids = await this.rolesService.getAllowedToolIds(user.sub, orgId);
+      allowedByOrg.set(orgId, ids === null ? null : new Set(ids));
     }
 
     // `null` from getAllowedToolIds means unrestricted — an ADMIN, or a user
     // holding no MCP role at all. The reach scope still applies.
     const visible = reachable.filter((t) => {
       const allowed = allowedByOrg.get(t.organizationId);
-      return allowed === null || (allowed?.includes(t.id) ?? false);
+      return allowed === null || (allowed?.has(t.id) ?? false);
     });
 
     // Handed to the call path so it resolves in exactly the scope that was
@@ -972,12 +1185,8 @@ export class McpEndpointController {
       }
       const connectorIds = await this.mcpServersService.getConnectorIds(demoServerId);
       const readOnlyTools = this.toolRegistry
-        .getAllTools()
-        .filter(
-          (t) =>
-            connectorIds.includes(t.connectorId) &&
-            deriveToolAnnotations(t).readOnlyHint === true,
-        );
+        .getToolsForConnectors(connectorIds)
+        .filter((t) => deriveToolAnnotations(t).readOnlyHint === true);
       const invocationContext: InvocationContext = {
         organizationId: cfg.organizationId,
         authMethod: 'demo',
@@ -1011,6 +1220,7 @@ export class McpEndpointController {
       `auth ${user.authMethod ?? 'unknown'}`,
     ];
     if (user.apiKeyName) parts.push(`key "${String(user.apiKeyName).slice(0, 60)}"`);
+    if (user.supportKeyId) parts.push(`support key ${String(user.supportKeyId).slice(0, 40)}`);
     if (user.mcpServerId) parts.push(`key bound to server ${user.mcpServerId}`);
     return parts.join(', ');
   }
@@ -1089,6 +1299,10 @@ export class McpEndpointController {
     // workspaces must reach servers in any org they're a member of, while a
     // non-member is still denied. The primary-org match is kept as a
     // zero-query fast path for the common single-org case.
+    //
+    // An API key is the exception: it belongs to the workspace it was created
+    // in (its `organizationId`, set by resolveUserByKey), so it reaches that
+    // workspace's servers only, even when its owner is a member of others.
     const user = (req as any).user;
     const isInstanceLevel =
       user?.authMethod === 'static_api_key' ||
@@ -1096,16 +1310,14 @@ export class McpEndpointController {
       user?.authMethod === 'none';
     if (!isInstanceLevel) {
       const serverOrg = mcpServerConfig.organizationId;
-      const primaryOrgMatches =
-        !!user?.organizationId && user.organizationId === serverOrg;
+      // Same rule as the consent page and the refresh grant
+      // (server-reachability.util). An API key only matches its own workspace.
       const isMember =
-        primaryOrgMatches ||
-        (!!user?.sub &&
-          !!serverOrg &&
-          (await this.mcpServersService.isUserInOrganization(
-            user.sub,
-            serverOrg,
-          )));
+        user?.authMethod === 'mcp_api_key'
+          ? !!user?.organizationId && user.organizationId === serverOrg
+          : await userReachesOrganization(user?.sub, serverOrg, user?.organizationId, (u, o) =>
+              this.mcpServersService.isUserInOrganization(u, o),
+            );
       if (!isMember) {
         // The auth headers are redacted from the request log, so without this
         // line a refused client can't be told apart from a working one: a paying
@@ -1115,6 +1327,41 @@ export class McpEndpointController {
           `MCP request refused: server ${serverId} belongs to org ${serverOrg ?? 'none'}, ` +
             `caller is not a member (${this.describePrincipal(user)})`,
         );
+        // A sign-in (OAuth or app token) for the wrong workspace: 401 with
+        // invalid_token, so the client runs OAuth again and the person can
+        // pick the right account. Clients do not re-authorize on a 403: one
+        // user who had signed in with the account of their other workspace
+        // was refused 510 times in 13 hours (#1609). An API key keeps the
+        // 403 below, since signing in again would not change the key.
+        if (user?.authMethod === 'jwt') {
+          // Clients answer this 401 with a refresh grant, and the token names
+          // no server, so leave a marker for the refresh middleware to refuse
+          // it with invalid_grant. Awaited: the refresh comes within a second.
+          // OAuth tokens only (an app JWT has no client and never refreshes).
+          const clientId = oauthClientId(user);
+          if (clientId && user?.sub) {
+            await this.refusals?.mark(user.sub, clientId, serverId).catch(() => undefined);
+          }
+          res.setHeader(
+            'WWW-Authenticate',
+            mcpWwwAuthenticate(
+              req,
+              `/mcp/${serverId}`,
+              process.env.SERVER_URL || 'http://localhost:4000',
+              'This sign-in is not a member of the workspace that owns this MCP server',
+            ),
+          );
+          return res.status(401).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message:
+                'Sign in again: this sign-in belongs to a different workspace than this MCP server. ' +
+                'Sign in with an account that is a member of the workspace that owns the server.',
+            },
+            id: null,
+          });
+        }
         return res.status(403).json({
           jsonrpc: '2.0',
           error: {
@@ -1159,8 +1406,7 @@ export class McpEndpointController {
 
     // 3. Filter tools to only those from assigned connectors (planToolSet
     // then applies the role filter).
-    const allTools = this.toolRegistry.getAllTools();
-    const serverTools = allTools.filter((t) => connectorIds.includes(t.connectorId));
+    const serverTools = this.toolRegistry.getToolsForConnectors(connectorIds);
 
     // 4. The connectors this caller can use: the owners of the tools that
     // survive both filters. Instructions and resources are scoped to exactly
@@ -1186,6 +1432,27 @@ export class McpEndpointController {
       ? [content.instructions, INTENT_INSTRUCTION].filter(Boolean).join('\n\n')
       : content.instructions;
 
+    // A server/discover probe, once the caller may reach this server, reads
+    // the name, capabilities and instructions only: answered without
+    // registering the tool surface (see handshakeServer). Same capabilities
+    // as a listen; the stateful mode keeps its own path.
+    if (isHandshakeRequest(body, ['server/discover']) && !McpSessionManager.isEnabled()) {
+      await this.serveStateless(
+        req,
+        res,
+        body,
+        () =>
+          handshakeServer(
+            mcpServerConfig.name,
+            mcpServerConfig.version || '1.0.0',
+            { tools: { listChanged: true }, resources: { listChanged: true } },
+            instructions,
+          ),
+        `server ${serverId} discover`,
+      );
+      return;
+    }
+
     // 5. Create a per-request MCP server with only the assigned tools
     const mcpServer = new McpServer(
       { name: mcpServerConfig.name, version: mcpServerConfig.version || '1.0.0' },
@@ -1204,6 +1471,8 @@ export class McpEndpointController {
       organizationId: mcpServerConfig.organizationId as string,
       authMethod: (user?.authMethod || 'none') as string,
       apiKeyName: user?.apiKeyName as string | undefined,
+      supportKeyId: user?.supportKeyId as string | undefined,
+      oauthClientId: user ? oauthClientId(user) : undefined,
       mcpServerId: mcpServerConfig.id,
       mcpServerName: mcpServerConfig.name,
       connectorIds,
@@ -1242,6 +1511,15 @@ export class McpEndpointController {
     // The same per-member decision marks this caller's calls as learnable.
     invocationContext.learnable = captureIntent;
 
+    // Inline code execution: the server opts in (codeMode 'inline'), the caller's
+    // role carries the inlineCode capability, a runner is configured, and there
+    // is at least one connector in reach for the code to call.
+    const inlineCode = await this.resolveInlineCode(
+      mcpServerConfig,
+      user?.sub,
+      visibleConnectorIds,
+    );
+
     const params: ToolSetParams = {
       serverTools,
       allowedToolIds,
@@ -1253,6 +1531,7 @@ export class McpEndpointController {
       // Memory belongs to the server's organization and its member levels.
       memory: withFolders(await this.memory?.caller(mcpServerConfig.organizationId, user?.sub), folderAccess),
       folders: folderAccess,
+      inlineCode,
     };
 
     // Register this server's tool surface onto the per-request McpServer.
@@ -1349,18 +1628,7 @@ export class McpEndpointController {
     // `res.once` is guarded because unit tests hand this method bare mocks.
     processGauges.inc('mcpRequestsInFlight');
     processGauges.inc('mcpHandlersUnclosed');
-    const startedAt = Date.now();
-    if (typeof (res as { once?: unknown }).once === 'function') {
-      res.once('close', () => {
-        processGauges.dec('mcpRequestsInFlight');
-        if (!res.writableFinished) {
-          processGauges.inc('mcpAbortedTotal');
-          if (Date.now() - startedAt > 60_000) processGauges.inc('mcpAbortedLongTotal');
-        }
-      });
-    } else {
-      processGauges.dec('mcpRequestsInFlight');
-    }
+    trackMcpRequestClose(res);
 
     // The handler's stateless fallback for 2025-era requests builds its own
     // transport and never receives `responseMode`, so with JSON enabled those
@@ -1653,9 +1921,7 @@ export class McpEndpointController {
 
       // Re-fetch connector ids so newly (un)assigned connectors are reflected.
       const connectorIds = await this.mcpServersService.getConnectorIds(serverId);
-      const serverTools = this.toolRegistry
-        .getAllTools()
-        .filter((t) => connectorIds.includes(t.connectorId));
+      const serverTools = this.toolRegistry.getToolsForConnectors(connectorIds);
       let allowedToolIds: string[] | null = null;
       if (user?.sub) {
         // Scope to the SERVER's org, not `invocationContext.organizationId`
@@ -1678,6 +1944,11 @@ export class McpEndpointController {
       const skillHints = skillsVisible
         ? await this.kgSkills.toolHints(serverOrganizationId, serverId, visibleIds, folderAccess)
         : undefined;
+      // Re-read the server's codeMode so toggling it applies on the next rebuild.
+      const serverCfg = await this.mcpServersService.findById(serverId);
+      const inlineCode = serverCfg
+        ? await this.resolveInlineCode(serverCfg, user?.sub, visibleIds)
+        : undefined;
       const entries = this.planToolSet({
         serverTools,
         allowedToolIds,
@@ -1688,6 +1959,7 @@ export class McpEndpointController {
         skillHints,
         memory: withFolders(await this.memory?.caller(serverOrganizationId, user?.sub), folderAccess),
         folders: folderAccess,
+        inlineCode,
       });
       const signature = this.aggregateSig(entries);
       if (signature === session.signature) return; // nothing changed here
@@ -1737,16 +2009,34 @@ export class McpEndpointController {
     } = params;
     const entries: ToolEntry[] = [];
     const registeredNames = new Set<string>();
+    // The connector that holds each bare name.
+    const bareOwner = new Map<string, string>();
+    const listed = serverTools.filter(
+      (tool) =>
+        // A connector that is not set up yet would only produce errors.
+        isListable(tool) &&
+        // Skip tools not allowed by role
+        (allowedToolIds === null || allowedToolIds.includes(tool.id)),
+    );
+    // Names that more than one connector exposes (two DATABASE connectors,
+    // two configs of one provider).
+    const sharedNames = new Set<string>();
+    const firstConnector = new Map<string, string>();
+    for (const tool of listed) {
+      if (!firstConnector.has(tool.name)) firstConnector.set(tool.name, tool.connectorId);
+      else if (firstConnector.get(tool.name) !== tool.connectorId) sharedNames.add(tool.name);
+    }
 
-    for (const tool of serverTools) {
-      // A connector that is not set up yet would only produce errors.
-      if (!isListable(tool)) continue;
-      // Skip tools not allowed by role
-      if (allowedToolIds !== null && !allowedToolIds.includes(tool.id)) continue;
-      // Dedupe by tool name. Two connectors can expose the same name (same
-      // connector assigned twice, or two configs of one provider); the SDK
-      // throws on the second registration, which would 500 the whole request.
-      if (registeredNames.has(tool.name)) {
+    for (const tool of listed) {
+      // The SDK throws on a second registration of one name, which would 500
+      // the whole request. The same connector assigned twice is skipped; a
+      // second connector's copy is listed under a name prefixed with that
+      // connector's name, so it stays reachable. The first copy keeps the
+      // bare name, so existing clients keep working.
+      let exposedName = tool.name;
+      if (!bareOwner.has(tool.name)) {
+        bareOwner.set(tool.name, tool.connectorId);
+      } else if (bareOwner.get(tool.name) === tool.connectorId) {
         // Once an hour per server and name: the tool set is planned on every
         // request, and one polling client turned this into 1,880 lines in 16 h.
         if (this.shouldWarnDuplicate(`${invocationContext.mcpServerId}:${tool.name}`)) {
@@ -1755,8 +2045,11 @@ export class McpEndpointController {
           );
         }
         continue;
+      } else {
+        exposedName = connectorScopedToolName(tool, registeredNames);
       }
-      registeredNames.add(tool.name);
+      if (registeredNames.has(exposedName)) continue;
+      registeredNames.add(exposedName);
 
       const schema = this.stripEnvVarParams(
         tool.parameters,
@@ -1777,7 +2070,11 @@ export class McpEndpointController {
 
       // The skills covering this tool, for clients that never show the
       // server's instructions to the model.
+      // Same-named tools of several connectors: say which one this is.
       const description =
+        (sharedNames.has(tool.name) && tool.connectorName
+          ? `[${tool.connectorName}] `
+          : '') +
         (tool.description ?? '') +
         (params.skillHints?.length
           ? skillHintText(params.skillHints, tool.connectorId, {
@@ -1787,7 +2084,7 @@ export class McpEndpointController {
           : '');
 
       const sig = [
-        tool.name,
+        exposedName,
         description,
         Object.keys(zodShape).sort().join(','),
         outShape ? Object.keys(outShape).sort().join(',') : '',
@@ -1795,7 +2092,7 @@ export class McpEndpointController {
       ].join('');
 
       entries.push({
-        name: tool.name,
+        name: exposedName,
         sig,
         register: (mcpServer: McpServer) => {
           const withFooter = (r: any) => {
@@ -1824,10 +2121,16 @@ export class McpEndpointController {
               else if (_intent)
                 ctx = { ...invocationContext, intent: String(_intent).slice(0, 2000) };
             }
+            // Resolve the name in this tool's own connector: with the whole
+            // server's connectors, a same-named tool of another connector
+            // could answer instead.
             const result = await this.toolExecutor.executeTool(
               tool.name,
               toolArgs,
-              ctx,
+              // allowedToolIds lets a code tool in `invoker` mode re-check the
+              // caller's role on every inner call; the role filter above already
+              // gated listing and this top-level call.
+              { ...ctx, connectorIds: [tool.connectorId], allowedToolIds },
             );
             // When an outputSchema is advertised, the SDK requires
             // structuredContent on success. Provide the result object
@@ -1860,7 +2163,7 @@ export class McpEndpointController {
           // registerTool for both branches: the legacy tool() overload has no
           // slot for annotations.
           return mcpServer.registerTool(
-            tool.name,
+            exposedName,
             {
               description,
               inputSchema: zodShape,
@@ -2151,6 +2454,135 @@ export class McpEndpointController {
               return {
                 content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
               };
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+
+    // Inline code execution (code_execute): offered only when the server's
+    // codeMode is 'inline' and the caller's role has the inlineCode capability
+    // (resolved in handleMcpRequest). Read-only, invoker rights, over exactly
+    // the connectors visible to this caller on this server.
+    if (params.inlineCode && !registeredNames.has(CODE_EXECUTE_TOOL)) {
+      registeredNames.add(CODE_EXECUTE_TOOL);
+      const inlineConnectorIds = params.inlineCode.connectorIds;
+      const inlineAllowed = allowedToolIds;
+      entries.push({
+        name: CODE_EXECUTE_TOOL,
+        sig: `${CODE_EXECUTE_TOOL}:v1:${inlineConnectorIds.length}`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            CODE_EXECUTE_TOOL,
+            {
+              description:
+                'Run a short JavaScript program that orchestrates several of this ' +
+                'workspace\'s tools in one step, instead of many separate tool calls. ' +
+                'Write an async function body. Discover and call tools with ' +
+                '`await amcp.search(query)`, `await amcp.describe(name)` and ' +
+                '`await amcp.run(name, args)`, and `return` the result. Read-only: ' +
+                'only tools that do not change data can be called, with your own ' +
+                'permissions. No filesystem, network or environment access.',
+              inputSchema: {
+                code: z
+                  .string()
+                  .min(1)
+                  .max(100_000)
+                  .describe('The async JavaScript program body to run.'),
+              },
+              annotations: { title: 'Run code', readOnlyHint: true, openWorldHint: false },
+            },
+            async (args: { code: string }) => {
+              const result = await this.toolExecutor.executeInlineCode(
+                String(args?.code ?? ''),
+                { ...invocationContext, allowedToolIds: inlineAllowed },
+                { connectorIds: inlineConnectorIds, allowedToolIds: inlineAllowed },
+              );
+              const { structured: _s, ...rest } = result;
+              return rest;
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+
+    // Propose a saved code tool for an admin to approve. Gated exactly like
+    // inline code (codeMode 'inline' + capability + runner). Records an inert
+    // proposal — it never runs code and grants no authority; the tool is always
+    // invoker + read-only until an admin approves it through the normal
+    // tool-creation path, where definer / writes are re-gated.
+    if (params.inlineCode && !registeredNames.has(CODE_PROPOSE_TOOL)) {
+      registeredNames.add(CODE_PROPOSE_TOOL);
+      const proposeConnectorIds = params.inlineCode.connectorIds;
+      entries.push({
+        name: CODE_PROPOSE_TOOL,
+        sig: `${CODE_PROPOSE_TOOL}:v1`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            CODE_PROPOSE_TOOL,
+            {
+              description:
+                'Propose saving a reusable code tool (a short JavaScript program that ' +
+                'orchestrates several of this workspace\'s tools) for a workspace admin ' +
+                'to review and approve. Use this after you have found a multi-step pattern ' +
+                'worth keeping. It does NOT run the code and does NOT create the tool: it ' +
+                'records a proposal. The admin decides whether it becomes a tool. Propose ' +
+                'read-only programs using the same `amcp.run` / `amcp.search` tools you can ' +
+                'call with code_execute.',
+              inputSchema: {
+                name: z.string().min(1).max(160).describe('A short, descriptive tool name.'),
+                description: z
+                  .string()
+                  .min(1)
+                  .max(2000)
+                  .describe('What the tool does, for the admin and future callers.'),
+                code: z
+                  .string()
+                  .min(1)
+                  .max(100_000)
+                  .describe('The async JavaScript program body, same contract as code_execute.'),
+                rationale: z
+                  .string()
+                  .max(2000)
+                  .optional()
+                  .describe('Why this is worth saving (shown to the admin reviewing it).'),
+                inputSchema: z
+                  .record(z.string(), z.any())
+                  .optional()
+                  .describe('Optional JSON Schema for the tool\'s own input parameters.'),
+              },
+              annotations: { title: 'Propose a code tool', readOnlyHint: true, openWorldHint: false },
+            },
+            async (args: { name: string; description: string; code: string; rationale?: string; inputSchema?: unknown }) => {
+              const org = invocationContext.organizationId;
+              const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], isError: true });
+              if (!org) return fail('Proposing a code tool requires an identified workspace.');
+              if (!proposeConnectorIds.length) return fail('No connectors are available to propose a tool for.');
+              try {
+                const s = await this.kgSkills.proposeCodeTool(org, {
+                  connectorId: proposeConnectorIds[0],
+                  usesConnectorIds: proposeConnectorIds,
+                  name: String(args?.name ?? ''),
+                  description: String(args?.description ?? ''),
+                  code: String(args?.code ?? ''),
+                  parameters: args?.inputSchema,
+                  rationale: String(args?.rationale ?? ''),
+                  mcpServerId: invocationContext.mcpServerId ?? null,
+                });
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: JSON.stringify({
+                        ok: true,
+                        proposalId: s.id,
+                        message:
+                          'Proposal recorded for admin review. It will not run or become a tool until an admin approves it.',
+                      }),
+                    },
+                  ],
+                };
+              } catch (e: any) {
+                return fail(e?.message ? String(e.message) : 'Could not record the proposal.');
+              }
             },
           ) as unknown as ToolHandle,
       });
@@ -2609,6 +3041,23 @@ function uniquePromptName(title: string, used: Set<string>): string {
   let name = base;
   for (let n = 2; used.has(name); n++) name = `${base}-${n}`;
   used.add(name);
+  return name;
+}
+
+/**
+ * The name a second connector's copy of a tool is listed under: the
+ * connector's name as a prefix (`sales_db_execute_query`), kept within the
+ * 64 characters clients accept, and unique on the server.
+ */
+function connectorScopedToolName(tool: RegisteredTool, used: Set<string>): string {
+  const room = Math.max(1, 64 - tool.name.length - 1);
+  let prefix = (
+    slugifyForPrefix(tool.connectorName ?? '') || `c_${tool.connectorId.slice(-6)}`
+  ).slice(0, room);
+  while (prefix.endsWith('_')) prefix = prefix.slice(0, -1);
+  const base = `${prefix || 'c'}_${tool.name}`;
+  let name = base;
+  for (let n = 2; used.has(name); n++) name = `${base}_${n}`;
   return name;
 }
 

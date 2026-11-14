@@ -166,7 +166,7 @@ function unstructuredTokens(headerName: string, value: string): string[] {
 /*  Addresses                                                          */
 /* ------------------------------------------------------------------ */
 
-interface ParsedAddress {
+export interface ParsedAddress {
   name?: string;
   address: string;
 }
@@ -205,7 +205,10 @@ const ADDRESS_RE = /^[^\s@<>()[\]",;:\\]+@[^\s@<>()[\]",;:\\]+$/;
 function parseAddress(field: string, item: string): ParsedAddress {
   let name: string | undefined;
   let address = item;
-  const angled = /^(.*?)\s*<([^<>]*)>$/.exec(item);
+  // No \s* before the '<': the lazy group and the whitespace class overlap,
+  // which is quadratic on a long run of spaces (CodeQL js/polynomial-redos).
+  // The trim below removes the same whitespace.
+  const angled = /^(.*?)<([^<>]*)>$/.exec(item);
   if (angled) {
     name = angled[1].trim();
     address = angled[2].trim();
@@ -234,6 +237,15 @@ function parseAddresses(field: string, value: unknown): ParsedAddress[] {
     for (const part of splitAddressList(text)) parsed.push(parseAddress(field, part));
   }
   return parsed;
+}
+
+/**
+ * The addresses of a To/Cc/Bcc value (a string, a comma list or an array),
+ * checked as buildMimeMessage checks them. The email engine uses it for the
+ * SMTP envelope, which must name exactly the recipients the headers show.
+ */
+export function parseMimeAddresses(field: string, value: unknown): ParsedAddress[] {
+  return parseAddresses(field, value);
 }
 
 // RFC 5322 specials: a display name containing one must be a quoted-string.

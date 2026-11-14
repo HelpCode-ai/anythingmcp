@@ -1,0 +1,1209 @@
+{
+  "slug": "launchdarkly",
+  "name": "LaunchDarkly",
+  "description": "LaunchDarkly feature flags: projects and environments, flags with state and evaluation status, segments, metrics and experiments, the audit log, members and teams. Create flags and segments, turn flags on or off and change targeting with semantic patches.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "launchdarkly",
+  "docsUrl": "https://launchdarkly.com/docs/api",
+  "instructions": "## LaunchDarkly\nThis connector works with **LaunchDarkly** feature management through its REST API (`https://app.launchdarkly.com/api/v2`, API version 20240415): projects and environments, feature flags with their state and evaluation status, segments, metrics and experiments, the audit log, members and teams. It can create flags and segments, turn flags on or off, and change targeting with semantic patch instructions.\n\n**Setup (2 minutes)**\n1. In LaunchDarkly open **Organization settings, Authorization** (https://app.launchdarkly.com/settings/authorization) and create an access token. For reading choose the **Reader** role; to toggle and change flags **Writer** (or a custom role limited to the projects and environments the agent may change). A service token is not tied to a person.\n2. Copy the token (`api-...`, shown once) into `LAUNCHDARKLY_API_TOKEN` and run `launchdarkly_get_caller_identity` to check it.\n3. On the EU instance or the federal one, change the connector base URL to `https://app.eu.launchdarkly.com` or `https://app.launchdarkly.us`.\n\n**Workflow**\n- Find things: `launchdarkly_list_projects`, `launchdarkly_get_project`, `launchdarkly_list_environments`, `launchdarkly_get_environment`; then `launchdarkly_list_flags` with `env: production` and `filter: query:checkout`, and `launchdarkly_get_flag` for its targeting.\n- Is a flag still used: `launchdarkly_list_flag_statuses` and `launchdarkly_get_flag_status` (inactive or launched flags are candidates for clean-up).\n- Release: `launchdarkly_create_flag`, then `launchdarkly_toggle_flag` per environment; change targeting or rollout with `launchdarkly_update_flag` (use `dry_run: true` to preview). Retire a flag with `archiveFlag` in `launchdarkly_update_flag`; `launchdarkly_delete_flag` removes it for good.\n- Audiences: `launchdarkly_list_segments`, `launchdarkly_get_segment`, `launchdarkly_create_segment`, `launchdarkly_update_segment`.\n- Experiments: `launchdarkly_list_metrics`, `launchdarkly_get_metric`, `launchdarkly_list_experiments`, `launchdarkly_get_experiment`.\n- Who changed what: `launchdarkly_list_audit_log` (e.g. `spec: proj/default:env/production:flag/new-checkout`) and `launchdarkly_get_audit_log_entry`. People: `launchdarkly_list_members`, `launchdarkly_get_member`, `launchdarkly_list_teams`, `launchdarkly_get_team`.\n\n**Switched off at install**: `launchdarkly_delete_flag`; it cannot be undone, so an admin switches it on when the team needs it.\n\n**Before writing**: toggling a flag or changing its targeting in production changes what live users get within seconds. Confirm the project, environment and flag with the user first, and add a `comment` (some environments require one; approval-gated environments answer 405 and need an approval request in the app).\n\n**Semantic patch**: `launchdarkly_toggle_flag`, `launchdarkly_update_flag` and `launchdarkly_update_segment` send instructions such as `{\"kind\": \"addTargets\", \"contextKind\": \"user\", \"values\": [\"key-1\"], \"variationId\": \"<_id>\"}`. Variation, rule and clause ids are the `_id` fields from `launchdarkly_get_flag` or `launchdarkly_get_segment`. Rollout weights are in thousandths of a percent (100000 = 100%).\n\n**Reading the answers**: keys (project, environment, flag, segment) are what you pass on; member and audit log ids are 24-character hex strings. Dates are Unix milliseconds (`creationDate`, `lastModified`, `date`). In a flag, `environments.<key>.on` says whether targeting is on and `_summary.variations` what is served. Environment SDK and mobile keys are left out of the answers.\n\n**Paging**: lists take `limit` and `offset` and return `totalCount` and `_links.next` while more pages exist. The audit log returns at most 20 entries; page back with `before` set to the `date` of the last entry.\n\n**Errors**: 401 means a wrong or deleted token, 403 a token whose role does not allow the call, 404 an unknown key, 400 or 409 an invalid patch or a conflicting change (the message names the problem), 405 a change that needs approval, 429 the rate limit (wait for the time in `X-Ratelimit-Reset`).",
+  "prerequisites": "A LaunchDarkly account and an access token (Organization settings, Authorization) with the Reader role, or Writer to change flags.",
+  "requiredEnvVars": [
+    "LAUNCHDARKLY_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "LAUNCHDARKLY_API_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "LaunchDarkly, Organization settings, Authorization, Create token: Reader role for reading, Writer (or a custom role) to change flags. Copy the api-... token.",
+      "link": "https://app.launchdarkly.com/settings/authorization",
+      "pattern": "^api-[A-Za-z0-9-]{20,}$",
+      "patternMessage": "Paste the access token starting with api-, without spaces. SDK keys (sdk-...) and mobile keys (mob-...) do not work here."
+    }
+  },
+  "verifyHints": {
+    "401": "LaunchDarkly refused the token: it is wrong or was deleted. Create a new access token under Organization settings, Authorization.",
+    "403": "The token works but its role does not allow this call. Give it the Writer role or a custom role with the needed actions.",
+    "429": "LaunchDarkly rate-limited the token. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "launchdarkly_get_caller_identity"
+  },
+  "connector": {
+    "name": "LaunchDarkly REST API",
+    "type": "REST",
+    "baseUrl": "https://app.launchdarkly.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{LAUNCHDARKLY_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "LD-API-Version": "20240415"
+    },
+    "healthcheckPath": "/api/v2/caller-identity"
+  },
+  "tools": [
+    {
+      "name": "launchdarkly_get_caller_identity",
+      "description": "Show what the access token is: account, token name and kind (personal or service), the member it belongs to and its scopes. Use it to check the token.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/caller-identity"
+      }
+    },
+    {
+      "name": "launchdarkly_list_projects",
+      "description": "List the projects with key, name, tags and default client-side settings. Add `expand: environments` to include each project's environments (SDK keys are left out).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filters, comma-separated `field:value`, e.g. `query:mobile` (key or name contains) or `tags:core`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, `-` for descending: `name`, `-createdOn`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "`environments` to include the environments."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page: the previous offset plus limit (or follow `_links.next`).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/projects",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "items[*].environments.items[*].apiKey",
+            "items[*].environments.items[*].mobileKey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_project",
+      "description": "Get one project with its settings; add `expand: environments` for its environments (SDK keys are left out).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "expand": {
+            "type": "string",
+            "description": "`environments` to include the environments."
+          }
+        },
+        "required": [
+          "project_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/projects/{project_key}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "environments.items[*].apiKey",
+            "environments.items[*].mobileKey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_list_environments",
+      "description": "List the environments of a project (e.g. Production, Test) with key, name, colour, client-side id, approval and comment settings. SDK and mobile keys are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters, comma-separated `field:value`, e.g. `query:prod`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, `-` for descending, e.g. `name`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page: the previous offset plus limit (or follow `_links.next`).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "project_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/projects/{project_key}/environments",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "items[*].apiKey",
+            "items[*].mobileKey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_environment",
+      "description": "Get one environment with its settings: client-side id, default TTL, secure mode, whether changes need comments, confirmation or approval, and its tags. SDK and mobile keys are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          }
+        },
+        "required": [
+          "project_key",
+          "environment_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/projects/{project_key}/environments/{environment_key}"
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "apiKey",
+            "mobileKey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_list_flags",
+      "description": "List the feature flags of a project: key, name, description, kind (boolean or multivariate), variations, tags, temporary flag, maintainer and creation date. With `env`, each flag also shows whether it is on in that environment and what it serves.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "env": {
+            "type": "string",
+            "description": "Environment key(s) whose state to include, e.g. `production`. Strongly recommended: without it the answer has no on or off state."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters, comma-separated `field:value`: `query:checkout` (key or name contains), `tags:beta+web`, `state:live` (or deprecated, archived), `maintainerId:<member id>`, `hasExperiment:true`, `evaluated:{\"after\":<unix ms>},filterEnv:production`, `codeReferences.max:0`."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Only flags with this tag."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, `-` for descending: `creationDate`, `-creationDate`, `name`, `key`, `maintainerId`, `targetingModifiedDate`."
+          },
+          "summary": {
+            "type": "boolean",
+            "description": "true (default): leave out targeting rules and targets. false together with `env`: include the full targeting of that environment."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: `evaluation`, `codeReferences`, `migrationSettings`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page: the previous offset plus limit (or follow `_links.next`).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "project_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/flags/{project_key}",
+        "queryParams": {
+          "env": "$env",
+          "filter": "$filter",
+          "tag": "$tag",
+          "sort": "$sort",
+          "summary": "$summary",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_flag",
+      "description": "Get one feature flag with its variations (with their `_id`), defaults and, per environment, whether it is on, its targets, rules (with `_id`), fallthrough, off variation, prerequisites and version. Rule and variation ids are what `launchdarkly_update_flag` instructions need.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "flag_key": {
+            "type": "string",
+            "description": "Feature flag key (the key used in code), from `launchdarkly_list_flags`."
+          },
+          "env": {
+            "type": "string",
+            "description": "Only these environment keys (comma-separated) in `environments`, to keep the answer small."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: `evaluation` (context kinds evaluated in the last 30 days), `migrationSettings`."
+          }
+        },
+        "required": [
+          "project_key",
+          "flag_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/flags/{project_key}/{flag_key}",
+        "queryParams": {
+          "env": "$env",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_list_flag_statuses",
+      "description": "List the evaluation status of every flag in one environment: new, active, inactive (not evaluated for 7 days) or launched (serving one variation to everyone), with the last time it was requested. Use it to find stale flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          }
+        },
+        "required": [
+          "project_key",
+          "environment_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/flag-statuses/{project_key}/{environment_key}"
+      }
+    },
+    {
+      "name": "launchdarkly_get_flag_status",
+      "description": "Get the evaluation status of one flag in one environment (new, active, inactive, launched) and when it was last requested.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          },
+          "flag_key": {
+            "type": "string",
+            "description": "Feature flag key (the key used in code), from `launchdarkly_list_flags`."
+          }
+        },
+        "required": [
+          "project_key",
+          "environment_key",
+          "flag_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/flag-statuses/{project_key}/{environment_key}/{flag_key}"
+      }
+    },
+    {
+      "name": "launchdarkly_create_flag",
+      "description": "Create a feature flag in a project, by default a boolean flag (variations true and false) that is off in every environment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "key": {
+            "type": "string",
+            "description": "Flag key used in code, e.g. `new-checkout`. Letters, numbers, `.`, `_`, `-`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name."
+          },
+          "description": {
+            "type": "string",
+            "description": "What the flag is for."
+          },
+          "temporary": {
+            "type": "boolean",
+            "description": "true (default) for a release flag that will be removed; false for a permanent flag."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags, e.g. [\"checkout\", \"web\"]."
+          },
+          "variations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Variations for a multivariate flag, each `{\"value\": ..., \"name\": \"...\", \"description\": \"...\"}`. Leave empty for a boolean flag."
+          },
+          "defaults": {
+            "type": "object",
+            "description": "Which variation (by index) new environments serve: `{\"onVariation\": 0, \"offVariation\": 1}`."
+          },
+          "maintainer_id": {
+            "type": "string",
+            "description": "Member id of the maintainer, from `launchdarkly_list_members` (default the token owner)."
+          },
+          "maintainer_team_key": {
+            "type": "string",
+            "description": "Team key of the maintaining team, from `launchdarkly_list_teams`."
+          },
+          "clone": {
+            "type": "string",
+            "description": "Copy the full targeting of this existing flag key into the new flag."
+          }
+        },
+        "required": [
+          "project_key",
+          "key",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/flags/{project_key}",
+        "queryParams": {
+          "clone": "$clone"
+        },
+        "bodyMapping": {
+          "key": "$key",
+          "name": "$name",
+          "description": "$description",
+          "temporary": "$temporary",
+          "tags": "$tags",
+          "variations": "$variations",
+          "defaults": "$defaults",
+          "maintainerId": "$maintainer_id",
+          "maintainerTeamKey": "$maintainer_team_key"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "launchdarkly_toggle_flag",
+      "description": "Turn a feature flag on or off in one environment. Off serves the off variation to everyone; on applies the targeting. This changes what live users get immediately.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "flag_key": {
+            "type": "string",
+            "description": "Feature flag key (the key used in code), from `launchdarkly_list_flags`."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          },
+          "action": {
+            "type": "string",
+            "description": "`turnFlagOn` or `turnFlagOff`.",
+            "enum": [
+              "turnFlagOn",
+              "turnFlagOff"
+            ]
+          },
+          "comment": {
+            "type": "string",
+            "description": "Why: shown in the audit log (required when the environment demands comments)."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate only and return the flag as it would be, without saving."
+          }
+        },
+        "required": [
+          "project_key",
+          "flag_key",
+          "environment_key",
+          "action"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v2/flags/{project_key}/{flag_key}",
+        "queryParams": {
+          "dryRun": "$dry_run"
+        },
+        "headers": {
+          "Content-Type": "application/json; domain-model=launchdarkly.semanticpatch"
+        },
+        "bodyMapping": {
+          "environmentKey": "$environment_key",
+          "comment": "$comment",
+          "instructions": [
+            {
+              "kind": "$action"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "launchdarkly_update_flag",
+      "description": "Change a feature flag with semantic patch instructions: targeting (addRule, removeRule, addClauses, addTargets, removeTargets, updateFallthroughVariationOrRollout, updateOffVariation, addPrerequisite), settings (updateName, updateDescription, addTags, removeTags, updateMaintainerMember, markTemporary, markPermanent) or lifecycle (deprecateFlag, archiveFlag, restoreFlag). Get rule and variation ids from `launchdarkly_get_flag` first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "flag_key": {
+            "type": "string",
+            "description": "Feature flag key (the key used in code), from `launchdarkly_list_flags`."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key; required for targeting instructions, not for settings such as updateName or addTags."
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Semantic patch instructions, each with `kind` and its parameters, e.g. [{\"kind\": \"addTargets\", \"contextKind\": \"user\", \"values\": [\"user-key-1\"], \"variationId\": \"<variation _id>\"}] or [{\"kind\": \"updateFallthroughVariationOrRollout\", \"rolloutWeights\": {\"<variation _id>\": 10000, \"<other _id>\": 90000}}] (weights in thousandths of a percent, total 100000)."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Why: shown in the audit log."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate only and return the flag as it would be, without saving."
+          }
+        },
+        "required": [
+          "project_key",
+          "flag_key",
+          "instructions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v2/flags/{project_key}/{flag_key}",
+        "queryParams": {
+          "dryRun": "$dry_run"
+        },
+        "headers": {
+          "Content-Type": "application/json; domain-model=launchdarkly.semanticpatch"
+        },
+        "bodyMapping": {
+          "environmentKey": "$environment_key",
+          "comment": "$comment",
+          "instructions": "$instructions"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "launchdarkly_delete_flag",
+      "description": "Delete a feature flag from every environment of the project. SDKs then serve the fallback value from code. Prefer archiving it with `launchdarkly_update_flag` (`archiveFlag`), which can be restored.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "flag_key": {
+            "type": "string",
+            "description": "Feature flag key (the key used in code), from `launchdarkly_list_flags`."
+          }
+        },
+        "required": [
+          "project_key",
+          "flag_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v2/flags/{project_key}/{flag_key}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "launchdarkly_list_segments",
+      "description": "List the segments of an environment: key, name, description, tags, whether it is a big segment, and when it changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters, comma-separated `field:value`: `query:beta`, `tags:web`, `unbounded:true`, `includedKeys:user-1`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "`name`, `creationDate` or `lastModified`, `-` for descending."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 50).",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page: the previous offset plus limit (or follow `_links.next`).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "project_key",
+          "environment_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/segments/{project_key}/{environment_key}",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_segment",
+      "description": "Get one segment with its included and excluded targets, rules (with `_id`) and version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          },
+          "segment_key": {
+            "type": "string",
+            "description": "Segment key, from `launchdarkly_list_segments`."
+          }
+        },
+        "required": [
+          "project_key",
+          "environment_key",
+          "segment_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/segments/{project_key}/{environment_key}/{segment_key}"
+      }
+    },
+    {
+      "name": "launchdarkly_create_segment",
+      "description": "Create an empty segment in one environment; add targets and rules afterwards with `launchdarkly_update_segment`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          },
+          "key": {
+            "type": "string",
+            "description": "Segment key, e.g. `beta-testers`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name."
+          },
+          "description": {
+            "type": "string",
+            "description": "What the segment is for."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags."
+          },
+          "unbounded": {
+            "type": "boolean",
+            "description": "true for a big segment (synced or imported lists of many contexts); false (default) for a standard segment."
+          }
+        },
+        "required": [
+          "project_key",
+          "environment_key",
+          "key",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v2/segments/{project_key}/{environment_key}",
+        "bodyMapping": {
+          "key": "$key",
+          "name": "$name",
+          "description": "$description",
+          "tags": "$tags",
+          "unbounded": "$unbounded"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "launchdarkly_update_segment",
+      "description": "Change a segment with semantic patch instructions: addIncludedTargets, removeIncludedTargets, addExcludedTargets, removeExcludedTargets, addRule, removeRule, addClauses, updateName, addTags and more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          },
+          "segment_key": {
+            "type": "string",
+            "description": "Segment key, from `launchdarkly_list_segments`."
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Semantic patch instructions, e.g. [{\"kind\": \"addIncludedTargets\", \"contextKind\": \"user\", \"values\": [\"user-key-1\", \"user-key-2\"]}]."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Why: shown in the audit log."
+          },
+          "dry_run": {
+            "type": "boolean",
+            "description": "Validate only, without saving."
+          }
+        },
+        "required": [
+          "project_key",
+          "environment_key",
+          "segment_key",
+          "instructions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v2/segments/{project_key}/{environment_key}/{segment_key}",
+        "queryParams": {
+          "dryRun": "$dry_run"
+        },
+        "headers": {
+          "Content-Type": "application/json; domain-model=launchdarkly.semanticpatch"
+        },
+        "bodyMapping": {
+          "environmentKey": "$environment_key",
+          "comment": "$comment",
+          "instructions": "$instructions"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "launchdarkly_list_metrics",
+      "description": "List the metrics of a project (conversions, clicks, page views, numeric custom events) with key, name, kind, event key, unit, success criteria and how many experiments use them.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter expression with operators, e.g. `query equals \"checkout\"`, `tags contains [\"revenue\"]`, `eventKind equals custom`, `isNumeric equals true`, `metricUsedIn equals experiments`; join several with a comma."
+          },
+          "sort": {
+            "type": "string",
+            "description": "`name` or `createdAt`, `-` for descending."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: `experimentCount`, `metricGroupCount`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 50).",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page: the previous offset plus limit (or follow `_links.next`).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "project_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/metrics/{project_key}",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_metric",
+      "description": "Get one metric with its definition and, with `expand`, the experiments and metric groups that use it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "metric_key": {
+            "type": "string",
+            "description": "Metric key, from `launchdarkly_list_metrics`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: `experiments`, `experimentCount`, `metricGroups`, `metricGroupCount`."
+          }
+        },
+        "required": [
+          "project_key",
+          "metric_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/metrics/{project_key}/{metric_key}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_list_experiments",
+      "description": "List the experiments of a project across environments: key, name, hypothesis, environment, current iteration status (not started, running, stopped) and flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filters, comma-separated `field:value`: `flagKey:new-checkout`, `metricKey:conversion`, `status:running` (or not_started, stopped)."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: `previousIterations`, `draftIteration`, `secondaryMetrics`, `treatments`, `analysisConfig`."
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "description": "`active` (default), `archived` or `active,archived`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20).",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page: the previous offset plus limit (or follow `_links.next`).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "project_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/projects/{project_key}/experiments",
+        "queryParams": {
+          "filter": "$filter",
+          "expand": "$expand",
+          "lifecycleState": "$lifecycle_state",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_experiment",
+      "description": "Get one experiment with its hypothesis, current iteration (status, start date, treatments and traffic allocation, primary and secondary metrics) and flag.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string",
+            "description": "Project key, from `launchdarkly_list_projects` (e.g. `default`)."
+          },
+          "environment_key": {
+            "type": "string",
+            "description": "Environment key within the project, from `launchdarkly_list_environments` (e.g. `production`, `test`)."
+          },
+          "experiment_key": {
+            "type": "string",
+            "description": "Experiment key, from `launchdarkly_list_experiments`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: `previousIterations`, `draftIteration`, `secondaryMetrics`, `treatments`."
+          }
+        },
+        "required": [
+          "project_key",
+          "environment_key",
+          "experiment_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/projects/{project_key}/environments/{environment_key}/experiments/{experiment_key}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_list_audit_log",
+      "description": "List audit log entries, newest first: who changed what (flags, segments, environments, members) and when, with the title, description and the resource. Filter by time, text, resource specifier and member.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "before": {
+            "type": "integer",
+            "description": "Only entries before this time, Unix milliseconds."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Only entries after this time, Unix milliseconds."
+          },
+          "q": {
+            "type": "string",
+            "description": "Text to search for, e.g. a flag key or name."
+          },
+          "spec": {
+            "type": "string",
+            "description": "Resource specifier, e.g. `proj/default:env/production:flag/new-checkout` or `proj/*:env/production:flag/*`."
+          },
+          "member": {
+            "type": "string",
+            "description": "Only changes by this member id, from `launchdarkly_list_members`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Entries to return, 1 to 20 (default 10). For older entries pass `before` = the date of the last entry.",
+            "minimum": 1,
+            "maximum": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/auditlog",
+        "queryParams": {
+          "before": "$before",
+          "after": "$after",
+          "q": "$q",
+          "spec": "$spec",
+          "member": "$member",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_audit_log_entry",
+      "description": "Get one audit log entry with the full change: the JSON patch or semantic instructions applied, the previous and current version of the resource and the comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "Audit log entry id, from `launchdarkly_list_audit_log` (`items[]._id`)."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/auditlog/{entry_id}"
+      }
+    },
+    {
+      "name": "launchdarkly_list_members",
+      "description": "List the account members: id, email, name, role (reader, writer, admin, owner, no_access) or custom roles, teams, last seen and whether they verified their email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filters, comma-separated `field:value`: `query:jane` (name or email), `role:admin|writer`, `team:platform`, `noteam:true`, `email:jane@example.com`, `lastSeen:{\"before\":<unix ms>}` or `lastSeen:{\"never\":true}`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, `-` for descending: `displayName`, `lastSeen`, `role`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "`customRoles` or `roleAttributes`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 1000).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page: the previous offset plus limit (or follow `_links.next`).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/members",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_member",
+      "description": "Get one account member with role, custom roles, teams and permission grants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "description": "Member id, from `launchdarkly_list_members` (or `me` for the token owner)."
+          },
+          "expand": {
+            "type": "string",
+            "description": "`customRoles` or `roleAttributes`."
+          }
+        },
+        "required": [
+          "member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/members/{member_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_list_teams",
+      "description": "List the teams: key, name, description, member count and the roles they hold.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filters, comma-separated `field:value`: `query:platform`, `nomembers:true`."
+          },
+          "sort": {
+            "type": "string",
+            "description": "`name` or `memberCount`, `-` for descending."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: `members`, `roles`, `projects`, `maintainers`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (default 20, up to 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip, for the next page: the previous offset plus limit (or follow `_links.next`).",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/teams",
+        "queryParams": {
+          "filter": "$filter",
+          "sort": "$sort",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "launchdarkly_get_team",
+      "description": "Get one team with its description and, with `expand`, members, roles, projects and maintainers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_key": {
+            "type": "string",
+            "description": "Team key, from `launchdarkly_list_teams`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: `members`, `roles`, `projects`, `maintainers`."
+          }
+        },
+        "required": [
+          "team_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/teams/{team_key}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    }
+  ]
+}

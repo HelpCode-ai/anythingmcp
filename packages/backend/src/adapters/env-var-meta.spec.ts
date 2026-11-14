@@ -1,5 +1,27 @@
 import { getAdapter, listAdapters } from './catalog';
-import { describeAdapterEnvVars, labelFromName, setupKind } from './env-var-meta';
+import { carriedSetupValues, describeAdapterEnvVars, labelFromName, setupKind } from './env-var-meta';
+
+describe('carriedSetupValues', () => {
+  it('carries the Odoo address and database to the JSON-RPC setup, never the key', () => {
+    const out = carriedSetupValues(getAdapter('odoo')!, getAdapter('odoo-jsonrpc')!, {
+      ODOO_URL: 'https://acme.odoo.com',
+      ODOO_DB: ' acme ',
+      ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e',
+    });
+    expect(out).toEqual({ ODOO_URL: 'https://acme.odoo.com', ODOO_DB: 'acme' });
+  });
+
+  it('skips empty values, values still a {{VARIABLE}}, and names the target does not take', () => {
+    expect(
+      carriedSetupValues(getAdapter('odoo')!, getAdapter('odoo-jsonrpc')!, {
+        ODOO_URL: '{{ODOO_URL}}',
+        ODOO_DB: '',
+        OTHER: 'x',
+      }),
+    ).toEqual({});
+    expect(carriedSetupValues(getAdapter('odoo')!, getAdapter('odoo-jsonrpc')!, null)).toEqual({});
+  });
+});
 
 const byName = (slug: string) =>
   Object.fromEntries(describeAdapterEnvVars(getAdapter(slug)!).map((d) => [d.name, d]));
@@ -47,5 +69,12 @@ describe('setupKind', () => {
     expect(setupKind(getAdapter('openplz')!)).toBe('none');
     expect(setupKind(getAdapter('lexware-office')!)).toBe('credentials');
     expect(setupKind(getAdapter('etsy')!)).toBe('oauth_browser');
+  });
+
+  it('never calls a marketplace shop that is authorized on the setup page keyless', () => {
+    // TikTok Shop asks for nothing on a server with its own app, but the shop still has to be authorized.
+    expect(getAdapter('tiktok-shop')!.requiredEnvVars).toEqual([]);
+    expect(setupKind(getAdapter('tiktok-shop')!)).toBe('credentials');
+    expect(setupKind(getAdapter('shopee')!)).toBe('credentials');
   });
 });

@@ -55,10 +55,39 @@ describe('Daftra adapter — static contract', () => {
   });
 
   // Daftra answers 405 to these with an API key (checked on a live account, 14 Oct 2026).
-  it('has no tools for site info, estimates, incomes or taxes', () => {
-    for (const path of ['/site_info.json', '/estimates.json', '/incomes.json', '/taxes.json']) {
+  it('has no tools for site info, incomes or taxes', () => {
+    for (const path of ['/site_info.json', '/incomes.json', '/taxes.json']) {
       expect(a.tools.some((t) => t.endpointMapping.path === path)).toBe(false);
     }
+  });
+
+  it('maps the documented estimate routes (docs.daftara.dev, Sales > Estimates)', () => {
+    expect(byName.daftra_list_estimates.endpointMapping).toEqual({
+      method: 'GET',
+      path: '/estimates.json',
+      queryParams: {
+        page: '$page',
+        limit: '$limit',
+        client_id: '$client_id',
+        date_from: '$date_from',
+        date_to: '$date_to',
+        payment_status: '$payment_status',
+        name: '$name',
+      },
+    });
+    expect(byName.daftra_get_estimate.endpointMapping).toEqual({ method: 'GET', path: '/estimates/{id}.json' });
+    expect(byName.daftra_get_estimate.parameters.required).toEqual(['id']);
+    const create = byName.daftra_create_estimate as Tool & { annotations?: Record<string, boolean> };
+    expect(create.endpointMapping).toEqual({
+      method: 'POST',
+      path: '/estimates.json',
+      bodyMapping: { Invoice: '$Invoice', InvoiceItem: '$InvoiceItem' },
+    });
+    expect(create.parameters.required).toEqual(['Invoice', 'InvoiceItem']);
+    expect(create.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });
+    expect(create.enabled).toBeUndefined();
+    expect(a.instructions).toContain('estimates (quotations)');
+    expect(a.instructions).toContain('`daftra_create_estimate`');
   });
 
   it('prefixes every tool and uses the .json resource paths', () => {
@@ -71,7 +100,7 @@ describe('Daftra adapter — static contract', () => {
 
   it('pages list tools with page and limit', () => {
     const lists = a.tools.filter((tool) => tool.name.startsWith('daftra_list_'));
-    expect(lists).toHaveLength(16);
+    expect(lists).toHaveLength(17);
     for (const tool of lists) {
       expect(tool.endpointMapping.method).toBe('GET');
       expect(tool.endpointMapping.queryParams).toMatchObject({ page: '$page', limit: '$limit' });
@@ -173,5 +202,11 @@ const live = process.env.RUN_DAFTRA_LIVE === '1';
       const body = await res.json();
       expect(Array.isArray(body.data)).toBe(true);
     }
+  });
+
+  it('pages estimates', async () => {
+    const res = await get('/estimates.json?page=1&limit=1');
+    expect(res.status).toBe(200);
+    expect(Array.isArray((await res.json()).data)).toBe(true);
   });
 });

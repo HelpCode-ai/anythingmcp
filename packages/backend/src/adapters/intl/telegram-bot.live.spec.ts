@@ -32,6 +32,13 @@ describe('telegram-bot adapter — static spec conformance', () => {
     expect(a.connector.authType).toBe('NONE');
   });
 
+  it('caps the getUpdates long poll below the 30 s request timeout', () => {
+    const t = a.tools.find((x) => x.name === 'telegram_bot_get_updates')! as unknown as {
+      parameters: { properties: { timeout: { maximum: number } } };
+    };
+    expect(t.parameters.properties.timeout.maximum).toBe(25);
+  });
+
   it('downloads a file from the /file/bot<token>/ host path, not the method path', () => {
     const download = a.tools.find((t) => t.name === 'telegram_bot_download_file')!;
     expect(download.endpointMapping).toEqual({
@@ -101,7 +108,7 @@ describe('telegram-bot adapter: albums and media sends', () => {
     expect(sent()).toEqual(expect.objectContaining({ method: 'POST', url: `${BASE}${path}` }));
   });
 
-  it('sends the album as a JSON array, the shape that works in hand-built tools', async () => {
+  it('sends the album as a JSON array, the shape Telegram accepts', async () => {
     mockedAxios.mockResolvedValue({ data: { ok: true } });
     const media = [
       { type: 'photo', media: 'https://example.com/1.jpg', caption: '<b>New</b>', parse_mode: 'HTML' },
@@ -179,6 +186,39 @@ describe('telegram-bot adapter: albums and media sends', () => {
         expect(t.endpointMapping.path).toMatch(/^\/[A-Za-z]+$/);
       }
     }
+  });
+});
+
+describe('telegram-bot adapter: reactions, chat management, stickers and webhook state', () => {
+  const find = (name: string) => {
+    const t = (a.tools as Array<Tool & { enabled?: boolean; annotations?: { readOnlyHint?: boolean } }>).find((x) => x.name === name);
+    if (!t) throw new Error(`missing tool ${name}`);
+    return t;
+  };
+
+  it('maps each tool to its Bot API method', () => {
+    const methods: Record<string, string> = {
+      telegram_bot_react_to_message: '/setMessageReaction',
+      telegram_bot_pin_message: '/pinChatMessage',
+      telegram_bot_unpin_chat_message: '/unpinChatMessage',
+      telegram_bot_rename_chat: '/setChatTitle',
+      telegram_bot_update_chat_description: '/setChatDescription',
+      telegram_bot_add_forum_topic: '/createForumTopic',
+      telegram_bot_edit_message_caption: '/editMessageCaption',
+      telegram_bot_create_chat_invite_link: '/createChatInviteLink',
+      telegram_bot_create_sticker_set: '/createNewStickerSet',
+      telegram_bot_extend_sticker_set: '/addStickerToSet',
+      telegram_bot_get_webhook_info: '/getWebhookInfo',
+      telegram_bot_remove_webhook: '/deleteWebhook',
+    };
+    for (const [name, path] of Object.entries(methods)) {
+      expect(find(name).endpointMapping).toMatchObject({ method: 'POST', path });
+    }
+  });
+
+  it('reads the webhook state read-only and installs the webhook removal switched off', () => {
+    expect(find('telegram_bot_get_webhook_info').annotations?.readOnlyHint).toBe(true);
+    expect(find('telegram_bot_remove_webhook').enabled).toBe(false);
   });
 });
 

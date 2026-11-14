@@ -2,12 +2,18 @@
 
 import {
   CLOUD_PLANS,
+  describeUsage,
+  fitFor,
   formatEur,
+  limitsExceeded,
+  smallestFittingPlan,
   formatPlanPrice,
   yearlyPerMonth,
   type BillingPeriod,
   type PlanSelection,
+  type WorkspaceUsage,
 } from '@/lib/card-trial';
+import type { PlanFits } from '@/lib/api';
 import { buildEnterpriseContactUrl } from '@/lib/marketing';
 import { useAuth } from '@/lib/auth-context';
 import { formatLocal, useLocalPricing } from '@/lib/local-currency';
@@ -60,18 +66,23 @@ function PeriodToggle({
 /**
  * The self-service Cloud plans with a billing-period switch, as a radio group,
  * and a line to Enterprise for anything beyond them. `compact` lays the plans
- * out as rows (for the licence wall's narrow modal).
+ * out as rows (for the licence wall's narrow modal). With `usage` (what the
+ * workspace already has), a plan it has outgrown says so under its summary.
+ * What a plan changes for this workspace ("What changes with Starter") is
+ * shown by the caller under its subscribe button (PlanFitNotice).
  */
 export function PlanPicker({
   value,
   onChange,
   compact = false,
   disabled = false,
+  usage = null,
 }: {
   value: PlanSelection;
   onChange: (next: PlanSelection) => void;
   compact?: boolean;
   disabled?: boolean;
+  usage?: WorkspaceUsage | null;
 }) {
   const { deploymentMode } = useAuth();
   // Outside the euro area Stripe charges in the visitor's currency: lead with
@@ -84,6 +95,8 @@ export function PlanPicker({
     : pricing?.vat === false
       ? 'Prices in EUR.'
       : 'Prices in EUR, VAT included.';
+  // Past Team too: Enterprise is the plan that fits.
+  const outgrewAll = !!usage && smallestFittingPlan(usage) === null;
   return (
     <div className="space-y-4">
       <div className="flex justify-center">
@@ -102,6 +115,7 @@ export function PlanPicker({
         {CLOUD_PLANS.map((plan) => {
           const selected = value.plan === plan.id;
           const local = formatLocal(value.period === 'yearly' ? plan.yearly : plan.monthly, pricing);
+          const exceeded = usage ? limitsExceeded(plan, usage) : [];
           return (
             <button
               key={plan.id}
@@ -140,6 +154,11 @@ export function PlanPicker({
                 <p className={cn('text-xs text-[var(--text-2)]', compact ? 'mt-0.5 pl-6' : 'mt-2')}>
                   {plan.summary}
                 </p>
+                {exceeded.length > 0 && usage && (
+                  <p className={cn('text-xs text-[var(--warning-text)]', compact ? 'mt-0.5 pl-6' : 'mt-1')}>
+                    This workspace has {describeUsage(usage, exceeded)}
+                  </p>
+                )}
               </div>
               <div className={cn(compact ? 'text-right flex-shrink-0' : 'mt-3')}>
                 <div className="text-sm font-semibold text-[var(--text)] whitespace-nowrap">
@@ -162,7 +181,7 @@ export function PlanPicker({
         })}
       </div>
       <p className="text-center text-[11px] text-[var(--text-3)]">
-        {footer} More users, single sign-on or SCIM?{' '}
+        {footer} {outgrewAll ? 'This workspace goes past Team.' : 'More users, single sign-on or SCIM?'}{' '}
         <a
           href={buildEnterpriseContactUrl()}
           target="_blank"

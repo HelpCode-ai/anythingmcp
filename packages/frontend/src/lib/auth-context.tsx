@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { users, server, organizations, AUTH_EXPIRED_EVENT, ApiError } from './api';
+import { users, server, organizations, recentSignIn, AUTH_EXPIRED_EVENT, ApiError } from './api';
 import { storage } from './storage';
 import { clearCommandPaletteCache } from './command-palette-cache';
 
@@ -78,6 +78,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearCommandPaletteCache();
+    // Signing out also forgets the authorization page's recent sign-in, or
+    // the sign-in page would offer "Continue as …" right after.
+    void recentSignIn.forget();
     setToken(null);
     setUser(null);
     setOrgName(null);
@@ -144,7 +147,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'];
-    if (!isLoading && !token && !publicPaths.includes(pathname)) {
+    // /f/<token>: File Share links decide themselves whether a sign-in is needed.
+    // /s/<token>: setup links first try the sign-in the browser just made to
+    // connect an AI client, then send to /login themselves.
+    // /setup/file-search: the File Search plugin's hand-off, the same way.
+    if (
+      !isLoading &&
+      !token &&
+      !publicPaths.includes(pathname) &&
+      !pathname.startsWith('/f/') &&
+      !pathname.startsWith('/s/') &&
+      // /reactivate/<token>: the no-login page an AI client links to once the
+      // trial ended; the token stands in for a session.
+      !pathname.startsWith('/reactivate/') &&
+      pathname !== '/setup/file-search'
+    ) {
       const currentUrl = typeof window !== 'undefined' ? window.location.pathname + window.location.search : pathname;
       router.push(`/login?redirect=${encodeURIComponent(currentUrl)}`);
     }

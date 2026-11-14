@@ -1,0 +1,1906 @@
+{
+  "slug": "shopware-6-admin",
+  "name": "Shopware 6 Admin API",
+  "aliases": [
+    "Shopware Admin API",
+    "Shopware 6 Admin"
+  ],
+  "description": "Shopware 6 Admin API for shop operators: search any entity with Shopware criteria, maintain products (texts, SEO fields, stock, prices, property options), categories, Shopping Experiences layouts down to single slots, and the media library with upload from a URL, plus sales channels, promotions and SEO URLs. OAuth2 client credentials from a Shopware integration; generic writes, deletes and bulk sync install switched off.",
+  "region": "de",
+  "category": "e-commerce",
+  "icon": "shopware",
+  "docsUrl": "https://developer.shopware.com/docs/guides/integrations-api/",
+  "instructions": "## Shopware 6 Admin API\nThis connector uses the **Admin API** (`/api`) of a Shopware 6 shop, the API the Shopware Administration itself uses: search and read every entity, maintain products (texts, SEO fields, stock, prices, properties), categories, Shopping Experiences layouts and the media library. For the public storefront API with a sales channel access key, use the separate Shopware 6 Store API connector.\n\n**Setup (about 3 minutes)**\n1. In the Shopware Administration open **Settings > System > Integrations** and click **Add integration**.\n2. Give it a name and either switch on **Administrator** or assign a role with the permissions the AI should have (a role with only read rights keeps every write tool failing with 403).\n3. Copy the **Access key ID** into `SHOPWARE_ACCESS_KEY_ID` and the **Secret access key** into `SHOPWARE_SECRET_ACCESS_KEY`. The secret is shown only once; create a new key in the integration if it is lost.\n4. `SHOPWARE_URL` is the shop's address without a path, e.g. `https://shop.example.com`. Do not add `/api` or `/admin`.\n5. Install and run `shopware_6_admin_get_version` to check the credentials.\n\nAnythingMCP fetches a short-lived bearer token at the shop's `/api/oauth/token` with the OAuth2 client-credentials grant and renews it on its own.\n\n**Ids** are 32 hex characters without dashes. Find them with the search tools; never guess them.\n\n**Search criteria.** Every search tool takes Shopware's criteria: `term`, `ids`, `filter` (equals, equalsAny, contains, prefix, suffix, range, not, multi), `sort`, `associations` (with nested criteria), `includes`, `limit`, `page` and `total_count_mode`. Pass `includes` (e.g. `{\"product\": [\"id\", \"productNumber\", \"name\", \"stock\"]}`) whenever you do not need the full records: a product without includes is large. Filter on related fields with dot paths, e.g. `categories.id`, `properties.id`, `manufacturer.name`.\n\n**Languages.** Texts are translated per language. Reads and writes use the shop's system language unless you pass `language_id`, sent as the `sw-language-id` header: a read then returns that translation (fields not translated are null, the `translated` object shows the fallback), a write changes that translation. List languages with `shopware_6_admin_search_entities` and entity `language`. Create records in the system language first.\n\n**Variants** are products with a `parentId`; they inherit empty fields from the parent. Pass `inheritance: true` to `shopware_6_admin_search_products` or `shopware_6_admin_get_product` to see the inherited values.\n\n**Tools**\n- Info: `shopware_6_admin_get_version`.\n- Products: `shopware_6_admin_search_products`, `shopware_6_admin_get_product`, `shopware_6_admin_update_product`, `shopware_6_admin_add_product_property`, `shopware_6_admin_remove_product_property`, `shopware_6_admin_create_property_option`.\n- Categories: `shopware_6_admin_search_categories`, `shopware_6_admin_create_category`, `shopware_6_admin_update_category`.\n- Layouts (Shopping Experiences): `shopware_6_admin_search_cms_pages`, `shopware_6_admin_get_cms_page` (sections, blocks and slots), `shopware_6_admin_create_cms_page`, `shopware_6_admin_update_cms_page`, `shopware_6_admin_create_cms_block`, `shopware_6_admin_update_cms_slot`.\n- Media: `shopware_6_admin_search_media`, `shopware_6_admin_create_media` then `shopware_6_admin_upload_media_from_url`, `shopware_6_admin_update_media`, `shopware_6_admin_create_media_folder`. Uploading by URL needs Shopware's `enable_url_upload_feature` (on by default) and a public URL.\n- Sales channels, promotions, SEO URLs: `shopware_6_admin_search_sales_channels`, `shopware_6_admin_search_promotions`, `shopware_6_admin_search_seo_urls`.\n- Any entity: `shopware_6_admin_search_entities`, `shopware_6_admin_get_entity`, and, installed switched off, `shopware_6_admin_create_entity`, `shopware_6_admin_update_entity`, `shopware_6_admin_delete_entity` and `shopware_6_admin_sync` (bulk upsert and delete).\n\n**Writes change the live shop.** The product, category, layout, slot and media tools change what shoppers see as soon as the shop's cache is refreshed: name the record and the new values, and wait for the user's yes before any write. `shopware_6_admin_remove_product_property` only unlinks an option and is undone with `shopware_6_admin_add_product_property`; `shopware_6_admin_upload_media_from_url` replaces an existing file. The generic writes, deletes and the Sync API are installed switched off: a workspace admin turns them on deliberately.\n\n**Writes answer with an empty 204** when nothing is returned (updates, uploads, deletes); read the record back to confirm. The create tools return the new record with its id.\n\nDocs: https://developer.shopware.com/docs/guides/integrations-api/ and the Admin API reference at https://shopware.stoplight.io/docs/admin-api.",
+  "prerequisites": "A Shopware 6 shop and an integration created under Settings > System > Integrations, with the Administrator switch or a role that grants the permissions you need.",
+  "requiredEnvVars": [
+    "SHOPWARE_URL",
+    "SHOPWARE_ACCESS_KEY_ID",
+    "SHOPWARE_SECRET_ACCESS_KEY"
+  ],
+  "envVarMeta": {
+    "SHOPWARE_URL": {
+      "label": "Shop address",
+      "kind": "address",
+      "help": "The address of your Shopware 6 shop without a path, e.g. https://shop.example.com. Not /admin, not /api.",
+      "example": "https://shop.example.com",
+      "pattern": "^https?://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{2,5})?/?$",
+      "patternMessage": "Only the address, e.g. https://shop.example.com, without /admin or /api."
+    },
+    "SHOPWARE_ACCESS_KEY_ID": {
+      "label": "Access key ID",
+      "kind": "credential",
+      "help": "Settings > System > Integrations in the Shopware Administration: the Access key ID of the integration. It starts with SWIA.",
+      "link": "https://developer.shopware.com/docs/guides/integrations-api/",
+      "pattern": "^SWIA[A-Za-z0-9_-]{10,}$",
+      "patternMessage": "Paste the integration's Access key ID; it starts with SWIA."
+    },
+    "SHOPWARE_SECRET_ACCESS_KEY": {
+      "label": "Secret access key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Secret access key shown once when the integration (or a new key) is created.",
+      "link": "https://developer.shopware.com/docs/guides/integrations-api/",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the secret access key, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Shopware refused the integration's access key or secret. Copy both again from Settings > System > Integrations, or create a new key there.",
+    "403": "The credentials work, but the integration's role may not do this. Switch on Administrator for the integration or extend its role.",
+    "404": "Nothing found at this address. SHOPWARE_URL must be the shop's address only, e.g. https://shop.example.com, without /admin or /api."
+  },
+  "probe": {
+    "tool": "shopware_6_admin_get_version"
+  },
+  "connector": {
+    "name": "Shopware 6 Admin API",
+    "type": "REST",
+    "baseUrl": "{{SHOPWARE_URL}}/api",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{SHOPWARE_ACCESS_KEY_ID}}",
+      "clientSecret": "{{SHOPWARE_SECRET_ACCESS_KEY}}",
+      "tokenUrl": "{{SHOPWARE_URL}}/api/oauth/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/_info/version"
+  },
+  "tools": [
+    {
+      "name": "shopware_6_admin_get_version",
+      "description": "Read the Shopware version of the instance. Costs nothing and checks that the integration credentials work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/_info/version"
+      }
+    },
+    {
+      "name": "shopware_6_admin_search_products",
+      "description": "Search products with Shopware criteria: free text, filters (productNumber, active, stock, manufacturerId, categories.id, properties.id, parentId for variants), sort, associations and includes. Returns {total, data, aggregations}. Variants are products too (parentId set); add inheritance to see the values they inherit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Free-text search, ranked by Shopware's search ranking."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these ids (32 hex characters each)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shopware criteria filters, combined with AND, e.g. [{\"type\":\"equals\",\"field\":\"active\",\"value\":true}], [{\"type\":\"contains\",\"field\":\"name\",\"value\":\"shirt\"}], [{\"type\":\"equalsAny\",\"field\":\"productNumber\",\"value\":[\"SW1\",\"SW2\"]}], {\"type\":\"range\",\"field\":\"stock\",\"parameters\":{\"lte\":5}}, or {\"type\":\"multi\",\"operator\":\"or\",\"queries\":[...]}."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sort order, e.g. [{\"field\":\"updatedAt\",\"order\":\"DESC\"}]."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Related entities to load, each with optional nested criteria, e.g. {\"properties\":{\"associations\":{\"group\":{}}},\"media\":{},\"categories\":{}}."
+          },
+          "includes": {
+            "type": "object",
+            "description": "Return only these fields per entity type (keyed by apiAlias), e.g. {\"product\":[\"id\",\"productNumber\",\"name\",\"stock\",\"active\"]}. Strongly recommended: full entities are large."
+          },
+          "aggregations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Aggregations, e.g. [{\"name\":\"by-active\",\"type\":\"terms\",\"field\":\"active\"}] or [{\"name\":\"avg-price\",\"type\":\"avg\",\"field\":\"price\"}]."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (Shopware's default max is 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based."
+          },
+          "total_count_mode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 no total, 1 exact total, 2 only whether a next page exists."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          },
+          "inheritance": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Pass true to fill a variant's empty fields from its parent product (sw-inheritance header). Leave out otherwise: Shopware switches inheritance on whenever the header is present."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/product",
+        "bodyMapping": {
+          "term": "$term",
+          "ids": "$ids",
+          "filter": "$filter",
+          "sort": "$sort",
+          "associations": "$associations",
+          "includes": "$includes",
+          "aggregations": "$aggregations",
+          "limit": "$limit",
+          "page": "$page",
+          "total-count-mode": "$total_count_mode"
+        },
+        "headers": {
+          "sw-language-id": "$language_id",
+          "sw-inheritance": "$inheritance"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_get_product",
+      "description": "Read one product by id with its own fields (name, productNumber, stock, price, active, description, SEO fields, customFields). For related data (properties, media, categories, variants) use shopware_6_admin_search_products with ids and associations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, 32 hex characters."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          },
+          "inheritance": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Pass true to fill a variant's empty fields from its parent product (sw-inheritance header). Leave out otherwise: Shopware switches inheritance on whenever the header is present."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/{product_id}",
+        "headers": {
+          "sw-language-id": "$language_id",
+          "sw-inheritance": "$inheritance"
+        }
+      }
+    },
+    {
+      "name": "shopware_6_admin_update_product",
+      "description": "Change fields of one product in the live shop: texts and SEO fields (written in the language of language_id), custom fields, active flag, stock, closeout, EAN or price. Only the fields you pass change. customFields are merged key by key; price replaces the whole price list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, 32 hex characters."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Product description, HTML allowed."
+          },
+          "keywords": {
+            "type": "string",
+            "description": "Search keywords, comma separated."
+          },
+          "meta_title": {
+            "type": "string",
+            "description": "SEO meta title."
+          },
+          "meta_description": {
+            "type": "string",
+            "description": "SEO meta description."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom field values by technical name, e.g. {\"my_field\": \"value\"}."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Whether the product is active."
+          },
+          "stock": {
+            "type": "integer",
+            "description": "Stock quantity."
+          },
+          "is_closeout": {
+            "type": "boolean",
+            "description": "Closeout: not orderable when out of stock."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN / GTIN."
+          },
+          "price": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Full price list, e.g. [{\"currencyId\":\"<currency id>\",\"gross\":19.99,\"net\":16.8,\"linked\":true}]. Replaces the existing prices."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further product fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) whose translation this write changes, sent as the sw-language-id header. Leave out to write the system language."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/product/{product_id}",
+        "headers": {
+          "sw-language-id": "$language_id"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "keywords": "$keywords",
+          "metaTitle": "$meta_title",
+          "metaDescription": "$meta_description",
+          "customFields": "$custom_fields",
+          "active": "$active",
+          "stock": "$stock",
+          "isCloseout": "$is_closeout",
+          "ean": "$ean",
+          "price": "$price",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_add_product_property",
+      "description": "Assign an existing property option (e.g. Color: Red) to a product. The option keeps existing; this only links it. Find option ids with shopware_6_admin_search_entities, entity property-group-option.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, 32 hex characters."
+          },
+          "option_id": {
+            "type": "string",
+            "description": "Property option id, 32 hex characters."
+          }
+        },
+        "required": [
+          "product_id",
+          "option_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/{product_id}/properties",
+        "bodyMapping": {
+          "id": "$option_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "shopware_6_admin_remove_product_property",
+      "description": "Unassign a property option from a product. Only the link is removed; the option itself and its other products stay. Undo with shopware_6_admin_add_product_property.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, 32 hex characters."
+          },
+          "option_id": {
+            "type": "string",
+            "description": "Property option id, 32 hex characters."
+          }
+        },
+        "required": [
+          "product_id",
+          "option_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/product/{product_id}/properties/{option_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_create_property_option",
+      "description": "Create a new option in a property group (e.g. a new color value). Returns the new option with its id, ready for shopware_6_admin_add_product_property. Find group ids with shopware_6_admin_search_entities, entity property-group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Property group id, 32 hex characters."
+          },
+          "name": {
+            "type": "string",
+            "description": "Option name in the system language."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Sort position within the group."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further property option (e.g. colorHexCode, mediaId) fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          }
+        },
+        "required": [
+          "group_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/property-group-option",
+        "queryParams": {
+          "_response": "detail"
+        },
+        "bodyMapping": {
+          "groupId": "$group_id",
+          "name": "$name",
+          "position": "$position",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "shopware_6_admin_search_categories",
+      "description": "Search categories with Shopware criteria, e.g. filter parentId for the children of a category, or level / active. Each category carries parentId, afterCategoryId (its left sibling), type, cmsPageId, active, visible and the breadcrumb.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Free-text search, ranked by Shopware's search ranking."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these ids (32 hex characters each)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shopware criteria filters, combined with AND, e.g. [{\"type\":\"equals\",\"field\":\"active\",\"value\":true}], [{\"type\":\"contains\",\"field\":\"name\",\"value\":\"shirt\"}], [{\"type\":\"equalsAny\",\"field\":\"productNumber\",\"value\":[\"SW1\",\"SW2\"]}], {\"type\":\"range\",\"field\":\"stock\",\"parameters\":{\"lte\":5}}, or {\"type\":\"multi\",\"operator\":\"or\",\"queries\":[...]}."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sort order, e.g. [{\"field\":\"updatedAt\",\"order\":\"DESC\"}]."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Related entities to load, each with optional nested criteria, e.g. {\"properties\":{\"associations\":{\"group\":{}}},\"media\":{},\"categories\":{}}."
+          },
+          "includes": {
+            "type": "object",
+            "description": "Return only these fields per entity type (keyed by apiAlias), e.g. {\"product\":[\"id\",\"productNumber\",\"name\",\"stock\",\"active\"]}. Strongly recommended: full entities are large."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (Shopware's default max is 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based."
+          },
+          "total_count_mode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 no total, 1 exact total, 2 only whether a next page exists."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/category",
+        "bodyMapping": {
+          "term": "$term",
+          "ids": "$ids",
+          "filter": "$filter",
+          "sort": "$sort",
+          "associations": "$associations",
+          "includes": "$includes",
+          "limit": "$limit",
+          "page": "$page",
+          "total-count-mode": "$total_count_mode"
+        },
+        "headers": {
+          "sw-language-id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_create_category",
+      "description": "Create a category in the live catalog tree: a page, a folder (structure only) or a link. Returns the new category with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Category name in the system language."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Parent category id. Leave out only for a new root category."
+          },
+          "after_category_id": {
+            "type": "string",
+            "description": "Id of the sibling this category is placed after. Leave out to place it first."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "page",
+              "folder",
+              "link"
+            ],
+            "description": "Category type, default page."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Whether the category is active."
+          },
+          "visible": {
+            "type": "boolean",
+            "description": "Whether it shows in the navigation."
+          },
+          "cms_page_id": {
+            "type": "string",
+            "description": "Layout (CMS page) id for a page category."
+          },
+          "link_type": {
+            "type": "string",
+            "enum": [
+              "external",
+              "category",
+              "product",
+              "landing_page"
+            ],
+            "description": "For a link category: what it points to."
+          },
+          "external_link": {
+            "type": "string",
+            "description": "Target URL for link_type external."
+          },
+          "internal_link": {
+            "type": "string",
+            "description": "Target id for link_type category, product or landing_page."
+          },
+          "link_new_tab": {
+            "type": "boolean",
+            "description": "Open the link in a new tab."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further category fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/category",
+        "queryParams": {
+          "_response": "detail"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "parentId": "$parent_id",
+          "afterCategoryId": "$after_category_id",
+          "type": "$type",
+          "active": "$active",
+          "visible": "$visible",
+          "cmsPageId": "$cms_page_id",
+          "linkType": "$link_type",
+          "externalLink": "$external_link",
+          "internalLink": "$internal_link",
+          "linkNewTab": "$link_new_tab",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "shopware_6_admin_update_category",
+      "description": "Change one category in the live shop: name, texts and SEO fields (in the language of language_id), active / visible, layout, or its place in the tree (parent_id, after_category_id). Only the fields you pass change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id, 32 hex characters."
+          },
+          "name": {
+            "type": "string",
+            "description": "Category name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Category description, HTML allowed."
+          },
+          "keywords": {
+            "type": "string",
+            "description": "SEO keywords."
+          },
+          "meta_title": {
+            "type": "string",
+            "description": "SEO meta title."
+          },
+          "meta_description": {
+            "type": "string",
+            "description": "SEO meta description."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom field values by technical name."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Whether the category is active."
+          },
+          "visible": {
+            "type": "boolean",
+            "description": "Whether it shows in the navigation."
+          },
+          "cms_page_id": {
+            "type": "string",
+            "description": "Layout (CMS page) id."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "New parent category id (moves the category)."
+          },
+          "after_category_id": {
+            "type": "string",
+            "description": "Id of the sibling it is placed after."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further category fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) whose translation this write changes, sent as the sw-language-id header. Leave out to write the system language."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/category/{category_id}",
+        "headers": {
+          "sw-language-id": "$language_id"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "keywords": "$keywords",
+          "metaTitle": "$meta_title",
+          "metaDescription": "$meta_description",
+          "customFields": "$custom_fields",
+          "active": "$active",
+          "visible": "$visible",
+          "cmsPageId": "$cms_page_id",
+          "parentId": "$parent_id",
+          "afterCategoryId": "$after_category_id",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_search_cms_pages",
+      "description": "Search Shopping Experiences layouts (CMS pages) with Shopware criteria, e.g. filter type landingpage / page / product_list / product_detail, or term on the name. For one layout with its sections, blocks and slots use shopware_6_admin_get_cms_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Free-text search, ranked by Shopware's search ranking."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these ids (32 hex characters each)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shopware criteria filters, combined with AND, e.g. [{\"type\":\"equals\",\"field\":\"active\",\"value\":true}], [{\"type\":\"contains\",\"field\":\"name\",\"value\":\"shirt\"}], [{\"type\":\"equalsAny\",\"field\":\"productNumber\",\"value\":[\"SW1\",\"SW2\"]}], {\"type\":\"range\",\"field\":\"stock\",\"parameters\":{\"lte\":5}}, or {\"type\":\"multi\",\"operator\":\"or\",\"queries\":[...]}."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sort order, e.g. [{\"field\":\"updatedAt\",\"order\":\"DESC\"}]."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Related entities to load, each with optional nested criteria, e.g. {\"properties\":{\"associations\":{\"group\":{}}},\"media\":{},\"categories\":{}}."
+          },
+          "includes": {
+            "type": "object",
+            "description": "Return only these fields per entity type (keyed by apiAlias), e.g. {\"product\":[\"id\",\"productNumber\",\"name\",\"stock\",\"active\"]}. Strongly recommended: full entities are large."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (Shopware's default max is 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based."
+          },
+          "total_count_mode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 no total, 1 exact total, 2 only whether a next page exists."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/cms-page",
+        "bodyMapping": {
+          "term": "$term",
+          "ids": "$ids",
+          "filter": "$filter",
+          "sort": "$sort",
+          "associations": "$associations",
+          "includes": "$includes",
+          "limit": "$limit",
+          "page": "$page",
+          "total-count-mode": "$total_count_mode"
+        },
+        "headers": {
+          "sw-language-id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_get_cms_page",
+      "description": "Read one layout (CMS page) with its sections, blocks and slots sorted by position, including each slot's id, type and config (texts, media ids). Use the slot ids with shopware_6_admin_update_cms_slot.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cms_page_id": {
+            "type": "string",
+            "description": "CMS page id, 32 hex characters."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        },
+        "required": [
+          "cms_page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/cms-page",
+        "headers": {
+          "sw-language-id": "$language_id"
+        },
+        "bodyMapping": {
+          "ids": [
+            "$cms_page_id"
+          ],
+          "associations": {
+            "sections": {
+              "sort": [
+                {
+                  "field": "position",
+                  "order": "ASC"
+                }
+              ],
+              "associations": {
+                "blocks": {
+                  "sort": [
+                    {
+                      "field": "position",
+                      "order": "ASC"
+                    }
+                  ],
+                  "associations": {
+                    "slots": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_create_cms_page",
+      "description": "Create a layout (CMS page), optionally with its sections, blocks and slots nested in one call. Returns the new page with its id. Assign it to a category with shopware_6_admin_update_category (cms_page_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Layout name."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "page",
+              "landingpage",
+              "product_list",
+              "product_detail"
+            ],
+            "description": "Layout type: page (shop page), landingpage, product_list (category listing) or product_detail."
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Nested sections, e.g. [{\"type\":\"default\",\"position\":0,\"sizingMode\":\"boxed\",\"blocks\":[{\"type\":\"text\",\"position\":0,\"sectionPosition\":\"main\",\"slots\":[{\"type\":\"text\",\"slot\":\"content\",\"config\":{\"content\":{\"source\":\"static\",\"value\":\"<p>Hello</p>\"}}}]}]}]."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further CMS page (e.g. cssClass, previewMediaId) fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cms-page",
+        "queryParams": {
+          "_response": "detail"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "sections": "$sections",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "shopware_6_admin_update_cms_page",
+      "description": "Change a layout in the live shop: rename it, or update and add sections with their blocks and slots. Sections, blocks and slots that carry an existing id are updated, those without an id are added; nothing is removed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cms_page_id": {
+            "type": "string",
+            "description": "CMS page id, 32 hex characters."
+          },
+          "name": {
+            "type": "string",
+            "description": "Layout name."
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sections to update (with id) or add (without id), with nested blocks and slots as in shopware_6_admin_create_cms_page."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further CMS page fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) whose translation this write changes, sent as the sw-language-id header. Leave out to write the system language."
+          }
+        },
+        "required": [
+          "cms_page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/cms-page/{cms_page_id}",
+        "headers": {
+          "sw-language-id": "$language_id"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "sections": "$sections",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_create_cms_block",
+      "description": "Add a block (e.g. text, image, image-text, product-listing) with its slots to an existing section of a layout. Returns the new block with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "section_id": {
+            "type": "string",
+            "description": "CMS section id, from shopware_6_admin_get_cms_page."
+          },
+          "type": {
+            "type": "string",
+            "description": "Block type, e.g. text, image, image-text, text-two-column, product-listing."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Position within the section, 0-based."
+          },
+          "section_position": {
+            "type": "string",
+            "enum": [
+              "main",
+              "sidebar"
+            ],
+            "description": "Section area, default main."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional block name."
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Slots of the block, e.g. [{\"type\":\"text\",\"slot\":\"content\",\"config\":{\"content\":{\"source\":\"static\",\"value\":\"<p>Text</p>\"}}}]."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further CMS block (e.g. marginTop, backgroundColor, cssClass, visibility) fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          }
+        },
+        "required": [
+          "section_id",
+          "type",
+          "position"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cms-block",
+        "queryParams": {
+          "_response": "detail"
+        },
+        "bodyMapping": {
+          "sectionId": "$section_id",
+          "type": "$type",
+          "position": "$position",
+          "sectionPosition": "$section_position",
+          "name": "$name",
+          "slots": "$slots",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "shopware_6_admin_update_cms_slot",
+      "description": "Change the content of one slot in the live shop, e.g. the HTML of a text element or the media of an image element, in the language of language_id. config replaces the slot's config for that language, so send every config key the element needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "description": "CMS slot id, from shopware_6_admin_get_cms_page."
+          },
+          "config": {
+            "type": "object",
+            "description": "Slot config, e.g. {\"content\":{\"source\":\"static\",\"value\":\"<p>New text</p>\"},\"verticalAlign\":{\"source\":\"static\",\"value\":null}} for a text slot or {\"media\":{\"source\":\"static\",\"value\":\"<mediaId>\"}} for an image slot."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further CMS slot (e.g. type, locked) fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) whose translation this write changes, sent as the sw-language-id header. Leave out to write the system language."
+          }
+        },
+        "required": [
+          "slot_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/cms-slot/{slot_id}",
+        "headers": {
+          "sw-language-id": "$language_id"
+        },
+        "bodyMapping": {
+          "config": "$config",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_search_media",
+      "description": "Search the media library with Shopware criteria, e.g. filter mediaFolderId, fileName, mimeType, or term. Each item carries url, fileName, fileExtension, alt, title and mediaFolderId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Free-text search, ranked by Shopware's search ranking."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these ids (32 hex characters each)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shopware criteria filters, combined with AND, e.g. [{\"type\":\"equals\",\"field\":\"active\",\"value\":true}], [{\"type\":\"contains\",\"field\":\"name\",\"value\":\"shirt\"}], [{\"type\":\"equalsAny\",\"field\":\"productNumber\",\"value\":[\"SW1\",\"SW2\"]}], {\"type\":\"range\",\"field\":\"stock\",\"parameters\":{\"lte\":5}}, or {\"type\":\"multi\",\"operator\":\"or\",\"queries\":[...]}."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sort order, e.g. [{\"field\":\"updatedAt\",\"order\":\"DESC\"}]."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Related entities to load, each with optional nested criteria, e.g. {\"properties\":{\"associations\":{\"group\":{}}},\"media\":{},\"categories\":{}}."
+          },
+          "includes": {
+            "type": "object",
+            "description": "Return only these fields per entity type (keyed by apiAlias), e.g. {\"product\":[\"id\",\"productNumber\",\"name\",\"stock\",\"active\"]}. Strongly recommended: full entities are large."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (Shopware's default max is 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based."
+          },
+          "total_count_mode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 no total, 1 exact total, 2 only whether a next page exists."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/media",
+        "bodyMapping": {
+          "term": "$term",
+          "ids": "$ids",
+          "filter": "$filter",
+          "sort": "$sort",
+          "associations": "$associations",
+          "includes": "$includes",
+          "limit": "$limit",
+          "page": "$page",
+          "total-count-mode": "$total_count_mode"
+        },
+        "headers": {
+          "sw-language-id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_create_media",
+      "description": "Create an empty media entry (no file yet) in the media library, optionally in a folder. Returns its id; then load the file with shopware_6_admin_upload_media_from_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_folder_id": {
+            "type": "string",
+            "description": "Media folder id. Find folders with shopware_6_admin_search_entities, entity media-folder."
+          },
+          "alt": {
+            "type": "string",
+            "description": "Alt text."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Any further media (e.g. private, customFields) fields in Shopware's camelCase names, merged into the request body; the named parameters above win on conflicts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/media",
+        "queryParams": {
+          "_response": "detail"
+        },
+        "bodyMapping": {
+          "mediaFolderId": "$media_folder_id",
+          "alt": "$alt",
+          "title": "$title",
+          "__merge": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "shopware_6_admin_upload_media_from_url",
+      "description": "Have Shopware download a file from a public URL into a media entry (created with shopware_6_admin_create_media). If the entry already has a file, it is replaced. Answers 204 with no body on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Media id, 32 hex characters."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public http(s) URL of the file. Shopware fetches it itself; private network addresses are refused."
+          },
+          "extension": {
+            "type": "string",
+            "description": "File extension without the dot, e.g. jpg, png, webp, pdf."
+          },
+          "file_name": {
+            "type": "string",
+            "description": "File name without extension; must be unique in the media library. Defaults to the media id."
+          }
+        },
+        "required": [
+          "media_id",
+          "url",
+          "extension"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/_action/media/{media_id}/upload",
+        "queryParams": {
+          "extension": "$extension",
+          "fileName": "$file_name"
+        },
+        "bodyMapping": {
+          "url": "$url"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_update_media",
+      "description": "Change the alt text, title, folder or custom fields of a media entry in the live shop (alt and title in the language of language_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "media_id": {
+            "type": "string",
+            "description": "Media id, 32 hex characters."
+          },
+          "alt": {
+            "type": "string",
+            "description": "Alt text."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title."
+          },
+          "media_folder_id": {
+            "type": "string",
+            "description": "Move to this media folder."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Custom field values by technical name."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) whose translation this write changes, sent as the sw-language-id header. Leave out to write the system language."
+          }
+        },
+        "required": [
+          "media_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/media/{media_id}",
+        "headers": {
+          "sw-language-id": "$language_id"
+        },
+        "bodyMapping": {
+          "alt": "$alt",
+          "title": "$title",
+          "mediaFolderId": "$media_folder_id",
+          "customFields": "$custom_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_create_media_folder",
+      "description": "Create a folder in the media library. A folder needs a configuration: either inherit the parent's (use_parent_configuration true plus configuration_id = the parent's configurationId) or pass configuration {} for a new default one. Returns the new folder with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Folder name."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Parent folder id. Leave out for a top-level folder."
+          },
+          "use_parent_configuration": {
+            "type": "boolean",
+            "description": "Inherit thumbnail settings from the parent folder."
+          },
+          "configuration_id": {
+            "type": "string",
+            "description": "Existing media folder configuration id, e.g. the parent folder's configurationId."
+          },
+          "configuration": {
+            "type": "object",
+            "description": "New configuration, e.g. {} for defaults or {\"createThumbnails\":true,\"keepAspectRatio\":true}."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/media-folder",
+        "queryParams": {
+          "_response": "detail"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "parentId": "$parent_id",
+          "useParentConfiguration": "$use_parent_configuration",
+          "configurationId": "$configuration_id",
+          "configuration": "$configuration"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "shopware_6_admin_search_sales_channels",
+      "description": "Search sales channels (storefronts, headless channels) with Shopware criteria: name, type, active, maintenance, navigation / footer / service category ids, home layout; add associations {\"domains\":{}} for their URLs. The Store API access key is removed from the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Free-text search, ranked by Shopware's search ranking."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these ids (32 hex characters each)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shopware criteria filters, combined with AND, e.g. [{\"type\":\"equals\",\"field\":\"active\",\"value\":true}], [{\"type\":\"contains\",\"field\":\"name\",\"value\":\"shirt\"}], [{\"type\":\"equalsAny\",\"field\":\"productNumber\",\"value\":[\"SW1\",\"SW2\"]}], {\"type\":\"range\",\"field\":\"stock\",\"parameters\":{\"lte\":5}}, or {\"type\":\"multi\",\"operator\":\"or\",\"queries\":[...]}."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sort order, e.g. [{\"field\":\"updatedAt\",\"order\":\"DESC\"}]."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Related entities to load, each with optional nested criteria, e.g. {\"properties\":{\"associations\":{\"group\":{}}},\"media\":{},\"categories\":{}}."
+          },
+          "includes": {
+            "type": "object",
+            "description": "Return only these fields per entity type (keyed by apiAlias), e.g. {\"product\":[\"id\",\"productNumber\",\"name\",\"stock\",\"active\"]}. Strongly recommended: full entities are large."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (Shopware's default max is 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based."
+          },
+          "total_count_mode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 no total, 1 exact total, 2 only whether a next page exists."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/sales-channel",
+        "bodyMapping": {
+          "term": "$term",
+          "ids": "$ids",
+          "filter": "$filter",
+          "sort": "$sort",
+          "associations": "$associations",
+          "includes": "$includes",
+          "limit": "$limit",
+          "page": "$page",
+          "total-count-mode": "$total_count_mode"
+        },
+        "headers": {
+          "sw-language-id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].accessKey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "shopware_6_admin_search_promotions",
+      "description": "Search promotions with Shopware criteria, e.g. filter active or code; associations {\"discounts\":{},\"salesChannels\":{}} add the discount rules and channels. Each promotion carries name, code, useCodes, validFrom, validUntil and redemption limits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Free-text search, ranked by Shopware's search ranking."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these ids (32 hex characters each)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shopware criteria filters, combined with AND, e.g. [{\"type\":\"equals\",\"field\":\"active\",\"value\":true}], [{\"type\":\"contains\",\"field\":\"name\",\"value\":\"shirt\"}], [{\"type\":\"equalsAny\",\"field\":\"productNumber\",\"value\":[\"SW1\",\"SW2\"]}], {\"type\":\"range\",\"field\":\"stock\",\"parameters\":{\"lte\":5}}, or {\"type\":\"multi\",\"operator\":\"or\",\"queries\":[...]}."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sort order, e.g. [{\"field\":\"updatedAt\",\"order\":\"DESC\"}]."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Related entities to load, each with optional nested criteria, e.g. {\"properties\":{\"associations\":{\"group\":{}}},\"media\":{},\"categories\":{}}."
+          },
+          "includes": {
+            "type": "object",
+            "description": "Return only these fields per entity type (keyed by apiAlias), e.g. {\"product\":[\"id\",\"productNumber\",\"name\",\"stock\",\"active\"]}. Strongly recommended: full entities are large."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (Shopware's default max is 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based."
+          },
+          "total_count_mode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 no total, 1 exact total, 2 only whether a next page exists."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/promotion",
+        "bodyMapping": {
+          "term": "$term",
+          "ids": "$ids",
+          "filter": "$filter",
+          "sort": "$sort",
+          "associations": "$associations",
+          "includes": "$includes",
+          "limit": "$limit",
+          "page": "$page",
+          "total-count-mode": "$total_count_mode"
+        },
+        "headers": {
+          "sw-language-id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_search_seo_urls",
+      "description": "Search SEO URLs with Shopware criteria, e.g. filter foreignKey (a product or category id), routeName (frontend.detail.page, frontend.navigation.page), salesChannelId, isCanonical, or seoPathInfo with contains.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Free-text search, ranked by Shopware's search ranking."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these ids (32 hex characters each)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shopware criteria filters, combined with AND, e.g. [{\"type\":\"equals\",\"field\":\"active\",\"value\":true}], [{\"type\":\"contains\",\"field\":\"name\",\"value\":\"shirt\"}], [{\"type\":\"equalsAny\",\"field\":\"productNumber\",\"value\":[\"SW1\",\"SW2\"]}], {\"type\":\"range\",\"field\":\"stock\",\"parameters\":{\"lte\":5}}, or {\"type\":\"multi\",\"operator\":\"or\",\"queries\":[...]}."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sort order, e.g. [{\"field\":\"updatedAt\",\"order\":\"DESC\"}]."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Related entities to load, each with optional nested criteria, e.g. {\"properties\":{\"associations\":{\"group\":{}}},\"media\":{},\"categories\":{}}."
+          },
+          "includes": {
+            "type": "object",
+            "description": "Return only these fields per entity type (keyed by apiAlias), e.g. {\"product\":[\"id\",\"productNumber\",\"name\",\"stock\",\"active\"]}. Strongly recommended: full entities are large."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (Shopware's default max is 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based."
+          },
+          "total_count_mode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 no total, 1 exact total, 2 only whether a next page exists."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/seo-url",
+        "bodyMapping": {
+          "term": "$term",
+          "ids": "$ids",
+          "filter": "$filter",
+          "sort": "$sort",
+          "associations": "$associations",
+          "includes": "$includes",
+          "limit": "$limit",
+          "page": "$page",
+          "total-count-mode": "$total_count_mode"
+        },
+        "headers": {
+          "sw-language-id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_search_entities",
+      "description": "Search any Admin API entity with Shopware criteria, e.g. order, customer, product-manufacturer, property-group, property-group-option, product-stream, rule, language, currency, tax, snippet, media-folder. Returns {total, data, aggregations}. Typed search tools exist for products, categories, layouts, media, sales channels, promotions and SEO URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity name in kebab case, e.g. order, customer, property-group-option, product-manufacturer, language."
+          },
+          "term": {
+            "type": "string",
+            "description": "Free-text search, ranked by Shopware's search ranking."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these ids (32 hex characters each)."
+          },
+          "filter": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Shopware criteria filters, combined with AND, e.g. [{\"type\":\"equals\",\"field\":\"active\",\"value\":true}], [{\"type\":\"contains\",\"field\":\"name\",\"value\":\"shirt\"}], [{\"type\":\"equalsAny\",\"field\":\"productNumber\",\"value\":[\"SW1\",\"SW2\"]}], {\"type\":\"range\",\"field\":\"stock\",\"parameters\":{\"lte\":5}}, or {\"type\":\"multi\",\"operator\":\"or\",\"queries\":[...]}."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sort order, e.g. [{\"field\":\"updatedAt\",\"order\":\"DESC\"}]."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Related entities to load, each with optional nested criteria, e.g. {\"properties\":{\"associations\":{\"group\":{}}},\"media\":{},\"categories\":{}}."
+          },
+          "includes": {
+            "type": "object",
+            "description": "Return only these fields per entity type (keyed by apiAlias), e.g. {\"product\":[\"id\",\"productNumber\",\"name\",\"stock\",\"active\"]}. Strongly recommended: full entities are large."
+          },
+          "aggregations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Aggregations, e.g. [{\"name\":\"by-active\",\"type\":\"terms\",\"field\":\"active\"}] or [{\"name\":\"avg-price\",\"type\":\"avg\",\"field\":\"price\"}]."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page (Shopware's default max is 500)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1-based."
+          },
+          "total_count_mode": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 no total, 1 exact total, 2 only whether a next page exists."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/search/{entity}",
+        "bodyMapping": {
+          "term": "$term",
+          "ids": "$ids",
+          "filter": "$filter",
+          "sort": "$sort",
+          "associations": "$associations",
+          "includes": "$includes",
+          "aggregations": "$aggregations",
+          "limit": "$limit",
+          "page": "$page",
+          "total-count-mode": "$total_count_mode"
+        },
+        "headers": {
+          "sw-language-id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data[*].accessKey",
+            "data[*].appSecret",
+            "data[*].secretAccessKey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "shopware_6_admin_get_entity",
+      "description": "Read one record of any Admin API entity by id, e.g. order, customer, category, cms-slot, media, promotion. Returns {data} with the record's own fields; for related data use shopware_6_admin_search_entities with ids and associations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity name in kebab case, e.g. order, category, property-group-option."
+          },
+          "id": {
+            "type": "string",
+            "description": "Record id, 32 hex characters."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) for translated fields such as name and description, sent as the sw-language-id header. Leave out for the shop's system language. Find ids with shopware_6_admin_search_entities, entity language."
+          }
+        },
+        "required": [
+          "entity",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{entity}/{id}",
+        "headers": {
+          "sw-language-id": "$language_id"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.accessKey",
+            "data.appSecret",
+            "data.secretAccessKey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "shopware_6_admin_create_entity",
+      "description": "Create one record of any Admin API entity, e.g. a cms-section, snippet, product-manufacturer or a product. Writes to the live shop. Returns the new record. For many records at once use shopware_6_admin_sync.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity name in kebab case, e.g. product-manufacturer, cms-section, snippet."
+          },
+          "data": {
+            "type": "object",
+            "description": "The record in Shopware's camelCase field names, e.g. {\"name\":\"ACME\",\"link\":\"https://acme.example\"} for a product-manufacturer. Associations can be nested."
+          }
+        },
+        "required": [
+          "entity",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{entity}",
+        "queryParams": {
+          "_response": "detail"
+        },
+        "bodyMapping": {
+          "__raw": "$data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "shopware_6_admin_update_entity",
+      "description": "Change fields of one record of any Admin API entity in the live shop (orders, customers, sales channels, settings included). Only the fields you pass change. Translated fields are written in the language of language_id.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity name in kebab case, e.g. sales-channel, promotion, snippet."
+          },
+          "id": {
+            "type": "string",
+            "description": "Record id, 32 hex characters."
+          },
+          "data": {
+            "type": "object",
+            "description": "Fields to change, in Shopware's camelCase names."
+          },
+          "language_id": {
+            "type": "string",
+            "description": "Language id (32 hex characters) whose translation this write changes, sent as the sw-language-id header. Leave out to write the system language."
+          }
+        },
+        "required": [
+          "entity",
+          "id",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/{entity}/{id}",
+        "headers": {
+          "sw-language-id": "$language_id"
+        },
+        "bodyMapping": {
+          "__raw": "$data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_delete_entity",
+      "description": "Delete one record of any Admin API entity by id, e.g. a cms-block, a product or a media entry. Permanent; dependent records may be deleted with it (cascade).",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Entity name in kebab case."
+          },
+          "id": {
+            "type": "string",
+            "description": "Record id, 32 hex characters."
+          }
+        },
+        "required": [
+          "entity",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/{entity}/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "shopware_6_admin_sync",
+      "description": "Bulk write: upsert or delete many records of one or more entities in a single request through the Sync API. Upserts create records without id and overwrite those with an existing id; deletes are permanent.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "List of operations, e.g. [{\"action\":\"upsert\",\"entity\":\"product\",\"payload\":[{\"id\":\"<id>\",\"stock\":10},{\"id\":\"<id2>\",\"stock\":0}]},{\"action\":\"delete\",\"entity\":\"product_property\",\"payload\":[{\"productId\":\"<id>\",\"optionId\":\"<optionId>\"}]}]. Entity names use snake case here (product_property, product_category)."
+          },
+          "fail_on_error": {
+            "type": "boolean",
+            "description": "false continues with the next operations after an error (fail-on-error header). Default true: the whole request is rolled back."
+          },
+          "indexing_behavior": {
+            "type": "string",
+            "enum": [
+              "use-queue-indexing",
+              "disable-indexing"
+            ],
+            "description": "indexing-behavior header: use-queue-indexing defers indexing to the message queue (faster for big batches); disable-indexing skips it (run indexing afterwards). Default: index synchronously."
+          }
+        },
+        "required": [
+          "operations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/_action/sync",
+        "headers": {
+          "fail-on-error": "$fail_on_error",
+          "indexing-behavior": "$indexing_behavior"
+        },
+        "bodyMapping": {
+          "__raw": "$operations"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      }
+    }
+  ]
+}

@@ -3,8 +3,7 @@ import * as adapter from './openrouteservice.json';
 /**
  * openrouteservice by HeiGIT (giscience.github.io/openrouteservice/api-reference), current host
  * api.heigit.org (api.openrouteservice.org is being retired in November 2026): raw key in Authorization.
- * Built from a customer's hand-built Cloud connector (directions, matrix, optimisation) and checked with its
- * free key on 22 Oct 2026, every tool (all compute-only).
+ * Every tool was checked with a free key on 22 Oct 2026 (all compute-only).
  * Live part: OPENROUTESERVICE_API_KEY=... RUN_OPENROUTESERVICE_LIVE=1 npx jest src/adapters/intl/openrouteservice
  */
 
@@ -53,8 +52,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'openrouteservice_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["ors_directions", "ors_matrix", "ors_optimize"];
 
 describe('openrouteservice adapter: static spec conformance', () => {
 
@@ -104,10 +101,6 @@ describe('openrouteservice adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);

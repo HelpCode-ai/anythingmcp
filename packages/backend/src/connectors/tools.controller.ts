@@ -12,9 +12,10 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiProperty, ApiPropertyOptional, ApiSecurity } from '@nestjs/swagger';
+import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import {
   IsString,
   IsOptional,
@@ -24,10 +25,17 @@ import {
   ValidateNested,
   MaxLength,
 } from 'class-validator';
-import { MAX_TOOL_NAME_LENGTH } from './parsers/tool-name.util';
-import { Type } from 'class-transformer';
+import { MAX_TOOL_NAME_LENGTH, trimToolName } from './parsers/tool-name.util';
+import { Transform, Type } from 'class-transformer';
 import { PrismaService } from '../common/prisma.service';
+import {
+  MemberVisibilityService,
+  canSeeConnector,
+  toolWhere,
+  type VisibilityScope,
+} from '../settings/member-visibility.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
+import { DynamicMcpTools } from '../mcp-server/dynamic-mcp-tools';
 import { ConnectorsService } from './connectors.service';
 import { inferJsonSchema } from './output-schema.util';
 import { classifyToolExecutionError } from './connector-error.util';
@@ -56,6 +64,13 @@ import {
   type SecretMoveSummary,
   type ToolDraft,
 } from './secret-extraction.util';
+import {
+  isCodeMethod,
+  parseCodeToolMapping,
+  validateCodeToolMapping,
+} from '../mcp-server/code-tool.util';
+import { EditionService } from '../ee/licensing/edition.service';
+import { LicenseGuardService } from '../license/license-guard.service';
 
 const RESPONSE_MAPPING_DESC =
   'Optional response handling for this tool. Keys: `cacheTtl` (seconds), ' +
@@ -85,11 +100,12 @@ const RESPONSE_MAPPING_EXAMPLE = {
   },
 };
 
-class CreateToolDto {
+export class CreateToolDto {
   @ApiProperty({
     description: 'Tool name exposed via MCP (unique per connector).',
     example: 'list_invoices',
   })
+  @Transform(({ value }) => trimToolName(value))
   @IsString()
   @MaxLength(MAX_TOOL_NAME_LENGTH)
   name: string;
@@ -135,8 +151,9 @@ class CreateToolDto {
   responseMapping?: Record<string, unknown>;
 }
 
-class UpdateToolDto {
+export class UpdateToolDto {
   @ApiPropertyOptional({ description: 'Tool name.' })
+  @Transform(({ value }) => trimToolName(value))
   @IsOptional()
   @IsString()
   @MaxLength(MAX_TOOL_NAME_LENGTH)
@@ -183,7 +200,7 @@ class UpdateToolDto {
   isEnabled?: boolean;
 }
 
-class BulkCreateToolsDto {
+export class BulkCreateToolsDto {
   @ApiProperty({
     description: 'Tools to create in a single call. Duplicates (same name) on the connector are skipped.',
     type: [CreateToolDto],
@@ -294,16 +311,97 @@ class PreviewMappingDto {
   sample?: unknown;
 }
 
+const UNRESTRICTED_SCOPE: VisibilityScope = Object.freeze({ restricted: false as const });
+
+/**
+ * Member visibility (settings/member-visibility.service.ts) on the tools of a
+ * connector: in a workspace set to `restricted`, a member who is not an admin
+ * gets 404 (the body an unknown connector id gets) on every GET route of a
+ * connector they cannot see, and the list holds only the tools their roles
+ * allow unless they own the connector. Writes keep their owner-or-admin rule.
+ * Admins and open workspaces take today's code path.
+ */
 @ApiTags('Tools')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
+@ApiSecurity('api-key')
+@UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/connectors/:connectorId/tools')
 export class ToolsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mcpServer: McpServerService,
     private readonly connectorsService: ConnectorsService,
+    private readonly edition: EditionService,
+    private readonly licenseGuard: LicenseGuardService,
+    private readonly toolExecutor: DynamicMcpTools,
+    // Not @Optional: Nest refuses to boot without it. It is missing only in
+    // unit specs that build the controller by hand and predate the setting.
+    private readonly visibility?: MemberVisibilityService,
   ) {}
+
+  /** The caller's member visibility; unrestricted for admins and open workspaces. */
+  private scopeFor(req: any): Promise<VisibilityScope> {
+    return this.visibility ? this.visibility.scopeFor(req.user) : Promise.resolve(UNRESTRICTED_SCOPE);
+  }
+
+  /** A connector the scope may not see: exactly the 404 ConnectorsService.findById gives an unknown id. */
+  private assertVisible(scope: VisibilityScope, connector: { userId: string; tools?: Array<{ id: string }> }, connectorId: string) {
+    if (!canSeeConnector(scope, { userId: connector.userId, tools: connector.tools ?? [] })) {
+      throw new NotFoundException(`Connector ${connectorId} not found`);
+    }
+  }
+
+  /**
+   * For a restricted member: another workspace's connector stays the 403 it is
+   * today, a hidden one is a 404. Nothing at all for admins and open workspaces.
+   */
+  private async hideUnlessVisible(connectorId: string, req: any): Promise<void> {
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) return;
+    const connector = await this.assertConnectorOrgMatch(connectorId, req);
+    this.assertVisible(scope, connector as any, connectorId);
+  }
+
+  /**
+   * Validate and authorize a code tool at save time (shape + authority gates).
+   * Shape: validateCodeToolMapping. Authority: `definer` is admin-only;
+   * `allowWrites` is Enterprise-only; and every connector in `uses` must belong
+   * to this connector's organization, or a code tool could reach another
+   * tenant's tools at call time (the registry is global, scoped by the ids the
+   * tool carries).
+   */
+  private async assertValidCodeTool(
+    endpointMapping: unknown,
+    connector: { organizationId: string },
+    req: any,
+  ): Promise<void> {
+    const error = validateCodeToolMapping(endpointMapping);
+    if (error) throw new BadRequestException(error);
+    const spec = parseCodeToolMapping(endpointMapping);
+    if (!spec) return;
+
+    if (spec.runAs === 'definer' && req.user.role !== 'ADMIN') {
+      throw new ForbiddenException('Only an admin can save a code tool that runs with definer rights.');
+    }
+    if (spec.allowWrites) {
+      await this.edition.assertEnterprise(connector.organizationId, 'Code tools that write');
+    }
+
+    const usesIds = [...new Set(spec.uses.map((u) => u.connectorId))];
+    if (usesIds.length > 0) {
+      const found = await this.prisma.connector.findMany({
+        where: { id: { in: usesIds }, organizationId: connector.organizationId },
+        select: { id: true },
+      });
+      const okIds = new Set(found.map((c) => c.id));
+      const foreign = usesIds.filter((id) => !okIds.has(id));
+      if (foreign.length > 0) {
+        throw new BadRequestException(
+          `A code tool can only use connectors from its own workspace. Unknown or foreign connector(s): ${foreign.join(', ')}.`,
+        );
+      }
+    }
+  }
 
   private async assertConnectorOrgMatch(connectorId: string, req: any) {
     const connector = await this.connectorsService.findById(connectorId);
@@ -418,11 +516,24 @@ export class ToolsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List tools for a connector' })
+  @ApiOperation({
+    summary: 'List tools for a connector',
+    description:
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they ' +
+      'cannot see, and only the tools their roles allow unless they own the connector.',
+  })
   async list(@Req() req: any, @Param('connectorId') connectorId: string) {
-    await this.assertConnectorOrgMatch(connectorId, req);
+    const connector = await this.assertConnectorOrgMatch(connectorId, req);
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) {
+      return this.prisma.mcpTool.findMany({
+        where: { connectorId },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+    this.assertVisible(scope, connector as any, connectorId);
     return this.prisma.mcpTool.findMany({
-      where: { connectorId },
+      where: { AND: [{ connectorId }, toolWhere(scope, connector)] },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -473,10 +584,19 @@ export class ToolsController {
     const connector = await this.assertCanWriteConnector(connectorId, req);
     this.assertKnownCallerContextVars(dto.endpointMapping);
     this.assertValidResponseMapping(dto.responseMapping);
+    const isCode = isCodeMethod(dto.endpointMapping);
+    if (isCode) {
+      await this.assertValidCodeTool(dto.endpointMapping, connector, req);
+      await this.licenseGuard.checkCanCreateCodeTool(connector.organizationId);
+    }
+    // A code tool's program is not an upstream request, so the secret-extraction
+    // pass (which rewrites paths/headers) must not touch it.
     const {
       tools: [guarded],
       summary,
-    } = await this.guardToolSecrets(connector, [{ ...dto }]);
+    } = isCode
+      ? { tools: [{ ...dto }], summary: {} as SecretMoveSummary }
+      : await this.guardToolSecrets(connector, [{ ...dto }]);
     const tool = await this.prisma.mcpTool
       .create({
         data: {
@@ -580,6 +700,9 @@ export class ToolsController {
     if (dto.responseMapping !== undefined) {
       this.assertValidResponseMapping(dto.responseMapping);
     }
+    if (dto.endpointMapping !== undefined && isCodeMethod(dto.endpointMapping)) {
+      await this.assertValidCodeTool(dto.endpointMapping, connector, req);
+    }
 
     const data: Record<string, unknown> = { ...(dto as Record<string, unknown>) };
 
@@ -590,7 +713,10 @@ export class ToolsController {
       select: { name: true, description: true, parameters: true, endpointMapping: true },
     });
     let summary: SecretMoveSummary = {};
-    if (stored) {
+    // A code tool's program is not an upstream request; skip secret extraction,
+    // which rewrites paths/headers and has nothing to do here.
+    const effectiveMapping = dto.endpointMapping ?? stored?.endpointMapping;
+    if (stored && !isCodeMethod(effectiveMapping)) {
       const draft = {
         name: dto.name ?? stored.name,
         description: dto.description ?? stored.description,
@@ -645,13 +771,15 @@ export class ToolsController {
       'Returns `derived` (inferred from the connector: HTTP verb, ' +
       'query/mutation, readOnly flag, SQL text), `override` (the stored ' +
       'explicit value, if any) and `effective` (what MCP clients actually ' +
-      'see). Also lists the supported keys.',
+      'see). Also lists the supported keys. Connector owner or admin; in a workspace with restricted member ' +
+      'visibility, a member who is not an admin gets 404 for a connector they cannot see.',
   })
   async getAnnotations(
     @Req() req: any,
     @Param('toolId') toolId: string,
     @Param('connectorId') connectorId: string,
   ) {
+    await this.hideUnlessVisible(connectorId, req);
     const connector = await this.assertCanWriteConnector(connectorId, req);
     const tool = await this.prisma.mcpTool.findFirst({
       where: { id: toolId, connectorId },
@@ -734,13 +862,15 @@ export class ToolsController {
     summary: 'Get the response mapping configured for a tool',
     description:
       'Returns the stored `transform` (or null), whether it is active, and ' +
-      'whether a recent real response is available to preview it against.',
+      'whether a recent real response is available to preview it against. Connector owner or admin; in a workspace ' +
+      'with restricted member visibility, a member who is not an admin gets 404 for a connector they cannot see.',
   })
   async getResponseMapping(
     @Req() req: any,
     @Param('toolId') toolId: string,
     @Param('connectorId') connectorId: string,
   ) {
+    await this.hideUnlessVisible(connectorId, req);
     await this.assertCanWriteConnector(connectorId, req);
     const tool = await this.prisma.mcpTool.findFirst({
       where: { id: toolId, connectorId },
@@ -936,6 +1066,42 @@ export class ToolsController {
     // `arguments` first, fall back to `params` so old clients keep working.
     const inputs = body.arguments ?? body.params ?? {};
 
+    // Code tools run their stored program in the out-of-process runner, not the
+    // REST/engine path. Route them there so the Test button exercises the real
+    // code-mode path instead of trying to HTTP-call the connector's base URL.
+    if (isCodeMethod(tool.endpointMapping)) {
+      const codeStart = Date.now();
+      const uses = parseCodeToolMapping(tool.endpointMapping)?.uses ?? [];
+      const codeRes = await this.toolExecutor.runSavedCodeTool(
+        {
+          id: tool.id,
+          name: tool.name,
+          connectorId: tool.connectorId,
+          connectorType: tool.connector.type,
+          organizationId: tool.connector.organizationId,
+          endpointMapping: tool.endpointMapping,
+        },
+        inputs,
+        {
+          userId: req.user?.sub,
+          userEmail: req.user?.email,
+          organizationId: tool.connector.organizationId,
+          authMethod: 'dashboard-test',
+          // The dashboard tester is an admin on this connector, so run
+          // unrestricted (invoker mode then behaves like ADMIN). The run is
+          // still bounded by the tool's `uses` and its write setting inside the
+          // bridge.
+          allowedToolIds: null,
+          connectorIds: uses.map((u) => u.connectorId),
+        },
+      );
+      return {
+        ok: !codeRes.isError,
+        durationMs: Date.now() - codeStart,
+        result: codeRes.structured ?? codeRes.content,
+      };
+    }
+
     // This runs from the admin UI, not through an authenticated MCP session,
     // so {{amcp.*}} resolves to empty here and the result can differ from a
     // real call. Say so rather than letting it look like a broken tool.
@@ -956,7 +1122,7 @@ export class ToolsController {
           inputs,
           tool.name,
           tool.parameters,
-          { useProxy: tool.useProxy === true },
+          { useProxy: tool.useProxy === true, userId: req.user?.sub },
         ),
       );
       const durationMs = Date.now() - startTime;

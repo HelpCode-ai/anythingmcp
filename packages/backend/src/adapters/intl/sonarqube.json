@@ -1,0 +1,383 @@
+{
+  "slug": "sonarqube",
+  "name": "SonarQube",
+  "description": "Let your AI read SonarQube: projects, quality gate status, measures such as coverage and their history, open issues by severity and software quality, analyses and branches. SonarQube Server or SonarQube Cloud, read-only, with a user token.",
+  "instructions": "## SonarQube\nThis connector reads SonarQube through the **v1 Web API** (`<your SonarQube address>/api`), which is the same on SonarQube Server (including the free Community Build) and SonarQube Cloud. All 7 tools are GET requests: the AI can read projects, quality gates, measures, issues, analyses and branches, and cannot change anything in SonarQube. The token decides what it sees: only the projects its user can browse.\n\n**Setup (about 3 minutes)**\n1. Set `SONARQUBE_URL` without `/api` and without a trailing slash:\n   - SonarQube Cloud, EU region: `https://sonarcloud.io`\n   - SonarQube Cloud, US region: `https://sonarqube.us`\n   - SonarQube Server: its address as you open it in the browser, including any context path, for example `https://sonar.example.com` or `https://example.com/sonarqube`.\n2. Create a token and paste it into `SONARQUBE_TOKEN`. On Server: avatar → **My Account** → **Security** → generate a token of type **User**. Project and global analysis tokens are for running scans and do not work for the Web API. On Cloud: avatar → **My Account** → **Access tokens** → **Personal Tokens** → generate a token. It is sent as `Authorization: Bearer <token>`.\n3. On SonarQube Cloud, set `SONARQUBE_ORGANIZATION` to your organization key (shown in the URL, `sonarcloud.io/organizations/<key>`): Cloud requires it to list projects and search issues. On Server, leave it empty; Server ignores it.\n\n**Private network**: on a self-hosted AnythingMCP, a SonarQube Server on an internal host or a private IP (`sonar.intern`, `10.0.0.x`) needs that host in `SSRF_ALLOWED_HOSTS`, or the outbound guard refuses the call before it is made. AnythingMCP Cloud can only reach SonarQube Cloud or a SonarQube Server that is reachable from the public internet.\n\n**Projects, branches and pull requests**: projects are addressed by their **project key** (for example `payments-api` or `my-org_payments-api` on Cloud), not their display name. Start with `sonarqube_list_projects`. Without `branch` or `pullRequest` every tool reads the main branch; `sonarqube_list_branches` lists the others. The Community Build analyzes only the main branch.\n\n**Quality gate**: `sonarqube_get_quality_gate_status` returns OK or ERROR with each failing condition. SonarQube Cloud marks this endpoint as deprecated but still answers it. If it ever stops answering, use `sonarqube_get_measures` with `metricKeys` set to `alert_status,quality_gate_details`, which exist on Server and Cloud.\n\n**Metrics**: useful keys for `sonarqube_get_measures` and `sonarqube_get_measures_history` are `coverage`, `duplicated_lines_density`, `ncloc`, `alert_status`, `software_quality_reliability_issues`, `software_quality_security_issues` and `software_quality_maintainability_issues`. Prefer the `software_quality_*` keys over `bugs`, `vulnerabilities` and `code_smells`, which SonarQube Cloud has deprecated.\n\n**Issues**: `sonarqube_search_issues` filters by project with `componentKeys` and by the impact model: `impactSoftwareQualities` (SECURITY, RELIABILITY, MAINTAINABILITY), `impactSeverities` (BLOCKER, HIGH, MEDIUM, LOW, INFO) and `issueStatuses` (OPEN, CONFIRMED, ACCEPTED, FIXED, FALSE_POSITIVE). The older `types`, `severities` and `statuses` filters are deprecated on Cloud and not used here. Security issues replace the separate security hotspots.\n\n**Pagination**: list tools take `p` (page, from 1) and `ps` (page size, up to 500; up to 1000 on `sonarqube_get_measures_history`). The response carries `paging` with `pageIndex`, `pageSize` and `total`. Issue search returns at most 10,000 results in total: narrow the filters rather than paging further.\n\n**Rate limits**: SonarQube Cloud answers 429 when a token sends too many requests; wait a few minutes and try again. SonarQube Server has no rate limit by default.\n\n**Errors**: 401 means the token is wrong, expired or revoked, or is an analysis token rather than a user token. 403 means the token's user lacks *Browse* permission on the project. 404 means the project key, branch or pull request does not exist, or `SONARQUBE_URL` is wrong. 400 names the missing or invalid parameter, for example a missing `organization` on Cloud.\n\n**Out of scope here**: any write (issue transitions, assignments and comments, quality gate and quality profile changes, creating or deleting projects, token management), security hotspots, portfolios and applications, Web API v2, administration and system endpoints, and new-code-only issue filters.",
+  "region": "intl",
+  "category": "infrastructure",
+  "icon": "sonarqube",
+  "docsUrl": "https://docs.sonarsource.com/sonarqube-server/latest/extension-guide/web-api/",
+  "prerequisites": "A SonarQube Server (the free Community Build works) or a SonarQube Cloud account with at least one analyzed project, and a user token. About 3 minutes.",
+  "requiredEnvVars": [
+    "SONARQUBE_URL",
+    "SONARQUBE_TOKEN"
+  ],
+  "optionalEnvVars": [
+    "SONARQUBE_ORGANIZATION"
+  ],
+  "envVarMeta": {
+    "SONARQUBE_URL": {
+      "label": "SonarQube address",
+      "kind": "address",
+      "help": "https://sonarcloud.io for SonarQube Cloud (EU), https://sonarqube.us for SonarQube Cloud (US), or your SonarQube Server's address as you open it in the browser, including any context path. Without /api and without a trailing slash.",
+      "example": "https://sonarcloud.io",
+      "pattern": "^(?!.*/api/?$)https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Use the SonarQube address, e.g. https://sonarcloud.io or https://sonar.example.com, without /api and without a trailing slash."
+    },
+    "SONARQUBE_TOKEN": {
+      "label": "User token",
+      "kind": "credential",
+      "secret": true,
+      "help": "SonarQube Server: avatar → My Account → Security → generate a token of type User. SonarQube Cloud: avatar → My Account → Access tokens → Personal Tokens. On Server, project and global analysis tokens cannot read the Web API.",
+      "link": "https://docs.sonarsource.com/sonarqube-server/latest/user-guide/managing-tokens/",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without spaces or the word Bearer."
+    },
+    "SONARQUBE_ORGANIZATION": {
+      "label": "Organization key (SonarQube Cloud only)",
+      "kind": "setting",
+      "help": "Required on SonarQube Cloud: the organization key from sonarcloud.io/organizations/<key>. Leave empty for SonarQube Server.",
+      "example": "my-org"
+    }
+  },
+  "verifyHints": {
+    "400": "SonarQube rejected the request. On SonarQube Cloud, set SONARQUBE_ORGANIZATION to your organization key.",
+    "401": "SonarQube refused the token: it is wrong, expired or revoked, or it is an analysis token. Create a new one (My Account → Security on Server, My Account → Access tokens on Cloud) and check that SONARQUBE_URL points at the instance that issued it.",
+    "403": "The token works, but its user cannot browse these projects. Check the user's Browse permission in SonarQube.",
+    "404": "SonarQube found nothing at this address. Check SONARQUBE_URL (e.g. https://sonarcloud.io or https://sonar.example.com, without /api) and include any context path such as /sonarqube.",
+    "rate_limited": "SonarQube Cloud is rate limiting this token. Wait a few minutes and try again."
+  },
+  "probe": {
+    "tool": "sonarqube_list_projects"
+  },
+  "connector": {
+    "name": "SonarQube Web API",
+    "type": "REST",
+    "baseUrl": "{{SONARQUBE_URL}}/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SONARQUBE_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "sonarqube_list_projects",
+      "description": "List the SonarQube projects the token can browse, with their key and name. Start here: the other tools take the project key it returns. Filter by name or exact key with q. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Optional search text, at least 2 characters: matches part of a project name or a project key exactly."
+          },
+          "p": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "ps": {
+            "type": "integer",
+            "description": "Projects per page, up to 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/components/search",
+        "queryParams": {
+          "qualifiers": "TRK",
+          "organization": "${SONARQUBE_ORGANIZATION}",
+          "q": "$q",
+          "p": "$p",
+          "ps": "$ps"
+        }
+      }
+    },
+    {
+      "name": "sonarqube_get_quality_gate_status",
+      "description": "Read whether a project passed its quality gate: the overall status (OK or ERROR) and each condition with its metric, threshold and actual value. Main branch by default; pass branch or pullRequest for another. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "projectKey": {
+            "type": "string",
+            "description": "Project key from sonarqube_list_projects, e.g. payments-api."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Optional branch name from sonarqube_list_branches. Leave empty for the main branch."
+          },
+          "pullRequest": {
+            "type": "string",
+            "description": "Optional pull request id, e.g. 42. Do not combine with branch."
+          }
+        },
+        "required": [
+          "projectKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/qualitygates/project_status",
+        "queryParams": {
+          "projectKey": "$projectKey",
+          "branch": "$branch",
+          "pullRequest": "$pullRequest"
+        }
+      }
+    },
+    {
+      "name": "sonarqube_get_measures",
+      "description": "Read the current value of one or more metrics for a project, such as coverage, duplicated_lines_density, ncloc or software_quality_security_issues. Also the quality gate fallback with alert_status,quality_gate_details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "description": "Project key from sonarqube_list_projects, e.g. payments-api."
+          },
+          "metricKeys": {
+            "type": "string",
+            "description": "Comma-separated metric keys, e.g. coverage,duplicated_lines_density,ncloc,software_quality_reliability_issues."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Optional branch name from sonarqube_list_branches. Leave empty for the main branch."
+          },
+          "pullRequest": {
+            "type": "string",
+            "description": "Optional pull request id, e.g. 42. Do not combine with branch."
+          }
+        },
+        "required": [
+          "component",
+          "metricKeys"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/measures/component",
+        "queryParams": {
+          "component": "$component",
+          "metricKeys": "$metricKeys",
+          "branch": "$branch",
+          "pullRequest": "$pullRequest"
+        }
+      }
+    },
+    {
+      "name": "sonarqube_get_measures_history",
+      "description": "Read how metrics changed over time for a project: one value per analysis, with its date. Use it for questions like how coverage changed since June. Filter the period with from and to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "component": {
+            "type": "string",
+            "description": "Project key from sonarqube_list_projects, e.g. payments-api."
+          },
+          "metrics": {
+            "type": "string",
+            "description": "Comma-separated metric keys, e.g. coverage,software_quality_security_issues."
+          },
+          "from": {
+            "type": "string",
+            "description": "Optional start date, e.g. 2026-06-01 or 2026-06-01T00:00:00+0000."
+          },
+          "to": {
+            "type": "string",
+            "description": "Optional end date, in the same format as from."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Optional branch name from sonarqube_list_branches. Leave empty for the main branch."
+          },
+          "p": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "ps": {
+            "type": "integer",
+            "description": "Analyses per page, up to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        },
+        "required": [
+          "component",
+          "metrics"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/measures/search_history",
+        "queryParams": {
+          "component": "$component",
+          "metrics": "$metrics",
+          "from": "$from",
+          "to": "$to",
+          "branch": "$branch",
+          "p": "$p",
+          "ps": "$ps"
+        }
+      }
+    },
+    {
+      "name": "sonarqube_search_issues",
+      "description": "Search issues in one or more projects: rule, message, file and line, impacts (software quality and severity), status, assignee and creation date. Filter by impactSoftwareQualities, impactSeverities and issueStatuses, e.g. open high-severity security issues. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "componentKeys": {
+            "type": "string",
+            "description": "Comma-separated project keys from sonarqube_list_projects, e.g. payments-api."
+          },
+          "issueStatuses": {
+            "type": "string",
+            "description": "Optional comma-separated statuses: OPEN, CONFIRMED, ACCEPTED, FIXED, FALSE_POSITIVE. Use OPEN,CONFIRMED for issues still to fix."
+          },
+          "impactSeverities": {
+            "type": "string",
+            "description": "Optional comma-separated severities: BLOCKER, HIGH, MEDIUM, LOW, INFO."
+          },
+          "impactSoftwareQualities": {
+            "type": "string",
+            "description": "Optional comma-separated software qualities: SECURITY, RELIABILITY, MAINTAINABILITY."
+          },
+          "createdAfter": {
+            "type": "string",
+            "description": "Optional: only issues created on or after this date, e.g. 2026-06-01."
+          },
+          "assigned": {
+            "type": "boolean",
+            "description": "Optional: true for assigned issues only, false for unassigned issues only."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Optional branch name from sonarqube_list_branches. Leave empty for the main branch."
+          },
+          "pullRequest": {
+            "type": "string",
+            "description": "Optional pull request id, e.g. 42. Do not combine with branch."
+          },
+          "p": {
+            "type": "integer",
+            "description": "Page number, starting at 1. At most 10,000 issues can be paged through.",
+            "minimum": 1,
+            "default": 1
+          },
+          "ps": {
+            "type": "integer",
+            "description": "Issues per page, up to 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/search",
+        "queryParams": {
+          "componentKeys": "$componentKeys",
+          "organization": "${SONARQUBE_ORGANIZATION}",
+          "issueStatuses": "$issueStatuses",
+          "impactSeverities": "$impactSeverities",
+          "impactSoftwareQualities": "$impactSoftwareQualities",
+          "createdAfter": "$createdAfter",
+          "assigned": "$assigned",
+          "branch": "$branch",
+          "pullRequest": "$pullRequest",
+          "p": "$p",
+          "ps": "$ps"
+        }
+      }
+    },
+    {
+      "name": "sonarqube_list_project_analyses",
+      "description": "List the analyses of a project, newest first, with their date, version and events such as quality gate changes or new versions. Use it to answer when a project was last scanned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project key from sonarqube_list_projects, e.g. payments-api."
+          },
+          "category": {
+            "type": "string",
+            "description": "Optional event category to keep only analyses with such an event: VERSION, QUALITY_GATE, QUALITY_PROFILE, DEFINITION_CHANGE, ISSUE_DETECTION, SQ_UPGRADE or OTHER."
+          },
+          "from": {
+            "type": "string",
+            "description": "Optional start date, e.g. 2026-06-01."
+          },
+          "to": {
+            "type": "string",
+            "description": "Optional end date, in the same format as from."
+          },
+          "p": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "ps": {
+            "type": "integer",
+            "description": "Analyses per page, up to 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project_analyses/search",
+        "queryParams": {
+          "project": "$project",
+          "category": "$category",
+          "from": "$from",
+          "to": "$to",
+          "p": "$p",
+          "ps": "$ps"
+        }
+      }
+    },
+    {
+      "name": "sonarqube_list_branches",
+      "description": "List the branches of a project with their type, whether one is the main branch, the date of its last analysis and its quality gate status. Use the names for the branch parameter of other tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string",
+            "description": "Project key from sonarqube_list_projects, e.g. payments-api."
+          }
+        },
+        "required": [
+          "project"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project_branches/list",
+        "queryParams": {
+          "project": "$project"
+        }
+      }
+    }
+  ]
+}

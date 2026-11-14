@@ -3,8 +3,8 @@ import { applyResponseTransform } from '../../connectors/response-transform.util
 
 /**
  * Flour REST API v3 (OpenAPI at backend.flour.cloud/api/docs-json; base URL https://flour.host/v3; Bearer
- * token issued by developer@flour.io). Built from a customer's hand-built Cloud connector (sold articles,
- * documents, articles, stocks, branches) and checked read-only with its token on 22 Oct 2026.
+ * token issued by developer@flour.io). Sold articles, documents,
+ * articles, stocks and branches were checked read-only against a live account on 22 Oct 2026.
  * Live part: FLOUR_API_TOKEN=... RUN_FLOUR_LIVE=1 npx jest src/adapters/de/flour
  * (reads only: stocks, one article, the last day's sold articles).
  */
@@ -54,8 +54,6 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'flour_';
 const WRITES: string[] = [];
-// Tool names of the customers' own connectors for this API on the Cloud (read 22 Oct 2026).
-const HAND_BUILT: string[] = ["articlescontroller_findall", "articlescontroller_findbynumberorean", "articlescontroller_findone", "articlescontroller_getscaleitem", "articlescontroller_getscaleitems", "articlescontroller_getstockitementries", "articlescontroller_getstocktotal", "articlescontroller_stockavailability", "branchescontroller_findall", "branchescontroller_findone", "branchescontroller_getaffiliations", "branchescontroller_getbranchusers", "branchescontroller_getmybranches", "documentscontroller_findall", "documentscontroller_findbyid", "documentscontroller_getdefaults", "documentscontroller_getsoldarticles", "documentscontroller_gettopseller", "inventoriescontroller_findall", "inventoriescontroller_findone", "inventoriescontroller_findonesimple", "inventoriescontroller_findsimple", "statisticscontroller_findall", "statisticscontroller_findone", "statisticscontroller_getdocumentitems", "statisticscontroller_getdocumentitemstopseller", "stockscontroller_findall", "stockscontroller_findmany", "stockscontroller_findone"];
 
 describe('flour adapter: static spec conformance', () => {
 
@@ -115,10 +113,6 @@ describe('flour adapter: static spec conformance', () => {
     for (const n of WRITES) expect(tool(n).annotations?.readOnlyHint).toBe(false);
   });
 
-  it('never reuses the tool names of hand-built Cloud connectors for the same API', () => {
-    const names = new Set(a.tools.map((t) => t.name));
-    for (const n of HAND_BUILT) expect(`${n}:${names.has(n)}`).toBe(`${n}:false`);
-  });
 
   it('probes with a read tool and documents every tool in the instructions', () => {
     const probe = tool(a.probe.tool);

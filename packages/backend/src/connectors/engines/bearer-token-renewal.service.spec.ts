@@ -293,6 +293,85 @@ describe('BearerTokenRenewalService', () => {
     expect(await service.getToken(cfg, 'conn-igl')).toBe('IGQnew');
     expect(mockedAxios.get).toHaveBeenCalledWith('https://graph.instagram.com/refresh_access_token', expect.anything());
   });
+
+  it('refreshes a pasted Instagram token once the day-old wait is over, though its expiry was unknown', async () => {
+    const now = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
+    // Pasted the day it was issued: Instagram refuses the first refresh.
+    graph({ '/refresh_access_token': () => graphError(100, undefined, 400) });
+    const cfg = { token: 'IGQfresh', tokenRenewal: { provider: 'instagram_login' } };
+    expect(await service.getToken(cfg, 'conn-igp')).toBe('IGQfresh');
+    // Seven hours later the retry is due, and the refresh tells the expiry.
+    clock.mockReturnValue(now + 7 * 60 * 60 * 1000);
+    graph({ '/refresh_access_token': () => ({ access_token: 'IGQrefreshed', expires_in: 5_184_000 }) });
+    expect(await service.getToken(cfg, 'conn-igp')).toBe('IGQrefreshed');
+    expect(authStatus.setTokenExpiry).toHaveBeenLastCalledWith('conn-igp', expect.any(Date));
+    // Known now: the next call uses it without asking again.
+    mockedAxios.get.mockClear();
+    expect(await service.getToken(cfg, 'conn-igp')).toBe('IGQrefreshed');
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
+
+  describe('seed (a token from "Authorize with Provider")', () => {
+    const PLATFORM_ID = '555000111222333';
+    const PLATFORM_SECRET = 'fedcba9876543210fedcba9876543210';
+    const prev = { id: process.env.META_PLATFORM_APP_ID, secret: process.env.META_PLATFORM_APP_SECRET };
+    afterEach(() => {
+      process.env.META_PLATFORM_APP_ID = prev.id;
+      process.env.META_PLATFORM_APP_SECRET = prev.secret;
+      if (prev.id === undefined) delete process.env.META_PLATFORM_APP_ID;
+      if (prev.secret === undefined) delete process.env.META_PLATFORM_APP_SECRET;
+    });
+
+    it('uses the seeded token as is, without exchanging it again, and stores its expiry', async () => {
+      const expiresAt = Date.now() + 59 * DAY;
+      await service.seed('conn-s', LONG, { expiresAt });
+      expect(decrypt(cacheRow.token, KEY)).toBe(LONG);
+      expect(cacheRow.metadata).toMatchObject({ kind: 'bearer_renewal', sourceRef: credentialRef(LONG) });
+      expect(cacheRow.metadata.viaPlatformApp).toBeUndefined();
+      expect(authStatus.setTokenExpiry).toHaveBeenCalledWith('conn-s', new Date(expiresAt));
+      graph({});
+      // The connector's variable holds the same token: no exchange, no debug_token.
+      expect(await service.getToken(withSecret(LONG), 'conn-s')).toBe(LONG);
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+
+    it("renews a token from the server's app with the server's app, the connector having none", async () => {
+      process.env.META_PLATFORM_APP_ID = PLATFORM_ID;
+      process.env.META_PLATFORM_APP_SECRET = PLATFORM_SECRET;
+      await service.seed('conn-p', LONG, { expiresAt: Date.now() + 5 * DAY, viaPlatformApp: true });
+      expect(cacheRow.metadata.viaPlatformApp).toBe(true);
+      graph({
+        '/oauth/access_token': (params) =>
+          params.client_id === PLATFORM_ID && params.client_secret === PLATFORM_SECRET && params.fb_exchange_token === LONG
+            ? { access_token: 'EAArenewed', expires_in: 5_184_000 }
+            : new Error('wrong app'),
+      });
+      // No META_APP_ID / META_APP_SECRET on the connector.
+      expect(await service.getToken(withoutSecret(LONG), 'conn-p')).toBe('EAArenewed');
+      expect(cacheRow.metadata.viaPlatformApp).toBe(true);
+      for (const line of logged) expect(line).not.toContain(PLATFORM_SECRET);
+    });
+
+    it('never exchanges a Unified Login system user token, even about to expire and with an app set', async () => {
+      await service.seed('conn-u', LONG, { expiresAt: Date.now() + 2 * DAY, systemUser: true });
+      expect(cacheRow.metadata.systemUser).toBe(true);
+      graph({ '/oauth/access_token': () => new Error('must not be called') });
+      expect(await service.getToken(withSecret(LONG), 'conn-u')).toBe(LONG);
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+    });
+
+    it("does not lend the server's app to a pasted token", async () => {
+      process.env.META_PLATFORM_APP_ID = PLATFORM_ID;
+      process.env.META_PLATFORM_APP_SECRET = PLATFORM_SECRET;
+      await service.seed('conn-q', LONG, { expiresAt: Date.now() + 5 * DAY });
+      graph({ '/oauth/access_token': () => new Error('must not be called') });
+      expect(await service.getToken(withoutSecret(LONG), 'conn-q')).toBe(LONG);
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+      // It warns instead, as it always did for a token it cannot renew.
+      expect(authStatus.mark).toHaveBeenCalledWith('conn-q', expect.objectContaining({ code: 'meta_expiring' }));
+    });
+  });
 });
 
 describe('withTokenRenewal', () => {

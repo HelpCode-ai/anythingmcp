@@ -1,0 +1,1446 @@
+{
+  "slug": "motive",
+  "name": "Motive",
+  "description": "Let your AI read your Motive fleet: where every truck and driver is, Hours of Service clocks and violations, inspection reports, safety events, fault codes, IFTA mileage and fuel purchases. Read-only, with a company API key.",
+  "instructions": "## Motive\nThis connector reads fleet data from **Motive** (formerly KeepTruckin) through its public REST API at `https://api.gomotive.com`: vehicles and their live and historical locations, drivers and other users, Hours of Service clocks, logs and violations, IFTA mileage, fuel purchases, inspection reports (DVIRs), safety events, fault codes, driving periods, trailers and other assets, and groups. Every tool only reads; nothing is changed in Motive.\n\n**Setup (about 3 minutes)**\n1. In the Motive dashboard open **Admin, Developers, API Access** (an admin role is needed) and create a company API key. Give it **read** access and the scopes for the data you want here (vehicles, locations, users, HOS, IFTA, fuel, inspections, safety events, fault codes, assets, groups). A key can also be limited to some groups; the AI then sees only those.\n2. Copy the key from the one-time dialog and paste it into `MOTIVE_API_KEY`. It is sent as the `X-Api-Key` header. Keys expire on the schedule chosen at creation; Motive warns admins a week before.\n3. Check the setup with `motive_list_vehicles`.\n\n**Identifiers**: vehicles, users and assets have numeric Motive ids (`motive_list_vehicles`, `motive_list_users`, `motive_list_assets`). The unit number a dispatcher uses (\"Truck 12\") is the vehicle `number`; turn it into an id with `motive_lookup_vehicle`. Drivers are users with role `driver`.\n\n**Dates, time zones and units**: date filters are `YYYY-MM-DD`; most reports default to the last 7 days. `updated_after` takes an ISO 8601 timestamp. Timestamps come back in UTC unless you pass `time_zone` (sent as `X-Time-Zone`); `metric_units` (sent as `X-Metric-Units`) switches between metric and imperial units. HOS durations in `motive_list_available_time` are seconds.\n\n**Pagination**: list tools take `per_page` (default 25, at most 100) and `page_no`; each answer has `pagination` with `per_page`, `page_no` and `total`. Ask for the next page while there are more records than seen.\n\n**Common workflows**\n- Where is a truck: `motive_lookup_vehicle` or `motive_list_vehicles`, then `motive_list_vehicle_locations` (all ELDs) or `motive_list_vehicle_gateway_locations` (Motive Vehicle Gateway); the route over a period comes from `motive_get_vehicle_location_history`. Drivers and their vehicle: `motive_list_driver_locations`.\n- Who can still drive: `motive_list_available_time`; compliance: `motive_list_hos_logs`, `motive_list_hos_violations` and unidentified driving with `motive_list_driving_periods` (assigned_to_driver false).\n- Maintenance: `motive_list_inspection_reports` with status with_defects and `motive_list_fault_codes` with status open.\n- Safety coaching: `motive_list_driver_performance_events`.\n- Fuel tax: `motive_get_ifta_mileage_summary`, `motive_list_ifta_trips` and `motive_list_fuel_purchases`.\n- Trailers: `motive_list_assets` and `motive_list_asset_locations`. Fleet structure: `motive_list_groups`. One record: `motive_get_vehicle`, `motive_get_user`.\n\n**Limitations**: read-only by design; creating or editing vehicles, users, groups, geofences, fuel purchases or inspection reports, messaging drivers, dispatches and engine immobilizer commands are left out. Some data needs the matching hardware or plan (AI dashcam events, Vehicle Gateway locations, asset gateways). The location history endpoint accepts at most 10 simultaneous requests. Accounts on Motive's EU platform use a different host and are not covered.",
+  "aliases": [
+    "KeepTruckin",
+    "gomotive"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "motive",
+  "docsUrl": "https://developer.gomotive.com/reference",
+  "requiredEnvVars": [
+    "MOTIVE_API_KEY"
+  ],
+  "envVarMeta": {
+    "MOTIVE_API_KEY": {
+      "label": "Company API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Motive dashboard: Admin, Developers, API Access, create a company API key with read access. The full key is shown only once.",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the API key only, without spaces or a header name such as X-Api-Key.",
+      "link": "https://developer.gomotive.com/reference/create-api-key"
+    }
+  },
+  "verifyHints": {
+    "401": "Motive refused the API key. Check that it was copied in full from Admin, Developers, API Access, that it has not expired or been revoked, and paste it without the X-Api-Key header name.",
+    "403": "The API key is valid but lacks the scope for this data. Create a new key with read access to the scopes you need (vehicles, locations, users, HOS and so on); Motive keys cannot be edited after creation.",
+    "404": "No Motive record with that id. Use the numeric id from motive_list_vehicles or motive_list_users, not the vehicle number or driver name.",
+    "rate_limited": "Motive is rate limiting this key. Wait a minute, ask for fewer pages, and try again."
+  },
+  "probe": {
+    "tool": "motive_list_vehicles",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "connector": {
+    "name": "Motive API",
+    "type": "REST",
+    "baseUrl": "https://api.gomotive.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{MOTIVE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "motive_list_vehicles",
+      "description": "List the company vehicles in Motive: id, number (the fleet unit name), status, VIN, make, model, year, license plate, fuel type, IFTA flag, groups, the ELD device and the current or permanent driver. Use it to find a vehicle id for the location, inspection, fault code and IFTA tools. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "driver_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only vehicles linked to these driver (user) ids."
+          },
+          "fuel_type": {
+            "type": "string",
+            "enum": [
+              "diesel",
+              "gasoline",
+              "propane",
+              "lng",
+              "cng",
+              "ethanol",
+              "methanol",
+              "e85",
+              "m85",
+              "a55",
+              "biodiesel",
+              "other"
+            ],
+            "description": "Only vehicles with this fuel type."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/vehicles",
+        "queryParams": {
+          "driver_ids[]": "$driver_ids",
+          "fuel_type": "$fuel_type",
+          "updated_after": "$updated_after",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_get_vehicle",
+      "description": "Read one vehicle by its Motive id: number, status, VIN, make, model, year, plate, fuel type, groups, ELD device and assigned driver. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vehicle_id": {
+            "type": "integer",
+            "description": "Motive vehicle id (the numeric id from motive_list_vehicles, not the unit number)."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        },
+        "required": [
+          "vehicle_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/vehicles/{vehicle_id}",
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_lookup_vehicle",
+      "description": "Find a vehicle by its fleet unit number (the \"number\" shown in the Motive dashboard, for example \"Truck 12\") and return its full record including the Motive id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Vehicle number exactly as set in Motive."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/vehicles/lookup",
+        "queryParams": {
+          "number": "$number"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_vehicle_locations",
+      "description": "Current location of every vehicle (v2): for each vehicle its id, number, VIN and current_location with latitude, longitude, a place description, located_at, bearing, speed, odometer, engine hours, fuel level and the current driver. Use it for \"where is truck X\" or a fleet map. Works for all ELD types. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vehicle_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these vehicle ids."
+          },
+          "vehicle_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deactivated"
+            ],
+            "description": "Only active or only deactivated vehicles."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/vehicle_locations",
+        "queryParams": {
+          "vehicle_ids[]": "$vehicle_ids",
+          "vehicle_status": "$vehicle_status",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_vehicle_gateway_locations",
+      "description": "Current location of vehicles fitted with the Motive Vehicle Gateway (v3), with richer telemetry than v2 and, on request, the auxiliary (PTO) status. For vehicles on older ELDs use motive_list_vehicle_locations. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vehicle_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these vehicle ids."
+          },
+          "vehicle_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deactivated"
+            ],
+            "description": "Only active or only deactivated vehicles."
+          },
+          "include_aux_details": {
+            "type": "boolean",
+            "description": "Include the auxiliary input status of each vehicle (default false)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/vehicle_locations",
+        "queryParams": {
+          "vehicle_ids[]": "$vehicle_ids",
+          "vehicle_status": "$vehicle_status",
+          "include_aux_details": "$include_aux_details",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_get_vehicle_location_history",
+      "description": "Location breadcrumbs of one vehicle between two dates (v2): each point with latitude, longitude, description, located_at, speed, bearing, odometer, engine hours and driver. The range may span at most 3 months; keep it short for a readable answer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vehicle_id": {
+            "type": "integer",
+            "description": "Motive vehicle id from motive_list_vehicles."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the history (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the history, at most 3 months after start_date (YYYY-MM-DD)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        },
+        "required": [
+          "vehicle_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/vehicle_locations/{vehicle_id}",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "updated_after": "$updated_after"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_driver_locations",
+      "description": "Drivers with their last known location and the vehicle they are in: user id, name, current_location (lat, lon, description, located_at) and current_vehicle. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "driver_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these driver (user) ids."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/driver_locations",
+        "queryParams": {
+          "driver_ids[]": "$driver_ids",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_users",
+      "description": "List the users of the Motive account (drivers, fleet users and admins): id, first and last name, email, phone, role, status, duty status, driver company id, licence details and time zone. Filter by role=driver to get the driver list. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "driver",
+              "fleet_user",
+              "admin"
+            ],
+            "description": "Only users with this role."
+          },
+          "duty_status": {
+            "type": "string",
+            "enum": [
+              "off_duty",
+              "on_duty",
+              "sleeper",
+              "driving",
+              "waiting"
+            ],
+            "description": "Only drivers currently in this duty status."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deactivated"
+            ],
+            "description": "Only active or only deactivated users."
+          },
+          "name": {
+            "type": "string",
+            "description": "Search by first name, last name or both."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users",
+        "queryParams": {
+          "role": "$role",
+          "duty_status": "$duty_status",
+          "status": "$status",
+          "name": "$name",
+          "updated_after": "$updated_after",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_get_user",
+      "description": "Read one user (driver or fleet user) by Motive id: name, contact details, role, status, duty status, licence, cycle and exceptions settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Motive user id from motive_list_users."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users/{user_id}",
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_available_time",
+      "description": "Hours of Service clocks per driver: current duty status and the time still available on the drive, shift, cycle and break clocks (in seconds), plus the recap of on-duty time per day. Use it to answer \"who can still drive today and for how long\". Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "driver_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these driver (user) ids."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/available_time",
+        "queryParams": {
+          "driver_ids[]": "$driver_ids",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_hos_logs",
+      "description": "Daily Hours of Service logs (records of duty status) of the drivers: per driver and day the duty status events with start time and duration, total miles, vehicles, cycle, shipping documents, signature and any violations. Defaults to the last 7 days. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "driver_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only the logs of these driver (user) ids."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First log day (default 7 days ago) (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last log day (default today) (YYYY-MM-DD)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only logs in this status, as Motive reports it on each log."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/logs",
+        "queryParams": {
+          "driver_ids[]": "$driver_ids",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "status": "$status",
+          "updated_after": "$updated_after",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_hos_violations",
+      "description": "Hours of Service violations of the drivers, for example exceeding the 11-hour drive or 14-hour shift limit or a missed 30-minute break: driver, type, name, start and end time and duration. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "driver_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only violations of these driver (user) ids."
+          },
+          "min_start_time": {
+            "type": "string",
+            "format": "date",
+            "description": "Only violations that started on or after this date (YYYY-MM-DD)."
+          },
+          "max_start_time": {
+            "type": "string",
+            "format": "date",
+            "description": "Only violations that started on or before this date (YYYY-MM-DD)."
+          },
+          "violation_types": {
+            "type": "string",
+            "description": "Only this violation type, as Motive names it in the type field of a violation."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/hos_violations",
+        "queryParams": {
+          "driver_ids[]": "$driver_ids",
+          "min_start_time": "$min_start_time",
+          "max_start_time": "$max_start_time",
+          "violation_types": "$violation_types",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_ifta_trips",
+      "description": "IFTA trip report: distance driven per vehicle and jurisdiction (state or province) with dates, start and end odometer and location. Use it for fuel tax reporting. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vehicle_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these vehicle ids."
+          },
+          "jurisdictions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these jurisdictions, as two-letter codes (for example TX, CA, ON)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the report (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the report (YYYY-MM-DD)."
+          },
+          "fuel_type": {
+            "type": "string",
+            "description": "Only vehicles with this fuel type: Diesel, Gasoline, Propane, LNG, CNG, Ethanol, Methanol, E85, M85, A55, Biodiesel or Others."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/ifta/trips",
+        "queryParams": {
+          "vehicle_ids[]": "$vehicle_ids",
+          "jurisdictions[]": "$jurisdictions",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "fuel_type": "$fuel_type",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_get_ifta_mileage_summary",
+      "description": "IFTA mileage summary: total distance per vehicle and jurisdiction over a period (default the last 7 days), the figure that goes on a quarterly fuel tax return. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vehicle_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these vehicle ids."
+          },
+          "jurisdictions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these jurisdictions, as two-letter codes."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day (default 7 days ago) (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (default today) (YYYY-MM-DD)."
+          },
+          "fuel_type": {
+            "type": "string",
+            "description": "Only vehicles with this fuel type: Diesel, Gasoline, Propane, LNG, CNG, Ethanol, Methanol, E85, M85, A55, Biodiesel or Others."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/ifta/summary",
+        "queryParams": {
+          "vehicle_ids[]": "$vehicle_ids",
+          "jurisdictions[]": "$jurisdictions",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "fuel_type": "$fuel_type",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        }
+      }
+    },
+    {
+      "name": "motive_list_fuel_purchases",
+      "description": "Fuel purchases recorded in Motive (entered by drivers, imported or from a fuel card integration): date, vehicle, driver, jurisdiction, fuel type, quantity, total cost, currency, vendor and receipt. Defaults to the last 7 days. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First purchase day (default 7 days ago) (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last purchase day (default today) (YYYY-MM-DD)."
+          },
+          "fuel_type": {
+            "type": "string",
+            "enum": [
+              "diesel",
+              "gasoline",
+              "propane",
+              "lng",
+              "cng",
+              "ethanol",
+              "methanol",
+              "e85",
+              "m85",
+              "a55",
+              "biodiesel",
+              "other"
+            ],
+            "description": "Only purchases of this fuel."
+          },
+          "vehicle_id": {
+            "type": "integer",
+            "description": "Only purchases for this vehicle id."
+          },
+          "vehicle_type": {
+            "type": "string",
+            "enum": [
+              "ifta",
+              "all"
+            ],
+            "description": "ifta: only vehicles subject to IFTA; all: every vehicle."
+          },
+          "jurisdictions": {
+            "type": "string",
+            "description": "Only purchases in this jurisdiction (two-letter code)."
+          },
+          "source": {
+            "type": "string",
+            "description": "Only purchases from this source, for example manual or a fuel card integration name."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fuel_purchases",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "fuel_type": "$fuel_type",
+          "vehicle_ids": "$vehicle_id",
+          "vehicle_type": "$vehicle_type",
+          "jurisdictions": "$jurisdictions",
+          "source": "$source",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        }
+      }
+    },
+    {
+      "name": "motive_list_inspection_reports",
+      "description": "Driver vehicle inspection reports (DVIRs, v2) for vehicles and trailers: date, driver, vehicle or asset, inspection type, location, odometer, defects with their category, notes and resolution status, and signatures. Filter status=with_defects to find open problems. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "driver_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only reports by these driver (user) ids."
+          },
+          "vehicle_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only reports for these vehicle ids."
+          },
+          "asset_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only reports for these asset (trailer) ids."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First report day (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last report day (YYYY-MM-DD)."
+          },
+          "status": {
+            "type": "string",
+            "description": "all, with_defects, with_no_defects or with_signature_missing; with defect-level resolution also open, acceptable or resolved, otherwise satisfactory, harmless or corrected."
+          },
+          "entity_type": {
+            "type": "string",
+            "description": "vehicle for truck reports or asset for trailer reports."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/inspection_reports",
+        "queryParams": {
+          "driver_ids[]": "$driver_ids",
+          "vehicle_ids[]": "$vehicle_ids",
+          "asset_ids[]": "$asset_ids",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "status": "$status",
+          "entity_type": "$entity_type",
+          "updated_after": "$updated_after",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_driver_performance_events",
+      "description": "Safety events detected by Motive (v2): harsh acceleration, braking and cornering, crashes, and with AI dashcams events such as cell phone use, seat belt, tailgating, stop sign violations and drowsiness. Each event has type, time, location, speed, driver, vehicle, coaching status and media links when recorded. Defaults to the last week. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "driver_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only events of these driver (user) ids."
+          },
+          "vehicle_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only events in these vehicle ids."
+          },
+          "event_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these event types, for example hard_brake, hard_accel, hard_corner, crash, seat_belt_violation, tailgating, cell_phone, stop_sign_violation, distraction, unsafe_lane_change, drowsiness, forward_collision_warning, near_miss, smoking."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day (default one week ago) (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (default today) (YYYY-MM-DD)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "media_required": {
+            "type": "boolean",
+            "description": "true: only events with a video or image attached."
+          },
+          "ignore_thresholds": {
+            "type": "boolean",
+            "description": "true: return every event, also those below the configured severity thresholds."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/driver_performance_events",
+        "queryParams": {
+          "driver_ids[]": "$driver_ids",
+          "vehicle_ids[]": "$vehicle_ids",
+          "event_types[]": "$event_types",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "updated_after": "$updated_after",
+          "media_required": "$media_required",
+          "ignore_thresholds": "$ignore_thresholds",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        }
+      }
+    },
+    {
+      "name": "motive_list_fault_codes",
+      "description": "Engine fault codes (diagnostic trouble codes) reported by the vehicles: code, label, description, source, status (open or closed), type, first and last observed time and the vehicle. Defaults to the last 7 days. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vehicle_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only codes from these vehicle ids."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "description": "Only open or only closed codes."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "constant",
+              "intermittent"
+            ],
+            "description": "Only constant or only intermittent codes."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day (default 7 days ago) (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (default today) (YYYY-MM-DD)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/fault_codes",
+        "queryParams": {
+          "vehicle_ids[]": "$vehicle_ids",
+          "status": "$status",
+          "type": "$type",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "updated_after": "$updated_after",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_driving_periods",
+      "description": "Driving periods of the vehicles: each stretch of driving with start and end time, duration, distance, origin and destination, vehicle and driver, and type (driving, PC for personal conveyance, YM for yard move). Filter assigned_to_driver=false for unidentified driving. Defaults to the last 7 days. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "driver_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only periods of these driver (user) ids."
+          },
+          "vehicle_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only periods of these vehicle ids."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "driving",
+              "PC",
+              "YM"
+            ],
+            "description": "driving, PC (personal conveyance) or YM (yard move)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "complete",
+              "interrupted"
+            ],
+            "description": "Only periods in this state."
+          },
+          "assigned_to_driver": {
+            "type": "boolean",
+            "description": "true: only periods with a driver; false: only unidentified driving."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day (default 7 days ago) (YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (default today) (YYYY-MM-DD)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/driving_periods",
+        "queryParams": {
+          "driver_ids[]": "$driver_ids",
+          "vehicle_ids[]": "$vehicle_ids",
+          "type": "$type",
+          "status": "$status",
+          "assigned_to_driver": "$assigned_to_driver",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "updated_after": "$updated_after",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone"
+        }
+      }
+    },
+    {
+      "name": "motive_list_assets",
+      "description": "List the non-powered assets (trailers, containers, equipment): id, name, type, status, make, model, year, VIN, plate, groups and the asset gateway. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Search by asset name."
+          },
+          "exact_match": {
+            "type": "boolean",
+            "description": "true: name must match exactly, including case (default false)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deactivated"
+            ],
+            "description": "Only active or only deactivated assets."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/assets",
+        "queryParams": {
+          "name": "$name",
+          "exact_match": "$exact_match",
+          "status": "$status",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    },
+    {
+      "name": "motive_list_asset_locations",
+      "description": "Last known location of the assets that carry a Motive asset gateway: asset id and name, latitude, longitude, place description, located_at and battery state. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only the asset with this name."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/asset_locations",
+        "queryParams": {
+          "name": "$name",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        }
+      }
+    },
+    {
+      "name": "motive_list_groups",
+      "description": "List the groups of the account (the way the fleet is split into terminals, regions or teams): id, name, parent group, status and member counts. Use a group to understand which vehicles and drivers belong together. Read-only, paginated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_after": {
+            "type": "string",
+            "description": "Only records changed after this moment (ISO 8601, for example 2026-10-01T00:00:00Z). Useful for incremental syncs."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Records per page (default 25, at most 100)."
+          },
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer carries pagination.total; ask for the next page while page_no * per_page is below it."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "Optional time zone for the timestamps in the answer, sent as X-Time-Zone (for example \"Eastern Time (US & Canada)\" or \"America/New_York\"). Without it the company time zone applies."
+          },
+          "metric_units": {
+            "type": "boolean",
+            "description": "Optional, sent as X-Metric-Units: true returns kilometres, litres and metric units, false miles and gallons. Without it the company setting applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/groups",
+        "queryParams": {
+          "updated_after": "$updated_after",
+          "per_page": "$per_page",
+          "page_no": "$page_no"
+        },
+        "headers": {
+          "X-Time-Zone": "$time_zone",
+          "X-Metric-Units": "$metric_units"
+        }
+      }
+    }
+  ]
+}

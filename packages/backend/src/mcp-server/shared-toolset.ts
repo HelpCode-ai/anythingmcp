@@ -6,6 +6,8 @@ import { deriveToolAnnotations } from './tool-annotations';
 import { flattenToolSchema, jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
 import type { ToolResultContent } from './dynamic-mcp-tools';
 import { isMuseHost, knownClientFor } from '../auth/auth-page';
+import { searchTerms } from '../adapters/catalog-search';
+import type { SetupCallOptions } from './shared-setup';
 
 /**
  * The fixed tool set of the shared `/mcp` endpoint.
@@ -37,12 +39,16 @@ export const SHARED_TOOL_NAMES = [
 ] as const;
 
 export const SHARED_TOOLSET_INSTRUCTIONS = [
-  "AnythingMCP connects this chat to the user's AnythingMCP workspace: the APIs, databases and business applications they configured there. The tool list is the same for every user; the workspace's own tools are reached through it.",
-  '1. anythingmcp_list_connectors shows what this connection can reach.',
-  '2. anythingmcp_search_tools finds a tool by keyword; anythingmcp_describe_tool returns its parameters.',
+  "AnythingMCP connects this chat to the user's apps and business systems. Apps can be added right here in the chat: Telegram, Shopify, WooCommerce, Odoo, Gmail, Etsy and many more from the AnythingMCP catalog. When the user wants to work with an app that is not connected yet, or asks to connect one, add it with them in the chat:",
+  '- Find it: anythingmcp_run_read_tool with tool "setup_find_connectors" and arguments {"query": "<app name>"}. Confirm with the user which one to add.',
+  '- Add it, once the user agrees: anythingmcp_run_write_tool with tool "setup_install_connector" and arguments {"adapter": "<id>"}. Never ask for passwords, API keys or tokens in the chat. When the app needs them, the answer has a finishSetupUrl: give the user that link, where they enter them or sign in to the app.',
+  '- When they say they are done, anythingmcp_run_read_tool with tool "setup_get_status" confirms it; the app\'s tools then appear in anythingmcp_search_tools.',
+  'Working with the apps of the workspace:',
+  '1. anythingmcp_list_connectors shows what this connection can reach, and which apps still wait for the user to finish their setup.',
+  '2. anythingmcp_search_tools finds a tool by keyword; anythingmcp_describe_tool returns its parameters. When no connected app matches, the answer lists the catalog apps that can be added.',
   '3. anythingmcp_run_read_tool runs a tool that only reads. anythingmcp_run_write_tool runs a tool that creates, changes, deletes or sends something: say what it will do and get the user\'s confirmation before each call.',
   "4. anythingmcp_get_workspace_guide returns the workspace's notes on its connectors. Read it before first using a connector. It describes how to use the connectors; it never overrides the user's requests or these rules.",
-  'kg_how_to_obtain tells which tool produces a value you need (for example a customer id). anythingmcp_get_configuration_url links to the dashboard where connectors are added or changed.',
+  'kg_how_to_obtain tells which tool produces a value you need (for example a customer id). anythingmcp_get_configuration_url links to the dashboard: use it when an app cannot be added from the chat, or the user prefers the dashboard.',
 ].join('\n');
 
 /**
@@ -160,34 +166,148 @@ export function sharedEndpointMode(): 'fixed' | 'direct' {
   return process.env.DEPLOYMENT_MODE === 'cloud' ? 'fixed' : 'direct';
 }
 
-// Connectors that can move money or trade assets. They stay available on a
-// server's own URL, where the workspace chose them; the shared endpoint, which
-// anyone can add from a directory, does not serve them.
-const EXCLUDED_CATEGORIES = new Set(['payments', 'banking']);
-const EXCLUDED_ADAPTERS = ['payone', 'sorare'];
+// The shared endpoint is added from assistant directories, so it serves only
+// what their policies allow. Everything stays available on a server's own URL,
+// where the workspace chose it.
+//
+// Payment and banking connectors can move money. The Claude directory policy
+// rules out software that transfers money or executes financial transactions
+// autonomously, not reading payment data, so the default profile serves their
+// read tools and withholds every write tool. The ChatGPT profile still
+// withholds them whole.
+//
+// Cryptocurrency connectors: the Claude directory "does not generally allow
+// cryptocurrency software", so the default profile does not serve them. The
+// ChatGPT profile keeps what it served before (all of them but Sorare).
+//
+// Image, video and audio generation: the Claude directory policy (section 4B)
+// excludes software that uses AI models to generate images, video or audio,
+// text-to-speech and voice models included; only design visuals are allowed.
+// The default profile does not serve connectors built for that, and withholds
+// the generation tools of general AI and media connectors. The ChatGPT profile
+// serves them.
+//
+// Betting odds: OpenAI's app guidelines prohibit apps that facilitate
+// sportsbook wagers, so the ChatGPT profile does not serve odds connectors.
+// The default profile does: the Claude directory policy does not exclude
+// sports data.
+const MONEY_CATEGORIES = new Set(['payments', 'banking']);
+const MONEY_ADAPTERS = ['payone'];
+const CRYPTO_ADAPTERS = [
+  'sorare',
+  'binance',
+  'coinbase',
+  'deribit',
+  'coinglass',
+  'coingecko',
+  'zerion',
+  'helius',
+  'blockcypher',
+];
+export const GENERATIVE_MEDIA_ADAPTERS = [
+  'elevenlabs',
+  'fish-audio',
+  'genapi',
+  'heygen',
+  'higgsfield',
+  'kie-ai',
+  'replicate',
+  'stability-ai',
+];
+/** Generation tools of catalog connectors that are otherwise served, by adapter slug. */
+export const GENERATIVE_MEDIA_TOOLS: Record<string, string[]> = {
+  cloudinary: ['cloudinary_generate_image', 'cloudinary_generate_image_from_images', 'cloudinary_get_generation_task'],
+  deepgram: ['deepgram_text_to_speech'],
+  freepik: ['freepik_generate_image_mystic', 'freepik_get_mystic_task'],
+  gemini: ['gemini_generate_image', 'gemini_edit_image'],
+  kittl: ['kittl_generate_media'],
+  openai: ['openai_generate_image', 'openai_edit_image'],
+  openrouter: ['openrouter_generate_image'],
+  telnyx: ['telnyx_speak_text'],
+  xai: ['xai_generate_image', 'xai_edit_image'],
+};
+const BETTING_ODDS_ADAPTERS = ['odds-api', 'oddsrelay', 'the-odds-api'];
 
-let excludedSlugs: Set<string> | null = null;
-function excludedAdapterSlugs(): Set<string> {
-  if (!excludedSlugs) {
-    excludedSlugs = new Set([
-      ...EXCLUDED_ADAPTERS,
-      ...listAdapters()
-        .filter((a) => EXCLUDED_CATEGORIES.has(a.category))
-        .map((a) => a.slug),
-    ]);
+/** How much of a catalog connector the shared endpoint serves. */
+export type SharedEndpointAccess = 'all' | 'read' | 'none';
+
+let moneySlugs: Set<string> | null = null;
+function moneyAdapterSlugs(): Set<string> {
+  moneySlugs ??= new Set([
+    ...MONEY_ADAPTERS,
+    ...listAdapters()
+      .filter((a) => MONEY_CATEGORIES.has(a.category))
+      .map((a) => a.slug),
+  ]);
+  return moneySlugs;
+}
+
+type WithheldKind = 'money' | 'crypto' | 'media' | 'odds';
+
+/** Why a connector is (partly) withheld, for the answers that name it. */
+function withheldKind(slug: string): WithheldKind | null {
+  if (CRYPTO_ADAPTERS.includes(slug)) return 'crypto';
+  if (GENERATIVE_MEDIA_ADAPTERS.includes(slug)) return 'media';
+  if (BETTING_ODDS_ADAPTERS.includes(slug)) return 'odds';
+  return moneyAdapterSlugs().has(slug) ? 'money' : null;
+}
+
+/** What the shared endpoint serves of the catalog adapter `slug` in `profile`. */
+export function sharedEndpointAccess(slug: string, profile: SharedToolsetProfile): SharedEndpointAccess {
+  const kind = withheldKind(slug);
+  if (!kind) return 'all';
+  if (profile === 'chatgpt') {
+    if (kind === 'media') return 'all';
+    if (kind === 'crypto') return slug === 'sorare' ? 'none' : 'all';
+    return 'none';
   }
-  return excludedSlugs;
+  if (kind === 'odds') return 'all';
+  return kind === 'money' ? 'read' : 'none';
 }
 
-/** True for a catalog adapter the shared endpoint does not serve (payments, banking, trading). */
-export function isExcludedAdapterSlug(slug: string): boolean {
-  return excludedAdapterSlugs().has(slug);
+/**
+ * Tools of the catalog adapter `slug` withheld one by one in `profile`, on top
+ * of {@link sharedEndpointAccess}: the generation tools of otherwise served
+ * connectors on the default profile.
+ */
+export function withheldGenerationTools(slug: string, profile: SharedToolsetProfile): string[] {
+  return profile === 'chatgpt' ? [] : (GENERATIVE_MEDIA_TOOLS[slug] ?? []);
 }
 
-/** True for a tool of a catalog connector the shared endpoint does not serve. */
-export function excludedOnSharedEndpoint(tool: RegisteredTool): boolean {
+/** True for a catalog adapter the shared endpoint does not serve at all in `profile`. */
+export function isExcludedAdapterSlug(slug: string, profile: SharedToolsetProfile): boolean {
+  return sharedEndpointAccess(slug, profile) === 'none';
+}
+
+/** True for a tool of a catalog connector the shared endpoint does not serve in `profile`. */
+export function excludedOnSharedEndpoint(tool: RegisteredTool, profile: SharedToolsetProfile): boolean {
+  // Code tools are never served on the shared endpoint: the per-server codeMode
+  // switch that governs them has no equivalent here, so serving them would run
+  // code outside that control. Shared-endpoint code mode is a separate,
+  // Enterprise-gated design (see the code-mode issues).
+  if ((tool.endpointMapping as { method?: unknown } | undefined)?.method === 'code') return true;
   const slug = tool.connectorConfig?.config?.adapterSlug;
-  return typeof slug === 'string' && excludedAdapterSlugs().has(slug);
+  if (typeof slug !== 'string') return false;
+  if (withheldGenerationTools(slug, profile).includes(tool.name)) return true;
+  const served = sharedEndpointAccess(slug, profile);
+  return served === 'none' || (served === 'read' && access(tool) === 'write');
+}
+
+function withheldReason(tool: RegisteredTool): string {
+  const slug = String(tool.connectorConfig?.config?.adapterSlug ?? '');
+  if (GENERATIVE_MEDIA_TOOLS[slug]?.includes(tool.name)) {
+    return `'${tool.name}' generates images, video or audio. Those tools are not served on this shared connection`;
+  }
+  switch (withheldKind(slug)) {
+    case 'crypto':
+      return `'${tool.name}' belongs to a cryptocurrency connector. Those are not served on this shared connection`;
+    case 'media':
+      return `'${tool.name}' belongs to an image, video or audio generation connector. Those are not served on this shared connection`;
+    case 'odds':
+      return `'${tool.name}' belongs to a betting odds connector. Those are not served on this shared connection`;
+    default:
+      return `'${tool.name}' belongs to a payment or banking connector and can move money or change payment data. On this shared connection those connectors serve at most their read tools`;
+  }
 }
 
 function describeSetupStatus(status: RegisteredTool['setupStatus']): string {
@@ -213,8 +333,26 @@ const SETUP_GUIDE = [
   '4. When they say they are done, setup_get_status confirms it; the new tools then appear in anythingmcp_search_tools.',
 ].join('\n');
 
+/** Names of the setup tools, reached through run_read_tool / run_write_tool. */
+export const SETUP_TOOL_NAMES = ['setup_find_connectors', 'setup_install_connector', 'setup_get_status'] as const;
+export type SetupToolName = (typeof SETUP_TOOL_NAMES)[number];
+
+export function isSetupToolName(name: unknown): name is SetupToolName {
+  return typeof name === 'string' && (SETUP_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+/**
+ * The catalog's size for the setup tools' descriptions, rounded down to ten
+ * ("690+"), so it stays true as adapters are added and does not change the
+ * text with every single one. Read from the catalog when the module loads.
+ */
+function catalogSizeText(): string {
+  const n = listAdapters().length;
+  return n >= 20 ? `${Math.floor(n / 10) * 10}+` : String(n);
+}
+
 const SETUP_TOOL_SPECS: Array<{
-  name: 'setup_find_connectors' | 'setup_install_connector' | 'setup_get_status';
+  name: SetupToolName;
   title: string;
   description: string;
   parameters: Record<string, unknown>;
@@ -224,7 +362,7 @@ const SETUP_TOOL_SPECS: Array<{
     name: 'setup_find_connectors',
     title: 'Find a connector to add',
     description:
-      'Search the AnythingMCP catalog (265 ready connectors: ERPs, online shops, accounting, CRM, messaging, data APIs) for an app the user wants to connect. Returns each connector id, what setting it up involves, and which non-secret settings may be passed when installing.',
+      `Search the AnythingMCP catalog (${catalogSizeText()} ready connectors: ERPs, online shops, accounting, CRM, messaging, data APIs) for an app the user wants to connect. Returns each connector id, what setting it up involves, and which non-secret settings may be passed when installing.`,
     parameters: {
       type: 'object',
       properties: {
@@ -254,7 +392,7 @@ const SETUP_TOOL_SPECS: Array<{
     name: 'setup_get_status',
     title: 'Setup status',
     description:
-      "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. While the workspace is on its free trial, also the days left and, for an administrator, the page where a plan is chosen. Call it after the user says they completed a setup link.",
+      "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. For a ready one, whether its last call worked, or the result of a test call when it was just set up. While the workspace is on its free trial, also the days left and, for an administrator, the page where a plan is chosen. Call it after the user says they completed a setup link.",
     parameters: { type: 'object', properties: {} },
     readOnly: true,
   },
@@ -293,6 +431,28 @@ export interface ConnectorSummary {
   hasGuide: boolean;
 }
 
+/** An ended trial, as anythingmcp_list_connectors reports it. */
+export interface TrialEndedNotice {
+  message: string;
+  reactivateUrl: string;
+}
+
+/**
+ * The `trialEnded` block of anythingmcp_list_connectors: the connectors are
+ * still listed, but their tools answer with the reactivation link, so the
+ * user hears about the ended trial before the first call fails.
+ */
+export async function trialEndedBlock(deps: Pick<SharedToolsetDeps, 'trialEnded'>): Promise<Record<string, unknown>> {
+  const notice = await deps.trialEnded?.().catch(() => null);
+  if (!notice) return {};
+  return {
+    trialEnded: {
+      ...notice,
+      hint: "This workspace's free trial has ended, so its tools are paused. Before anything else, tell the user and show them the reactivateUrl as a clickable link: they choose a plan there and the tools work again, with everything kept.",
+    },
+  };
+}
+
 export interface SharedToolsetDeps {
   /** Runs one tool, resolved in exactly its own connector. */
   execute(tool: RegisteredTool, args: Record<string, unknown>): Promise<TextResult>;
@@ -310,8 +470,30 @@ export interface SharedToolsetDeps {
    */
   setup?: {
     organizationId: string;
-    run(name: string, args: Record<string, unknown>): Promise<{ body: unknown; isError?: boolean }>;
+    run(
+      name: string,
+      args: Record<string, unknown>,
+      opts?: SetupCallOptions,
+    ): Promise<{ body: unknown; isError?: boolean }>;
   };
+  /**
+   * Told about every call of a tool of this set, before it runs: `tool` is
+   * the listed tool, `setupTool` the AnythingMCP Setup tool a run tool was
+   * asked to run. For measurement only: it must return at once and never
+   * throw (see shared-tool-calls.ts).
+   */
+  called?(call: { tool: string; setupTool?: SetupToolName }): void;
+  /**
+   * Cloud: when the workspace's trial has ended, what to tell the user and
+   * the reactivation link (the one a blocked tool call gives); null when the
+   * licence is active or on self-hosted. Optional, best-effort.
+   */
+  trialEnded?(): Promise<TrialEndedNotice | null>;
+  /**
+   * Cloud: the connectors a plan change paused (above the plan's cap), so the
+   * model can explain why they are missing; null when none. Best-effort.
+   */
+  pausedByPlan?(): Promise<{ connectors: string[]; manageUrl: string } | null>;
   /** Where the user configures connectors, plus their servers' direct URLs. */
   configuration(): Promise<{
     dashboardUrl: string;
@@ -320,6 +502,8 @@ export interface SharedToolsetDeps {
 }
 
 const SEARCH_DEFAULT_LIMIT = 20;
+/** Catalog apps offered when a search finds nothing in the workspace. */
+const CAN_BE_ADDED_LIMIT = 3;
 const SEARCH_MAX_LIMIT = 50;
 const SHORT_DESCRIPTION = 240;
 const GUIDE_MAX_CHARS = 100_000;
@@ -414,8 +598,8 @@ export function registerSharedToolset(
   // the Claude directory reviewed.
   const hints = (a: Annotations): Annotations =>
     profile === 'chatgpt' ? explicitHints(a) : a;
-  const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t));
-  const withheld = scopeTools.filter((t) => excludedOnSharedEndpoint(t));
+  const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t, profile));
+  const withheld = scopeTools.filter((t) => excludedOnSharedEndpoint(t, profile));
   // Connectors still missing a credential or an authorization: not offered to
   // the model, but named in list_connectors with where to finish them.
   const tools = [
@@ -440,6 +624,16 @@ export function registerSharedToolset(
   };
   const connectorName = (byId: Map<string, ConnectorSummary>, id: string) =>
     byId.get(id)?.name ?? id;
+
+  // Measurement: which of these tools a connection calls at all. Never lets a
+  // failure reach the call itself.
+  const called: CallReporter = (tool, inner) => {
+    try {
+      deps.called?.({ tool, ...(deps.setup && isSetupToolName(inner) ? { setupTool: inner } : {}) });
+    } catch {
+      // not measured
+    }
+  };
 
   /**
    * Connector ids matching a user-supplied id or name, case-insensitive. An
@@ -497,11 +691,23 @@ export function registerSharedToolset(
         ),
       };
     }
-    if (withheld.some((t) => t.name === name)) {
+    const held = withheld.find((t) => t.name === name);
+    if (held) {
       return {
         error: json(
           {
-            error: `'${name}' belongs to a payment, banking or trading connector. Those are not served on this shared connection; use the connector's own server URL (see anythingmcp_get_configuration_url).`,
+            error: `${withheldReason(held)}; use the connector's own server URL (see anythingmcp_get_configuration_url).`,
+          },
+          true,
+        ),
+      };
+    }
+    if (isSetupToolName(name) && !deps.setup) {
+      return {
+        error: json(
+          {
+            error:
+              "Adding apps from the chat is open to the workspace's admins and editors only, and not to a connection pinned to one server. Ask a workspace admin, or add the app in the dashboard (anythingmcp_get_configuration_url gives the link).",
           },
           true,
         ),
@@ -515,6 +721,81 @@ export function registerSharedToolset(
         true,
       ),
     };
+  };
+
+  /**
+   * A search that found nothing in the workspace: the app may simply not be
+   * connected yet. Names the matching connectors that wait for their setup
+   * (with the link), else the catalog apps that can be added, found with the
+   * same search and rules as setup_find_connectors (it is what runs, so the
+   * catalog_search event and the per-profile exclusions are the same). Only
+   * for a caller who may add connectors; any failure leaves the answer as it
+   * was.
+   */
+  const notConnectedYet = async (
+    query: string,
+    byId: Map<string, ConnectorSummary>,
+  ): Promise<Record<string, unknown>> => {
+    // Words that name an app ("telegram"), not "my", "with" or "bot".
+    const wanted = searchTerms(query).filter((w) => w.length >= 3);
+    const waiting = [...new Map(pending.map((t) => [t.connectorId, t])).values()].filter((t) => {
+      const name = connectorName(byId, t.connectorId).toLowerCase();
+      return wanted.some((w) => name.includes(w) || t.name.toLowerCase().includes(w));
+    });
+    if (waiting.length) {
+      return {
+        notReadyYet: waiting.map((t) => ({
+          connector: connectorName(byId, t.connectorId),
+          whatIsMissing: describeSetupStatus(t.setupStatus),
+          finishSetupUrl: deps.connectorUrl(t.connectorId),
+        })),
+        hint: 'This app is added but its setup is not finished. Give the user the finishSetupUrl as a clickable link first: they enter the credentials or sign in to the app there, never in the chat.',
+      };
+    }
+    if (!deps.setup) {
+      return {
+        hint: 'Nothing in this workspace matches. If the app is not connected yet, a workspace admin or editor can add it; anythingmcp_get_configuration_url links to the dashboard.',
+      };
+    }
+    if (searchTerms(query).length === 0) return {};
+    try {
+      const out = await deps.setup.run(
+        'setup_find_connectors',
+        { query, limit: CAN_BE_ADDED_LIMIT },
+        // Recorded apart from the model's own setup_find_connectors searches.
+        { via: 'mcp_search_fallback' },
+      );
+      const results = (out.body as { results?: unknown } | null)?.results;
+      if (out.isError || !Array.isArray(results)) return {};
+      const canBeAdded = results
+        .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && !r.alreadyInstalled)
+        .filter((r) => typeof r.adapter === 'string')
+        .map((r) => ({
+          adapter: r.adapter as string,
+          name: r.name,
+          whatSetupInvolves: r.setup,
+          ...(r.servedHere ? { servedHere: r.servedHere } : {}),
+          howToAdd:
+            typeof r.setupUrl === 'string'
+              ? { setupUrl: r.setupUrl, showToTheUser: 'Give setupUrl as a clickable link: this app is set up on that page, not from the chat.' }
+              : profile === 'chatgpt'
+                ? { tool: 'anythingmcp_add_connector', arguments: { adapter: r.adapter } }
+                : {
+                    tool: 'anythingmcp_run_write_tool',
+                    arguments: { tool: 'setup_install_connector', arguments: { adapter: r.adapter } },
+                  },
+        }));
+      if (canBeAdded.length === 0) return {};
+      return {
+        canBeAdded,
+        hint:
+          profile === 'chatgpt'
+            ? 'Not connected yet: ask the user, then add it with anythingmcp_add_connector. Never ask for passwords, API keys or tokens in the chat: the answer links to a page for them.'
+            : 'Not connected yet: ask the user, then add it with anythingmcp_run_write_tool (tool "setup_install_connector", as in howToAdd). Never ask for passwords, API keys or tokens in the chat: the answer links to a page for them.',
+      };
+    } catch {
+      return {};
+    }
   };
 
   const run = async (
@@ -565,7 +846,7 @@ export function registerSharedToolset(
     'anythingmcp_list_connectors',
     {
       description:
-        'List the connectors (APIs, databases, applications) this connection can use in the user\'s AnythingMCP workspace, with how many tools each has and whether they read or write.',
+        'List the connectors (APIs, databases, applications) this connection can use in the user\'s AnythingMCP workspace, with how many tools each has and whether they read or write, and the apps that were added but still wait for the user to finish their setup (with the link to do it). When the workspace has no apps yet, the answer says how to add one from the chat (Telegram, Shopify, WooCommerce, Odoo, Gmail and many more).',
       inputSchema: {},
       annotations: hints({
         title: 'List connectors',
@@ -574,6 +855,7 @@ export function registerSharedToolset(
       }),
     },
     async () => {
+      called('anythingmcp_list_connectors');
       const byId = await connectorsById();
       const connectors = connectorIds
         .map((id) => {
@@ -589,9 +871,19 @@ export function registerSharedToolset(
           };
         })
         .sort((a, b) => a.name.localeCompare(b.name));
-      const notServedHere = [...new Set(withheld.map((t) => t.connectorId))].map(
-        (id) => connectorName(byId, id),
-      );
+      // Withheld whole, or only their write tools (payment and banking
+      // connectors on the default profile), or only their generation tools.
+      const servedIds = new Set(served.map((t) => t.connectorId));
+      const isGenerationTool = (t: RegisteredTool) =>
+        withheldGenerationTools(String(t.connectorConfig?.config?.adapterSlug ?? ''), profile).includes(t.name);
+      const heldIds = [...new Set(withheld.filter((t) => !isGenerationTool(t)).map((t) => t.connectorId))];
+      const notServedHere = heldIds.filter((id) => !servedIds.has(id)).map((id) => connectorName(byId, id));
+      const readToolsOnlyHere = heldIds.filter((id) => servedIds.has(id)).map((id) => connectorName(byId, id));
+      const generationToolsNotServedHere = [
+        ...new Set(withheld.filter(isGenerationTool).map((t) => t.connectorId)),
+      ]
+        .filter((id) => servedIds.has(id))
+        .map((id) => connectorName(byId, id));
       const needsSetup = [...new Map(pending.map((t) => [t.connectorId, t])).values()]
         .map((t) => ({
           name: connectorName(byId, t.connectorId),
@@ -600,20 +892,45 @@ export function registerSharedToolset(
           finishSetupUrl: deps.connectorUrl(t.connectorId),
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
+      const paused = await deps.pausedByPlan?.().catch(() => null);
       return json({
+        ...(await trialEndedBlock(deps)),
         connectors,
+        ...(paused?.connectors.length
+          ? {
+              pausedByPlan: paused.connectors,
+              pausedByPlanHint:
+                `These connectors are paused because the workspace's plan includes fewer active connectors; nothing was deleted. If the user asks for one of them, tell them they can choose which connectors are active at ${paused.manageUrl}, or upgrade the plan to use them all.`,
+            }
+          : {}),
         ...(needsSetup.length
           ? {
               needsSetup,
               needsSetupHint:
-                'These connectors are installed but not usable yet. Give the user the finishSetupUrl; their tools appear here as soon as the setup is done.',
+                'These connectors are added but not usable yet. Before anything else, give the user the finishSetupUrl of the one they want to use, as a clickable link: they enter the credentials or sign in to the app there, never in the chat. Its tools appear here as soon as the setup is done.',
             }
           : {}),
         ...(notServedHere.length
           ? {
               notServedHere,
               notServedHereReason:
-                'Payment, banking and trading connectors are only served on their server\'s own URL.',
+                profile === 'chatgpt'
+                  ? 'Payment, banking, trading and betting odds connectors are only served on their server\'s own URL.'
+                  : 'Cryptocurrency connectors and image, video or audio generation connectors are only served on their server\'s own URL.',
+            }
+          : {}),
+        ...(generationToolsNotServedHere.length
+          ? {
+              generationToolsNotServedHere,
+              generationToolsNotServedHereReason:
+                'These connectors serve their other tools here; their image, video and audio generation tools run on the server\'s own URL.',
+            }
+          : {}),
+        ...(readToolsOnlyHere.length
+          ? {
+              readToolsOnlyHere,
+              readToolsOnlyHereReason:
+                'Payment and banking connectors serve only their read tools here; tools that move money or change payment data run on the server\'s own URL.',
             }
           : {}),
         ...(connectors.every((c) => c.id === SETUP_CONNECTOR_ID) && needsSetup.length === 0
@@ -633,7 +950,7 @@ export function registerSharedToolset(
     'anythingmcp_search_tools',
     {
       description:
-        'Search the tools of the user\'s workspace by keyword, connector or access (read or write). Returns each tool\'s name, connector, a short description and whether it reads or writes. Call anythingmcp_describe_tool next for its parameters.',
+        'Search the tools of the user\'s workspace by keyword, connector or access (read or write). Returns each tool\'s name, connector, a short description and whether it reads or writes. Call anythingmcp_describe_tool next for its parameters. When no connected app matches (for example "etsy orders" or "telegram message" before that app is added), the answer lists the catalog apps that can still be added, with the exact call that adds one.',
       inputSchema: {
         query: z
           .string()
@@ -664,6 +981,7 @@ export function registerSharedToolset(
       access?: 'read' | 'write' | 'any';
       limit?: number;
     }) => {
+      called('anythingmcp_search_tools');
       const byId = await connectorsById();
       let pool = tools;
       if (args.connector) {
@@ -695,8 +1013,17 @@ export function registerSharedToolset(
         .sort((a, b) => b.score - a.score || a.t.name.localeCompare(b.t.name));
 
       const limit = args.limit ?? SEARCH_DEFAULT_LIMIT;
+      // The setup tools match generic words ("shop", "connect"), so they do
+      // not count as finding the app.
+      const notConnected =
+        terms.length > 0 &&
+        !args.connector &&
+        scored.every((x) => x.t.connectorId === SETUP_CONNECTOR_ID)
+          ? await notConnectedYet(args.query ?? '', byId)
+          : {};
       return json({
         total: scored.length,
+        ...notConnected,
         tools: scored.slice(0, limit).map(({ t }) => {
           const description = t.description ?? '';
           return {
@@ -727,6 +1054,7 @@ export function registerSharedToolset(
       }),
     },
     async (args: { tool: string; connector?: string }) => {
+      called('anythingmcp_describe_tool', args.tool);
       const found = await resolve(args.tool, args.connector);
       if ('error' in found) return found.error;
       const t = found.tool;
@@ -757,8 +1085,10 @@ export function registerSharedToolset(
         openWorldHint: true,
       }),
     },
-    async (args: { tool: string; connector?: string; arguments?: Record<string, unknown> }) =>
-      run('read', args),
+    async (args: { tool: string; connector?: string; arguments?: Record<string, unknown> }) => {
+      called('anythingmcp_run_read_tool', args.tool);
+      return run('read', args);
+    },
   );
 
   mcpServer.registerTool(
@@ -775,8 +1105,10 @@ export function registerSharedToolset(
         openWorldHint: true,
       }),
     },
-    async (args: { tool: string; connector?: string; arguments?: Record<string, unknown> }) =>
-      run('write', args),
+    async (args: { tool: string; connector?: string; arguments?: Record<string, unknown> }) => {
+      called('anythingmcp_run_write_tool', args.tool);
+      return run('write', args);
+    },
   );
 
   mcpServer.registerTool(
@@ -794,6 +1126,7 @@ export function registerSharedToolset(
       }),
     },
     async (args: { connector?: string }) => {
+      called('anythingmcp_get_workspace_guide');
       const ids = args.connector ? [...(await matchConnector(args.connector))] : connectorIds;
       if (args.connector && ids.length === 0) {
         return json({ error: `No connector '${args.connector}' on this connection.` }, true);
@@ -828,6 +1161,7 @@ export function registerSharedToolset(
       }),
     },
     async (args: { query: string }) => {
+      called('kg_how_to_obtain');
       const result = await deps.kgLookup(args.query, connectorIds);
       if (result === null) {
         return json({
@@ -843,7 +1177,7 @@ export function registerSharedToolset(
     'anythingmcp_get_configuration_url',
     {
       description:
-        'Link to the AnythingMCP dashboard where the user adds, removes or configures connectors, plus the direct URL of each of their MCP servers.',
+        'Link to the AnythingMCP dashboard where the user adds, removes or configures connectors, plus the direct URL of each of their MCP servers. Apps can also be added from the chat, without leaving it (see anythingmcp_search_tools).',
       inputSchema: {},
       annotations: hints({
         title: 'Configuration link',
@@ -852,6 +1186,7 @@ export function registerSharedToolset(
       }),
     },
     async () => {
+      called('anythingmcp_get_configuration_url');
       const cfg = await deps.configuration();
       return json({
         dashboardUrl: cfg.dashboardUrl,
@@ -861,8 +1196,10 @@ export function registerSharedToolset(
     },
   );
 
-  if (profile === 'chatgpt') registerChatgptTools(mcpServer, deps, run);
+  if (profile === 'chatgpt') registerChatgptTools(mcpServer, deps, run, called);
 }
+
+type CallReporter = (tool: string, inner?: unknown) => void;
 
 type RunArgs = { tool: string; connector?: string; arguments?: Record<string, unknown> };
 
@@ -920,6 +1257,7 @@ function registerChatgptTools(
   mcpServer: McpServer,
   deps: SharedToolsetDeps,
   run: (mode: 'read' | 'write', args: RunArgs) => Promise<TextResult>,
+  called: CallReporter,
 ): void {
   // Always listed, so every ChatGPT user sees the same tools; a caller who may
   // not add connectors gets this answer instead.
@@ -966,6 +1304,7 @@ function registerChatgptTools(
       }),
     },
     async (args: { steps: RunArgs[] }) => {
+      called('anythingmcp_run_read_steps');
       const results = await Promise.all(
         args.steps.map(async (step, i) => {
           const result = await run('read', step);
@@ -1000,8 +1339,10 @@ function registerChatgptTools(
         openWorldHint: false,
       }),
     },
-    async (args: { query: string; limit?: number }) =>
-      setupOrRefuse('setup_find_connectors', args),
+    async (args: { query: string; limit?: number }) => {
+      called('anythingmcp_find_connectors');
+      return setupOrRefuse('setup_find_connectors', args);
+    },
   );
 
   mcpServer.registerTool(
@@ -1024,15 +1365,17 @@ function registerChatgptTools(
         openWorldHint: false,
       },
     },
-    async (args: { adapter: string; settings?: Record<string, unknown> }) =>
-      setupOrRefuse('setup_install_connector', args),
+    async (args: { adapter: string; settings?: Record<string, unknown> }) => {
+      called('anythingmcp_add_connector');
+      return setupOrRefuse('setup_install_connector', args);
+    },
   );
 
   mcpServer.registerTool(
     'anythingmcp_connection_status',
     {
       description:
-        "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. Call it after the user says they completed a setup link.",
+        "Which connectors of the workspace are ready and which still need the user, each with a fresh link to finish it. For a ready one, whether its last call worked, or the result of a test call when it was just set up. Call it after the user says they completed a setup link.",
       inputSchema: {},
       annotations: explicitHints({
         title: 'Setup status',
@@ -1040,6 +1383,9 @@ function registerChatgptTools(
         openWorldHint: false,
       }),
     },
-    async () => setupOrRefuse('setup_get_status', {}),
+    async () => {
+      called('anythingmcp_connection_status');
+      return setupOrRefuse('setup_get_status', {});
+    },
   );
 }

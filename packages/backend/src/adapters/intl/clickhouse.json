@@ -1,0 +1,409 @@
+{
+  "slug": "clickhouse",
+  "name": "ClickHouse",
+  "aliases": [
+    "ClickHouse SQL",
+    "ClickHouse database"
+  ],
+  "description": "Read-only SQL on a ClickHouse server or ClickHouse Cloud service over the HTTP interface: databases, tables, columns, CREATE statements, table sizes, running and recent queries, and any SELECT with readonly=1.",
+  "region": "intl",
+  "category": "database",
+  "icon": "clickhouse",
+  "docsUrl": "https://clickhouse.com/docs/interfaces/http",
+  "instructions": "## ClickHouse\nThis connector runs read-only SQL against a **ClickHouse** server through its HTTP interface: ClickHouse Cloud services and self-hosted servers alike. Every request carries the setting `readonly=1`, so ClickHouse itself refuses writes, DDL and SET statements, whatever the user's grants. To manage ClickHouse Cloud services (start, stop, scaling, backups, costs) install the **ClickHouse Cloud** connector.\n\n**Setup (3 minutes)**\n1. `CLICKHOUSE_URL`: the HTTPS address with port. ClickHouse Cloud: open the service, click **Connect**, choose **HTTPS** and copy the host, e.g. `https://abc123xyz.europe-west4.gcp.clickhouse.cloud:8443`. Self-hosted: `https://your-host:8443` (or `http://your-host:8123` on a private network).\n2. Create a dedicated user that may only read, for example `CREATE USER mcp_reader IDENTIFIED BY '...'; GRANT SELECT ON analytics.* TO mcp_reader;` plus `GRANT SELECT ON system.parts, system.processes, system.query_log TO mcp_reader` if you want `clickhouse_table_sizes`, `clickhouse_running_queries` and `clickhouse_recent_queries`. Do not give it a `readonly = 2` settings profile: the connector sets `readonly=1` and ClickHouse rejects that change under `readonly = 2` (`readonly = 0` or `1` both work).\n3. Put the user name into `CLICKHOUSE_USER` and its password into `CLICKHOUSE_PASSWORD` (sent as HTTP Basic auth).\n4. ClickHouse Cloud only: the service's **IP access list** must allow the address AnythingMCP calls from.\n5. Run `clickhouse_server_info` to check the connection.\n\n**Workflow**\n- Explore: `clickhouse_list_databases`, then `clickhouse_list_tables` for one database, `clickhouse_describe_table` for the columns and keys, `clickhouse_show_create_table` for the engine, sorting key and partitioning; `clickhouse_search_columns` finds a column by name across databases.\n- Ask questions: `clickhouse_query` with one statement. Filter on the sorting key and partition columns from `clickhouse_show_create_table`, aggregate in SQL (`count()`, `sum()`, `uniq()`, `quantile(0.95)(x)`, `toStartOfDay(ts)`), and always end with `LIMIT`. Use `EXPLAIN` or `EXPLAIN ESTIMATE` before a query that may scan a large table.\n- Operations: `clickhouse_server_info`, `clickhouse_table_sizes`, `clickhouse_running_queries`, `clickhouse_recent_queries` (failed queries have an `exception_code`).\n\n**Reading the answers**: the JSON format returns `meta` (column names and types), `data` (rows), `rows` (row count) and `statistics` (elapsed seconds, rows and bytes read). 64-bit integers (UInt64, Int64) arrive as strings, so `\"12345678901\"` is a number. DateTime values are `YYYY-MM-DD hh:mm:ss` in the server time zone from `clickhouse_server_info` unless the column type names another. Sizes from `formatReadableSize` are binary units (KiB, MiB, GiB).\n\n**Limits**: there is no row cap besides your `LIMIT` and the connector's response size limit, so aggregate rather than fetch raw rows. A ClickHouse Cloud service that idles wakes on the first query, which can take up to a minute. `clickhouse_running_queries` shows one replica of a Cloud service.\n\n**Errors**: the body carries `Code: <n>. DB::Exception: ...`. Code 164 (READONLY) means the statement writes or changes a setting; 497 (ACCESS_DENIED, HTTP 403) a missing GRANT; 60 (UNKNOWN_TABLE) and 81 (UNKNOWN_DATABASE) a wrong name; 62 (SYNTAX_ERROR) bad SQL; 159 or 241 a timeout or memory limit (narrow the query). 401 or 516 (AUTHENTICATION_FAILED) means a wrong user or password.",
+  "prerequisites": "The HTTPS address of a ClickHouse server or Cloud service and a user that may read (a SELECT-only user is best).",
+  "requiredEnvVars": [
+    "CLICKHOUSE_URL",
+    "CLICKHOUSE_USER",
+    "CLICKHOUSE_PASSWORD"
+  ],
+  "envVarMeta": {
+    "CLICKHOUSE_URL": {
+      "label": "HTTPS address",
+      "kind": "address",
+      "secret": false,
+      "help": "The HTTP interface with its port. ClickHouse Cloud: service, Connect, HTTPS (port 8443). Self-hosted: https://host:8443 or http://host:8123.",
+      "example": "https://abc123xyz.europe-west4.gcp.clickhouse.cloud:8443",
+      "pattern": "^https?://[^/\\s]+(:\\d+)?/?$",
+      "patternMessage": "Enter only the scheme, host and port, e.g. https://abc123xyz.europe-west4.gcp.clickhouse.cloud:8443, without a path or query."
+    },
+    "CLICKHOUSE_USER": {
+      "label": "User",
+      "kind": "credential",
+      "secret": false,
+      "help": "A ClickHouse user with SELECT grants, e.g. mcp_reader. On ClickHouse Cloud the built-in user is default.",
+      "example": "mcp_reader"
+    },
+    "CLICKHOUSE_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that user. ClickHouse Cloud shows the default user's password when the service is created; reset it under the service's settings if lost."
+    }
+  },
+  "verifyHints": {
+    "401": "ClickHouse refused the user or password. Check CLICKHOUSE_USER and CLICKHOUSE_PASSWORD.",
+    "403": "ClickHouse refused the request: the user lacks a GRANT for it (Code 497), or on ClickHouse Cloud the service's IP access list does not allow this server.",
+    "404": "Nothing answered at this address. Check CLICKHOUSE_URL: scheme, host and port of the HTTP interface (8443 for HTTPS), without a path."
+  },
+  "probe": {
+    "tool": "clickhouse_server_info"
+  },
+  "connector": {
+    "name": "ClickHouse HTTP interface",
+    "type": "REST",
+    "baseUrl": "{{CLICKHOUSE_URL}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CLICKHOUSE_USER}}",
+      "password": "{{CLICKHOUSE_PASSWORD}}"
+    },
+    "headers": {
+      "Content-Type": "text/plain; charset=utf-8"
+    },
+    "healthcheckPath": "/ping"
+  },
+  "tools": [
+    {
+      "name": "clickhouse_server_info",
+      "description": "Version, uptime in seconds, server time zone, the user the connector signs in as, its default database and its effective readonly level. A quick check that the address and credentials work.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT version() AS version, uptime() AS uptime_seconds, timezone() AS timezone, currentUser() AS user, currentDatabase() AS current_database, getSetting('readonly') AS readonly"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_query",
+      "description": "Run one read-only SQL statement (SELECT, WITH, SHOW, DESCRIBE, EXPLAIN, EXISTS) and return the result. The request carries readonly=1, so ClickHouse refuses INSERT, ALTER, CREATE, DROP and SET. Always add a LIMIT: the whole result comes back in one answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "One SQL statement, without a FORMAT clause and without a trailing semicolon, e.g. SELECT toDate(ts) AS day, count() FROM db.events GROUP BY day ORDER BY day DESC LIMIT 30."
+          },
+          "database": {
+            "type": "string",
+            "description": "Default database for unqualified table names. Leave out to use the user's default."
+          },
+          "format": {
+            "type": "string",
+            "description": "Output format: JSON (default, rows as objects with column names), JSONCompact (rows as arrays, smaller), CSVWithNames or TabSeparatedWithNames.",
+            "enum": [
+              "JSON",
+              "JSONCompact",
+              "CSVWithNames",
+              "TabSeparatedWithNames"
+            ],
+            "default": "JSON"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "$format",
+          "database": "$database"
+        },
+        "bodyMapping": {
+          "__raw": "$query"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_list_databases",
+      "description": "Every database the user can see, with its engine and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT name, engine, comment FROM system.databases ORDER BY name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_list_tables",
+      "description": "Tables and views of one database: engine (MergeTree family, View, MaterializedView, Dictionary, ...), total rows and bytes when the engine knows them, readable size and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "string",
+            "description": "Database name from clickhouse_list_databases."
+          },
+          "name_like": {
+            "type": "string",
+            "description": "Only tables whose name matches this LIKE pattern, e.g. events%. Default % (all).",
+            "default": "%"
+          }
+        },
+        "required": [
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON",
+          "param_database": "$database",
+          "param_name_like": "$name_like"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT name, engine, total_rows, total_bytes, formatReadableSize(total_bytes) AS size, comment FROM system.tables WHERE database = {database:String} AND name LIKE {name_like:String} ORDER BY name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_describe_table",
+      "description": "Columns of a table in order: name, type, default kind and expression, comment, and whether the column is part of the partition, sorting or primary key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "string",
+            "description": "Database name from clickhouse_list_databases."
+          },
+          "table": {
+            "type": "string",
+            "description": "Table name from clickhouse_list_tables."
+          }
+        },
+        "required": [
+          "database",
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON",
+          "param_database": "$database",
+          "param_table": "$table"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT name, type, default_kind, default_expression, comment, is_in_partition_key, is_in_sorting_key, is_in_primary_key FROM system.columns WHERE database = {database:String} AND table = {table:String} ORDER BY position"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_show_create_table",
+      "description": "The CREATE statement of a table or view: engine, ORDER BY, PARTITION BY, TTL and settings, or the SELECT behind a view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "string",
+            "description": "Database name from clickhouse_list_databases."
+          },
+          "table": {
+            "type": "string",
+            "description": "Table name from clickhouse_list_tables."
+          }
+        },
+        "required": [
+          "database",
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON",
+          "param_database": "$database",
+          "param_table": "$table"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT create_table_query FROM system.tables WHERE database = {database:String} AND name = {table:String}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_search_columns",
+      "description": "Find columns by name across databases (case-insensitive LIKE), up to 500 matches: database, table, column, type and comment. Use it to find where a field such as customer_id or revenue lives.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name_like": {
+            "type": "string",
+            "description": "Column name pattern for ILIKE, e.g. %customer%."
+          },
+          "database_like": {
+            "type": "string",
+            "description": "Only databases matching this LIKE pattern. Default % (all).",
+            "default": "%"
+          }
+        },
+        "required": [
+          "name_like"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON",
+          "param_name_like": "$name_like",
+          "param_database_like": "$database_like"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT database, table, name, type, comment FROM system.columns WHERE name ILIKE {name_like:String} AND database LIKE {database_like:String} ORDER BY database, table, position LIMIT 500"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_table_sizes",
+      "description": "Storage per table of one database from the active parts: rows, part count, bytes on disk, compressed and uncompressed size, last modification. Needs SELECT on system.parts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "string",
+            "description": "Database name from clickhouse_list_databases."
+          }
+        },
+        "required": [
+          "database"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON",
+          "param_database": "$database"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT table, sum(rows) AS rows, count() AS active_parts, sum(bytes_on_disk) AS bytes_on_disk, formatReadableSize(sum(bytes_on_disk)) AS size_on_disk, formatReadableSize(sum(data_uncompressed_bytes)) AS size_uncompressed, max(modification_time) AS last_modified FROM system.parts WHERE active AND database = {database:String} GROUP BY table ORDER BY sum(bytes_on_disk) DESC"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_running_queries",
+      "description": "Queries running right now on the node that answers: query id, user, elapsed seconds, rows read, memory and the first 500 characters of the SQL. Needs SELECT on system.processes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT query_id, user, elapsed, read_rows, formatReadableSize(memory_usage) AS memory, substring(query, 1, 500) AS query FROM system.processes ORDER BY elapsed DESC"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "clickhouse_recent_queries",
+      "description": "The last 100 finished or failed queries of the past minutes from the query log: time, user, type (QueryFinish, ExceptionBeforeStart, ExceptionWhileProcessing), duration in ms, rows read and returned, memory, error code and the first 500 characters of the SQL. Needs SELECT on system.query_log.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "minutes": {
+            "type": "integer",
+            "description": "How far back to look, in minutes. Default 60.",
+            "default": 60,
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/",
+        "queryParams": {
+          "readonly": "1",
+          "default_format": "JSON",
+          "param_minutes": "$minutes"
+        },
+        "bodyMapping": {
+          "__raw": "SELECT event_time, user, type, query_duration_ms, read_rows, result_rows, formatReadableSize(memory_usage) AS memory, exception_code, substring(query, 1, 500) AS query FROM system.query_log WHERE event_time > now() - toIntervalMinute({minutes:UInt32}) AND type != 'QueryStart' ORDER BY event_time DESC LIMIT 100"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

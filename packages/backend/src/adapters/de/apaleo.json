@@ -1,0 +1,2286 @@
+{
+  "slug": "apaleo",
+  "name": "apaleo",
+  "aliases": [
+    "apaleo PMS",
+    "apaleo API"
+  ],
+  "description": "Hotel operations in the apaleo cloud property management system: properties, rooms and room types, rate plans and rates, availability and offers, bookings, reservations and guests, groups, folios, payments, invoices, maintenance, housekeeping and performance reports. Creates bookings, assigns rooms and checks guests in and out.",
+  "region": "de",
+  "category": "travel",
+  "icon": "apaleo",
+  "docsUrl": "https://api.apaleo.com/swagger/index.html",
+  "instructions": "## apaleo\nThis connector works with the **apaleo** cloud property management system (`https://api.apaleo.com`): properties, unit groups and units (rooms), rate plans and rates, availability and offers, bookings, reservations and guests, groups and blocks, folios, payments and invoices, maintenance and housekeeping, and performance reports. It can create bookings, change reservations, assign rooms, check guests in and out, set room conditions and create maintenance windows.\n\n**Setup (5 minutes)**\n1. In apaleo open **Apps > Connected apps > Add a custom app** (or on apaleo.dev register an OAuth *simple client*, client credentials). Give it the permissions the team needs, for example properties.read, unitgroups.read, units.read, rateplans.read, rates.read, services.read, companies.read, availability.read, offers.read, reservations.read, reservations.create, reservations.manage, reservations.assign-unit, groups.read, blocks.read, folios.read, payments.read, invoices.read, maintenances.read, maintenances.create, operations.change-room-state and reports.read. Leave out the write permissions for a read-only connector.\n2. Copy the client id and the client secret (shown once) into `APALEO_CLIENT_ID` and `APALEO_CLIENT_SECRET`. The connector gets a token from `https://identity.apaleo.com/connect/token` with the client credentials grant and renews it every hour.\n3. Run `apaleo_list_properties` to check the connection.\n\n**Workflow**\n- Set-up data: `apaleo_list_properties`, `apaleo_get_property`, `apaleo_list_unit_groups`, `apaleo_get_unit_group`, `apaleo_list_units`, `apaleo_get_unit`, `apaleo_list_rate_plans`, `apaleo_get_rate_plan`, `apaleo_list_rates`, `apaleo_list_services`, `apaleo_list_cancellation_policies`, `apaleo_list_companies`.\n- Free rooms and prices: `apaleo_get_unit_group_availability` (rooms left per room type and night), `apaleo_get_unit_availability` (free rooms for a stay), `apaleo_get_offers` (bookable rate plans with prices for one stay).\n- New booking: `apaleo_get_offers`, then `apaleo_create_booking` with the offer's ratePlanId and one timeSlice per night. Change it with `apaleo_update_booking`.\n- Find a guest or stay: `apaleo_list_reservations` with `text_search` (name, email, reservation id), `apaleo_get_reservation`, `apaleo_list_bookings`, `apaleo_get_booking`, `apaleo_list_reservation_services`. Counts: `apaleo_count_reservations`. Guests are part of reservations (primaryGuest, additionalGuests) and bookings (booker); change them with `apaleo_update_reservation`.\n- Front desk: today's arrivals are `apaleo_list_reservations` with `date_filter: Arrival`, `from` and `to` = today and `status: Confirmed`; assign a room with `apaleo_assign_unit` (automatic) or `apaleo_list_available_units_for_reservation` and `apaleo_assign_specific_unit`, remove it with `apaleo_unassign_units`; then `apaleo_check_in_reservation` (undo with `apaleo_revert_check_in`). Departures: `date_filter: Departure`, check the folio, then `apaleo_check_out_reservation`. Change dates or rate with `apaleo_amend_reservation`.\n- Groups: `apaleo_list_groups`, `apaleo_get_group`, `apaleo_list_blocks`.\n- Billing: `apaleo_list_folios` (with `reservation_ids`), `apaleo_get_folio`, `apaleo_list_folio_payments`, `apaleo_list_invoices`, `apaleo_get_invoice`.\n- Housekeeping and maintenance: `apaleo_list_units` with `condition`, `apaleo_set_unit_conditions`, `apaleo_list_maintenances`, `apaleo_create_maintenance`.\n- Reports: `apaleo_get_property_performance_report` (occupancy, ADR, RevPAR), `apaleo_get_revenues_report`, `apaleo_get_arrivals_report`.\n\n**Switched off at install**: `apaleo_cancel_reservation` and `apaleo_set_reservation_no_show`; they cannot be undone, so an admin switches them on when the team needs them.\n\n**Reading the answers**\n- Ids are readable codes: a property `MUC`, a unit group `MUC-DBL`, a unit `MUC-101`, a rate plan `MUC-FLEX-DBL`, a booking `ABCDEF`, its reservations `ABCDEF-1`, `ABCDEF-2`, a folio `ABCDEF-1-1`.\n- Money is `{\"amount\": 120.0, \"currency\": \"EUR\"}` in major units. Reservation `balance` is negative when the guest still owes money.\n- Dates are `YYYY-MM-DD`; times are ISO 8601 with the property's UTC offset. A night belongs to the business day it starts on; `to` is included for availability and performance, excluded for the revenues report.\n- Reservation status: Confirmed, InHouse, CheckedOut, Canceled, NoShow. Unit condition: Clean, CleanToBeInspected, Dirty.\n\n**Filters**: list filters that take several values are comma-separated without spaces (`status: Confirmed,InHouse`). `expand` adds embedded objects (`expand: booker,assignedUnits`).\n\n**Paging**: lists take `page_number` (from 1) and `page_size` (up to 500) and return `count` with the total. A page past the end answers 204 No Content, which means there is nothing more.\n\n**Changes with JSON Patch**: `apaleo_update_booking` and `apaleo_update_reservation` take a list of operations such as `[{\"op\": \"replace\", \"path\": \"/comment\", \"value\": \"Late arrival\"}]`.\n\n**Errors**: 401 means the client id or secret is wrong or the token expired; 403 a missing permission on the custom app; 404 an unknown id; 422 a business rule (for example check-in before the arrival day, no unit assigned, a sold-out offer) with the reason in `messages`; 429 the rate limit.",
+  "prerequisites": "An apaleo account with a custom app (OAuth client credentials) that has the needed permissions.",
+  "requiredEnvVars": [
+    "APALEO_CLIENT_ID",
+    "APALEO_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "APALEO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "apaleo, Apps > Connected apps > your custom app (client credentials): the client id.",
+      "link": "https://app.apaleo.com/apps/connected-apps",
+      "pattern": "^[A-Za-z0-9._-]{3,}$",
+      "patternMessage": "Paste only the client id, without spaces."
+    },
+    "APALEO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when you create the custom app; create a new secret if you no longer have it.",
+      "link": "https://app.apaleo.com/apps/connected-apps"
+    }
+  },
+  "verifyHints": {
+    "401": "apaleo refused the client id or secret. Copy both again from the custom app in apaleo (Apps > Connected apps).",
+    "403": "The custom app lacks a permission for this call. Add it to the app in apaleo, for example properties.read for the check."
+  },
+  "probe": {
+    "tool": "apaleo_list_properties"
+  },
+  "connector": {
+    "name": "apaleo API",
+    "type": "REST",
+    "baseUrl": "https://api.apaleo.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{APALEO_CLIENT_ID}}",
+      "clientSecret": "{{APALEO_CLIENT_SECRET}}",
+      "tokenUrl": "https://identity.apaleo.com/connect/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "apaleo_list_properties",
+      "description": "List the properties (hotels) of the account with id, code, name, address, time zone, currency and status (Test or Live). Archived properties are left out unless include_archived is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only these statuses, comma-separated: Test, Live."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "Include archived properties."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Only properties in these countries, comma-separated ISO 3166-1 alpha-2 codes (DE, AT, ...)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory/v1/properties",
+        "queryParams": {
+          "status": "$status",
+          "includeArchived": "$include_archived",
+          "countryCode": "$country_code",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_property",
+      "description": "One property with address, company and bank details, time zone, currency, payment terms, check-in and check-out times and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "languages": {
+            "type": "string",
+            "description": "'all' or comma-separated two-letter language codes for the translated texts."
+          }
+        },
+        "required": [
+          "property_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory/v1/properties/{property_id}",
+        "queryParams": {
+          "languages": "$languages"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_unit_groups",
+      "description": "List unit groups (room types and other sellable unit kinds) with code, name, member count, max persons, rank and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "unit_group_types": {
+            "type": "string",
+            "description": "Only these types, comma-separated: BedRoom, MeetingRoom, EventSpace, ParkingLot, Other."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: property, connectedUnitGroups."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory/v1/unit-groups",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "unitGroupTypes": "$unit_group_types",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_unit_group",
+      "description": "One unit group with its description, max persons, member count and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unit_group_id": {
+            "type": "string",
+            "description": "Unit group id (for example MUC-DBL), from apaleo_list_unit_groups."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: property, connectedUnitGroups."
+          }
+        },
+        "required": [
+          "unit_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory/v1/unit-groups/{unit_group_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_units",
+      "description": "List units (rooms) with name, unit group, max persons, status (isOccupied, condition Clean, CleanToBeInspected or Dirty, maintenance) and attributes. Use it for housekeeping views.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "unit_group_ids": {
+            "type": "string",
+            "description": "Only units of these unit groups, comma-separated ids."
+          },
+          "unit_attribute_ids": {
+            "type": "string",
+            "description": "Only units with these attributes, comma-separated ids."
+          },
+          "is_occupied": {
+            "type": "boolean",
+            "description": "true for occupied units only, false for vacant units only."
+          },
+          "maintenance_type": {
+            "type": "string",
+            "description": "Only units with this maintenance.",
+            "enum": [
+              "OutOfService",
+              "OutOfOrder",
+              "OutOfInventory"
+            ]
+          },
+          "condition": {
+            "type": "string",
+            "description": "Only units in this housekeeping condition.",
+            "enum": [
+              "Clean",
+              "CleanToBeInspected",
+              "Dirty"
+            ]
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Case-insensitive text contained in the unit name."
+          },
+          "status": {
+            "type": "string",
+            "description": "Active (default), Archived or All.",
+            "enum": [
+              "Active",
+              "Archived",
+              "All"
+            ]
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: property, unitGroup, connectedUnits."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory/v1/units",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "unitGroupIds": "$unit_group_ids",
+          "unitAttributeIds": "$unit_attribute_ids",
+          "isOccupied": "$is_occupied",
+          "maintenanceType": "$maintenance_type",
+          "condition": "$condition",
+          "textSearch": "$text_search",
+          "status": "$status",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_unit",
+      "description": "One unit (room) with its unit group, status, condition, maintenance and attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "description": "Unit id (for example MUC-101), from apaleo_list_units."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: property, unitGroup, connectedUnits."
+          }
+        },
+        "required": [
+          "unit_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory/v1/units/{unit_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_rate_plans",
+      "description": "List rate plans with code, name, unit group, channel codes, cancellation and no-show policy, minimum guarantee and whether they are derived from another plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "rate_plan_codes": {
+            "type": "string",
+            "description": "Only these rate plan codes, comma-separated."
+          },
+          "channel_codes": {
+            "type": "string",
+            "description": "Only plans sold through these channels, comma-separated: Direct, BookingCom, Ibe, ChannelManager, Expedia, Homelike, Hrs, AltoVita, DesVu, Gimsi."
+          },
+          "unit_group_ids": {
+            "type": "string",
+            "description": "Only plans for these unit groups, comma-separated ids."
+          },
+          "company_ids": {
+            "type": "string",
+            "description": "Only plans of these companies, comma-separated ids."
+          },
+          "promo_codes": {
+            "type": "string",
+            "description": "Only plans with these promo codes, comma-separated."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "Include archived rate plans."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: property, unitGroup, cancellationPolicy, services, bookingPeriods, surcharges, ageCategories."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rateplan/v1/rate-plans",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "ratePlanCodes": "$rate_plan_codes",
+          "channelCodes": "$channel_codes",
+          "unitGroupIds": "$unit_group_ids",
+          "companyIds": "$company_ids",
+          "promoCodes": "$promo_codes",
+          "includeArchived": "$include_archived",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_rate_plan",
+      "description": "One rate plan with its pricing rule, restrictions, policies, included services and channels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rate_plan_id": {
+            "type": "string",
+            "description": "Rate plan id (for example MUC-NONREF-DBL), from apaleo_list_rate_plans."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: property, cancellationPolicy."
+          }
+        },
+        "required": [
+          "rate_plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rateplan/v1/rate-plans/{rate_plan_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_rates",
+      "description": "Prices of one rate plan per time slice (night) in a period: the gross price, restrictions (min and max length of stay, closed, closed on arrival or departure) and the calculated derived prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rate_plan_id": {
+            "type": "string",
+            "description": "Rate plan id, from apaleo_list_rate_plans."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "rate_plan_id",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rateplan/v1/rate-plans/{rate_plan_id}/rates",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_services",
+      "description": "List services (extras such as breakfast or parking, and services included in rate plans) with code, name, default gross price, pricing unit and whether they can be sold as extras.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Text contained in the service name."
+          },
+          "only_sold_as_extras": {
+            "type": "boolean",
+            "description": "true to list only services that can be booked as extras."
+          },
+          "service_types": {
+            "type": "string",
+            "description": "Only these types, comma-separated: Other, Accommodation, FoodAndBeverages."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rateplan/v1/services",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "textSearch": "$text_search",
+          "onlySoldAsExtras": "$only_sold_as_extras",
+          "serviceTypes": "$service_types",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_cancellation_policies",
+      "description": "List cancellation policies with name, description, the period before arrival in which a fee applies and the fee.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rateplan/v1/cancellation-policies",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_companies",
+      "description": "List companies (corporate accounts) with code, name, address, tax id and the rate plans and corporate codes they can book.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Text contained in the company name."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/rateplan/v1/companies",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "textSearch": "$text_search",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_unit_group_availability",
+      "description": "Availability per unit group and night for a property: units available to sell, house count, occupied units, blocked units and maintenance. Use it for a quick overview of free rooms by room type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "from": {
+            "type": "string",
+            "description": "First night, YYYY-MM-DD (included)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last night, YYYY-MM-DD (included)."
+          },
+          "unit_group_ids": {
+            "type": "string",
+            "description": "Only these unit groups, comma-separated ids."
+          },
+          "unit_group_types": {
+            "type": "string",
+            "description": "Only these types, comma-separated: BedRoom, MeetingRoom, EventSpace, ParkingLot, Other."
+          },
+          "adults": {
+            "type": "integer",
+            "description": "Number of adults to check availability for (default 1).",
+            "minimum": 1
+          },
+          "children_ages": {
+            "type": "string",
+            "description": "Ages of the children, comma-separated (for example 4,9)."
+          },
+          "only_sellable": {
+            "type": "boolean",
+            "description": "true to return only unit groups sold with the time slice template."
+          },
+          "time_slice_template": {
+            "type": "string",
+            "description": "OverNight (default) or DayUse.",
+            "enum": [
+              "DayUse",
+              "OverNight"
+            ]
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "property_id",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/availability/v1/unit-groups",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "from": "$from",
+          "to": "$to",
+          "unitGroupIds": "$unit_group_ids",
+          "unitGroupTypes": "$unit_group_types",
+          "adults": "$adults",
+          "childrenAges": "$children_ages",
+          "onlySellable": "$only_sellable",
+          "timeSliceTemplate": "$time_slice_template",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_unit_availability",
+      "description": "Units (rooms) that are free during the whole period, optionally of one unit group or in one housekeeping condition.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the stay. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the stay. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "unit_group_id": {
+            "type": "string",
+            "description": "Only units of this unit group."
+          },
+          "unit_condition": {
+            "type": "string",
+            "description": "Only units in this condition.",
+            "enum": [
+              "Clean",
+              "CleanToBeInspected",
+              "Dirty"
+            ]
+          },
+          "include_out_of_service": {
+            "type": "boolean",
+            "description": "Count units that are OutOfService in the period as available."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "property_id",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/availability/v1/units",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "from": "$from",
+          "to": "$to",
+          "unitGroupId": "$unit_group_id",
+          "unitCondition": "$unit_condition",
+          "includeOutOfService": "$include_out_of_service",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_available_units_for_reservation",
+      "description": "Units that can be assigned to a reservation for its stay (or for part of it), for choosing a room before apaleo_assign_specific_unit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id (for example ABCDEF-1), from apaleo_list_reservations."
+          },
+          "unit_group_id": {
+            "type": "string",
+            "description": "Only units of this unit group."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period to check, default the arrival. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period to check, default the departure. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "unit_condition": {
+            "type": "string",
+            "description": "Only units in this condition.",
+            "enum": [
+              "Clean",
+              "CleanToBeInspected",
+              "Dirty"
+            ]
+          },
+          "include_out_of_service": {
+            "type": "boolean",
+            "description": "Count OutOfService units as available."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/availability/v1/reservations/{reservation_id}/units",
+        "queryParams": {
+          "unitGroupId": "$unit_group_id",
+          "from": "$from",
+          "to": "$to",
+          "unitCondition": "$unit_condition",
+          "includeOutOfService": "$include_out_of_service"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_offers",
+      "description": "Bookable offers for one stay: for each rate plan and unit group the total gross amount, the price per night (timeSlices), available units, cancellation and no-show policy and the minimum guarantee. Run it before apaleo_create_booking and copy ratePlanId and the timeSlices from the chosen offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "arrival": {
+            "type": "string",
+            "description": "Arrival date, YYYY-MM-DD (or date and time)."
+          },
+          "departure": {
+            "type": "string",
+            "description": "Departure date, YYYY-MM-DD (or date and time)."
+          },
+          "adults": {
+            "type": "integer",
+            "description": "Number of adults.",
+            "minimum": 1
+          },
+          "children_ages": {
+            "type": "string",
+            "description": "Ages of the children, comma-separated (for example 4,9)."
+          },
+          "channel_code": {
+            "type": "string",
+            "description": "Channel to price for (default all channels the plan is sold on).",
+            "enum": [
+              "Direct",
+              "BookingCom",
+              "Ibe",
+              "ChannelManager",
+              "Expedia",
+              "Homelike",
+              "Hrs",
+              "AltoVita",
+              "DesVu",
+              "Gimsi"
+            ]
+          },
+          "promo_code": {
+            "type": "string",
+            "description": "Promo code of a special offer."
+          },
+          "corporate_code": {
+            "type": "string",
+            "description": "Corporate code of a company rate."
+          },
+          "unit_group_ids": {
+            "type": "string",
+            "description": "Only these unit groups, comma-separated ids."
+          },
+          "unit_group_types": {
+            "type": "string",
+            "description": "Only these types, comma-separated: BedRoom, MeetingRoom, EventSpace, ParkingLot, Other."
+          },
+          "include_unavailable": {
+            "type": "boolean",
+            "description": "Also return offers that break a restriction or are sold out."
+          },
+          "time_slice_template": {
+            "type": "string",
+            "description": "OverNight (default) or DayUse.",
+            "enum": [
+              "DayUse",
+              "OverNight"
+            ]
+          }
+        },
+        "required": [
+          "property_id",
+          "arrival",
+          "departure",
+          "adults"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/offers",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "arrival": "$arrival",
+          "departure": "$departure",
+          "adults": "$adults",
+          "childrenAges": "$children_ages",
+          "channelCode": "$channel_code",
+          "promoCode": "$promo_code",
+          "corporateCode": "$corporate_code",
+          "unitGroupIds": "$unit_group_ids",
+          "unitGroupTypes": "$unit_group_types",
+          "includeUnavailable": "$include_unavailable",
+          "timeSliceTemplate": "$time_slice_template"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_bookings",
+      "description": "List bookings (the booker plus one or more reservations). text_search finds a booker by last name, first name, email or company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Only the booking that holds this reservation."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only bookings of this group."
+          },
+          "channel_code": {
+            "type": "string",
+            "description": "Only bookings with reservations from these channels, comma-separated: Direct, BookingCom, Ibe, ChannelManager, Expedia, Homelike, Hrs, AltoVita, DesVu, Gimsi."
+          },
+          "external_code": {
+            "type": "string",
+            "description": "Only bookings with a reservation whose external code starts with this value (for example an OTA confirmation number)."
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Text in the booker's last name, first name, email or company name."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: property, unitGroup, ratePlan, services, reservations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/bookings",
+        "queryParams": {
+          "reservationId": "$reservation_id",
+          "groupId": "$group_id",
+          "channelCode": "$channel_code",
+          "externalCode": "$external_code",
+          "textSearch": "$text_search",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_booking",
+      "description": "One booking with the booker, payment account, comments and its reservations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "string",
+            "description": "Booking id (for example ABCDEF), from apaleo_list_bookings or a reservation's bookingId."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: property, unitGroup, ratePlan, services, reservations."
+          }
+        },
+        "required": [
+          "booking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/bookings/{booking_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_reservations",
+      "description": "List reservations with status, arrival and departure, adults, primary guest, unit group, assigned unit, rate plan, total gross amount, balance and channel. Combine date_filter with from and to: Arrival for today's arrivals, Departure for departures, Stay for guests in house during a period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "string",
+            "description": "Only reservations of this booking."
+          },
+          "property_ids": {
+            "type": "string",
+            "description": "Only these properties, comma-separated ids."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only these statuses, comma-separated: Confirmed, InHouse, CheckedOut, Canceled, NoShow."
+          },
+          "date_filter": {
+            "type": "string",
+            "description": "Which date from and to filter on: Arrival, Departure, Stay (overlapping the period), Creation, Modification, Cancellation, ArrivalAndCheckIn, DepartureAndCheckOut.",
+            "enum": [
+              "Arrival",
+              "Departure",
+              "Stay",
+              "Creation",
+              "Modification",
+              "Cancellation",
+              "ArrivalAndCheckIn",
+              "DepartureAndCheckOut"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the date_filter interval. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the date_filter interval. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "unit_ids": {
+            "type": "string",
+            "description": "Only reservations with these assigned units, comma-separated ids."
+          },
+          "unit_group_ids": {
+            "type": "string",
+            "description": "Only these unit groups, comma-separated ids."
+          },
+          "rate_plan_ids": {
+            "type": "string",
+            "description": "Only these rate plans, comma-separated ids."
+          },
+          "company_ids": {
+            "type": "string",
+            "description": "Only these companies, comma-separated ids."
+          },
+          "channel_code": {
+            "type": "string",
+            "description": "Only these channels, comma-separated: Direct, BookingCom, Ibe, ChannelManager, Expedia, Homelike, Hrs, AltoVita, DesVu, Gimsi."
+          },
+          "external_code": {
+            "type": "string",
+            "description": "Only reservations whose external code starts with this value."
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Case-insensitive text in the booker or guest names and email, the reservation id or the external code. Use it to find a guest."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort fields, comma-separated, each field:asc or field:desc: arrival, departure, created, updated, balance, id, firstname, lastname, unitname."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: booker, timeSlices, services, assignedUnits, company."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/reservations",
+        "queryParams": {
+          "bookingId": "$booking_id",
+          "propertyIds": "$property_ids",
+          "status": "$status",
+          "dateFilter": "$date_filter",
+          "from": "$from",
+          "to": "$to",
+          "unitIds": "$unit_ids",
+          "unitGroupIds": "$unit_group_ids",
+          "ratePlanIds": "$rate_plan_ids",
+          "companyIds": "$company_ids",
+          "channelCode": "$channel_code",
+          "externalCode": "$external_code",
+          "textSearch": "$text_search",
+          "sort": "$sort",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_count_reservations",
+      "description": "Number of reservations matching the same filters as apaleo_list_reservations, without loading them (for example how many arrivals tomorrow).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "string",
+            "description": "Only reservations of this booking."
+          },
+          "property_ids": {
+            "type": "string",
+            "description": "Only these properties, comma-separated ids."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only these statuses, comma-separated: Confirmed, InHouse, CheckedOut, Canceled, NoShow."
+          },
+          "date_filter": {
+            "type": "string",
+            "description": "Which date from and to filter on: Arrival, Departure, Stay (overlapping the period), Creation, Modification, Cancellation, ArrivalAndCheckIn, DepartureAndCheckOut.",
+            "enum": [
+              "Arrival",
+              "Departure",
+              "Stay",
+              "Creation",
+              "Modification",
+              "Cancellation",
+              "ArrivalAndCheckIn",
+              "DepartureAndCheckOut"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the date_filter interval. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the date_filter interval. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "unit_ids": {
+            "type": "string",
+            "description": "Only reservations with these assigned units, comma-separated ids."
+          },
+          "unit_group_ids": {
+            "type": "string",
+            "description": "Only these unit groups, comma-separated ids."
+          },
+          "rate_plan_ids": {
+            "type": "string",
+            "description": "Only these rate plans, comma-separated ids."
+          },
+          "company_ids": {
+            "type": "string",
+            "description": "Only these companies, comma-separated ids."
+          },
+          "channel_code": {
+            "type": "string",
+            "description": "Only these channels, comma-separated: Direct, BookingCom, Ibe, ChannelManager, Expedia, Homelike, Hrs, AltoVita, DesVu, Gimsi."
+          },
+          "external_code": {
+            "type": "string",
+            "description": "Only reservations whose external code starts with this value."
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Case-insensitive text in the booker or guest names and email, the reservation id or the external code. Use it to find a guest."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/reservations/$count",
+        "queryParams": {
+          "bookingId": "$booking_id",
+          "propertyIds": "$property_ids",
+          "status": "$status",
+          "dateFilter": "$date_filter",
+          "from": "$from",
+          "to": "$to",
+          "unitIds": "$unit_ids",
+          "unitGroupIds": "$unit_group_ids",
+          "ratePlanIds": "$rate_plan_ids",
+          "companyIds": "$company_ids",
+          "channelCode": "$channel_code",
+          "externalCode": "$external_code",
+          "textSearch": "$text_search"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_reservation",
+      "description": "One reservation with primary and additional guests, booker, stay, unit group, assigned units, rate plan, prices per night, services, balance, payment account, cancellation fee and allowed actions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id (for example ABCDEF-1)."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: timeSlices, services, booker, actions, company, assignedUnits. actions tells which of check-in, check-out, cancel and amend are possible now."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/reservations/{reservation_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_reservation_services",
+      "description": "Services booked for a reservation (included and extras) with dates, count and gross amount.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/reservations/{reservation_id}/services"
+      }
+    },
+    {
+      "name": "apaleo_list_groups",
+      "description": "List group bookings with name, booker, property, blocks and status. text_search looks in group name, booker name, email and company.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text_search": {
+            "type": "string",
+            "description": "Text in group name, booker name, email or company."
+          },
+          "property_ids": {
+            "type": "string",
+            "description": "Only these properties, comma-separated ids."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only groups with blocks overlapping from this date. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only groups with blocks overlapping until this date. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: blocks, actions."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/groups",
+        "queryParams": {
+          "textSearch": "$text_search",
+          "propertyIds": "$property_ids",
+          "from": "$from",
+          "to": "$to",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_group",
+      "description": "One group booking with its booker, comments, payment account, property and blocks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group id, from apaleo_list_groups."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: blocks, actions."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/groups/{group_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_blocks",
+      "description": "List blocks (room allotments of groups) with unit group, rate plan, period, blocked and picked-up units and status (Tentative, Definite, Canceled, Optional).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Only blocks of this group."
+          },
+          "property_ids": {
+            "type": "string",
+            "description": "Only these properties, comma-separated ids."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only these statuses, comma-separated: Tentative, Definite, Canceled, Optional."
+          },
+          "unit_group_ids": {
+            "type": "string",
+            "description": "Only these unit groups, comma-separated ids."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only blocks overlapping from this date. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only blocks overlapping until this date. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: actions, timeSlices."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/booking/v1/blocks",
+        "queryParams": {
+          "groupId": "$group_id",
+          "propertyIds": "$property_ids",
+          "status": "$status",
+          "unitGroupIds": "$unit_group_ids",
+          "from": "$from",
+          "to": "$to",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_folios",
+      "description": "List folios (guest bills) with debitor, reservation, booking, balance, status (Open or Closed) and type. Use reservation_ids to find the bill of a stay.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_ids": {
+            "type": "string",
+            "description": "Only these properties, comma-separated ids."
+          },
+          "reservation_ids": {
+            "type": "string",
+            "description": "Only folios of these reservations, comma-separated ids."
+          },
+          "booking_ids": {
+            "type": "string",
+            "description": "Only folios of these bookings, comma-separated ids."
+          },
+          "company_ids": {
+            "type": "string",
+            "description": "Only folios of these companies, comma-separated ids."
+          },
+          "type": {
+            "type": "string",
+            "description": "Folio type.",
+            "enum": [
+              "House",
+              "Guest",
+              "External",
+              "Booking"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Open or Closed.",
+            "enum": [
+              "Open",
+              "Closed"
+            ]
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Text in the debitor's first or last name, company name or the folio id."
+          },
+          "only_main": {
+            "type": "boolean",
+            "description": "true to return only main folios."
+          },
+          "has_invoices": {
+            "type": "boolean",
+            "description": "true for folios with invoices, false for folios without."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created at or after this time. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created before this time. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Comma-separated: created:asc, created:desc, balance:asc, balance:desc."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "Comma-separated embedded objects: charges, transitoryCharges, payments, allowances, company, allowedActions, warnings."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/v1/folios",
+        "queryParams": {
+          "propertyIds": "$property_ids",
+          "reservationIds": "$reservation_ids",
+          "bookingIds": "$booking_ids",
+          "companyIds": "$company_ids",
+          "type": "$type",
+          "status": "$status",
+          "textSearch": "$text_search",
+          "onlyMain": "$only_main",
+          "hasInvoices": "$has_invoices",
+          "createdFrom": "$created_from",
+          "createdTo": "$created_to",
+          "sort": "$sort",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_folio",
+      "description": "One folio with its charges, transitory charges, payments, allowances, balance, related invoices and allowed actions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folio_id": {
+            "type": "string",
+            "description": "Folio id (for example ABCDEF-1-1), from apaleo_list_folios."
+          }
+        },
+        "required": [
+          "folio_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/v1/folios/{folio_id}"
+      }
+    },
+    {
+      "name": "apaleo_list_folio_payments",
+      "description": "Payments posted on a folio with method, amount, status and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folio_id": {
+            "type": "string",
+            "description": "Folio id."
+          },
+          "status_codes": {
+            "type": "string",
+            "description": "Only these statuses, comma-separated: Pending, Success, Failure, Canceled."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "folio_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/v1/folios/{folio_id}/payments",
+        "queryParams": {
+          "statusCodes": "$status_codes",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_list_invoices",
+      "description": "List invoices (metadata only) with number, date, recipient, folio, reservation, total, outstanding payment and status (FullyPaid, Unpaid, WrittenOff).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "status": {
+            "type": "string",
+            "description": "Invoice status.",
+            "enum": [
+              "FullyPaid",
+              "Unpaid",
+              "WrittenOff"
+            ]
+          },
+          "property_ids": {
+            "type": "string",
+            "description": "Only these properties, comma-separated ids."
+          },
+          "reservation_ids": {
+            "type": "string",
+            "description": "Only these reservations, comma-separated ids."
+          },
+          "booking_ids": {
+            "type": "string",
+            "description": "Only these bookings, comma-separated ids."
+          },
+          "folio_ids": {
+            "type": "string",
+            "description": "Only these folios, comma-separated ids."
+          },
+          "company_ids": {
+            "type": "string",
+            "description": "Only these companies, comma-separated ids."
+          },
+          "name_search": {
+            "type": "string",
+            "description": "Recipient name or company, at least three characters."
+          },
+          "payment_settled": {
+            "type": "boolean",
+            "description": "true for settled invoices, false for invoices with an outstanding payment."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/v1/invoices",
+        "queryParams": {
+          "number": "$number",
+          "status": "$status",
+          "propertyIds": "$property_ids",
+          "reservationIds": "$reservation_ids",
+          "bookingIds": "$booking_ids",
+          "folioIds": "$folio_ids",
+          "companyIds": "$company_ids",
+          "nameSearch": "$name_search",
+          "paymentSettled": "$payment_settled",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_invoice",
+      "description": "One invoice with recipient, lines, taxes, payments and totals.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id, from apaleo_list_invoices."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/v1/invoices/{invoice_id}"
+      }
+    },
+    {
+      "name": "apaleo_list_maintenances",
+      "description": "List maintenance windows of units: OutOfService (still sellable but flagged), OutOfOrder (not sellable) or OutOfInventory, with period and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "unit_id": {
+            "type": "string",
+            "description": "Only this unit."
+          },
+          "from": {
+            "type": "string",
+            "description": "Windows ending after this time. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Windows starting before this time. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "types": {
+            "type": "string",
+            "description": "Only these types, comma-separated: OutOfService, OutOfOrder, OutOfInventory."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page to read, starting at 1 (default 1). An empty page answers 204 No Content.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Items per page, at most 500 (default 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "expand": {
+            "type": "string",
+            "description": "unit to embed the unit."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/operations/v1/maintenances",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "unitId": "$unit_id",
+          "from": "$from",
+          "to": "$to",
+          "types": "$types",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_property_performance_report",
+      "description": "Property performance per period: occupancy, ADR (average daily rate), RevPAR, sold and available units and revenues, optionally per business day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "from": {
+            "type": "string",
+            "description": "First business day, YYYY-MM-DD (included)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last business day, YYYY-MM-DD (included)."
+          },
+          "channel_codes": {
+            "type": "string",
+            "description": "Only these channels, comma-separated."
+          },
+          "unit_group_ids": {
+            "type": "string",
+            "description": "Only these unit groups, comma-separated ids."
+          },
+          "rate_plan_ids": {
+            "type": "string",
+            "description": "Only these rate plans, comma-separated ids."
+          },
+          "company_ids": {
+            "type": "string",
+            "description": "Only these companies, comma-separated ids."
+          },
+          "expand": {
+            "type": "string",
+            "description": "businessDays for one row per day."
+          }
+        },
+        "required": [
+          "property_id",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/v1/reports/property-performance",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "from": "$from",
+          "to": "$to",
+          "channelCodes": "$channel_codes",
+          "unitGroupIds": "$unit_group_ids",
+          "ratePlanIds": "$rate_plan_ids",
+          "companyIds": "$company_ids",
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_revenues_report",
+      "description": "Revenues of a property by account (accommodation, food and beverages, other) with net and gross amounts and VAT, for a period of at most one year.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "from": {
+            "type": "string",
+            "description": "First business day, YYYY-MM-DD (included)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End business day, YYYY-MM-DD (excluded)."
+          },
+          "language_code": {
+            "type": "string",
+            "description": "Language of the account names, for example en or de."
+          }
+        },
+        "required": [
+          "property_id",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/v1/reports/revenues",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "from": "$from",
+          "to": "$to",
+          "languageCode": "$language_code"
+        }
+      }
+    },
+    {
+      "name": "apaleo_get_arrivals_report",
+      "description": "Number of arriving reservations per day in one month for a property, for staffing plans.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id (a short code such as MUC), from apaleo_list_properties."
+          },
+          "month": {
+            "type": "integer",
+            "description": "Month, 1 to 12.",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "year": {
+            "type": "integer",
+            "description": "Year, for example 2026."
+          }
+        },
+        "required": [
+          "property_id",
+          "month",
+          "year"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/v1/reports/arrivals",
+        "queryParams": {
+          "propertyId": "$property_id",
+          "month": "$month",
+          "year": "$year"
+        }
+      }
+    },
+    {
+      "name": "apaleo_create_booking",
+      "description": "Create a booking with one or more reservations. Get an offer first with apaleo_get_offers and pass its ratePlanId and prices in each reservation's timeSlices. Returns the booking id and reservation ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booker": {
+            "type": "object",
+            "description": "The booker: {\"lastName\": \"Muster\", \"firstName\": \"Anna\", \"email\": \"anna@example.com\", \"phone\": \"+49 ...\", \"address\": {\"addressLine1\": \"...\", \"postalCode\": \"...\", \"city\": \"...\", \"countryCode\": \"DE\"}}. lastName is required."
+          },
+          "reservations": {
+            "type": "array",
+            "description": "Reservations to create, each {\"arrival\": \"2026-11-20\", \"departure\": \"2026-11-22\", \"adults\": 2, \"childrenAges\": [], \"channelCode\": \"Direct\", \"primaryGuest\": {\"firstName\": \"Anna\", \"lastName\": \"Muster\", \"email\": \"...\"}, \"guaranteeType\": \"CreditCard\", \"timeSlices\": [{\"ratePlanId\": \"MUC-FLEX-DBL\", \"totalAmount\": {\"amount\": 120.0, \"currency\": \"EUR\"}}], \"services\": [{\"serviceId\": \"MUC-BRKF\", \"count\": 2}], \"comment\": \"...\"}. arrival, departure, adults, channelCode and one timeSlice per night are required; channelCode ChannelManager also needs source.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "comment": {
+            "type": "string",
+            "description": "Internal comment on the booking."
+          },
+          "booker_comment": {
+            "type": "string",
+            "description": "Comment from the booker."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional unique key; a retry with the same key returns the first result instead of booking twice."
+          }
+        },
+        "required": [
+          "booker",
+          "reservations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/booking/v1/bookings",
+        "bodyMapping": {
+          "booker": "$booker",
+          "reservations": "$reservations",
+          "comment": "$comment",
+          "bookerComment": "$booker_comment"
+        },
+        "headers": {
+          "Idempotency-Key": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "apaleo_update_booking",
+      "description": "Change booking fields with JSON Patch operations: replace the booker (the whole object), or add, replace or remove the comment, booker comment or payment account. Example: [{\"op\": \"replace\", \"path\": \"/comment\", \"value\": \"VIP guest\"}].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "string",
+            "description": "Booking id."
+          },
+          "operations": {
+            "type": "array",
+            "description": "JSON Patch operations, each {\"op\": \"add|replace|remove\", \"path\": \"/...\", \"value\": ...}. Allowed paths: /booker (replace only), /comment, /bookerComment, /paymentAccount.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "booking_id",
+          "operations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/booking/v1/bookings/{booking_id}",
+        "bodyMapping": {
+          "__raw": "$operations"
+        },
+        "headers": {
+          "Content-Type": "application/json-patch+json"
+        }
+      }
+    },
+    {
+      "name": "apaleo_update_reservation",
+      "description": "Change reservation fields with JSON Patch operations: replace the primary guest (the whole object), add, replace or remove additional guests, comment, guest comment, travel purpose, market segment or commission, add a company, mark it pre-checked-in. Example: [{\"op\": \"replace\", \"path\": \"/comment\", \"value\": \"Late arrival\"}]. Stay dates and rate plan change with apaleo_amend_reservation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          },
+          "operations": {
+            "type": "array",
+            "description": "JSON Patch operations, each {\"op\": \"add|replace|remove\", \"path\": \"/...\", \"value\": ...}. Allowed paths: /primaryGuest (replace only, the whole guest object), /additionalGuests, /comment, /guestComment, /travelPurpose, /marketSegment, /commission, /company (add only, {\"id\": ...}), /isPreCheckedIn, /isOpenForCharges.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "reservation_id",
+          "operations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/booking/v1/reservations/{reservation_id}",
+        "bodyMapping": {
+          "__raw": "$operations"
+        },
+        "headers": {
+          "Content-Type": "application/json-patch+json"
+        }
+      }
+    },
+    {
+      "name": "apaleo_amend_reservation",
+      "description": "Change the stay of a reservation: arrival, departure, number of guests and the rate plan and price per night. Get valid prices from apaleo_get_offers first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          },
+          "arrival": {
+            "type": "string",
+            "description": "New arrival date, YYYY-MM-DD."
+          },
+          "departure": {
+            "type": "string",
+            "description": "New departure date, YYYY-MM-DD."
+          },
+          "adults": {
+            "type": "integer",
+            "description": "Number of adults.",
+            "minimum": 1
+          },
+          "children_ages": {
+            "type": "array",
+            "description": "Ages of the children.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "time_slices": {
+            "type": "array",
+            "description": "One entry per night: {\"ratePlanId\": \"MUC-FLEX-DBL\", \"totalGrossAmount\": {\"amount\": 120.0, \"currency\": \"EUR\"}}. Without totalGrossAmount the current rate is used.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "requote": {
+            "type": "boolean",
+            "description": "Re-quote the price of nights whose rate plan does not change."
+          }
+        },
+        "required": [
+          "reservation_id",
+          "arrival",
+          "departure",
+          "adults",
+          "time_slices"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/amend",
+        "bodyMapping": {
+          "arrival": "$arrival",
+          "departure": "$departure",
+          "adults": "$adults",
+          "childrenAges": "$children_ages",
+          "timeSlices": "$time_slices",
+          "requote": "$requote"
+        }
+      }
+    },
+    {
+      "name": "apaleo_assign_unit",
+      "description": "Let apaleo pick and assign a free unit (room) of the reserved unit group to a reservation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          },
+          "unit_conditions": {
+            "type": "string",
+            "description": "Only pick units in these conditions, comma-separated: Clean, CleanToBeInspected, Dirty."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/assign-unit",
+        "queryParams": {
+          "unitConditions": "$unit_conditions"
+        }
+      }
+    },
+    {
+      "name": "apaleo_assign_specific_unit",
+      "description": "Assign a given unit (room) to a reservation, for the whole stay or part of it. Find free units with apaleo_list_available_units_for_reservation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          },
+          "unit_id": {
+            "type": "string",
+            "description": "Unit id to assign."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the assignment, default the arrival. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the assignment, default the departure. Date (YYYY-MM-DD) or date and time with UTC offset (ISO 8601)."
+          },
+          "lock_unit": {
+            "type": "boolean",
+            "description": "Lock the unit so automatic reassignment does not move the guest."
+          }
+        },
+        "required": [
+          "reservation_id",
+          "unit_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/assign-unit/{unit_id}",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "lockUnit": "$lock_unit"
+        }
+      }
+    },
+    {
+      "name": "apaleo_unassign_units",
+      "description": "Remove the assigned units (rooms) from a reservation, for example before assigning another room.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/unassign-units"
+      }
+    },
+    {
+      "name": "apaleo_check_in_reservation",
+      "description": "Check in a Confirmed reservation that has a unit assigned: status becomes InHouse and the check-in time is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          },
+          "with_city_tax": {
+            "type": "boolean",
+            "description": "Add city tax for this reservation (default true)."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/checkin",
+        "queryParams": {
+          "withCityTax": "$with_city_tax"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "apaleo_revert_check_in",
+      "description": "Undo the check-in of a reservation (status back to Confirmed), for a check-in done by mistake.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/revert-checkin"
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "apaleo_check_out_reservation",
+      "description": "Check out an InHouse reservation: status becomes CheckedOut and all open charges on the folio are posted. Only possible when the departure is not later than tomorrow; shorten the stay with apaleo_amend_reservation first otherwise. Check the folio balance before.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/checkout"
+      }
+    },
+    {
+      "name": "apaleo_cancel_reservation",
+      "description": "Cancel a Confirmed reservation whose arrival is in the future: status becomes Canceled; the cancellation fee of the rate plan's policy applies. A canceled reservation cannot be reactivated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/cancel"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "apaleo_set_reservation_no_show",
+      "description": "Mark a reservation whose guest did not arrive as NoShow. The no-show fee of the rate plan's policy is posted to the folio. It cannot be reverted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "string",
+            "description": "Reservation id."
+          }
+        },
+        "required": [
+          "reservation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/booking/v1/reservation-actions/{reservation_id}/noshow"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "apaleo_create_maintenance",
+      "description": "Create a maintenance window for a unit: OutOfService (flagged but sellable), OutOfOrder (not sellable) or OutOfInventory (removed from the house count).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "description": "Unit id."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start, date and time with UTC offset (ISO 8601)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End, date and time with UTC offset (ISO 8601)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Maintenance type.",
+            "enum": [
+              "OutOfService",
+              "OutOfOrder",
+              "OutOfInventory"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "description": "What is being repaired or why."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional unique key so a retry does not create a second window."
+          }
+        },
+        "required": [
+          "unit_id",
+          "from",
+          "to",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/operations/v1/maintenances",
+        "bodyMapping": {
+          "unitId": "$unit_id",
+          "from": "$from",
+          "to": "$to",
+          "type": "$type",
+          "description": "$description"
+        },
+        "headers": {
+          "Idempotency-Key": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "apaleo_set_unit_conditions",
+      "description": "Set the housekeeping condition of one or more units, for example after cleaning.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "units_conditions": {
+            "type": "array",
+            "description": "List of {\"id\": \"MUC-101\", \"condition\": \"Clean\"}; condition is Clean, CleanToBeInspected or Dirty.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "units_conditions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/operations/v1/units-condition",
+        "bodyMapping": {
+          "unitsConditions": "$units_conditions"
+        }
+      }
+    }
+  ]
+}

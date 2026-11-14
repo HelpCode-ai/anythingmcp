@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomBytes } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import * as client from 'openid-client';
 import { PrismaService } from '../common/prisma.service';
 import { findUserByEmail, normalizeEmail } from '../common/email.util';
@@ -53,7 +53,13 @@ export type SsoCompletion =
   | {
       kind: 'MCP';
       profile: { id: string; email: string; name: string | null; username: string };
-    };
+    }
+  /**
+   * The connect page (/auth/connect): a user signs in only to connect their
+   * own account to a connector with per-user credentials. No dashboard
+   * session is minted; the controller pins the user to that page alone.
+   */
+  | { kind: 'CONNECT'; userId: string; returnTo: string };
 
 /** How long a user has to complete the trip to the provider and back. */
 const ATTEMPT_TTL_MS = 5 * 60 * 1000;
@@ -230,6 +236,48 @@ export class SsoService {
     });
   }
 
+  /**
+   * Begins a sign-in from the connect page of a connector with per-user
+   * credentials, for a user who reaches it from a chat client without a
+   * dashboard session (on a self-hosted server the dashboard may not be
+   * public at all).
+   *
+   * The provider must belong to the connector's workspace. `binding` is a
+   * random value the page also put in a signed cookie: like the MCP surface's
+   * session id it is recorded now (in `oauthSessionId`) and ASSERTED on
+   * return, so the identity only ever reaches the browser that started.
+   */
+  async startConnect(
+    providerId: string,
+    organizationId: string,
+    connectorId: string,
+    binding: string,
+  ): Promise<{ authorizationUrl: string }> {
+    if (!binding) throw new SsoError('connect_without_binding');
+
+    const provider = await this.prisma.identityProvider.findUnique({
+      where: { id: providerId },
+      select: {
+        id: true,
+        type: true,
+        issuer: true,
+        clientId: true,
+        isActive: true,
+        organizationId: true,
+        config: true,
+      },
+    });
+    if (!provider || !provider.isActive || provider.organizationId !== organizationId) {
+      throw new SsoError('unknown_or_inactive_provider');
+    }
+
+    return this.beginAuthorization(provider, {
+      surface: 'CONNECT',
+      returnTo: `/auth/connect/${encodeURIComponent(connectorId)}`,
+      oauthSessionId: binding,
+    });
+  }
+
   /** Shared by both entry points: PKCE, state, nonce and the stored attempt. */
   private async beginAuthorization(
     provider: {
@@ -309,7 +357,7 @@ export class SsoService {
    */
   async complete(
     currentUrl: URL,
-    ctx: { ip?: string; userAgent?: string; oauthSessionId?: string },
+    ctx: { ip?: string; userAgent?: string; oauthSessionId?: string; connectBinding?: string },
   ): Promise<SsoCompletion> {
     const state = currentUrl.searchParams.get('state');
     if (!state) throw new SsoError('missing_state');
@@ -382,6 +430,35 @@ export class SsoService {
         ctx,
       );
       return { kind: 'LINK', returnTo };
+    }
+
+    if (attempt.surface === 'CONNECT') {
+      // Same reasoning as the MCP surface below: without the binding, an
+      // attacker could start a connect sign-in, get the victim to complete
+      // the IdP leg, and have the attacker's browser signed in as the victim.
+      await this.assertConnectBinding(attempt, provider, subject, ctx);
+
+      const userId = await this.resolveUser(provider, subject, tid, claims, ctx);
+      const sync = await this.roleSync.syncOnLogin(provider, userId, claims, ctx);
+
+      await this.securityEvents.log({
+        event: SecurityEvents.SSO_LOGIN_SUCCESS,
+        actorType: 'USER',
+        organizationId: provider.organizationId,
+        actorUserId: userId,
+        metadata: {
+          providerId: provider.id,
+          oid: subject,
+          tid,
+          surface: 'CONNECT',
+          ...this.claimShape(claims),
+          roleSync: sync.reason,
+        },
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
+
+      return { kind: 'CONNECT', userId, returnTo: attempt.returnTo ?? '/' };
     }
 
     if (attempt.surface === 'MCP') {
@@ -721,6 +798,35 @@ export class SsoService {
         userAgent: ctx.userAgent,
       });
       throw new SsoError('mcp_session_binding_mismatch', 'Sign-in failed', true);
+    }
+  }
+
+  /** The connect page's binding cookie must match the one recorded at start. */
+  private async assertConnectBinding(
+    attempt: { oauthSessionId: string | null },
+    provider: { id: string; organizationId: string },
+    subject: string,
+    ctx: { ip?: string; userAgent?: string; connectBinding?: string },
+  ): Promise<void> {
+    const recorded = attempt.oauthSessionId ?? '';
+    const presented = ctx.connectBinding ?? '';
+    const a = Buffer.from(recorded);
+    const b = Buffer.from(presented);
+    if (!recorded || a.length !== b.length || !timingSafeEqual(a, b)) {
+      await this.securityEvents.log({
+        event: SecurityEvents.SSO_LOGIN_FAILED,
+        actorType: 'ANONYMOUS',
+        organizationId: provider.organizationId,
+        metadata: {
+          providerId: provider.id,
+          reason: 'connect_binding_mismatch',
+          oid: subject,
+          surface: 'CONNECT',
+        },
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
+      throw new SsoError('connect_binding_mismatch', 'Sign-in failed', true);
     }
   }
 

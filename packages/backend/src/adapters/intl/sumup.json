@@ -1,0 +1,847 @@
+{
+  "slug": "sumup",
+  "name": "SumUp",
+  "description": "Manage SumUp merchant accounts, transactions, payouts, checkouts, receipts, readers, team members and subaccounts from any AI agent, read-only. Bearer-token authentication.",
+  "instructions": "This connector interacts with the SumUp API (developer.sumup.com).\n\n**Setup**:\n1. Log in to the SumUp Dashboard at https://me.sumup.com.\n2. Navigate to **Settings → For Developers** (or Developer Portal).\n3. Generate an API Key (Personal Access Token).\n4. Set `SUMUP_API_KEY`.\n\n**Authentication**: `Authorization: Bearer ${SUMUP_API_KEY}`.\n\n**Overview of capabilities**:\n- Retrieve authenticated merchant account and profile details.\n- Query transaction history with date range, status, and pagination filters.\n- Fetch specific transaction details by code or ID.\n- List payouts and bank settlement batches.\n- List customer checkouts and payment links.\n- List operator subaccounts.\n\n**Read-only by design**: SumUp is a payments account, so this connector only reads. It has no tools that refund, charge, create checkouts, start reader payments or change members; do those in the SumUp dashboard.\n\n**Merchant code**: the current SumUp API addresses an account by its merchant code (e.g. `MH4H92C7`). Find it with `sumup_get_merchant_profile` (`merchant_profile.merchant_code`) or, when the key reaches several accounts, with `sumup_list_memberships` (`resource.id`). `sumup_get_merchant` shows the account.\n\n**Money in and out**: `sumup_list_merchant_transactions` (v2.1, filters by time, status, type, payment type and user) and `sumup_get_merchant_transaction` replace the older `sumup_list_transactions` / `sumup_get_transaction`, which stay for existing setups. `sumup_get_receipt` returns the receipt of a transaction. `sumup_list_merchant_payouts` lists payouts and deductions (refunds, chargebacks) between two dates. Amounts are in major units (12.50 = 12.50 EUR); times are ISO 8601 in UTC.\n\n**Online payments**: `sumup_list_checkouts`, `sumup_get_checkout`, `sumup_list_payment_methods`, and saved customers with `sumup_get_customer` and `sumup_list_payment_instruments` (tokenized cards, last four digits only).\n\n**Team and devices**: `sumup_list_members`, `sumup_get_member`, `sumup_list_roles`, `sumup_get_role`, `sumup_list_persons`, `sumup_get_person`; card readers with `sumup_list_readers`, `sumup_get_reader`, `sumup_get_reader_status` and `sumup_get_reader_checkout`.\n\n**Paging**: v2.1 transactions return `links`; take `oldest_ref` or `newest_ref` from the link href for the next page. Memberships and members page with `offset` and `limit`.\n\n**Errors**: 401 means the API key is wrong or revoked; 403 that the key's user lacks the permission for that account; 404 an unknown merchant code or id.",
+  "region": "intl",
+  "category": "payments",
+  "icon": "sumup",
+  "docsUrl": "https://developer.sumup.com/api",
+  "requiredEnvVars": ["SUMUP_API_KEY"],
+  "connector": {
+    "name": "SumUp API",
+    "type": "REST",
+    "baseUrl": "https://api.sumup.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SUMUP_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "healthcheckPath": "/v0.1/me"
+  },
+  "tools": [
+    {
+      "name": "sumup_get_merchant_profile",
+      "description": "Retrieve the merchant profile and account information associated with the authenticated API key, including merchant code, company name, currency, and country.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me"
+      }
+    },
+    {
+      "name": "sumup_list_transactions",
+      "description": "List transaction history for the authenticated merchant account with filtering by date range, payment status, and pagination.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "changes_since": {
+            "type": "string",
+            "description": "Retrieve transactions changed since the given timestamp (ISO 8601 format)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of transactions to return per page (default 20, max 100)."
+          },
+          "order": {
+            "type": "string",
+            "enum": ["ascending", "descending"],
+            "description": "Order of transactions by timestamp (default descending)."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filter transactions by statuses (e.g. ['SUCCESSFUL', 'CANCELLED', 'FAILED'])."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me/transactions/history",
+        "queryParams": {
+          "changes_since": "$changes_since",
+          "limit": "$limit",
+          "order": "$order",
+          "statuses": "$statuses"
+        }
+      }
+    },
+    {
+      "name": "sumup_get_transaction",
+      "description": "Retrieve detailed information for a specific transaction by transaction ID or transaction code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The unique internal ID of the transaction."
+          },
+          "transaction_code": {
+            "type": "string",
+            "description": "The transaction code (e.g. TD6Q7P2)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me/transactions",
+        "queryParams": {
+          "id": "$id",
+          "transaction_code": "$transaction_code"
+        }
+      }
+    },
+    {
+      "name": "sumup_list_payouts",
+      "description": "Retrieve payout history and settlement reports transferred to the merchant bank account, filtered by date range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start date for payouts filter in YYYY-MM-DD format."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date for payouts filter in YYYY-MM-DD format."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of payout records to return (default 20, max 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me/financials/payouts",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "sumup_list_checkouts",
+      "description": "List online checkouts and payment links generated for customers, with optional status and checkout reference filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "checkout_reference": {
+            "type": "string",
+            "description": "Filter by custom merchant checkout reference string."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/checkouts",
+        "queryParams": {
+          "checkout_reference": "$checkout_reference"
+        }
+      }
+    },
+    {
+      "name": "sumup_list_subaccounts",
+      "description": "Retrieve operator subaccounts configured under the main merchant account.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/me/accounts"
+      }
+    },
+    {
+      "name": "sumup_list_memberships",
+      "description": "List the merchant accounts (and organizations) the API key's user belongs to, with the merchant code as resource.id, the account name, the user's roles and the membership status. Start here to find the merchant_code the merchant tools take when the key has access to several accounts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Only memberships of this resource kind, e.g. merchant."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "pending",
+              "expired",
+              "disabled",
+              "unknown"
+            ],
+            "description": "Only memberships with this status."
+          },
+          "resource_name": {
+            "type": "string",
+            "description": "Only memberships of accounts with this name."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Offset of the first membership (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "description": "Memberships per page, 1 to 25 (default 10)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/memberships",
+        "queryParams": {
+          "kind": "$kind",
+          "status": "$status",
+          "resource.name": "$resource_name",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "sumup_get_merchant",
+      "description": "Get a merchant account by merchant code: company name and legal details, business type and profile, country, default currency and locale, and whether it is a sandbox account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchants/{merchant_code}"
+      }
+    },
+    {
+      "name": "sumup_list_merchant_payouts",
+      "description": "List payouts to the merchant's bank account between two dates (current v1.0 API): payout date, amount, fee, currency, status, reference and the transaction behind each line. Besides regular payouts (type PAYOUT) the list holds deductions for refunds, chargebacks, direct debit returns and balance adjustments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First payout date, YYYY-MM-DD (inclusive)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last payout date, YYYY-MM-DD (inclusive), not before start_date."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort by payout date; asc by default."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999,
+            "description": "Maximum records to return."
+          }
+        },
+        "required": [
+          "merchant_code",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.0/merchants/{merchant_code}/payouts",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "order": "$order",
+          "limit": "$limit",
+          "format": "json"
+        }
+      }
+    },
+    {
+      "name": "sumup_list_merchant_transactions",
+      "description": "List the merchant's transactions (current v2.1 API): card, cash and online payments, refunds and chargebacks with amount, currency, status, payment type, entry mode, card type, user and time. Filter by time range, status, type or user. The answer has items and links: for the next page pass the oldest_ref or newest_ref value found in the link href. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "oldest_time": {
+            "type": "string",
+            "description": "Only transactions created at or after this time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "newest_time": {
+            "type": "string",
+            "description": "Only transactions created before this time, ISO 8601."
+          },
+          "changes_since": {
+            "type": "string",
+            "description": "Only transactions modified at or after this time, ISO 8601, for incremental syncs."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "SUCCESSFUL",
+                "CANCELLED",
+                "FAILED",
+                "REFUNDED",
+                "CHARGE_BACK"
+              ]
+            },
+            "description": "Only these final statuses."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PAYMENT",
+                "REFUND",
+                "CHARGE_BACK"
+              ]
+            },
+            "description": "Only these transaction types."
+          },
+          "payment_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CASH",
+                "POS",
+                "ECOM",
+                "RECURRING",
+                "BITCOIN",
+                "BALANCE",
+                "MOTO",
+                "BOLETO",
+                "DIRECT_DEBIT",
+                "APM",
+                "UNKNOWN"
+              ]
+            },
+            "description": "Only these payment types, e.g. POS for card reader payments, ECOM for online."
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only transactions taken by these users (e-mail addresses)."
+          },
+          "transaction_code": {
+            "type": "string",
+            "description": "Only the transaction with this code, e.g. TEENSK4W2K."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "ascending",
+              "descending"
+            ],
+            "description": "Sort by time; ascending by default, descending for the latest first."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Transactions per page (default 10)."
+          },
+          "oldest_ref": {
+            "type": "string",
+            "description": "Paging reference from a returned link: results after it."
+          },
+          "newest_ref": {
+            "type": "string",
+            "description": "Paging reference from a returned link: results before it."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2.1/merchants/{merchant_code}/transactions/history",
+        "queryParams": {
+          "oldest_time": "$oldest_time",
+          "newest_time": "$newest_time",
+          "changes_since": "$changes_since",
+          "statuses[]": "$statuses",
+          "types[]": "$types",
+          "payment_types[]": "$payment_types",
+          "users[]": "$users",
+          "transaction_code": "$transaction_code",
+          "order": "$order",
+          "limit": "$limit",
+          "oldest_ref": "$oldest_ref",
+          "newest_ref": "$newest_ref"
+        }
+      }
+    },
+    {
+      "name": "sumup_get_merchant_transaction",
+      "description": "Get the full details of one transaction (current v2.1 API): amount, VAT, tip, fee, status, card and entry mode, products, payout plan and payout status, events such as refunds, and location. Pass exactly one of id, transaction_code, foreign_transaction_id or client_transaction_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "id": {
+            "type": "string",
+            "description": "Transaction id."
+          },
+          "transaction_code": {
+            "type": "string",
+            "description": "Transaction code as on the receipt, e.g. TEENSK4W2K."
+          },
+          "foreign_transaction_id": {
+            "type": "string",
+            "description": "External id your system passed with the payment."
+          },
+          "client_transaction_id": {
+            "type": "string",
+            "description": "Client transaction id from the SumUp SDK or reader."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2.1/merchants/{merchant_code}/transactions",
+        "queryParams": {
+          "id": "$id",
+          "transaction_code": "$transaction_code",
+          "foreign_transaction_id": "$foreign_transaction_id",
+          "client_transaction_id": "$client_transaction_id"
+        }
+      }
+    },
+    {
+      "name": "sumup_get_receipt",
+      "description": "Get the structured receipt of a transaction: merchant details, transaction data with products and VAT, card (EMV) and acquirer data. Pass tx_event_id to show a specific event, such as a refund, on the receipt. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "Transaction id or transaction code, e.g. TS7HDYLSKD."
+          },
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "tx_event_id": {
+            "type": "string",
+            "description": "Id of a transaction event (e.g. a refund) to include."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1.1/receipts/{transaction_id}",
+        "queryParams": {
+          "mid": "$merchant_code",
+          "tx_event_id": "$tx_event_id"
+        }
+      }
+    },
+    {
+      "name": "sumup_get_checkout",
+      "description": "Get one online checkout by its id: amount, currency, status (PENDING, PAID, FAILED, EXPIRED), checkout reference, description, and the transactions made against it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "checkout_id": {
+            "type": "string",
+            "description": "Checkout id from sumup_list_checkouts."
+          }
+        },
+        "required": [
+          "checkout_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/checkouts/{checkout_id}"
+      }
+    },
+    {
+      "name": "sumup_get_customer",
+      "description": "Get a saved customer (used for recurring or tokenized online payments) by the customer id you assigned: personal details such as name, e-mail, phone and address. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Your customer id as stored in SumUp."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/customers/{customer_id}"
+      }
+    },
+    {
+      "name": "sumup_list_payment_instruments",
+      "description": "List the saved payment instruments of a customer: the card token, card type and masked details, mandate, creation date and whether it is active. No full card numbers are returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Your customer id as stored in SumUp."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/customers/{customer_id}/payment-instruments"
+      }
+    },
+    {
+      "name": "sumup_list_payment_methods",
+      "description": "List the payment methods available to the merchant for online checkouts (cards, Apple Pay, Google Pay, iDEAL, Bancontact and others), optionally only those eligible for a given amount and currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in major units, e.g. 9.99, to check eligibility for that payment."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency, e.g. EUR. Use with amount."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/payment-methods",
+        "queryParams": {
+          "amount": "$amount",
+          "currency": "$currency"
+        }
+      }
+    },
+    {
+      "name": "sumup_list_members",
+      "description": "List the members (users) of a merchant account with e-mail, roles, status (accepted, pending...) and permissions. Filter by e-mail prefix, status or role. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only members whose e-mail starts with this."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "pending",
+              "expired",
+              "disabled",
+              "unknown"
+            ],
+            "description": "Only members with this status."
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only members with these roles."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Offset of the first member (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Members per page."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/members",
+        "queryParams": {
+          "email": "$email",
+          "status": "$status",
+          "roles": "$roles",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "sumup_get_member",
+      "description": "Get one member of a merchant account: user, e-mail, roles, permissions, status and timestamps. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "member_id": {
+            "type": "string",
+            "description": "Member id from sumup_list_members."
+          }
+        },
+        "required": [
+          "merchant_code",
+          "member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/members/{member_id}"
+      }
+    },
+    {
+      "name": "sumup_list_roles",
+      "description": "List the custom roles of a merchant account with their names and permissions, to explain what a member's role allows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/roles"
+      }
+    },
+    {
+      "name": "sumup_get_role",
+      "description": "Get one custom role of a merchant account with its permissions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "role_id": {
+            "type": "string",
+            "description": "Role id from sumup_list_roles."
+          }
+        },
+        "required": [
+          "merchant_code",
+          "role_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/roles/{role_id}"
+      }
+    },
+    {
+      "name": "sumup_list_persons",
+      "description": "List the persons registered for a merchant account (legal representatives, owners and other people of the business, as collected during onboarding), with name, relationships and contact details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchants/{merchant_code}/persons"
+      }
+    },
+    {
+      "name": "sumup_get_person",
+      "description": "Get one person registered for a merchant account. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "person_id": {
+            "type": "string",
+            "description": "Person id from sumup_list_persons."
+          }
+        },
+        "required": [
+          "merchant_code",
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/merchants/{merchant_code}/persons/{person_id}"
+      }
+    },
+    {
+      "name": "sumup_list_readers",
+      "description": "List the card readers (e.g. SumUp Solo) paired with the merchant account: id, name, status, device model and identifier. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          }
+        },
+        "required": [
+          "merchant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/readers"
+      }
+    },
+    {
+      "name": "sumup_get_reader",
+      "description": "Get one paired card reader: name, status, device model and identifier, metadata and timestamps. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "reader_id": {
+            "type": "string",
+            "description": "Reader id from sumup_list_readers."
+          }
+        },
+        "required": [
+          "merchant_code",
+          "reader_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/readers/{reader_id}"
+      }
+    },
+    {
+      "name": "sumup_get_reader_status",
+      "description": "Get the live status of a card reader: online or offline, battery level, connection type, firmware and the state of the current checkout. Use it to troubleshoot a reader. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "reader_id": {
+            "type": "string",
+            "description": "Reader id from sumup_list_readers."
+          }
+        },
+        "required": [
+          "merchant_code",
+          "reader_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/readers/{reader_id}/status"
+      }
+    },
+    {
+      "name": "sumup_get_reader_checkout",
+      "description": "Get a checkout that was sent to a card reader: amount, status and the resulting transaction. Read-only; this connector does not start reader payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_code": {
+            "type": "string",
+            "description": "Merchant code, e.g. MH4H92C7: merchant_profile.merchant_code from sumup_get_merchant_profile, or resource.id from sumup_list_memberships."
+          },
+          "reader_id": {
+            "type": "string",
+            "description": "Reader id from sumup_list_readers."
+          },
+          "checkout_id": {
+            "type": "string",
+            "description": "Id of the reader checkout."
+          }
+        },
+        "required": [
+          "merchant_code",
+          "reader_id",
+          "checkout_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0.1/merchants/{merchant_code}/readers/{reader_id}/checkout/{checkout_id}"
+      }
+    }
+  ]
+}

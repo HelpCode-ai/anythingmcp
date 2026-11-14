@@ -183,6 +183,8 @@ describe('ready2order adapter: static spec conformance', () => {
     ['ready2order_get_bill', { id: 900 }, 'GET', `${BASE}/document/invoice/900`],
     ['ready2order_get_bill_pdf', { id: 900 }, 'GET', `${BASE}/document/invoice/900/pdf`],
     ['ready2order_list_open_orders', {}, 'GET', `${BASE}/orders`],
+    ['ready2order_list_tables', {}, 'GET', `${BASE}/tables`],
+    ['ready2order_list_table_areas', {}, 'GET', `${BASE}/tableAreas`],
     ['ready2order_list_customers', {}, 'GET', `${BASE}/customers`],
     ['ready2order_get_customer', { id: 7 }, 'GET', `${BASE}/customers/7`],
     ['ready2order_create_customer', { customerCategory_id: 1, lastName: 'Muster' }, 'POST', `${BASE}/customers`],
@@ -218,6 +220,19 @@ describe('ready2order adapter: static spec conformance', () => {
     mockedAxios.mockClear();
     await call('ready2order_get_bill_pdf', { id: 900 });
     expect(sent().params).toEqual({ format: 'A4' });
+  });
+
+  it('pages tables and table areas with page and limit, read-only', async () => {
+    mockedAxios.mockResolvedValue({ data: [] });
+    await call('ready2order_list_tables', { page: 2, limit: 50 });
+    expect(sent().params).toEqual({ page: 2, limit: 50 });
+    mockedAxios.mockClear();
+    await call('ready2order_list_table_areas', { page: 1, limit: 25 });
+    expect(sent().params).toEqual({ page: 1, limit: 25 });
+    for (const n of ['ready2order_list_tables', 'ready2order_list_table_areas']) {
+      expect(annotationsOf(tool(n)).readOnlyHint).toBe(true);
+      expect(tool(n).enabled).toBeUndefined();
+    }
   });
 
   it('sends only the given product, stock and customer fields', async () => {

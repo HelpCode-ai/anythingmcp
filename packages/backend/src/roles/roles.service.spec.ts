@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { RolesService } from './roles.service';
 
 describe('RolesService', () => {
@@ -29,6 +30,8 @@ describe('RolesService', () => {
         // existing case on the legacy path (no role = unrestricted).
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
+        createMany: jest.fn(),
+        updateMany: jest.fn(),
         deleteMany: jest.fn(),
         upsert: jest.fn(),
       },
@@ -81,6 +84,31 @@ describe('RolesService', () => {
       expect(result).toBe(role);
       expect(mockPrisma.role.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'r1' } }),
+      );
+    });
+  });
+
+  describe('duplicate names', () => {
+    const unique = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+
+    it('answers 409 when creating a role whose name exists', async () => {
+      mockPrisma.role.create.mockRejectedValue(unique);
+      await expect(service.create({ name: 'Sales', organizationId: 'org1' })).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('answers 409 when renaming a role to an existing name', async () => {
+      mockPrisma.role.updateMany.mockRejectedValue(unique);
+      await expect(service.update('r1', 'org1', { name: 'Sales' })).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('rethrows any other database error', async () => {
+      mockPrisma.role.create.mockRejectedValue(new Error('connection lost'));
+      await expect(service.create({ name: 'Sales', organizationId: 'org1' })).rejects.toThrow(
+        'connection lost',
       );
     });
   });
@@ -153,13 +181,17 @@ describe('RolesService', () => {
   });
 
   describe('setToolAccess', () => {
-    it('should call $transaction with delete + create operations after validating org-ownership of tools', async () => {
+    beforeEach(() => {
+      mockPrisma.role.findFirst.mockResolvedValue({ isSystem: false });
+      mockPrisma.toolRoleAccess.createMany = jest.fn();
+    });
+
+    it('preserves retained rows and changes only removed/added grants in one transaction', async () => {
       mockPrisma.mcpTool = { count: jest.fn().mockResolvedValue(2) } as any;
-      mockPrisma.toolRoleAccess.deleteMany.mockReturnValue('delete-op');
-      mockPrisma.toolRoleAccess.create
-        .mockReturnValueOnce('create-op-1')
-        .mockReturnValueOnce('create-op-2');
-      mockPrisma.$transaction.mockResolvedValue([]);
+      mockPrisma.toolRoleAccess.findMany.mockResolvedValue([
+        { toolId: 't1', callsPerMinute: 5, callsPerHour: 30 },
+        { toolId: 'removed' },
+      ]);
 
       await service.setToolAccess('r1', ['t1', 't2'], 'org-1');
 
@@ -169,11 +201,34 @@ describe('RolesService', () => {
           connector: { organizationId: 'org-1' },
         },
       });
-      expect(mockPrisma.$transaction).toHaveBeenCalledWith([
-        'delete-op',
-        'create-op-1',
-        'create-op-2',
-      ]);
+      expect(mockPrisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockPrisma.toolRoleAccess.deleteMany).toHaveBeenCalledWith({
+        where: { roleId: 'r1', role: { organizationId: 'org-1' }, toolId: { notIn: ['t1', 't2'] } },
+      });
+      expect(mockPrisma.toolRoleAccess.createMany).toHaveBeenCalledWith({
+        data: [{ roleId: 'r1', toolId: 't2' }], skipDuplicates: true,
+      });
+      expect(mockPrisma.toolRoleAccess.create).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates input and can remove every grant', async () => {
+      mockPrisma.mcpTool.count.mockResolvedValue(1);
+      await service.setToolAccess('r1', ['t1', 't1'], 'org-1');
+      expect(mockPrisma.toolRoleAccess.createMany).toHaveBeenCalledWith({
+        data: [{ roleId: 'r1', toolId: 't1' }], skipDuplicates: true,
+      });
+      mockPrisma.toolRoleAccess.createMany.mockClear();
+      await service.setToolAccess('r1', [], 'org-1');
+      expect(mockPrisma.toolRoleAccess.deleteMany).toHaveBeenLastCalledWith({
+        where: { roleId: 'r1', role: { organizationId: 'org-1' }, toolId: { notIn: [] } },
+      });
+      expect(mockPrisma.toolRoleAccess.createMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a role owned by another organization before writing', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+      await expect(service.setToolAccess('other-role', [], 'org-1')).rejects.toThrow('Role not found');
+      expect(mockPrisma.toolRoleAccess.deleteMany).not.toHaveBeenCalled();
     });
 
     it('rejects when toolIds contain ids from another organization', async () => {
@@ -598,11 +653,48 @@ describe('RolesService', () => {
     it('refuses, matching updateRole and deleteRole', async () => {
       // System roles are global and visible to every org; without this any org
       // admin could rewrite a whitelist every other organization shares.
-      mockPrisma.role.findUnique.mockResolvedValue({ isSystem: true });
+      mockPrisma.role.findFirst.mockResolvedValue({ isSystem: true });
 
       await expect(service.setToolAccess('sys', ['t1'], 'org-1')).rejects.toThrow(
         'system role',
       );
+    });
+  });
+
+  describe('getCapabilities', () => {
+    it('returns {} for a non-member', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({});
+    });
+
+    it('returns {} for a deactivated member', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: new Date() });
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({});
+    });
+
+    it('grants every capability to an org ADMIN', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'ADMIN', deactivatedAt: null });
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({ inlineCode: true });
+    });
+
+    it('unions capabilities of the assigned roles, only true wins', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'r1' }, { roleId: 'r2' }]);
+      mockPrisma.role.findMany.mockResolvedValue([
+        { capabilities: { inlineCode: true, other: false } },
+        { capabilities: null },
+      ]);
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({ inlineCode: true });
+    });
+
+    it('returns {} for a member with no assigned roles', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ role: 'EDITOR', deactivatedAt: null });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([]);
+      expect(await service.getCapabilities('u1', 'org1')).toEqual({});
+    });
+
+    it('returns {} without an organization', async () => {
+      expect(await service.getCapabilities('u1', undefined)).toEqual({});
     });
   });
 });

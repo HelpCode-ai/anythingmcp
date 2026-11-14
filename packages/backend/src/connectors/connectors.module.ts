@@ -9,6 +9,7 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { DatabaseEngine } from './engines/database.engine';
 import { ODataEngine } from './engines/odata.engine';
+import { EmailEngine } from './engines/email.engine';
 import { GraphqlSchemaService } from './engines/graphql-schema.service';
 import { OpenApiParser } from './parsers/openapi.parser';
 import { WsdlParser } from './parsers/wsdl.parser';
@@ -19,10 +20,18 @@ import { HarParser } from './parsers/har.parser';
 import { McpOAuthService } from './mcp-oauth.service';
 import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 import { ShopeeAuthController } from './shopee-auth.controller';
+import { WooCommerceAuthController } from './woocommerce-auth.controller';
+import { TikTokShopAuthController } from './tiktok-shop-auth.controller';
+import { MetaAuthController } from './meta-auth.controller';
+import { MetaLoginService } from './engines/meta-login.service';
+import { WebhookIngestController } from './webhook-ingest.controller';
 import { CatalogResyncService } from './catalog-resync.service';
 import { CatalogReconciler } from './catalog-reconciler.service';
 import { LicenseModule } from '../license/license.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
+import { FileSearchCoreModule } from '../file-search/file-search-core.module';
+import { IdentityProvidersModule } from '../identity-providers/identity-providers.module';
+import { MemberVisibilityModule } from '../settings/member-visibility.module';
 
 const ENGINES = [
   RestEngine,
@@ -31,6 +40,7 @@ const ENGINES = [
   McpClientEngine,
   DatabaseEngine,
   ODataEngine,
+  EmailEngine,
 ];
 
 const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlParser, HarParser];
@@ -43,11 +53,22 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
 // and one login mutex per connector, so a Test connection and tool calls do
 // not each log in.
 @Module({
-  imports: [McpServerModule, McpServersModule, LicenseModule],
-  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, ToolsController],
+  // IdentityProvidersModule: SsoService, for signing in on the connect page.
+  // MemberVisibilityModule (not SettingsModule): what a restricted member may
+  // read on the connectors and tools routes.
+  imports: [
+    McpServerModule,
+    McpServersModule,
+    LicenseModule,
+    IdentityProvidersModule,
+    FileSearchCoreModule,
+    MemberVisibilityModule,
+  ],
+  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, TikTokShopAuthController, MetaAuthController, WooCommerceAuthController, ToolsController, WebhookIngestController],
   providers: [
     ConnectorsService,
     McpOAuthService,
+    MetaLoginService,
     CatalogResyncService,
     CatalogReconciler,
     GraphqlSchemaService,

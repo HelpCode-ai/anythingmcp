@@ -1,0 +1,1118 @@
+{
+  "slug": "storyblok",
+  "name": "Storyblok",
+  "aliases": [
+    "Storyblok CMS",
+    "Storyblok Management API"
+  ],
+  "description": "Storyblok headless CMS through the Management API: stories and folders with their block content, create, update, publish and unpublish, component schemas, asset metadata, datasources, workflow stages and releases, in the EU, US, CA, AP or CN region.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "storyblok",
+  "docsUrl": "https://www.storyblok.com/docs/api/management",
+  "instructions": "## Storyblok\nThis connector works with the **Storyblok Management API** (`https://<region host>/v1/spaces/<space id>`) of one space: stories and folders, the block schemas (components), assets and their metadata, datasources, workflows and releases. It reads drafts as well as published content, so the Content Delivery API is not needed here.\n\n**Setup (3 minutes)**\n1. In Storyblok open **My account > Account settings > Personal access tokens** and generate a token. It acts with your own rights in every space you can open, so a user with a restricted role gives a narrower token.\n2. Paste it into `STORYBLOK_PERSONAL_ACCESS_TOKEN`. Storyblok takes it as is in the `Authorization` header, without a Bearer prefix.\n3. `STORYBLOK_SPACE_ID`: the numeric id in **Settings > Space** (also in the app URL after `#/me/spaces/`).\n4. `STORYBLOK_API_HOST`: the Management API host of the region where the space was created: `mapi.storyblok.com` (EU), `api-us.storyblok.com` (US), `api-ca.storyblok.com` (Canada), `api-ap.storyblok.com` (Australia) or `app.storyblokchina.cn` (China). A wrong region answers 404 or 401.\n5. Run `storyblok_get_space` to check the three values.\n\n**Workflow**\n- Find content: `storyblok_list_stories` (by `starts_with` folder slug, `by_slugs`, `search`, `text_search`, tags, `filter_query` on content fields, workflow stage or release; it returns no content), then `storyblok_get_story` for the full block tree, `storyblok_list_story_versions` for its history.\n- Learn the schema before writing: `storyblok_list_components` (or `storyblok_get_component`) shows each block's fields; `storyblok_list_component_folders` groups them.\n- Write content: `storyblok_create_story` (draft by default), `storyblok_update_story` (content is replaced whole: read, change, send back the full tree), then `storyblok_publish_story` or `storyblok_unpublish_story`. Publishing and unpublishing are GET calls at Storyblok but change the live site; they are marked as writes.\n- Assets: `storyblok_list_assets`, `storyblok_get_asset`, `storyblok_update_asset` for alt text, title, copyright and folder; `storyblok_list_asset_folders`, `storyblok_list_internal_tags`. Uploading files is not part of this connector.\n- Datasources: `storyblok_list_datasources`, `storyblok_list_datasource_entries`, `storyblok_create_datasource_entry`, `storyblok_update_datasource_entry`.\n- Workflows: `storyblok_list_workflows` (per content type), `storyblok_list_workflow_stages`, `storyblok_list_workflow_stage_changes` for a story's history, `storyblok_change_workflow_stage` to move a story to a stage and assign reviewers.\n- Releases: `storyblok_list_releases`, `storyblok_get_release`, `storyblok_create_release`, `storyblok_update_release` (`do_release: true` publishes everything in it). Put a story change into a release with `release_id` on create or update.\n\n**Switched off at install**: `storyblok_delete_story` and `storyblok_delete_asset`; they cannot be undone through this connector, so an admin switches them on when the team needs them.\n\n**Reading the answers**: ids are numbers, `uuid` fields are UUIDs. `full_slug` is the path of a story; `published` and `unpublished_changes` tell its state. Asset `filename` is the public URL. Times are ISO 8601 UTC; `release_at` takes `YYYY-MM-DD HH:mm`.\n\n**Paging**: lists of stories, versions, assets, datasources and datasource entries take `page` (from 1) and `per_page` (25 by default, 100 at most; 1,000 for datasource entries). The total is returned in the `total` header, shown as `_headers.total`. A page past the end returns an empty list.\n\n**Limits and errors**: 3 requests per second on the Starter plan, 6 on higher plans; 429 means slow down. 401 is a wrong token or wrong region host, 404 a wrong space id or item, 422 an invalid story (the message names the field).",
+  "prerequisites": "A Storyblok space, its numeric id and region, and a personal access token from Account settings.",
+  "requiredEnvVars": [
+    "STORYBLOK_PERSONAL_ACCESS_TOKEN",
+    "STORYBLOK_SPACE_ID",
+    "STORYBLOK_API_HOST"
+  ],
+  "envVarMeta": {
+    "STORYBLOK_PERSONAL_ACCESS_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Storyblok > My account > Account settings > Personal access tokens > Generate new token. Sent as the Authorization header without a Bearer prefix.",
+      "link": "https://app.storyblok.com/#/me/account?tab=token",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Bearer prefix."
+    },
+    "STORYBLOK_SPACE_ID": {
+      "label": "Space id",
+      "kind": "address",
+      "help": "The numeric space id from Settings > Space, or from the app URL after #/me/spaces/.",
+      "example": "288868932106293",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "The space id is a number, e.g. 288868932106293."
+    },
+    "STORYBLOK_API_HOST": {
+      "label": "Region host",
+      "kind": "address",
+      "help": "Management API host of the space's region: mapi.storyblok.com (EU), api-us.storyblok.com (US), api-ca.storyblok.com (Canada), api-ap.storyblok.com (Australia) or app.storyblokchina.cn (China).",
+      "example": "mapi.storyblok.com",
+      "link": "https://www.storyblok.com/docs/api/management",
+      "pattern": "^(mapi\\.storyblok\\.com|api-(us|ca|ap)\\.storyblok\\.com|app\\.storyblokchina\\.cn)$",
+      "patternMessage": "Enter only the host: mapi.storyblok.com, api-us.storyblok.com, api-ca.storyblok.com, api-ap.storyblok.com or app.storyblokchina.cn."
+    }
+  },
+  "verifyHints": {
+    "401": "Storyblok refused the token. Check the personal access token, and that the region host matches the region of the space.",
+    "404": "The space was not found. Check STORYBLOK_SPACE_ID and that STORYBLOK_API_HOST is the host of the space's region.",
+    "rate_limited": "Storyblok allows 3 Management API requests per second on Starter and 6 on higher plans. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "storyblok_get_space"
+  },
+  "connector": {
+    "name": "Storyblok Management API",
+    "type": "REST",
+    "baseUrl": "https://{{STORYBLOK_API_HOST}}/v1/spaces/{{STORYBLOK_SPACE_ID}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{STORYBLOK_PERSONAL_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP (https://anythingmcp.com)"
+    },
+    "healthcheckPath": "/"
+  },
+  "tools": [
+    {
+      "name": "storyblok_get_space",
+      "description": "The connected space: name, id, plan, default domain, languages, the release and workflow features in use and the story count. Use it to check the token and the region host.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/"
+      }
+    },
+    {
+      "name": "storyblok_list_stories",
+      "description": "List stories (content entries and folders) of the space without their content: id, uuid, name, slug, full_slug, content_type, published, unpublished_changes, parent_id, tag_list, timestamps. Filter by slug, folder, tag, content type field values, workflow stage, release or a text search. The total count is in _headers.total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search in name, slug and full slug."
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Full-text search in name, slug and the whole content."
+          },
+          "starts_with": {
+            "type": "string",
+            "description": "Only stories whose full slug starts with this, e.g. blog/."
+          },
+          "by_slugs": {
+            "type": "string",
+            "description": "Comma-separated full slugs; wildcards allowed, e.g. blog/*."
+          },
+          "with_slug": {
+            "type": "string",
+            "description": "Only the story with this exact full slug."
+          },
+          "by_ids": {
+            "type": "string",
+            "description": "Comma-separated story ids."
+          },
+          "by_uuids": {
+            "type": "string",
+            "description": "Comma-separated story uuids."
+          },
+          "with_parent": {
+            "type": "integer",
+            "description": "Only direct children of this folder id."
+          },
+          "with_tag": {
+            "type": "string",
+            "description": "Comma-separated tags."
+          },
+          "contain_component": {
+            "type": "string",
+            "description": "Comma-separated block names the content must contain."
+          },
+          "filter_query": {
+            "type": "object",
+            "description": "Filter on content fields, e.g. {\"category\": {\"in\": \"news\"}, \"date\": {\"gt_date\": \"2026-01-01 00:00\"}}. Operations: is, in, not_in, like, not_like, in_array, all_in_array, gt_date, lt_date, gt_int, lt_int, gt_float, lt_float."
+          },
+          "is_published": {
+            "type": "boolean",
+            "description": "true for published stories only, false for drafts only."
+          },
+          "story_only": {
+            "type": "boolean",
+            "description": "Leave folders out."
+          },
+          "folder_only": {
+            "type": "boolean",
+            "description": "Only folders."
+          },
+          "in_workflow_stages": {
+            "type": "string",
+            "description": "Comma-separated workflow stage ids."
+          },
+          "in_release": {
+            "type": "integer",
+            "description": "Only stories in this release id."
+          },
+          "in_trash": {
+            "type": "boolean",
+            "description": "Only deleted stories in the trash."
+          },
+          "with_summary": {
+            "type": "boolean",
+            "description": "Add a content_summary of the content fields."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort, e.g. created_at:desc, updated_at:desc, name:asc or content.FIELD:asc (append :int or :float for numbers)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stories",
+        "queryParams": {
+          "search": "$search",
+          "text_search": "$text_search",
+          "starts_with": "$starts_with",
+          "by_slugs": "$by_slugs",
+          "with_slug": "$with_slug",
+          "by_ids": "$by_ids",
+          "by_uuids": "$by_uuids",
+          "with_parent": "$with_parent",
+          "with_tag": "$with_tag",
+          "contain_component": "$contain_component",
+          "filter_query": "$filter_query",
+          "is_published": "$is_published",
+          "story_only": "$story_only",
+          "folder_only": "$folder_only",
+          "in_workflow_stages": "$in_workflow_stages",
+          "in_release": "$in_release",
+          "in_trash": "$in_trash",
+          "with_summary": "$with_summary",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "total",
+          "per_page"
+        ]
+      }
+    },
+    {
+      "name": "storyblok_get_story",
+      "description": "One story with its full content (the block tree under content, each block with component and _uid), slug, published state, translations, alternates, tags, workflow stage and release info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Numeric story id."
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stories/{story_id}"
+      }
+    },
+    {
+      "name": "storyblok_list_story_versions",
+      "description": "Version history of a story, newest first: version id, event (published, saved, ...), author and time, and whether the version is a draft.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Numeric story id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 100)."
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stories/{story_id}/versions",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "total",
+          "per_page"
+        ]
+      }
+    },
+    {
+      "name": "storyblok_create_story",
+      "description": "Create a story or a folder. Stories are saved as drafts unless publish is true. The content root needs \"component\" set to a content type block; nested blocks sit in arrays and need a _uid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story": {
+            "type": "object",
+            "description": "The story, e.g. {\"name\": \"Summer sale\", \"slug\": \"summer-sale\", \"parent_id\": 123, \"content\": {\"component\": \"page\", \"body\": []}, \"tag_list\": [\"promo\"]}. A folder: {\"name\": \"Blog\", \"slug\": \"blog\", \"is_folder\": true}."
+          },
+          "publish": {
+            "type": "boolean",
+            "description": "Publish right away (default false: draft)."
+          },
+          "release_id": {
+            "type": "integer",
+            "description": "Save it into this release instead of the main version."
+          }
+        },
+        "required": [
+          "story"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/stories",
+        "bodyMapping": {
+          "story": "$story",
+          "publish": "$publish",
+          "release_id": "$release_id"
+        }
+      }
+    },
+    {
+      "name": "storyblok_update_story",
+      "description": "Update a story. Send the story object with the fields to change; content is replaced as a whole, so read it with storyblok_get_story first and send the full block tree back. publish true also publishes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Numeric story id."
+          },
+          "story": {
+            "type": "object",
+            "description": "Story fields to set, e.g. {\"name\": \"New title\", \"content\": {...the whole content...}}."
+          },
+          "publish": {
+            "type": "boolean",
+            "description": "Publish after saving."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language code to publish individually (needs Publish translations individually)."
+          },
+          "release_id": {
+            "type": "integer",
+            "description": "Save the change into this release."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group UUID shared with the stories that are alternates of this one."
+          },
+          "force_update": {
+            "type": "string",
+            "description": "1 to overwrite a story another user is editing (causes a content conflict).",
+            "enum": [
+              "1"
+            ]
+          }
+        },
+        "required": [
+          "story_id",
+          "story"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/stories/{story_id}",
+        "bodyMapping": {
+          "story": "$story",
+          "publish": "$publish",
+          "lang": "$lang",
+          "release_id": "$release_id",
+          "group_id": "$group_id",
+          "force_update": "$force_update"
+        }
+      }
+    },
+    {
+      "name": "storyblok_publish_story",
+      "description": "Publish a story so the Content Delivery API serves the current version. Optionally only some languages, or into a release. Storyblok does this with a GET request, but it changes the live site.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Numeric story id."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Comma-separated language codes to publish, e.g. es,pt-br,[default]."
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stories/{story_id}/publish",
+        "queryParams": {
+          "lang": "$lang"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "storyblok_unpublish_story",
+      "description": "Unpublish a story: it disappears from the published content until it is published again. Optionally only some languages. Storyblok does this with a GET request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Numeric story id."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Comma-separated language codes to unpublish."
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stories/{story_id}/unpublish",
+        "queryParams": {
+          "lang": "$lang"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "storyblok_delete_story",
+      "description": "Delete a story, or a folder with its stories, by id. Gone from the delivery API at once.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Numeric story id."
+          }
+        },
+        "required": [
+          "story_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/stories/{story_id}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "storyblok_list_components",
+      "description": "The block schemas (components) of the space: name, display_name, is_root (content type) or nestable, the schema with every field and its type, and the component folders in component_groups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search in name or display name."
+          },
+          "is_root": {
+            "type": "boolean",
+            "description": "true for content types only, false for nestable blocks only."
+          },
+          "in_group": {
+            "type": "string",
+            "description": "Only components in the folder with this UUID."
+          },
+          "by_ids": {
+            "type": "string",
+            "description": "Comma-separated component ids."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort, e.g. name:asc, updated_at:desc or is_nestable:asc,is_root:desc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/components",
+        "queryParams": {
+          "search": "$search",
+          "is_root": "$is_root",
+          "in_group": "$in_group",
+          "by_ids": "$by_ids",
+          "sort_by": "$sort_by"
+        }
+      }
+    },
+    {
+      "name": "storyblok_get_component",
+      "description": "One block schema by id with all fields (type, required, options, allowed blocks), preview field and folder.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "component_id": {
+            "type": "integer",
+            "description": "Numeric component id."
+          }
+        },
+        "required": [
+          "component_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/components/{component_id}"
+      }
+    },
+    {
+      "name": "storyblok_list_component_folders",
+      "description": "Component folders (groups) with id, uuid, name and parent folder, used by in_group.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search in folder names."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/component_groups",
+        "queryParams": {
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "storyblok_list_assets",
+      "description": "List assets (images, videos, files) with id, filename (the URL), title, alt, copyright, focus, folder, tags, size and private flag. Paged; the total count is in _headers.total.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search in file names."
+          },
+          "in_folder": {
+            "type": "integer",
+            "description": "Only assets in this folder id; -1 for deleted assets."
+          },
+          "by_title": {
+            "type": "string",
+            "description": "Filter by title."
+          },
+          "by_alt": {
+            "type": "string",
+            "description": "Filter by alt text."
+          },
+          "by_copyright": {
+            "type": "string",
+            "description": "Filter by copyright."
+          },
+          "with_tags": {
+            "type": "string",
+            "description": "Comma-separated internal tags (any of them)."
+          },
+          "is_private": {
+            "type": "boolean",
+            "description": "Only private assets."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "created_at:asc",
+              "created_at:desc",
+              "updated_at:asc",
+              "updated_at:desc",
+              "short_filename:asc",
+              "short_filename:desc",
+              "content_length:asc",
+              "content_length:desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assets",
+        "queryParams": {
+          "search": "$search",
+          "in_folder": "$in_folder",
+          "by_title": "$by_title",
+          "by_alt": "$by_alt",
+          "by_copyright": "$by_copyright",
+          "with_tags": "$with_tags",
+          "is_private": "$is_private",
+          "sort_by": "$sort_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "total",
+          "per_page"
+        ]
+      }
+    },
+    {
+      "name": "storyblok_get_asset",
+      "description": "One asset's metadata by id: filename URL, title, alt, copyright, source, focus point, folder, internal tags and size.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "integer",
+            "description": "Numeric asset id."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assets/{asset_id}"
+      }
+    },
+    {
+      "name": "storyblok_update_asset",
+      "description": "Update an asset's metadata: alt text, title, copyright and source (meta_data), folder, internal tags, private or locked flag. The file itself is not changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "integer",
+            "description": "Numeric asset id."
+          },
+          "asset": {
+            "type": "object",
+            "description": "Fields to set, e.g. {\"meta_data\": {\"alt\": \"Red bike\", \"title\": \"Bike\", \"copyright\": \"Studio X\"}, \"asset_folder_id\": 12, \"internal_tag_ids\": [3], \"is_private\": false}."
+          }
+        },
+        "required": [
+          "asset_id",
+          "asset"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/assets/{asset_id}",
+        "bodyMapping": {
+          "asset": "$asset"
+        }
+      }
+    },
+    {
+      "name": "storyblok_delete_asset",
+      "description": "Delete an asset by id. Stories that still point to its URL show a broken file.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "integer",
+            "description": "Numeric asset id."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/assets/{asset_id}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "storyblok_list_asset_folders",
+      "description": "Asset folders with id, uuid, name and parent_id, for in_folder and asset_folder_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search in folder names."
+          },
+          "with_parent": {
+            "type": "string",
+            "description": "Only folders under this parent folder id."
+          },
+          "by_ids": {
+            "type": "string",
+            "description": "Comma-separated folder ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/asset_folders",
+        "queryParams": {
+          "search": "$search",
+          "with_parent": "$with_parent",
+          "by_ids": "$by_ids"
+        }
+      }
+    },
+    {
+      "name": "storyblok_list_internal_tags",
+      "description": "Internal tags used to organise assets and components, with id, name and object type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search in tag names."
+          },
+          "by_object_type": {
+            "type": "string",
+            "description": "Only tags of assets or of components.",
+            "enum": [
+              "asset",
+              "component"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/internal_tags",
+        "queryParams": {
+          "search": "$search",
+          "by_object_type": "$by_object_type"
+        }
+      }
+    },
+    {
+      "name": "storyblok_list_datasources",
+      "description": "Datasources (key-value lists used for options and translations) with id, name, slug and dimensions. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Search in datasource names."
+          },
+          "by_ids": {
+            "type": "string",
+            "description": "Comma-separated datasource ids."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page (default 25, max 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasources",
+        "queryParams": {
+          "search": "$search",
+          "by_ids": "$by_ids",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "total",
+          "per_page"
+        ]
+      }
+    },
+    {
+      "name": "storyblok_list_datasource_entries",
+      "description": "Entries of a datasource (name is the key, value the value), optionally with the dimension_value of one dimension (e.g. a language). Pass datasource_id or datasource_slug. Paged up to 1,000 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datasource_id": {
+            "type": "integer",
+            "description": "Numeric datasource id."
+          },
+          "datasource_slug": {
+            "type": "string",
+            "description": "Datasource slug."
+          },
+          "dimension": {
+            "type": "integer",
+            "description": "Numeric dimension id, to get dimension_value."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search in entry names."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Entries per page (default 25, max 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/datasource_entries",
+        "queryParams": {
+          "datasource_id": "$datasource_id",
+          "datasource_slug": "$datasource_slug",
+          "dimension": "$dimension",
+          "search": "$search",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "total",
+          "per_page"
+        ]
+      }
+    },
+    {
+      "name": "storyblok_create_datasource_entry",
+      "description": "Add a key-value entry (name is the key, value the value) to a datasource.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datasource_id": {
+            "type": "integer",
+            "description": "Numeric datasource id."
+          },
+          "name": {
+            "type": "string",
+            "description": "The entry key."
+          },
+          "value": {
+            "type": "string",
+            "description": "The entry value."
+          }
+        },
+        "required": [
+          "datasource_id",
+          "name",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/datasource_entries",
+        "bodyMapping": {
+          "datasource_entry": {
+            "datasource_id": "$datasource_id",
+            "name": "$name",
+            "value": "$value"
+          }
+        }
+      }
+    },
+    {
+      "name": "storyblok_update_datasource_entry",
+      "description": "Change a datasource entry's key or value, or its value for one dimension (dimension_id and dimension_value).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "datasource_entry_id": {
+            "type": "integer",
+            "description": "Numeric datasource entry id."
+          },
+          "datasource_entry": {
+            "type": "object",
+            "description": "Fields to set, e.g. {\"name\": \"red\", \"value\": \"Red\"} or {\"dimension_value\": \"Rot\"}."
+          },
+          "dimension_id": {
+            "type": "integer",
+            "description": "Dimension id; required when setting a dimension_value."
+          }
+        },
+        "required": [
+          "datasource_entry_id",
+          "datasource_entry"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/datasource_entries/{datasource_entry_id}",
+        "bodyMapping": {
+          "datasource_entry": "$datasource_entry",
+          "dimension_id": "$dimension_id"
+        }
+      }
+    },
+    {
+      "name": "storyblok_list_workflows",
+      "description": "Workflows that apply to a content type, with their stages. Pass the content type block name, e.g. page or article.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content_type": {
+            "type": "string",
+            "description": "Content type block name, e.g. page."
+          }
+        },
+        "required": [
+          "content_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflows",
+        "queryParams": {
+          "content_type": "$content_type"
+        }
+      }
+    },
+    {
+      "name": "storyblok_list_workflow_stages",
+      "description": "Workflow stages with id, name, color, the next allowed stages, who may publish and the workflow they belong to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "in_workflow": {
+            "type": "integer",
+            "description": "Only stages of this workflow id."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search in stage names."
+          },
+          "by_ids": {
+            "type": "string",
+            "description": "Comma-separated stage ids."
+          },
+          "exclude_id": {
+            "type": "integer",
+            "description": "Leave this stage id out."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflow_stages",
+        "queryParams": {
+          "in_workflow": "$in_workflow",
+          "search": "$search",
+          "by_ids": "$by_ids",
+          "exclude_id": "$exclude_id"
+        }
+      }
+    },
+    {
+      "name": "storyblok_list_workflow_stage_changes",
+      "description": "History of workflow stage changes of one story: stage, user and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_story": {
+            "type": "string",
+            "description": "Numeric story id."
+          }
+        },
+        "required": [
+          "with_story"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/workflow_stage_changes",
+        "queryParams": {
+          "with_story": "$with_story"
+        }
+      }
+    },
+    {
+      "name": "storyblok_change_workflow_stage",
+      "description": "Move a story to another workflow stage, optionally assigning users or roles and notifying them with a comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "story_id": {
+            "type": "string",
+            "description": "Numeric story id."
+          },
+          "workflow_stage_id": {
+            "type": "integer",
+            "description": "Target workflow stage id."
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "Notify the assigned users (default false)."
+          },
+          "comment": {
+            "type": "object",
+            "description": "Comment for the notification, e.g. {\"message\": \"Ready for review\"}."
+          },
+          "assign": {
+            "type": "object",
+            "description": "Assignees, e.g. {\"user_ids\": [123], \"space_role_ids\": [45]}."
+          },
+          "release_id": {
+            "type": "integer",
+            "description": "Release id when the story is edited in a release."
+          }
+        },
+        "required": [
+          "story_id",
+          "workflow_stage_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/workflow_stage_changes",
+        "bodyMapping": {
+          "workflow_stage_change": {
+            "story_id": "$story_id",
+            "workflow_stage_id": "$workflow_stage_id"
+          },
+          "notify": "$notify",
+          "comment": "$comment",
+          "assign": "$assign",
+          "release_id": "$release_id"
+        }
+      }
+    },
+    {
+      "name": "storyblok_list_releases",
+      "description": "Releases (bundles of story changes published together): id, name, scheduled release_at, released flag and branches to deploy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "integer",
+            "description": "Only releases deploying to this pipeline branch id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/releases",
+        "queryParams": {
+          "branch_id": "$branch_id"
+        }
+      }
+    },
+    {
+      "name": "storyblok_get_release",
+      "description": "One release by id: name, release_at, released state, owner and branches to deploy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "release_id": {
+            "type": "integer",
+            "description": "Numeric release id."
+          }
+        },
+        "required": [
+          "release_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/releases/{release_id}"
+      }
+    },
+    {
+      "name": "storyblok_create_release",
+      "description": "Create a release to collect story changes, optionally scheduled for a time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": "object",
+            "description": "The release, e.g. {\"name\": \"Summer campaign\", \"release_at\": \"2027-06-01 08:00\", \"branches_to_deploy\": [123]}."
+          }
+        },
+        "required": [
+          "release"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/releases",
+        "bodyMapping": {
+          "release": "$release"
+        }
+      }
+    },
+    {
+      "name": "storyblok_update_release",
+      "description": "Rename or reschedule a release, or deploy it now with do_release true, which publishes every story change it holds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "release_id": {
+            "type": "integer",
+            "description": "Numeric release id."
+          },
+          "release": {
+            "type": "object",
+            "description": "Fields to set, e.g. {\"name\": \"New name\", \"release_at\": \"2027-06-02 08:00\"}."
+          },
+          "do_release": {
+            "type": "boolean",
+            "description": "true deploys the release now."
+          }
+        },
+        "required": [
+          "release_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/releases/{release_id}",
+        "bodyMapping": {
+          "release": "$release",
+          "do_release": "$do_release"
+        }
+      }
+    }
+  ]
+}

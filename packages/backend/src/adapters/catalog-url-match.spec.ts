@@ -92,8 +92,7 @@ describe('matchCatalogUrl on the real catalog', () => {
     }));
   const slugsFor = (url: string) => matchCatalogUrl(url, catalog).map((m) => m.slug);
 
-  // Base URLs of custom connectors users built by hand on the Cloud in
-  // October 2026, for APIs the catalog already covered.
+  // Base URLs a custom connector would typically use for APIs the catalog covers.
   it.each([
     ['https://api-v2.fattureincloud.it', 'fatture-in-cloud'],
     ['https://api.printify.com/v1', 'printify'],

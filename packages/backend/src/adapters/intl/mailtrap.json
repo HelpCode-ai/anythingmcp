@@ -1,0 +1,2094 @@
+{
+  "slug": "mailtrap",
+  "name": "Mailtrap",
+  "aliases": [
+    "Mailtrap Email API",
+    "Mailtrap Email Sandbox"
+  ],
+  "description": "Mailtrap email platform: send transactional, bulk and batch emails, test them in Email Sandbox (messages, spam and HTML reports), manage sending domains, suppressions, templates, Email Marketing contacts, lists and campaigns, and read sending stats and email logs.",
+  "region": "intl",
+  "category": "email",
+  "icon": "mailtrap",
+  "docsUrl": "https://docs.mailtrap.io/developers",
+  "instructions": "## Mailtrap\nThis connector uses the **Mailtrap API** for one Mailtrap account: sending transactional and bulk email (Email API), testing email in **Email Sandbox**, sending domains, suppressions, sending stats and email logs, email templates, and **Email Marketing** contacts, lists and campaigns. Mailtrap serves these areas from different hosts and the connector picks the right one per tool: `https://mailtrap.io` for management and reports, `https://send.api.mailtrap.io` for transactional sending, `https://bulk.api.mailtrap.io` for the Bulk stream and `https://sandbox.api.mailtrap.io` for test sends into a sandbox.\n\n**Setup (3 minutes)**\n1. In Mailtrap open **Settings**, **API Tokens** (https://mailtrap.io/api-tokens) and create a token. Give it access to the sending domains (for sending, stats, logs and suppressions), the sandboxes or projects (for Email Sandbox) and, if you use it, Email Marketing. Admin access is needed to change suppressions.\n2. Paste it into `MAILTRAP_API_TOKEN`. It is sent as `Authorization: Bearer <token>` and does not expire until you reset it.\n3. Run `mailtrap_list_accounts` to check the token. A token belongs to one account and every call works on that account, so no account id is needed.\n4. Live sending needs a verified sending domain (`mailtrap_list_sending_domains`); Email Sandbox works without one.\n\n**Sending email**\n- `mailtrap_send_email` sends one transactional email, `mailtrap_send_batch_emails` up to 500 different ones in one call. Marketing and other bulk mail belongs on the Bulk stream: `mailtrap_send_bulk_email` and `mailtrap_send_bulk_batch_emails`.\n- Content is `text`, `html` or both, or a stored template: pass `template_uuid` (the `uuid` from `mailtrap_list_templates`, not the numeric id) with `template_variables`, and leave `subject`, `text`, `html` and `category` out.\n- `from_email` must be on a verified sending domain. `to`, `cc` and `bcc` are lists of `{\"email\", \"name\"}`. Attachments are Base64 in `content`.\n- **Sending is real.** Before any send, batch, bulk send or campaign start, show the user the recipients, sender, subject and content and wait for a clear yes. To try a message out first, send it with `mailtrap_send_sandbox_email` and look at it in the sandbox.\n- A send answers `message_ids`, one per recipient; follow them with `mailtrap_get_email_log`. Batch calls answer 200 even when single messages fail: check `success` and `errors` of each entry in `responses`.\n\n**Email Sandbox (testing)**\n- Find sandboxes with `mailtrap_list_sandboxes` or by project with `mailtrap_list_sandbox_projects`; `mailtrap_get_sandbox` shows one, `mailtrap_create_sandbox` adds one to a project.\n- Send test mail with `mailtrap_send_sandbox_email`: it is caught in the sandbox and never delivered.\n- Inspect: `mailtrap_list_sandbox_messages`, `mailtrap_get_sandbox_message`, `mailtrap_get_sandbox_message_body` (txt, html, htmlsource or raw), `mailtrap_get_sandbox_message_headers`, `mailtrap_list_sandbox_attachments`, `mailtrap_get_sandbox_spam_report` (SpamAssassin score) and `mailtrap_get_sandbox_html_analysis` (email client support).\n- `mailtrap_clean_sandbox` deletes every message in a sandbox; confirm first.\n\n**Domains and deliverability**\n- `mailtrap_list_sending_domains`, `mailtrap_get_sending_domain` (DNS records and their verification), `mailtrap_create_sending_domain`, `mailtrap_send_domain_setup_instructions` (emails the DNS steps to whoever manages DNS).\n- Suppressed addresses get no mail: `mailtrap_list_suppressions`, `mailtrap_create_suppression`, `mailtrap_delete_suppression` (only when the recipient asked for it or the bounce is resolved).\n- What happened to an email: `mailtrap_list_email_logs` (filter by recipient, status, events, category, sent time), then `mailtrap_get_email_log` for its delivery, open, click and bounce events.\n- Totals: `mailtrap_get_sending_stats` for a date range, `mailtrap_get_sending_stats_grouped` split by domain, category, mailbox provider or day. Usage against the plan: `mailtrap_get_billing_usage`.\n\n**Templates**: `mailtrap_list_templates`, `mailtrap_get_template`, `mailtrap_create_template`, `mailtrap_update_template`. Variables use Handlebars, e.g. `{{user_name}}`.\n\n**Email Marketing**\n- Contacts: `mailtrap_list_contacts`, `mailtrap_get_contact` and `mailtrap_update_contact` (by id or email), `mailtrap_create_contact`, `mailtrap_delete_contact`, custom events with `mailtrap_create_contact_event`. Many contacts at once: `mailtrap_import_contacts`, then `mailtrap_get_contact_import` until it is finished.\n- Lists and fields: `mailtrap_list_contact_lists`, `mailtrap_create_contact_list`, `mailtrap_list_contact_fields` (the merge tags used as keys in `fields`).\n- Campaigns: `mailtrap_list_campaigns`, `mailtrap_get_campaign`, `mailtrap_get_campaign_stats`. Build one with `mailtrap_create_campaign` (always a draft) and `mailtrap_update_campaign`, then `mailtrap_schedule_campaign` or `mailtrap_start_campaign`; `mailtrap_cancel_campaign` returns a scheduled campaign to draft. Scheduling and starting email the whole audience: confirm first.\n- Add only contacts who agreed to receive email. To stop mailing someone, unsubscribe them (`unsubscribed: true`) rather than deleting them.\n\n**Reading the answers**: ids of domains, sandboxes, messages, templates, lists and campaigns are integers; contacts, suppressions and email log messages use UUIDs. Times are ISO 8601 in UTC. Stats rates are fractions (0.25 = 25%); stats dates are `YYYY-MM-DD`. Sandbox and template lists leave out SMTP credentials and bodies.\n\n**Paging**\n- Contacts: pass `pagination.next_token` as `token`; stop when it is null. Campaigns: `token` is a page number taken from `pagination.next_token`.\n- Email logs: pass `next_page_cursor` as `search_after`. Suppressions: pass the `id` of the last item as `last_id` (1000 per page). Sandbox messages: 30 per page, use `page` or the last message id as `last_id`.\n\n**Limits**: 150 requests per 10 seconds per token; Contacts 200 per minute, Stats and Suppressions 10 per minute, listing email logs 60 per minute per account. A send takes up to 1000 recipients, a batch up to 500 messages and 50 MB.\n\n**Errors**: 401 `Incorrect API token` (wrong token, or no access to that domain or sandbox), 403 missing permission, 404 unknown id, 422 invalid input with the reason in `errors` (e.g. sender not on a verified domain, campaign not in draft), 429 rate limit.\n\n**Switched off at install**: `mailtrap_delete_suppression`, `mailtrap_clean_sandbox` and `mailtrap_delete_contact`; they cannot be undone, so an admin switches them on when the team needs them.",
+  "prerequisites": "A Mailtrap account and an API token from Settings, API Tokens with access to the domains, sandboxes and features you want to use.",
+  "requiredEnvVars": [
+    "MAILTRAP_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "MAILTRAP_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "mailtrap.io, Settings, API Tokens: create a token and give it access to the sending domains, sandboxes and Email Marketing as needed. It belongs to one account.",
+      "link": "https://mailtrap.io/api-tokens",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste only the token, without spaces, quotes or a Bearer prefix."
+    }
+  },
+  "verifyHints": {
+    "401": "Mailtrap refused the API token (\"Incorrect API token\"). Copy it again from Settings, API Tokens; paste the token itself.",
+    "403": "The token has no permission for this domain, sandbox or feature. Edit its permissions under Settings, API Tokens.",
+    "429": "Mailtrap rate limit reached (150 requests per 10 seconds per token; stats and suppressions 10 per minute). Wait and try again."
+  },
+  "probe": {
+    "tool": "mailtrap_list_accounts"
+  },
+  "connector": {
+    "name": "Mailtrap API",
+    "type": "REST",
+    "baseUrl": "https://mailtrap.io",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MAILTRAP_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/api/accounts"
+  },
+  "tools": [
+    {
+      "name": "mailtrap_list_accounts",
+      "description": "Mailtrap accounts the API token can reach, with id, name and access_levels (1000 owner, 100 admin, 10 viewer). Needs no parameters; use it to check the token.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/accounts"
+      }
+    },
+    {
+      "name": "mailtrap_get_billing_usage",
+      "description": "Usage of the current billing cycle: plan names and sent or stored message counts against their limits for Email Sending, Email Sandbox and Email Marketing.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/billing/usage"
+      }
+    },
+    {
+      "name": "mailtrap_send_email",
+      "description": "Send one transactional email through the Email API (send.api.mailtrap.io): to up to 1000 recipients, with text and/or HTML, or from a stored template with variables. Real email: confirm recipients, subject and content with the user first. Returns message_ids, one per recipient.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_email": {
+            "type": "string",
+            "description": "Sender address. For live sending it must be on a verified sending domain of the account (see mailtrap_list_sending_domains)."
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Display name of the sender."
+          },
+          "to": {
+            "type": "array",
+            "description": "Recipients, at most 1000: [{\"email\": \"jane@example.com\", \"name\": \"Jane\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "cc": {
+            "type": "array",
+            "description": "Cc recipients, same shape as to.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "description": "Bcc recipients, same shape as to.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "reply_to": {
+            "type": "object",
+            "description": "Reply-To address: {\"email\": \"support@example.com\", \"name\": \"Support\"}."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line. Leave out when sending with template_uuid."
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain-text body. text, html or both are required unless template_uuid is given."
+          },
+          "html": {
+            "type": "string",
+            "description": "HTML body."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category for statistics and logs, e.g. \"Password reset\" (max 255 characters). Not allowed together with template_uuid."
+          },
+          "template_uuid": {
+            "type": "string",
+            "description": "UUID of a Mailtrap email template (mailtrap_list_templates, field uuid). Subject and bodies then come from the template; leave subject, text, html and category out."
+          },
+          "template_variables": {
+            "type": "object",
+            "description": "Values for the template variables, e.g. {\"user_name\": \"Jane\", \"reset_link\": \"https://...\"}."
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Attachments: [{\"filename\": \"invoice.pdf\", \"content\": \"<Base64>\", \"type\": \"application/pdf\", \"disposition\": \"attachment\"}]. Use disposition \"inline\" with content_id to embed an image referenced as cid:<content_id>.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "headers": {
+            "type": "object",
+            "description": "Extra MIME headers as string pairs, e.g. {\"X-Message-Source\": \"app\"}."
+          },
+          "custom_variables": {
+            "type": "object",
+            "description": "Your own string values stored with the message and sent back in webhooks and email logs, e.g. {\"order_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "from_email",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://send.api.mailtrap.io/api/send",
+        "bodyMapping": {
+          "from": {
+            "email": "$from_email",
+            "name": "$from_name"
+          },
+          "to": "$to",
+          "cc": "$cc",
+          "bcc": "$bcc",
+          "reply_to": "$reply_to",
+          "subject": "$subject",
+          "text": "$text",
+          "html": "$html",
+          "category": "$category",
+          "template_uuid": "$template_uuid",
+          "template_variables": "$template_variables",
+          "attachments": "$attachments",
+          "headers": "$headers",
+          "custom_variables": "$custom_variables"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_send_batch_emails",
+      "description": "Send up to 500 different transactional emails in one call (send.api.mailtrap.io/api/batch): shared fields in base, one entry per message in requests. Real email: confirm first. Answers 200 even when single messages fail; check success and errors of every entry in responses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "base": {
+            "type": "object",
+            "description": "Fields shared by every message: from, reply_to, subject, text, html, category, template_uuid, template_variables, attachments, headers, custom_variables. Example: {\"from\": {\"email\": \"news@example.com\", \"name\": \"Example\"}, \"template_uuid\": \"...\"}."
+          },
+          "requests": {
+            "type": "array",
+            "description": "The messages, at most 500 (50 MB in total). Each takes the same fields as base plus to, cc and bcc; a field set here overrides base. Example: [{\"to\": [{\"email\": \"jane@example.com\"}], \"template_variables\": {\"name\": \"Jane\"}}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://send.api.mailtrap.io/api/batch",
+        "bodyMapping": {
+          "base": "$base",
+          "requests": "$requests"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_send_bulk_email",
+      "description": "Send one marketing or bulk email through the Bulk stream (bulk.api.mailtrap.io), which keeps promotional traffic apart from transactional mail. Same fields as mailtrap_send_email. Real email: confirm first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_email": {
+            "type": "string",
+            "description": "Sender address. For live sending it must be on a verified sending domain of the account (see mailtrap_list_sending_domains)."
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Display name of the sender."
+          },
+          "to": {
+            "type": "array",
+            "description": "Recipients, at most 1000: [{\"email\": \"jane@example.com\", \"name\": \"Jane\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "cc": {
+            "type": "array",
+            "description": "Cc recipients, same shape as to.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "description": "Bcc recipients, same shape as to.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "reply_to": {
+            "type": "object",
+            "description": "Reply-To address: {\"email\": \"support@example.com\", \"name\": \"Support\"}."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line. Leave out when sending with template_uuid."
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain-text body. text, html or both are required unless template_uuid is given."
+          },
+          "html": {
+            "type": "string",
+            "description": "HTML body."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category for statistics and logs, e.g. \"Password reset\" (max 255 characters). Not allowed together with template_uuid."
+          },
+          "template_uuid": {
+            "type": "string",
+            "description": "UUID of a Mailtrap email template (mailtrap_list_templates, field uuid). Subject and bodies then come from the template; leave subject, text, html and category out."
+          },
+          "template_variables": {
+            "type": "object",
+            "description": "Values for the template variables, e.g. {\"user_name\": \"Jane\", \"reset_link\": \"https://...\"}."
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Attachments: [{\"filename\": \"invoice.pdf\", \"content\": \"<Base64>\", \"type\": \"application/pdf\", \"disposition\": \"attachment\"}]. Use disposition \"inline\" with content_id to embed an image referenced as cid:<content_id>.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "headers": {
+            "type": "object",
+            "description": "Extra MIME headers as string pairs, e.g. {\"X-Message-Source\": \"app\"}."
+          },
+          "custom_variables": {
+            "type": "object",
+            "description": "Your own string values stored with the message and sent back in webhooks and email logs, e.g. {\"order_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "from_email",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://bulk.api.mailtrap.io/api/send",
+        "bodyMapping": {
+          "from": {
+            "email": "$from_email",
+            "name": "$from_name"
+          },
+          "to": "$to",
+          "cc": "$cc",
+          "bcc": "$bcc",
+          "reply_to": "$reply_to",
+          "subject": "$subject",
+          "text": "$text",
+          "html": "$html",
+          "category": "$category",
+          "template_uuid": "$template_uuid",
+          "template_variables": "$template_variables",
+          "attachments": "$attachments",
+          "headers": "$headers",
+          "custom_variables": "$custom_variables"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_send_bulk_batch_emails",
+      "description": "Send up to 500 different bulk (marketing) emails in one call through the Bulk stream (bulk.api.mailtrap.io/api/batch). Same shape as mailtrap_send_batch_emails. Real email: confirm first; check every entry in responses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "base": {
+            "type": "object",
+            "description": "Fields shared by every message: from, reply_to, subject, text, html, category, template_uuid, template_variables, attachments, headers, custom_variables. Example: {\"from\": {\"email\": \"news@example.com\", \"name\": \"Example\"}, \"template_uuid\": \"...\"}."
+          },
+          "requests": {
+            "type": "array",
+            "description": "The messages, at most 500 (50 MB in total). Each takes the same fields as base plus to, cc and bcc; a field set here overrides base. Example: [{\"to\": [{\"email\": \"jane@example.com\"}], \"template_variables\": {\"name\": \"Jane\"}}].",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://bulk.api.mailtrap.io/api/batch",
+        "bodyMapping": {
+          "base": "$base",
+          "requests": "$requests"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_list_sending_domains",
+      "description": "Sending domains of the account with their id, DNS verification and compliance status and tracking settings. DNS records are left out; mailtrap_get_sending_domain has them.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/domains"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "data": {
+              "$from": "$.data[*]",
+              "$select": {
+                "id": "id",
+                "domain_name": "domain_name",
+                "demo": "demo",
+                "compliance_status": "compliance_status",
+                "dns_verified": "dns_verified",
+                "dns_verified_at": "dns_verified_at",
+                "open_tracking_enabled": "open_tracking_enabled",
+                "click_tracking_enabled": "click_tracking_enabled",
+                "inbound_enabled": "inbound_enabled"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_sending_domain",
+      "description": "One sending domain with the DNS records to publish (SPF, DKIM, DMARC, return path) and whether each is verified, plus compliance status and tracking and alert settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "integer",
+            "description": "Domain id from mailtrap_list_sending_domains."
+          }
+        },
+        "required": [
+          "domain_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/domains/{domain_id}"
+      }
+    },
+    {
+      "name": "mailtrap_create_sending_domain",
+      "description": "Add a sending domain. Mailtrap answers with the DNS records to publish; sending works once they are verified and the compliance check passed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_name": {
+            "type": "string",
+            "description": "The domain or subdomain to send from, e.g. mail.example.com."
+          }
+        },
+        "required": [
+          "domain_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/domains",
+        "bodyMapping": {
+          "domain": {
+            "domain_name": "$domain_name"
+          }
+        }
+      }
+    },
+    {
+      "name": "mailtrap_send_domain_setup_instructions",
+      "description": "Email the DNS setup instructions of a sending domain to someone, e.g. the person who manages DNS.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain_id": {
+            "type": "integer",
+            "description": "Domain id from mailtrap_list_sending_domains."
+          },
+          "email": {
+            "type": "string",
+            "description": "Address that receives the instructions."
+          }
+        },
+        "required": [
+          "domain_id",
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/domains/{domain_id}/send_setup_instructions",
+        "bodyMapping": {
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_list_suppressions",
+      "description": "Addresses Mailtrap no longer sends to (hard bounce, unsubscription, spam complaint, manual import), up to 1000 per call, with the message that caused it. Filter by exact email or creation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact email address (case-insensitive)."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Created at or before, ISO 8601."
+          },
+          "last_id": {
+            "type": "string",
+            "description": "Id (UUID) of the last suppression of the previous page, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/suppressions",
+        "queryParams": {
+          "email": "$email",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "last_id": "$last_id"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_create_suppression",
+      "description": "Stop sending to an address on one domain and stream. Needs admin access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Address to suppress."
+          },
+          "domain_id": {
+            "type": "integer",
+            "description": "Sending domain id (mailtrap_list_sending_domains)."
+          },
+          "sending_stream": {
+            "type": "string",
+            "description": "Stream to suppress it on.",
+            "enum": [
+              "transactional",
+              "bulk"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Reason; manual import when left out.",
+            "enum": [
+              "hard bounce",
+              "unsubscription",
+              "spam complaint",
+              "manual import"
+            ]
+          }
+        },
+        "required": [
+          "email",
+          "domain_id",
+          "sending_stream"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/suppressions",
+        "bodyMapping": {
+          "email": "$email",
+          "domain_id": "$domain_id",
+          "sending_stream": "$sending_stream",
+          "type": "$type"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_delete_suppression",
+      "description": "Remove a suppression so the address receives email again. Only do this when the recipient asked for it or the bounce is resolved. Needs admin access.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "suppression_id": {
+            "type": "string",
+            "description": "Suppression id (UUID) from mailtrap_list_suppressions."
+          }
+        },
+        "required": [
+          "suppression_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/suppressions/{suppression_id}"
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "mailtrap_get_sending_stats",
+      "description": "Sending totals for a date range: delivery, bounce, open, click and spam counts and rates, optionally limited to domains, streams, categories or mailbox providers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "domain_ids": {
+            "type": "array",
+            "description": "Only these sending domain ids (mailtrap_list_sending_domains).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "sending_streams": {
+            "type": "array",
+            "description": "Only these streams.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "transactional",
+                "bulk"
+              ]
+            }
+          },
+          "categories": {
+            "type": "array",
+            "description": "Only these categories, e.g. [\"Password reset\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "email_service_providers": {
+            "type": "array",
+            "description": "Only these recipient mailbox providers, e.g. [\"Google\", \"Microsoft\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/stats",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "domain_ids[]": "$domain_ids",
+          "sending_streams[]": "$sending_streams",
+          "categories[]": "$categories",
+          "email_service_providers[]": "$email_service_providers"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_sending_stats_grouped",
+      "description": "The same sending stats split by sending domain, category, recipient mailbox provider or day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_by": {
+            "type": "string",
+            "description": "How to split the stats.",
+            "enum": [
+              "domains",
+              "categories",
+              "email_service_providers",
+              "date"
+            ]
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "domain_ids": {
+            "type": "array",
+            "description": "Only these sending domain ids (mailtrap_list_sending_domains).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "sending_streams": {
+            "type": "array",
+            "description": "Only these streams.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "transactional",
+                "bulk"
+              ]
+            }
+          },
+          "categories": {
+            "type": "array",
+            "description": "Only these categories, e.g. [\"Password reset\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "email_service_providers": {
+            "type": "array",
+            "description": "Only these recipient mailbox providers, e.g. [\"Google\", \"Microsoft\"].",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "group_by",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/stats/{group_by}",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "domain_ids[]": "$domain_ids",
+          "sending_streams[]": "$sending_streams",
+          "categories[]": "$categories",
+          "email_service_providers[]": "$email_service_providers"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_list_email_logs",
+      "description": "Sent messages of the account, newest first, with status, recipient, subject, category, opens and clicks. Filter by sent time and by filters; page with next_page_cursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sent_after": {
+            "type": "string",
+            "description": "Sent at or after, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "sent_before": {
+            "type": "string",
+            "description": "Sent at or before, ISO 8601."
+          },
+          "filters": {
+            "type": "object",
+            "description": "Filters keyed by field, each {\"operator\": ..., \"value\": ...}: to, from, subject (ci_equal, ci_not_equal, ci_contain, ci_not_contain), status (equal, not_equal: delivered, not_delivered, enqueued, opted_out), events (include_event, not_include_event: delivery, open, click, bounce, spam, unsubscribe, soft_bounce, reject, suspension), category, domain_id, sending_stream (equal, not_equal). Example: {\"to\": {\"operator\": \"ci_equal\", \"value\": \"jane@example.com\"}, \"status\": {\"operator\": \"equal\", \"value\": \"not_delivered\"}}. Use one value per filter."
+          },
+          "search_after": {
+            "type": "string",
+            "description": "next_page_cursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/email_logs",
+        "queryParams": {
+          "filters[sent_after]": "$sent_after",
+          "filters[sent_before]": "$sent_before",
+          "filters": "$filters",
+          "search_after": "$search_after"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_email_log",
+      "description": "One sent message with its delivery events (delivery, open, click, bounce with the provider response), custom variables, template and a link to the raw message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id (UUID) from mailtrap_list_email_logs or from a send result."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/email_logs/{message_id}"
+      }
+    },
+    {
+      "name": "mailtrap_list_sandbox_projects",
+      "description": "Email Sandbox projects with the sandboxes (test inboxes) in each.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/projects"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].sandboxes[*].password",
+            "[*].sandboxes[*].username"
+          ]
+        }
+      }
+    },
+    {
+      "name": "mailtrap_list_sandboxes",
+      "description": "All sandboxes (test inboxes) with id, name, project, message and unread counts and the sandbox email address. SMTP credentials are left out.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].password",
+            "[*].username"
+          ]
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_sandbox",
+      "description": "One sandbox: name, project, message counts, size limits, SMTP host and ports and its email address. SMTP credentials are left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          }
+        },
+        "required": [
+          "sandbox_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes/{sandbox_id}"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "password",
+            "username"
+          ]
+        }
+      }
+    },
+    {
+      "name": "mailtrap_list_sandbox_messages",
+      "description": "Messages caught in a sandbox, newest first, 30 per page: id, subject, sender, recipient, sent time, size and read state (SMTP details and blacklist reports are left out). Search by subject or recipient.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          },
+          "search": {
+            "type": "string",
+            "description": "Matches subject, to_email and to_name."
+          },
+          "last_id": {
+            "type": "integer",
+            "description": "Returns the page of messages older than this message id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1."
+          }
+        },
+        "required": [
+          "sandbox_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes/{sandbox_id}/messages",
+        "queryParams": {
+          "search": "$search",
+          "last_id": "$last_id",
+          "page": "$page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].smtp_information",
+            "[*].blacklists_report_info"
+          ]
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_sandbox_message",
+      "description": "One sandbox message: sender, recipient, subject, size, SMTP details and blacklist report summary.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "Message id from mailtrap_list_sandbox_messages."
+          }
+        },
+        "required": [
+          "sandbox_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes/{sandbox_id}/messages/{message_id}"
+      }
+    },
+    {
+      "name": "mailtrap_get_sandbox_message_body",
+      "description": "The body of a sandbox message: txt (plain text), html (sanitized for preview), htmlsource (the HTML as sent) or raw (the whole MIME message).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "Message id from mailtrap_list_sandbox_messages."
+          },
+          "format": {
+            "type": "string",
+            "description": "Which body.",
+            "enum": [
+              "txt",
+              "html",
+              "htmlsource",
+              "raw"
+            ]
+          }
+        },
+        "required": [
+          "sandbox_id",
+          "message_id",
+          "format"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes/{sandbox_id}/messages/{message_id}/body.{format}"
+      }
+    },
+    {
+      "name": "mailtrap_get_sandbox_message_headers",
+      "description": "The mail headers of a sandbox message (From, To, Subject, Message-ID, List-Unsubscribe, ...).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "Message id from mailtrap_list_sandbox_messages."
+          }
+        },
+        "required": [
+          "sandbox_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes/{sandbox_id}/messages/{message_id}/mail_headers"
+      }
+    },
+    {
+      "name": "mailtrap_get_sandbox_spam_report",
+      "description": "SpamAssassin report of a sandbox message: total score, threshold and the rules that matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "Message id from mailtrap_list_sandbox_messages."
+          }
+        },
+        "required": [
+          "sandbox_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes/{sandbox_id}/messages/{message_id}/spam_report"
+      }
+    },
+    {
+      "name": "mailtrap_get_sandbox_html_analysis",
+      "description": "HTML check of a sandbox message: which elements and CSS properties are unsupported by which email clients, with an overall support score.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "Message id from mailtrap_list_sandbox_messages."
+          }
+        },
+        "required": [
+          "sandbox_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes/{sandbox_id}/messages/{message_id}/analyze"
+      }
+    },
+    {
+      "name": "mailtrap_list_sandbox_attachments",
+      "description": "Attachments of a sandbox message with filename, content type, size and download path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          },
+          "message_id": {
+            "type": "integer",
+            "description": "Message id from mailtrap_list_sandbox_messages."
+          },
+          "attachment_type": {
+            "type": "string",
+            "description": "Only this disposition, e.g. inline or attachment."
+          }
+        },
+        "required": [
+          "sandbox_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sandboxes/{sandbox_id}/messages/{message_id}/attachments",
+        "queryParams": {
+          "attachment_type": "$attachment_type"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_send_sandbox_email",
+      "description": "Send a test email into a sandbox (sandbox.api.mailtrap.io): it is caught there and never reaches the recipients, so it is safe for trying templates and content. Same fields as mailtrap_send_email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          },
+          "from_email": {
+            "type": "string",
+            "description": "Sender address; any address works in a sandbox."
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Display name of the sender."
+          },
+          "to": {
+            "type": "array",
+            "description": "Recipients, at most 1000: [{\"email\": \"jane@example.com\", \"name\": \"Jane\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "cc": {
+            "type": "array",
+            "description": "Cc recipients, same shape as to.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "description": "Bcc recipients, same shape as to.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "reply_to": {
+            "type": "object",
+            "description": "Reply-To address: {\"email\": \"support@example.com\", \"name\": \"Support\"}."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line. Leave out when sending with template_uuid."
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain-text body. text, html or both are required unless template_uuid is given."
+          },
+          "html": {
+            "type": "string",
+            "description": "HTML body."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category for statistics and logs, e.g. \"Password reset\" (max 255 characters). Not allowed together with template_uuid."
+          },
+          "template_uuid": {
+            "type": "string",
+            "description": "UUID of a Mailtrap email template (mailtrap_list_templates, field uuid). Subject and bodies then come from the template; leave subject, text, html and category out."
+          },
+          "template_variables": {
+            "type": "object",
+            "description": "Values for the template variables, e.g. {\"user_name\": \"Jane\", \"reset_link\": \"https://...\"}."
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Attachments: [{\"filename\": \"invoice.pdf\", \"content\": \"<Base64>\", \"type\": \"application/pdf\", \"disposition\": \"attachment\"}]. Use disposition \"inline\" with content_id to embed an image referenced as cid:<content_id>.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "headers": {
+            "type": "object",
+            "description": "Extra MIME headers as string pairs, e.g. {\"X-Message-Source\": \"app\"}."
+          },
+          "custom_variables": {
+            "type": "object",
+            "description": "Your own string values stored with the message and sent back in webhooks and email logs, e.g. {\"order_id\": \"123\"}."
+          }
+        },
+        "required": [
+          "sandbox_id",
+          "from_email",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://sandbox.api.mailtrap.io/api/send/{sandbox_id}",
+        "bodyMapping": {
+          "from": {
+            "email": "$from_email",
+            "name": "$from_name"
+          },
+          "to": "$to",
+          "cc": "$cc",
+          "bcc": "$bcc",
+          "reply_to": "$reply_to",
+          "subject": "$subject",
+          "text": "$text",
+          "html": "$html",
+          "category": "$category",
+          "template_uuid": "$template_uuid",
+          "template_variables": "$template_variables",
+          "attachments": "$attachments",
+          "headers": "$headers",
+          "custom_variables": "$custom_variables"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_create_sandbox",
+      "description": "Create a sandbox (test inbox) in a project; the answer carries its id and email address, SMTP credentials left out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Project id from mailtrap_list_sandbox_projects."
+          },
+          "name": {
+            "type": "string",
+            "description": "Sandbox name."
+          }
+        },
+        "required": [
+          "project_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/projects/{project_id}/sandboxes",
+        "bodyMapping": {
+          "sandbox": {
+            "name": "$name"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "password",
+            "username"
+          ]
+        }
+      }
+    },
+    {
+      "name": "mailtrap_clean_sandbox",
+      "description": "Delete every message in a sandbox. Cannot be undone; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sandbox_id": {
+            "type": "integer",
+            "description": "Sandbox id from mailtrap_list_sandboxes."
+          }
+        },
+        "required": [
+          "sandbox_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/sandboxes/{sandbox_id}/clean"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "password",
+            "username"
+          ]
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "mailtrap_list_contacts",
+      "description": "Email Marketing contacts, 25 per page by default (at most 50), with id, email, status, list ids and fields. Filter by list, status or part of the email; page with pagination.next_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "integer",
+            "description": "Only contacts in this list (mailtrap_list_contact_lists)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only this status.",
+            "enum": [
+              "subscribed",
+              "unsubscribed"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "description": "Part of the email address (case-insensitive)."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Contacts per page, 1-50 (default 25).",
+            "maximum": 50
+          },
+          "token": {
+            "type": "string",
+            "description": "pagination.next_token of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/contacts",
+        "queryParams": {
+          "list_id": "$list_id",
+          "status": "$status",
+          "email": "$email",
+          "per_page": "$per_page",
+          "token": "$token"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_contact",
+      "description": "One contact by id or email: status, lists, fields and timestamps.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_identifier": {
+            "type": "string",
+            "description": "The contact id (UUID) or the contact's email address, as returned by mailtrap_list_contacts."
+          }
+        },
+        "required": [
+          "contact_identifier"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/contacts/{contact_identifier}",
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "mailtrap_create_contact",
+      "description": "Add a contact, optionally with fields (by merge tag) and lists. Add only people who agreed to receive email.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Field values keyed by merge tag (mailtrap_list_contact_fields), e.g. {\"first_name\": \"Jane\", \"company\": \"Acme\"}."
+          },
+          "list_ids": {
+            "type": "array",
+            "description": "Lists to add the contact to.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/contacts",
+        "bodyMapping": {
+          "contact": {
+            "email": "$email",
+            "fields": "$fields",
+            "list_ids": "$list_ids"
+          }
+        }
+      }
+    },
+    {
+      "name": "mailtrap_update_contact",
+      "description": "Change a contact: email, fields, list membership or subscription status. Answers whether it was updated or created.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_identifier": {
+            "type": "string",
+            "description": "The contact id (UUID) or the contact's email address, as returned by mailtrap_list_contacts."
+          },
+          "email": {
+            "type": "string",
+            "description": "The contact's email address; Mailtrap requires it on every update, so pass the current one when it does not change."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Field values to set, keyed by merge tag."
+          },
+          "list_ids_included": {
+            "type": "array",
+            "description": "Lists to add the contact to.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "list_ids_excluded": {
+            "type": "array",
+            "description": "Lists to remove the contact from.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "unsubscribed": {
+            "type": "boolean",
+            "description": "true unsubscribes the contact, false subscribes it again."
+          }
+        },
+        "required": [
+          "contact_identifier",
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/contacts/{contact_identifier}",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "contact": {
+            "email": "$email",
+            "fields": "$fields",
+            "list_ids_included": "$list_ids_included",
+            "list_ids_excluded": "$list_ids_excluded",
+            "unsubscribed": "$unsubscribed"
+          }
+        }
+      }
+    },
+    {
+      "name": "mailtrap_delete_contact",
+      "description": "Delete a contact for good, e.g. on an erasure request. To stop mailing someone, unsubscribe them with mailtrap_update_contact instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_identifier": {
+            "type": "string",
+            "description": "The contact id (UUID) or the contact's email address, as returned by mailtrap_list_contacts."
+          }
+        },
+        "required": [
+          "contact_identifier"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/contacts/{contact_identifier}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "mailtrap_create_contact_event",
+      "description": "Record a custom event for a contact (e.g. purchase, trial_started) with parameters, for automations and segments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_identifier": {
+            "type": "string",
+            "description": "The contact id (UUID) or the contact's email address, as returned by mailtrap_list_contacts."
+          },
+          "name": {
+            "type": "string",
+            "description": "Event name, at most 255 characters."
+          },
+          "params": {
+            "type": "object",
+            "description": "Event parameters, string keys with string, number or boolean values, e.g. {\"plan\": \"pro\", \"amount\": 49}."
+          }
+        },
+        "required": [
+          "contact_identifier",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/contacts/{contact_identifier}/events",
+        "encodePathParams": true,
+        "bodyMapping": {
+          "name": "$name",
+          "params": "$params"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_list_contact_lists",
+      "description": "Contact lists with id and name; search filters by the start of the name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Start of the list name (case-insensitive)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/contacts/lists",
+        "queryParams": {
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_create_contact_list",
+      "description": "Create an Email Marketing contact list; add contacts with list_ids or list_ids_included afterwards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "List name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/contacts/lists",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_list_contact_fields",
+      "description": "Contact fields with id, name, data type and the merge tag used in contact fields and templates.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/contacts/fields"
+      }
+    },
+    {
+      "name": "mailtrap_import_contacts",
+      "description": "Create or update up to 50,000 contacts in one asynchronous import, matched by email. Returns an import id; follow it with mailtrap_get_contact_import.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "description": "Contacts: [{\"email\": \"jane@example.com\", \"fields\": {\"first_name\": \"Jane\"}, \"list_ids_included\": [1], \"list_ids_excluded\": [2]}]. Dates in fields as YYYY-MM-DD.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "contacts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/contacts/imports",
+        "bodyMapping": {
+          "contacts": "$contacts"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_contact_import",
+      "description": "Status of a contact import (created, started, finished, failed) with the counts of created and updated contacts and those over the plan limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "import_id": {
+            "type": "integer",
+            "description": "Import id from mailtrap_import_contacts."
+          }
+        },
+        "required": [
+          "import_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/contacts/imports/{import_id}"
+      }
+    },
+    {
+      "name": "mailtrap_list_templates",
+      "description": "Email templates of the account with id, uuid (used to send), name, category and subject. Bodies are left out; mailtrap_get_template has them.",
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/email_templates"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "[*].body_html",
+            "[*].body_text"
+          ]
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_template",
+      "description": "One email template with subject, HTML and text body (Handlebars variables such as {{user_name}}).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Template id (not the uuid) from mailtrap_list_templates."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/email_templates/{template_id}"
+      }
+    },
+    {
+      "name": "mailtrap_create_template",
+      "description": "Create an email template. Variables use Handlebars, e.g. {{user_name}}; send it with template_uuid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Template name."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category, e.g. \"Password reset\"."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line, may hold variables."
+          },
+          "body_html": {
+            "type": "string",
+            "description": "HTML body."
+          },
+          "body_text": {
+            "type": "string",
+            "description": "Plain-text body."
+          }
+        },
+        "required": [
+          "name",
+          "category",
+          "subject"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/email_templates",
+        "bodyMapping": {
+          "email_template": {
+            "name": "$name",
+            "category": "$category",
+            "subject": "$subject",
+            "body_html": "$body_html",
+            "body_text": "$body_text"
+          }
+        }
+      }
+    },
+    {
+      "name": "mailtrap_update_template",
+      "description": "Change an email template; only the fields you pass change. Emails sent afterwards with its uuid use the new version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Template id from mailtrap_list_templates."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "category": {
+            "type": "string",
+            "description": "New category."
+          },
+          "subject": {
+            "type": "string",
+            "description": "New subject."
+          },
+          "body_html": {
+            "type": "string",
+            "description": "New HTML body."
+          },
+          "body_text": {
+            "type": "string",
+            "description": "New plain-text body."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/email_templates/{template_id}",
+        "bodyMapping": {
+          "email_template": {
+            "name": "$name",
+            "category": "$category",
+            "subject": "$subject",
+            "body_html": "$body_html",
+            "body_text": "$body_text"
+          }
+        }
+      }
+    },
+    {
+      "name": "mailtrap_list_campaigns",
+      "description": "Email Marketing campaigns, newest first, with id, name, state and schedule. Search by name; page with token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the campaign name."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Campaigns per page, 1-100 (default 50).",
+            "maximum": 100
+          },
+          "token": {
+            "type": "integer",
+            "description": "Page number from pagination.next_token (default 1)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/email_campaigns",
+        "queryParams": {
+          "search": "$search",
+          "per_page": "$per_page",
+          "token": "$token"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_get_campaign",
+      "description": "One campaign: state, sender, audience lists and segments, delivery mode, template and schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from mailtrap_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/email_campaigns/{campaign_id}"
+      }
+    },
+    {
+      "name": "mailtrap_get_campaign_stats",
+      "description": "Results of a campaign: delivered, opened, clicked, bounced, spam and unsubscribed counts and rates, optionally for a date window.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from mailtrap_list_campaigns."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "From this day, YYYY-MM-DD (default: when it last started)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "To this day, YYYY-MM-DD (default: today)."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/email_campaigns/{campaign_id}/stats",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_create_campaign",
+      "description": "Create a campaign as a draft: sender, audience, subject and design. Nothing is sent; schedule or start it afterwards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Campaign name."
+          },
+          "domain_id": {
+            "type": "integer",
+            "description": "Id of the verified sending domain the campaign is sent from (mailtrap_list_sending_domains)."
+          },
+          "from_local_part": {
+            "type": "string",
+            "description": "Part of the From address before the @, e.g. \"news\"; the domain comes from domain_id."
+          },
+          "from_display_name": {
+            "type": "string",
+            "description": "Display name in the From header."
+          },
+          "reply_to": {
+            "type": "object",
+            "description": "Reply-To address in parts: {\"display_name\": \"Support\", \"local_part\": \"support\", \"domain\": \"example.com\"}."
+          },
+          "delivery_mode": {
+            "type": "string",
+            "description": "rapid sends as fast as possible; gradual throttles to delivery_options.emails_per_hour.",
+            "enum": [
+              "rapid",
+              "gradual"
+            ]
+          },
+          "delivery_options": {
+            "type": "object",
+            "description": "Throttling for gradual delivery: {\"emails_per_hour\": 1000}."
+          },
+          "contact_list_ids": {
+            "type": "array",
+            "description": "Contact list ids to send to (mailtrap_list_contact_lists). This is the full set: lists left out are removed.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "contact_segment_ids": {
+            "type": "array",
+            "description": "Contact segment ids to send to; also the full set.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line; merge tags such as {{first_name}} work."
+          },
+          "body_html": {
+            "type": "string",
+            "description": "HTML design. Needed before the campaign can be scheduled or started; include a link whose href contains __unsubscribe_url__."
+          },
+          "body_text": {
+            "type": "string",
+            "description": "Plain-text version."
+          }
+        },
+        "required": [
+          "name",
+          "domain_id",
+          "from_local_part",
+          "subject"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/email_campaigns",
+        "bodyMapping": {
+          "name": "$name",
+          "domain_id": "$domain_id",
+          "from_local_part": "$from_local_part",
+          "from_display_name": "$from_display_name",
+          "reply_to": "$reply_to",
+          "delivery_mode": "$delivery_mode",
+          "delivery_options": "$delivery_options",
+          "contact_list_ids": "$contact_list_ids",
+          "contact_segment_ids": "$contact_segment_ids",
+          "template_attributes": {
+            "subject": "$subject",
+            "body_html": "$body_html",
+            "body_text": "$body_text"
+          }
+        }
+      }
+    },
+    {
+      "name": "mailtrap_update_campaign",
+      "description": "Change a draft campaign; only the fields you pass change. Pass template_attributes to edit subject or design. Scheduled or sending campaigns answer 422.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from mailtrap_list_campaigns."
+          },
+          "name": {
+            "type": "string",
+            "description": "Campaign name."
+          },
+          "domain_id": {
+            "type": "integer",
+            "description": "Id of the verified sending domain the campaign is sent from (mailtrap_list_sending_domains)."
+          },
+          "from_local_part": {
+            "type": "string",
+            "description": "Part of the From address before the @, e.g. \"news\"; the domain comes from domain_id."
+          },
+          "from_display_name": {
+            "type": "string",
+            "description": "Display name in the From header."
+          },
+          "reply_to": {
+            "type": "object",
+            "description": "Reply-To address in parts: {\"display_name\": \"Support\", \"local_part\": \"support\", \"domain\": \"example.com\"}."
+          },
+          "delivery_mode": {
+            "type": "string",
+            "description": "rapid sends as fast as possible; gradual throttles to delivery_options.emails_per_hour.",
+            "enum": [
+              "rapid",
+              "gradual"
+            ]
+          },
+          "delivery_options": {
+            "type": "object",
+            "description": "Throttling for gradual delivery: {\"emails_per_hour\": 1000}."
+          },
+          "contact_list_ids": {
+            "type": "array",
+            "description": "Contact list ids to send to (mailtrap_list_contact_lists). This is the full set: lists left out are removed.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "contact_segment_ids": {
+            "type": "array",
+            "description": "Contact segment ids to send to; also the full set.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "template_attributes": {
+            "type": "object",
+            "description": "Subject and design changes: {\"subject\": \"...\", \"body_html\": \"...\", \"body_text\": \"...\"}; left-out keys keep their value."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/email_campaigns/{campaign_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "domain_id": "$domain_id",
+          "from_local_part": "$from_local_part",
+          "from_display_name": "$from_display_name",
+          "reply_to": "$reply_to",
+          "delivery_mode": "$delivery_mode",
+          "delivery_options": "$delivery_options",
+          "contact_list_ids": "$contact_list_ids",
+          "contact_segment_ids": "$contact_segment_ids",
+          "template_attributes": "$template_attributes"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_schedule_campaign",
+      "description": "Schedule a draft campaign to go out at a set time, at most one month ahead. It will email the whole audience: confirm the campaign, audience and time with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from mailtrap_list_campaigns."
+          },
+          "datetime": {
+            "type": "string",
+            "description": "When to send, ISO 8601 with time zone, e.g. 2026-11-05T09:00:00Z."
+          }
+        },
+        "required": [
+          "campaign_id",
+          "datetime"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/email_campaigns/{campaign_id}/schedule",
+        "bodyMapping": {
+          "datetime": "$datetime"
+        }
+      }
+    },
+    {
+      "name": "mailtrap_start_campaign",
+      "description": "Start sending a draft campaign now to its whole audience. Cannot be undone once mail has gone out: confirm the campaign and audience with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from mailtrap_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/email_campaigns/{campaign_id}/start"
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "mailtrap_cancel_campaign",
+      "description": "Cancel a scheduled campaign before it goes out; it goes back to draft and can be edited again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "integer",
+            "description": "Campaign id from mailtrap_list_campaigns."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/email_campaigns/{campaign_id}/cancel"
+      }
+    }
+  ]
+}

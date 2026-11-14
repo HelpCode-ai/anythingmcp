@@ -1,11 +1,11 @@
 {
   "name": "anythingmcp",
-  "version": "0.48.0",
-  "description": "Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 545 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).",
+  "version": "0.54.0",
+  "description": "Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 732 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).",
   "private": true,
   "license": "AGPL-3.0-only",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.15"
   },
   "workspaces": [
     "packages/backend",
@@ -42,6 +42,7 @@
     "rxjs": "7.8.1",
     "mysql2": "^3.24.4",
     "deepmerge-ts": "^8.0.2",
-    "shell-quote": "^1.11.0"
+    "shell-quote": "^1.11.0",
+    "multer": "2.5.0"
   }
 }

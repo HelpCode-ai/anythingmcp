@@ -11,9 +11,10 @@ import {
   BROWSER_CONFIG_GLOBAL,
   BROWSER_DENY_URLS,
   BROWSER_IGNORE_ERRORS,
+  DATA_COLLECTION,
   beforeSendBrowser,
   scrubBreadcrumb,
-  scrubEvent,
+  scrubSpan,
   type BrowserSentryConfig,
 } from '@/lib/sentry-scrub';
 
@@ -32,10 +33,10 @@ function init(): void {
     // connector configurations and credentials forms.
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 0,
-    sendDefaultPii: false,
+    dataCollection: DATA_COLLECTION,
     // Drops errors thrown entirely inside scripts the browser injected.
     beforeSend: beforeSendBrowser,
-    beforeSendTransaction: scrubEvent,
+    beforeSendSpan: scrubSpan,
     beforeBreadcrumb: scrubBreadcrumb,
     // Noise from extensions and link scanners: see lib/sentry-scrub.ts.
     ignoreErrors: BROWSER_IGNORE_ERRORS,

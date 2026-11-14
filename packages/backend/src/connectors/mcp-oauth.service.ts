@@ -39,7 +39,17 @@ export interface PendingOAuthFlow {
   codeVerifier?: string;
   connectorId: string;
   userId: string;
+  /**
+   * The `redirect_uri` sent with the authorization request, and therefore
+   * with the code exchange: the callback URL, or the provider's own redirect
+   * name when the connector sets `providerRedirectUri` (eBay's RuName).
+   */
   redirectUri: string;
+  /**
+   * This server's callback URL, set only when `redirectUri` is not it: the
+   * provider-side setting (the RuName's accepted URL) must point here.
+   */
+  callbackUrl?: string;
   clientId: string;
   clientSecret?: string;
   tokenUrl: string;
@@ -82,10 +92,48 @@ export interface PendingOAuthFlow {
    */
   dynamicClient?: boolean;
   /**
-   * Set on a Shopee shop authorization (shopee-auth.controller.ts), which is
+   * Set on a Shopee shop authorization (shopee-auth.controller.ts) or a
+   * TikTok Shop authorization (tiktok-shop-auth.controller.ts), each
    * completed by its own endpoint; unset on every OAuth flow.
+   * 'tiktok-shop-install' is a TikTok Shop App Store install: it arrived
+   * without a state of ours, so it has no connector and no user yet
+   * (both empty) and carries the authorization code itself. 'meta' is a
+   * Facebook or Instagram sign-in of an Instagram connector
+   * (meta-auth.controller.ts).
    */
-  provider?: 'shopee';
+  provider?: 'shopee' | 'tiktok-shop' | 'tiktok-shop-install' | 'woocommerce' | 'woocommerce-outcome' | 'meta';
+  /**
+   * A WooCommerce one-click key (woocommerce-auth.controller.ts): the
+   * workspace the key may be written to, the shop address it must work on,
+   * the permission asked for and, on a 'woocommerce-outcome' record, how the
+   * callback ended. Unset on every other flow.
+   */
+  woocommerce?: {
+    organizationId: string;
+    shopUrl: string;
+    scope: 'read' | 'read_write';
+    outcome?: 'ready' | 'failed';
+    message?: string;
+  };
+  /**
+   * The authorization code of a 'tiktok-shop-install', kept here (encrypted
+   * at rest) instead of in the dashboard address. Unset on every other flow.
+   */
+  code?: string;
+  /** The seller's region TikTok named on a 'tiktok-shop-install' (`shop_region`, e.g. GB, US). */
+  shopRegion?: string;
+  /**
+   * The user signs in with their own account on a connector whose
+   * credentials are per user: the tokens go to that user's
+   * UserConnectorCredential, never to the connector.
+   */
+  forUser?: boolean;
+  /**
+   * Started from the connect page (/auth/connect, connect-page.controller):
+   * the callback sends the browser back there, which completes the flow for
+   * the user signed in on that page. Unset, the dashboard completes it.
+   */
+  completeOn?: 'connect-page';
   createdAt: number;
 }
 
@@ -485,7 +533,12 @@ export class McpOAuthService {
     } else if (useBasic && params.clientSecret) {
       // client_secret_basic (RFC 6749 §2.3.1): credentials go in the
       // Authorization header, NOT the body. Providers like DATEV reject a
-      // body-supplied client_secret for confidential clients with 401.
+      // body-supplied client_secret for confidential clients with 401, and
+      // Okta servers (Constant Contact) refuse a body client_id next to the
+      // header as "multiple client credentials". The client authenticates,
+      // so client_id is not needed in the body (RFC 6749 §4.1.3), and the
+      // MCP SDK leaves it out the same way.
+      delete body.client_id;
       const basic = Buffer.from(
         `${params.clientId}:${params.clientSecret}`,
       ).toString('base64');
@@ -587,9 +640,13 @@ export class McpOAuthService {
   async storePendingFlow(
     state: string,
     data: PendingOAuthFlow,
-    opts: { returnTo?: string } = {},
+    opts: { returnTo?: string; ttlMs?: number } = {},
   ): Promise<void> {
-    const expiresAt = Date.now() + PENDING_FLOW_TTL_MS;
+    // A caller may ask for longer (a store install that waits for a sign-up),
+    // never for more than an authorization code lives.
+    const ttl =
+      typeof opts.ttlMs === 'number' && opts.ttlMs > 0 ? Math.min(opts.ttlMs, PENDING_FLOW_MAX_TTL_MS) : PENDING_FLOW_TTL_MS;
+    const expiresAt = Date.now() + ttl;
     const returnTo = safeReturnTo(opts.returnTo);
     if (!this.prisma) {
       this.memoryFlows.set(state, { flow: data, returnTo, expiresAt });
@@ -724,6 +781,8 @@ export function isLocalOnlyHost(hostname: string): boolean {
 
 /** How long a started authorization waits for the user to come back. */
 export const PENDING_FLOW_TTL_MS = 15 * 60 * 1000;
+/** The longest a pending flow may be kept (`ttlMs`): 30 minutes. */
+export const PENDING_FLOW_MAX_TTL_MS = 30 * 60 * 1000;
 
 export interface PendingFlowRecord {
   flow: PendingOAuthFlow;

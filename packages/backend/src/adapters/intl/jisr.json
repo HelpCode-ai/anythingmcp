@@ -1,0 +1,497 @@
+{
+  "slug": "jisr",
+  "name": "Jisr",
+  "aliases": [
+    "Jisr HR",
+    "جسر"
+  ],
+  "description": "Ask about your Jisr HR organization from any AI assistant: employees and their job data, attendance summaries and punches, annual leave balances, departments and locations. Read-only by default; submitting attendance punches is available but switched off.",
+  "instructions": "## Jisr HR\nThis connector reads a Jisr (جسر) HR and payroll organization through the **Jisr Open API** (`https://apis.jisr.net/api`, paths under `/openapi/v1`): employees, attendance summaries, attendance punches, annual leave balances and lookup lists. It can also submit attendance punches, which is installed switched off.\n\n**Setup**\n1. A Jisr **Admin** opens **Settings > Webhook & API Keys > API Keys** and clicks **Add new API key**.\n2. Name the key and tick the APIs it may use: Get List Employees, Get Employee Basic Information, Get attendance summary, View attendance records, View summary of employee annual leave, and the lookups you want. Untick **Get Employee Financial Info** unless the AI may see salaries; bank details (IBAN) are removed from employee lists either way.\n3. Click **Generate** and copy the **API key** into `JISR_API_KEY` and the **secret** into `JISR_API_SECRET`. The secret is shown only once.\n4. Set `JISR_SLUG` to your organization slug, the subdomain of your Jisr address (`acme` for `acme.jisr.net`).\n\n**Authentication**: the connector calls `POST /openapi/v1/auth` with the `slug`, `api-key`, `secret` and `api-version: 1` headers, receives an access token (a JWT in `data`) and sends it as the `Access-Token` header, with `slug` and `api-version`, on every call. It signs in again when the token is refused.\n\n**Hosting**: organizations whose Jisr address ends in `.jisr.net.sa` are hosted in Saudi Arabia and use `https://api.jisr.net.sa/api` instead; change the connector's base URL and login URL to that host.\n\n**Identifiers**: an employee has a public **id** (UUID, e.g. `bab6cd98-7246-4cfc-a576-19bc00391792`), used by `jisr_get_employee` and the attendance summary filter, and a numeric **employee code** (e.g. `43`), used by punches and leave balances. Dates are `YYYY-MM-DD`; punch times are date-times such as `2026-11-01T08:00:00`.\n\n**Pagination**: lists take `page` (from 1) and `rpp` or `limit` (at most 100). Answers carry `data.pagination` with `next_page` and `total_pages`; call again with the next page while `next_page` is set.\n\n**Tools**\n- `jisr_list_employees`, `jisr_get_employee`: people and their job data.\n- `jisr_get_attendance_summary`: attendance totals per employee for a period (the current month by default).\n- `jisr_list_attendance_logs`: single punches; `status: failed` shows punches Jisr rejected.\n- `jisr_create_attendance_logs` (switched off): submit up to 100 punches from a device; confirm with the user first.\n- `jisr_get_annual_leave_summary`: remaining annual leave per employee.\n- `jisr_list_lookup`: departments, locations, employment types, business units, nationalities and outsourcing companies.\n\n**Errors**: `This call requires login` means the token expired (the connector signs in again); `Organization not found with given subdomain` means `JISR_SLUG` is wrong; a 403 means the API key lacks the permission for that API.\n\n**Not covered**: creating employees, payroll and accrual transactions, journals, webhooks and audit events. Employee data is personal data: share only what the user needs.",
+  "region": "intl",
+  "category": "hr",
+  "icon": "jisr",
+  "docsUrl": "https://openapi.jisr.net/",
+  "requiredEnvVars": [
+    "JISR_SLUG",
+    "JISR_API_KEY",
+    "JISR_API_SECRET"
+  ],
+  "envVarMeta": {
+    "JISR_SLUG": {
+      "label": "Organization slug",
+      "kind": "setting",
+      "help": "The subdomain of your Jisr address: acme for https://acme.jisr.net.",
+      "example": "acme",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "patternMessage": "Only the subdomain in lower case, e.g. acme, not the full address."
+    },
+    "JISR_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Jisr > Settings > Webhook & API Keys > API Keys > Add new API key (Admin only).",
+      "link": "https://jisr.zendesk.com/hc/en-sa/articles/15530621047825",
+      "pattern": "^[A-Za-z0-9_-]{8,}$",
+      "patternMessage": "Paste the API key exactly as Jisr shows it, without spaces."
+    },
+    "JISR_API_SECRET": {
+      "label": "API secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the API key is generated. If it was lost, generate a new key.",
+      "link": "https://jisr.zendesk.com/hc/en-sa/articles/15530621047825",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the whole secret, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Jisr refused the sign-in. Check JISR_SLUG (the subdomain of your Jisr address) and copy the API key and secret again; the secret is shown only once, so generate a new key if it was lost.",
+      "field": "JISR_API_KEY"
+    },
+    "403": {
+      "hint": "The API key works but may not use this API. In Jisr open Settings > Webhook & API Keys, edit the key and tick the APIs the connector uses (Get List Employees at least).",
+      "field": "JISR_API_KEY"
+    }
+  },
+  "probe": {
+    "tool": "jisr_list_employees",
+    "params": {
+      "rpp": 1
+    }
+  },
+  "connector": {
+    "name": "Jisr Open API",
+    "type": "REST",
+    "baseUrl": "https://apis.jisr.net/api",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://apis.jisr.net/api/openapi/v1/auth",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "slug": "{{JISR_SLUG}}",
+        "api-key": "{{JISR_API_KEY}}",
+        "secret": "{{JISR_API_SECRET}}",
+        "api-version": "1",
+        "source": "open_api"
+      },
+      "loginBody": {},
+      "username": "{{JISR_API_KEY}}",
+      "password": "{{JISR_API_SECRET}}",
+      "tokenJsonPath": "data",
+      "tokenTTLSeconds": 86400,
+      "proactiveRefreshSeconds": 600,
+      "refreshOn401": true,
+      "headerName": "Access-Token",
+      "headerTemplate": "${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "slug": "{{JISR_SLUG}}",
+      "api-version": "1"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": "error",
+          "messageMatches": "requires login|Organization not found|invalid (api key|secret|token)",
+          "status": 401
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": "error",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "jisr_list_employees",
+      "description": "List the organization's employees, 1 to 100 per page: for each the public id (UUID), employee code, English and Arabic full name, work and personal e-mail, phone, status (active or inactive), job title, department, location, business unit, employment type, nationality, line manager, joining date, date of birth, document and passport numbers, and termination or deletion dates. Custom fields come back only when the API key has that permission. Bank details are removed from the answer. Use the filters to find leavers, joiners or recently created records; use jisr_get_employee for one employee's full profile. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "active or inactive. Leave out for both.",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only employees created on or after this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "joining_from": {
+            "type": "string",
+            "description": "Only employees who joined on or after this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "joining_to": {
+            "type": "string",
+            "description": "Only employees who joined on or before this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "terminated_from": {
+            "type": "string",
+            "description": "Only employees offboarded on or after this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "terminated_to": {
+            "type": "string",
+            "description": "Only employees offboarded on or before this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "deleted_from": {
+            "type": "string",
+            "description": "Only employees deleted from Jisr on or after this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "deleted_to": {
+            "type": "string",
+            "description": "Only employees deleted from Jisr on or before this date, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "custom_field_ids": {
+            "type": "string",
+            "description": "Comma-separated custom field UUIDs to return (all by default). Ignored without the custom fields permission."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). Read data.pagination (current_page, next_page, total_pages, total_entries) to see whether more pages exist.",
+            "minimum": 1,
+            "default": 1
+          },
+          "rpp": {
+            "type": "integer",
+            "description": "Records per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/openapi/v1/employees",
+        "queryParams": {
+          "status": "$status",
+          "date": "$created_from",
+          "joining_date[from]": "$joining_from",
+          "joining_date[to]": "$joining_to",
+          "terminate_date[from]": "$terminated_from",
+          "terminate_date[to]": "$terminated_to",
+          "delete_date[from]": "$deleted_from",
+          "delete_date[to]": "$deleted_to",
+          "custom_field_ids": "$custom_field_ids",
+          "page": "$page",
+          "rpp": "$rpp"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.employees[*].bank"
+          ]
+        }
+      }
+    },
+    {
+      "name": "jisr_get_employee",
+      "description": "Full basic profile of one employee by public id (UUID from jisr_list_employees or jisr_get_attendance_summary): personal details, address, contact data, job title, department, location, line manager, employment type, joining date and custom fields (with that permission). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_id": {
+            "type": "string",
+            "description": "Public employee id (UUID), e.g. bab6cd98-7246-4cfc-a576-19bc00391792. Not the numeric employee code.",
+            "pattern": "^[0-9a-fA-F-]{36}$"
+          },
+          "custom_field_ids": {
+            "type": "string",
+            "description": "Comma-separated custom field UUIDs to return (all by default)."
+          }
+        },
+        "required": [
+          "employee_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/openapi/v1/employees/basic_info",
+        "queryParams": {
+          "id": "$employee_id",
+          "custom_field_ids": "$custom_field_ids"
+        }
+      }
+    },
+    {
+      "name": "jisr_get_attendance_summary",
+      "description": "Attendance totals per employee for a date range (the current month when no dates are given), ordered by employee code: for each employee the public id, code and name, total working hours (inside and outside shifts), late arrival and early departure time and days (with excused parts), extra working time, approved overtime, absence, days without records, leave days, off days, full-day excuses and business trip days. Use it for monthly attendance reviews or payroll preparation. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period (default: first day of the current month), YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period (default: last day of the current month), YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}[-/][0-9]{2}[-/][0-9]{2}$"
+          },
+          "employee_id": {
+            "type": "string",
+            "description": "Only this employee: public id (UUID)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Employment status to include: active (default) or inactive.",
+            "enum": [
+              "active",
+              "inactive"
+            ],
+            "default": "active"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). Read data.pagination (current_page, next_page, total_pages, total_entries) to see whether more pages exist.",
+            "minimum": 1,
+            "default": 1
+          },
+          "rpp": {
+            "type": "integer",
+            "description": "Records per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/openapi/v1/attendance/summary",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "employee_id": "$employee_id",
+          "status": "$status",
+          "page": "$page",
+          "rpp": "$rpp"
+        }
+      }
+    },
+    {
+      "name": "jisr_list_attendance_logs",
+      "description": "Individual attendance punches (clock-ins and clock-outs) in a time range, 1 to 100 per page: punch id, employee code, punch time, device serial number (terminal_sn), clocking id, and for failed punches the error Jisr reported. status success lists punches Jisr processed; status failed lists punches it rejected, which is where to look when an employee says a punch is missing. Without from and to the window is the last hour. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "success for processed punches (default), failed for rejected ones.",
+            "enum": [
+              "success",
+              "failed"
+            ],
+            "default": "success"
+          },
+          "from": {
+            "type": "string",
+            "description": "Range start as date-time, e.g. 2026-11-01T00:00:00 (default: one hour ago)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Range end as date-time, e.g. 2026-11-01T23:59:59 (default: now)."
+          },
+          "source_type": {
+            "type": "string",
+            "description": "Only punches from this source.",
+            "enum": [
+              "zkt",
+              "geofencing",
+              "wdms",
+              "biotime",
+              "open_api"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). Read data.pagination (current_page, next_page, total_pages, total_entries) to see whether more pages exist.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Punches per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/openapi/v1/attendance_logs",
+        "queryParams": {
+          "status": "$status",
+          "from": "$from",
+          "to": "$to",
+          "source_type": "$source_type",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "jisr_create_attendance_logs",
+      "description": "Send up to 100 attendance punches to Jisr, as a time clock or access-control system would. Jisr queues them and processes them in the background: check the outcome afterwards with jisr_list_attendance_logs (status success or failed). Each punch needs the employee code as a string, the punch time, the device serial number and a device-generated punch id. Punches change employees' attendance records: confirm with the user first. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "punches": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "The punches to submit (at most 100).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "emp_code": {
+                  "type": "string",
+                  "description": "Employee code as a string, e.g. \"199\"."
+                },
+                "punch_time": {
+                  "type": "string",
+                  "description": "Punch time, e.g. 2026-11-05T08:01:00."
+                },
+                "terminal_sn": {
+                  "type": "string",
+                  "description": "Serial number of the device, e.g. ZKT-001."
+                },
+                "id": {
+                  "type": "integer",
+                  "description": "Punch id generated by the device, unique per device."
+                }
+              },
+              "required": [
+                "emp_code",
+                "punch_time",
+                "terminal_sn",
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "punches"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/v1/attendance_logs",
+        "bodyMapping": {
+          "data": "$punches"
+        }
+      }
+    },
+    {
+      "name": "jisr_get_annual_leave_summary",
+      "description": "Annual leave balances per employee: employee code, leave days, opening and previous-year balance, manual adjustments, days used, pending and reserved days, unpaid leave deduction and the year-end balance, for all employees or for up to 100 employee codes. Use it to answer 'how many vacation days does X have left'. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employee_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "description": "Employee codes (not UUIDs), e.g. [\"43\", \"77\"]. Leave out for all employees."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). Read data.pagination (current_page, next_page, total_pages, total_entries) to see whether more pages exist.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Employees per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/openapi/v1/employee_leaves/summary",
+        "queryParams": {
+          "leave_type": "annual",
+          "employee_codes": "$employee_codes",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "jisr_list_lookup",
+      "description": "Reference lists of the organization: departments, locations, employment types, business units, nationalities or outsourcing companies, each entry with its id and English and Arabic name. Use it to translate ids in employee records or to find a department's id. Only the lookups ticked on the API key are available. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lookup": {
+            "type": "string",
+            "description": "Which list to read.",
+            "enum": [
+              "departments",
+              "locations",
+              "employment_types",
+              "business_units",
+              "nationalities",
+              "outsourcing_companies"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1). Read data.pagination (current_page, next_page, total_pages, total_entries) to see whether more pages exist.",
+            "minimum": 1,
+            "default": 1
+          },
+          "rpp": {
+            "type": "integer",
+            "description": "Records per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        "required": [
+          "lookup"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/openapi/v1/lookups/{lookup}",
+        "queryParams": {
+          "page": "$page",
+          "rpp": "$rpp"
+        }
+      }
+    }
+  ]
+}

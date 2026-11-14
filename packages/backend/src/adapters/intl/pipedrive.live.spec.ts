@@ -153,3 +153,18 @@ maybe('pipedrive adapter — live edge reachability', () => {
     expect(err.config?.params?.api_token).toBe('sentinel-token-12345');
   }, 30000);
 });
+
+describe('pipedrive_create_activity body (API v2)', () => {
+  const tool = (adapter as unknown as {
+    tools: { name: string; endpointMapping: { bodyMapping: Record<string, string> } }[];
+  }).tools.find((t) => t.name === 'pipedrive_create_activity')!;
+
+  it('links people through participants and the owner through owner_id', () => {
+    // v2 sets person_id from the primary participant and rejects it in the body.
+    const body = tool.endpointMapping.bodyMapping;
+    expect(body.participants).toBe('$participants');
+    expect(body.owner_id).toBe('$owner_id');
+    expect(body).not.toHaveProperty('person_id');
+    expect(body).not.toHaveProperty('user_id');
+  });
+});

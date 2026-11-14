@@ -4,6 +4,17 @@ import { McpOAuthService } from './mcp-oauth.service';
 import { encrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from '../adapters/catalog';
 
+// The Atlassian site lookup (tenant_info) answers from here; no test may reach Atlassian.
+const mockSiteLookup = jest.fn();
+jest.mock('../adapters/derived-settings', () => {
+  const actual = jest.requireActual('../adapters/derived-settings');
+  return {
+    ...actual,
+    resolveDerivedEnvVars: (adapter: unknown, values: unknown, opts: Record<string, unknown> = {}) =>
+      actual.resolveDerivedEnvVars(adapter, values, { ...opts, fetch: mockSiteLookup }),
+  };
+});
+
 const VALID_ENCRYPTION_KEY = 'a'.repeat(48);
 
 function buildController(overrides: {
@@ -15,6 +26,7 @@ function buildController(overrides: {
   deployment?: any;
   mcpOAuthService?: any;
   serverUrl?: string;
+  webhookEvents?: any;
 } = {}) {
   const connectorsService = overrides.connectorsService ?? {
     create: jest.fn().mockResolvedValue({ id: 'c1', type: 'REST' }),
@@ -31,6 +43,7 @@ function buildController(overrides: {
   };
   const licenseGuard = overrides.licenseGuard ?? {
     checkCanCreateConnector: jest.fn().mockResolvedValue(undefined),
+    checkCanEnableWebhook: jest.fn().mockResolvedValue(undefined),
   };
   const configService = {
     get: jest.fn((key: string) =>
@@ -43,6 +56,9 @@ function buildController(overrides: {
       .mockResolvedValue({ id: 's1', name: 'Default' }),
   };
   const deployment = overrides.deployment ?? { isCloud: () => true };
+  const webhookEvents = overrides.webhookEvents ?? {
+    recentEvents: jest.fn().mockResolvedValue([]),
+  };
 
   const controller = new ConnectorsController(
     connectorsService as any,
@@ -61,6 +77,7 @@ function buildController(overrides: {
     licenseGuard as any,
     mcpServers as any,
     deployment as any,
+    webhookEvents as any,
   );
 
   return {
@@ -71,6 +88,7 @@ function buildController(overrides: {
     licenseGuard,
     mcpServers,
     deployment,
+    webhookEvents,
   };
 }
 
@@ -822,6 +840,138 @@ describe('PUT :id/env-vars — a base URL variable without https://', () => {
   });
 });
 
+describe('PUT :id/env-vars and PUT :id — the checks of the install form', () => {
+  const odoo = (envVars: Record<string, string>) => ({
+    id: 'c1',
+    type: 'REST',
+    authType: 'BEARER_TOKEN',
+    userId: 'u1',
+    organizationId: 'org1',
+    baseUrl: 'https://erp.acme.de/json/2',
+    headers: null,
+    authConfig: null,
+    envVars,
+    config: { adapterSlug: 'odoo' },
+  });
+  const stored = { ODOO_URL: 'https://erp.acme.de', ODOO_DB: 'acme', ODOO_API_KEY: 'a3f9c27e18d04b5f9e6a7c1d2b3e4f5a6b7c8d9e' };
+  const build = (connector: any) =>
+    buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connector),
+        update: jest.fn().mockImplementation(async (_id: string, data: any) => ({ ...connector, ...data })),
+      },
+    });
+
+  it('refuses an Odoo address with /web after the host, naming the field and saving nothing', async () => {
+    const { controller, connectorsService } = build(odoo(stored));
+    await expect(
+      controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ODOO_URL: 'https://erp.acme.de/web' } }),
+    ).rejects.toMatchObject({
+      response: { code: 'invalid_values', fields: { ODOO_URL: expect.stringMatching(/Remove \/web after the host: https:\/\/erp\.acme\.de\./) } },
+    });
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('stores an address typed without https:// with it, also one outside the base URL (Zoho accounts server)', async () => {
+    const zoho = {
+      ...odoo({}),
+      authType: 'OAUTH2',
+      baseUrl: 'https://mail.zoho.eu/api',
+      envVars: { ZOHO_MAIL_CLIENT_ID: '1000.ABCDEFGHIJKLMNOP', ZOHO_MAIL_API_URL: 'https://mail.zoho.eu', ZOHO_MAIL_ACCOUNTS_URL: '' },
+      config: { adapterSlug: 'zoho-mail' },
+    };
+    const { controller, connectorsService } = build(zoho);
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ...zoho.envVars, ZOHO_MAIL_ACCOUNTS_URL: 'accounts.zoho.eu' },
+    });
+    expect(connectorsService.update).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({ envVars: expect.objectContaining({ ZOHO_MAIL_ACCOUNTS_URL: 'https://accounts.zoho.eu' }) }),
+    );
+  });
+
+  it('refuses a key pasted twice through the connector form (PUT :id) too', async () => {
+    const { controller, connectorsService } = build(odoo(stored));
+    await expect(
+      controller.update(req('ADMIN'), 'c1', { envVars: { ...stored, ODOO_API_KEY: stored.ODOO_API_KEY.repeat(2) } } as any),
+    ).rejects.toMatchObject({ response: { fields: { ODOO_API_KEY: expect.stringMatching(/Paste it once/) } } });
+    expect(connectorsService.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves stored Etsy app keys the pattern would refuse alone when they are sent back unchanged', async () => {
+    const etsy = {
+      ...odoo({}),
+      authType: 'OAUTH2',
+      baseUrl: 'https://openapi.etsy.com/v3',
+      envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkl', ETSY_CLIENT_SECRET: 'abcd-efgh-i' },
+      config: { adapterSlug: 'etsy' },
+    };
+    const { controller, connectorsService } = build(etsy);
+    // The editor sends the visible value back as it was and a secret empty (kept).
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkl', ETSY_CLIENT_SECRET: '', ETSY_SHOP_ID: '12345678' },
+    });
+    expect(connectorsService.update).toHaveBeenCalled();
+    // Changing one of them is checked.
+    await expect(
+      controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ETSY_CLIENT_ID: 'abcd-efgh-ijkm' } }),
+    ).rejects.toMatchObject({ response: { fields: { ETSY_CLIENT_ID: expect.any(String) } } });
+  });
+
+  describe('the Atlassian site and its looked-up cloudId', () => {
+    const CLOUD_ID = '1324a887-45db-1bf4-1e99-ef0ff456d421';
+    const keys = { ATLASSIAN_EMAIL: 'jane.doe@acme.test', ATLASSIAN_API_TOKEN: 'ATATT' + 'Zq9'.repeat(40) };
+    const atlassian = (envVars: Record<string, string>) => ({
+      ...odoo(envVars),
+      type: 'MCP',
+      authType: 'BASIC_AUTH',
+      baseUrl: 'https://mcp.atlassian.com/v2/mcp',
+      config: { adapterSlug: 'atlassian' },
+    });
+    beforeEach(() => mockSiteLookup.mockReset());
+
+    it('stores the cloudId when the site is set on an installed connector', async () => {
+      mockSiteLookup.mockResolvedValue({ status: 200, data: { cloudId: CLOUD_ID } });
+      const { controller, connectorsService } = build(atlassian(keys));
+      await controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...keys, ATLASSIAN_SITE: 'https://acme.atlassian.net/' } });
+      expect(mockSiteLookup).toHaveBeenCalledWith('https://acme.atlassian.net/_edge/tenant_info');
+      expect(connectorsService.update.mock.calls[0][1].envVars).toMatchObject({
+        ATLASSIAN_SITE: 'acme.atlassian.net',
+        ATLASSIAN_CLOUD_ID: CLOUD_ID,
+      });
+    });
+
+    it('refuses a site without a cloudId on its field, saving nothing', async () => {
+      mockSiteLookup.mockResolvedValue({ status: 404, data: 'not found' });
+      const { controller, connectorsService } = build(atlassian(keys));
+      await expect(
+        controller.update(req('ADMIN'), 'c1', { envVars: { ...keys, ATLASSIAN_SITE: 'acme-typo.atlassian.net' } } as any),
+      ).rejects.toMatchObject({ response: { fields: { ATLASSIAN_SITE: expect.stringMatching(/No Atlassian site answers/) } } });
+      expect(connectorsService.update).not.toHaveBeenCalled();
+    });
+
+    it('does not ask again when the site is unchanged, and drops the cloudId with the site', async () => {
+      const stored = { ...keys, ATLASSIAN_SITE: 'acme.atlassian.net', ATLASSIAN_CLOUD_ID: CLOUD_ID };
+      const first = build(atlassian(stored));
+      await first.controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ATLASSIAN_EMAIL: 'john@acme.test' } });
+      expect(mockSiteLookup).not.toHaveBeenCalled();
+      expect(first.connectorsService.update.mock.calls[0][1].envVars.ATLASSIAN_CLOUD_ID).toBe(CLOUD_ID);
+
+      const second = build(atlassian(stored));
+      await second.controller.updateEnvVars(req('ADMIN'), 'c1', { envVars: { ...stored, ATLASSIAN_SITE: '' } });
+      expect(second.connectorsService.update.mock.calls[0][1].envVars.ATLASSIAN_CLOUD_ID).toBeUndefined();
+    });
+  });
+
+  it('does not let a stored bad value block an edit of another variable', async () => {
+    const { controller, connectorsService } = build(odoo({ ...stored, ODOO_URL: 'https://erp.acme.de/web' }));
+    await controller.updateEnvVars(req('ADMIN'), 'c1', {
+      envVars: { ...stored, ODOO_URL: 'https://erp.acme.de/web', ODOO_DB: 'acme2' },
+    });
+    expect(connectorsService.update).toHaveBeenCalled();
+  });
+});
+
 describe('weclapp tenant pasted as an address after install (#733)', () => {
   const weclapp = (envVars: Record<string, string>) => ({
     id: 'c1',
@@ -956,7 +1106,7 @@ describe('POST :id/oauth/authorize (REST)', () => {
     expect(url.origin + url.pathname).toBe('https://www.etsy.com/oauth/connect');
     expect(url.searchParams.get('client_id')).toBe('keystring');
     expect(url.searchParams.get('redirect_uri')).toBe(`${SERVER}/api/mcp-oauth/callback`);
-    expect(url.searchParams.get('scope')).toBe('email_r shops_r listings_r listings_w transactions_r transactions_w');
+    expect(url.searchParams.get('scope')).toBe('email_r shops_r listings_r listings_w listings_d transactions_r transactions_w');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
 
     const [state, flow] = store.mock.calls[0];
@@ -973,7 +1123,7 @@ describe('POST :id/oauth/authorize (REST)', () => {
       tokenAuthMethod: undefined,
       persistAuthConfig: {
         authorizationUrl: 'https://www.etsy.com/oauth/connect',
-        scopes: 'email_r shops_r listings_r listings_w transactions_r transactions_w',
+        scopes: 'email_r shops_r listings_r listings_w listings_d transactions_r transactions_w',
       },
     });
   });
@@ -1352,6 +1502,28 @@ describe('Connector secrets are never returned', () => {
       });
       expect(JSON.stringify(result)).not.toContain(TOKEN);
       expect(JSON.stringify(result)).not.toContain('test-header-key');
+    });
+
+    it('leaves them out for an admin using a read-only management key', async () => {
+      const { controller } = buildExport();
+      const result: any = await controller.exportAll({
+        ...req('ADMIN'),
+        mcpKeyScope: 'MANAGEMENT_READ',
+      });
+      expect(result.secretsIncluded).toBe(false);
+      expect(result.connectors[0].maskedEnvVars).toEqual(['WHATSAPP_ACCESS_TOKEN']);
+      expect(JSON.stringify(result)).not.toContain(TOKEN);
+      expect(JSON.stringify(result)).not.toContain('test-header-key');
+    });
+
+    it('keeps them for an admin using an admin management key', async () => {
+      const { controller } = buildExport();
+      const result: any = await controller.exportAll({
+        ...req('ADMIN'),
+        mcpKeyScope: 'MANAGEMENT_ADMIN',
+      });
+      expect(result.secretsIncluded).toBe(true);
+      expect(result.connectors[0].envVars.WHATSAPP_ACCESS_TOKEN).toBe(TOKEN);
     });
 
     it('never exports authConfig', async () => {
@@ -1761,6 +1933,287 @@ describe('PUT :id — config is merged, not replaced', () => {
     });
     await controller.update(req('ADMIN'), 'c1', { config: { deniedTables: null } } as any);
     expect(connectorsService.update.mock.calls[0][1].config).not.toHaveProperty('deniedTables');
+  });
+});
+
+describe('PUT :id — webhookEnabled toggled on update', () => {
+  const baseConnector = {
+    id: 'c1',
+    type: 'REST',
+    userId: 'u1',
+    organizationId: 'org1',
+    name: 'Stripe Billing',
+    baseUrl: 'https://api.example.test',
+    authType: 'NONE',
+    config: null,
+    envVars: null,
+    headers: null,
+    webhookEnabled: false,
+    tools: [] as Array<{ id: string; endpointMapping: unknown }>,
+  };
+
+  it('creates the webhook builtin tool when webhookEnabled flips false -> true', async () => {
+    const mcpToolCreate = jest.fn().mockResolvedValue(undefined);
+    const { controller, prisma } = buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(baseConnector),
+        update: jest.fn().mockResolvedValue({ ...baseConnector, webhookEnabled: true }),
+      },
+      prisma: {
+        connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+        mcpTool: { create: mcpToolCreate, deleteMany: jest.fn() },
+      },
+    });
+
+    await controller.update(req('ADMIN'), 'c1', {
+      webhookEnabled: true,
+      webhookProvider: 'stripe',
+      webhookSecret: 'whsec_x',
+    } as any);
+
+    expect(mcpToolCreate).toHaveBeenCalledTimes(1);
+    expect(mcpToolCreate.mock.calls[0][0].data).toMatchObject({
+      connectorId: 'c1',
+      name: 'stripe_billing_recent_events',
+    });
+    expect(prisma.mcpTool.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('removes the webhook builtin tool when webhookEnabled flips true -> false, matched by endpointMapping not name', async () => {
+    const deleteMany = jest.fn().mockResolvedValue({ count: 1 });
+    const connectorWithTool = {
+      ...baseConnector,
+      webhookEnabled: true,
+      // Renamed by hand after creation — removal must not depend on the name.
+      tools: [{ id: 'tool_1', endpointMapping: { method: 'webhook_recent_events', path: '' } }],
+    };
+    const { controller, prisma } = buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(connectorWithTool),
+        update: jest.fn().mockResolvedValue({ ...connectorWithTool, webhookEnabled: false }),
+      },
+      prisma: {
+        connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+        mcpTool: { create: jest.fn(), deleteMany },
+      },
+    });
+
+    await controller.update(req('ADMIN'), 'c1', { webhookEnabled: false } as any);
+
+    expect(deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['tool_1'] } } });
+    expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+  });
+
+  it('does nothing tool-related when webhookEnabled is left unchanged', async () => {
+    const { controller, prisma } = buildController({
+      connectorsService: {
+        findById: jest.fn().mockResolvedValue(baseConnector),
+        update: jest.fn().mockResolvedValue(baseConnector),
+      },
+      prisma: {
+        connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+        mcpTool: { create: jest.fn(), deleteMany: jest.fn() },
+      },
+    });
+
+    await controller.update(req('ADMIN'), 'c1', { name: 'Stripe Billing v2' } as any);
+
+    expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+    expect(prisma.mcpTool.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET :id/webhook/url and :id/webhook/events', () => {
+  const baseConnector = {
+    id: 'c1',
+    userId: 'u1',
+    organizationId: 'org1',
+    name: 'Stripe Billing',
+  };
+
+  describe('webhookUrl', () => {
+    it('builds the URL from SERVER_URL for the connector owner', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        serverUrl: 'https://amcp.example.com',
+      });
+      const result = await controller.webhookUrl(req('MEMBER'), 'c1');
+      expect(result).toEqual({ url: 'https://amcp.example.com/api/webhooks/c1' });
+    });
+
+    it('falls back to localhost:4000 when SERVER_URL is unset, like oauthRedirectUri', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      const result = await controller.webhookUrl(req('ADMIN'), 'c1');
+      expect(result).toEqual({ url: 'http://localhost:4000/api/webhooks/c1' });
+    });
+
+    it('rejects a viewer, like any other connector setting', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      await expect(controller.webhookUrl(req('VIEWER'), 'c1')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a non-owner, non-admin member', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      const otherMember = { user: { sub: 'u2', organizationId: 'org1', role: 'MEMBER' } };
+      await expect(controller.webhookUrl(otherMember, 'c1')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a caller from a different organization', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      const otherOrg = { user: { sub: 'u1', organizationId: 'org2', role: 'ADMIN' } };
+      await expect(controller.webhookUrl(otherOrg, 'c1')).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('webhookEventsList', () => {
+    it('reads through to the service, scoped by connector and organization', async () => {
+      const receivedAt = new Date('2026-01-01T00:00:00Z');
+      const recentEvents = jest.fn().mockResolvedValue([
+        {
+          id: 'evt_1',
+          provider: 'stripe',
+          eventType: 'payment_intent.succeeded',
+          externalId: 'evt_ext_1',
+          payload: { customer: { name: 'Jane Doe', email: 'jane@example.com' } },
+          receivedAt,
+        },
+      ]);
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        webhookEvents: { recentEvents },
+      });
+      const result = await controller.webhookEventsList(req('ADMIN'), 'c1', '10', '2026-01-01T00:00:00Z');
+      expect(recentEvents).toHaveBeenCalledWith('c1', 'org1', { limit: 10, since: '2026-01-01T00:00:00Z' });
+      expect(result).toEqual({
+        events: [{ id: 'evt_1', provider: 'stripe', eventType: 'payment_intent.succeeded', externalId: 'evt_ext_1', receivedAt }],
+      });
+    });
+
+    it('never returns payload, unlike the MCP tool reading the same table', async () => {
+      const recentEvents = jest.fn().mockResolvedValue([
+        {
+          id: 'evt_1',
+          provider: 'stripe',
+          eventType: 'payment_intent.succeeded',
+          externalId: 'evt_ext_1',
+          payload: { customer: { name: 'Jane Doe', email: 'jane@example.com' } },
+          receivedAt: new Date('2026-01-01T00:00:00Z'),
+        },
+      ]);
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        webhookEvents: { recentEvents },
+      });
+      const result = await controller.webhookEventsList(req('ADMIN'), 'c1');
+      expect(result.events[0]).not.toHaveProperty('payload');
+      expect(JSON.stringify(result)).not.toContain('Jane Doe');
+    });
+
+    it('passes limit/since through as undefined when not given, leaving the service default', async () => {
+      const recentEvents = jest.fn().mockResolvedValue([]);
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+        webhookEvents: { recentEvents },
+      });
+      await controller.webhookEventsList(req('ADMIN'), 'c1');
+      expect(recentEvents).toHaveBeenCalledWith('c1', 'org1', { limit: undefined, since: undefined });
+    });
+
+    it('rejects a viewer', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      await expect(controller.webhookEventsList(req('VIEWER'), 'c1')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects a non-owner, non-admin member', async () => {
+      const { controller } = buildController({
+        connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector) },
+      });
+      const otherMember = { user: { sub: 'u2', organizationId: 'org1', role: 'MEMBER' } };
+      await expect(controller.webhookEventsList(otherMember, 'c1')).rejects.toThrow(ForbiddenException);
+    });
+  });
+});
+
+describe('PUT :id and POST — the webhook plan cap (#1393)', () => {
+  const baseConnector = {
+    id: 'c1',
+    type: 'REST',
+    userId: 'u1',
+    organizationId: 'org1',
+    name: 'Stripe Billing',
+    baseUrl: 'https://api.example.test',
+    authType: 'NONE',
+    config: null,
+    envVars: null,
+    headers: null,
+    webhookEnabled: false,
+    isActive: true,
+    tools: [] as Array<{ id: string; endpointMapping: unknown }>,
+  };
+  const prisma = () => ({
+    connector: { create: jest.fn(), findFirst: jest.fn().mockResolvedValue(null) },
+    mcpTool: { create: jest.fn(), deleteMany: jest.fn() },
+  });
+
+  it('checks the cap when webhooks go from off to on, before anything is saved', async () => {
+    const update = jest.fn().mockResolvedValue({ ...baseConnector, webhookEnabled: true });
+    const { controller, licenseGuard } = buildController({
+      connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector), update },
+      prisma: prisma(),
+    });
+    await controller.update(req('ADMIN'), 'c1', { webhookEnabled: true } as any);
+    expect(licenseGuard.checkCanEnableWebhook).toHaveBeenCalledWith('org1');
+    expect(licenseGuard.checkCanEnableWebhook.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]);
+  });
+
+  it('saves nothing when the cap refuses', async () => {
+    const update = jest.fn();
+    const refusal = new Error('Your plan includes inbound webhooks on 1 connector.');
+    const { controller } = buildController({
+      connectorsService: { findById: jest.fn().mockResolvedValue(baseConnector), update },
+      prisma: prisma(),
+      licenseGuard: {
+        checkCanCreateConnector: jest.fn(),
+        checkCanEnableWebhook: jest.fn().mockRejectedValue(refusal),
+      },
+    });
+    await expect(controller.update(req('ADMIN'), 'c1', { webhookEnabled: true } as any)).rejects.toBe(refusal);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('never checks when webhooks stay on or are turned off', async () => {
+    const on = { ...baseConnector, webhookEnabled: true };
+    for (const dto of [{ webhookEnabled: true }, { webhookEnabled: false }, { name: 'Renamed' }]) {
+      const { controller, licenseGuard } = buildController({
+        connectorsService: {
+          findById: jest.fn().mockResolvedValue(on),
+          update: jest.fn().mockResolvedValue({ ...on, ...dto }),
+        },
+        prisma: prisma(),
+      });
+      await controller.update(req('ADMIN'), 'c1', dto as any);
+      expect(licenseGuard.checkCanEnableWebhook).not.toHaveBeenCalled();
+    }
+  });
+
+  it('checks the cap when a connector is created with webhooks on, and only then', async () => {
+    const withWebhook = buildController();
+    await withWebhook.controller.create(req('ADMIN'), { name: 'Stripe', type: 'REST', baseUrl: 'https://api.example.test', webhookEnabled: true } as any);
+    expect(withWebhook.licenseGuard.checkCanEnableWebhook).toHaveBeenCalledWith('org1');
+
+    const without = buildController();
+    await without.controller.create(req('ADMIN'), { name: 'Plain', type: 'REST', baseUrl: 'https://api.example.test' } as any);
+    expect(without.licenseGuard.checkCanEnableWebhook).not.toHaveBeenCalled();
   });
 });
 
