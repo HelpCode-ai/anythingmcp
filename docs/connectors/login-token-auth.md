@@ -125,9 +125,13 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   "tokenTTLSeconds": 2592000,                        // fallback when expiry is absent (30 days)
 
   // ─── Or: the session is a cookie the login sets ────────────────
-  "tokenSource": "cookie",                           // body (default) | cookie
+  "tokenSource": "cookie",                           // body (default) | cookie | header
   "cookieName":  "B1SESSION",                        // the cookie whose value is ${token}
   "cookieMode":  "single",                           // single (default) | all — see below
+
+  // ─── Or: the token comes back in a response header ─────────────
+  "tokenSource": "header",                           // body (default) | cookie | header
+  "tokenHeaderName": "access_token",                 // the response header whose value is ${token}
 
   // ─── Re-login policy ───────────────────────────────────────────
   "refreshOn401": true,                              // re-login on a 401 and retry once (default true)
@@ -321,6 +325,43 @@ With `"tokenSource": "cookie"` the token is read from the login response's
 
 The body can still supply `${aud}` through `audJsonPath` (`"."` takes the
 whole body, for logins that answer with a bare token string).
+
+### Token in a response header
+
+With `"tokenSource": "header"` the token is the value of the login response's
+header named `tokenHeaderName`, and the body is not read for it, so
+`tokenJsonPath` is not needed. Ceneo's token call works this way: a `GET` with
+the API key in `Authorization: Basic <key>` answers an empty body and the
+headers `access_token`, `expires_in` and `token_type`.
+
+```json
+"loginUrl": "https://developers.ceneo.pl/AuthorizationService.svc/GetToken?grantType='client_credentials'",
+"loginMethod": "GET",
+"loginHeaders": { "Authorization": "Basic {{CENEO_API_KEY}}" },
+"loginBody": {},
+"username": "{{CENEO_API_KEY}}",
+"password": "{{CENEO_API_KEY}}",
+"tokenSource": "header",
+"tokenHeaderName": "access_token",
+"tokenTTLSeconds": 900,
+"proactiveRefreshSeconds": 120
+```
+
+- The header name is matched without regard to case (`access_token`,
+  `Access_Token` and `ACCESS_TOKEN` are the same header). White space around
+  the value is dropped.
+- The login fails with `header "<name>" not found in the login response
+  headers` when the response has no such header or an empty one. A
+  `tokenSource` of `header` without `tokenHeaderName` is refused before any
+  request is sent, and `scripts/validate-adapters.mjs` reports it (rule
+  `login-token-source`).
+- The expiry is not read from a header: set `tokenTTLSeconds` to the token's
+  lifetime (900 for Ceneo's 15 minutes), or `expiryJsonPath` when the body
+  carries it.
+- `username` and `password` are still required. A login that only sends a key
+  in `loginHeaders` sets both to that key and `"loginBody": {}`, so nothing
+  but the header travels (a `GET` login sends `loginBody` as query
+  parameters, and without a `loginBody` the credentials themselves).
 
 ---
 

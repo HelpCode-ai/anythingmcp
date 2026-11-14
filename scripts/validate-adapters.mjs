@@ -191,6 +191,41 @@ export function loginTokenXmlProblems(adapter) {
   return problems;
 }
 
+const LOGIN_TOKEN_SOURCES = ['body', 'cookie', 'header'];
+
+/**
+ * LOGIN_TOKEN reads the token from the login answer's body (default), a
+ * cookie or, with tokenSource "header", a response header named by
+ * tokenHeaderName (Ceneo answers it in `access_token`). LoginTokenService
+ * refuses a header source without a name at sign-in, and reads the body for a
+ * source it does not know; both fail here instead.
+ */
+export function loginTokenSourceProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object') return [];
+  const problems = [];
+  const { tokenSource, tokenHeaderName } = cfg;
+  if (tokenSource === undefined && tokenHeaderName === undefined) return problems;
+  if (connector.authType !== 'LOGIN_TOKEN') {
+    for (const field of ['tokenSource', 'tokenHeaderName']) {
+      if (cfg[field] !== undefined) problems.push(`${field} only applies to LOGIN_TOKEN authentication`);
+    }
+    return problems;
+  }
+  if (tokenSource !== undefined && !LOGIN_TOKEN_SOURCES.includes(tokenSource)) {
+    problems.push(`tokenSource must be one of ${LOGIN_TOKEN_SOURCES.join(', ')}`);
+  }
+  if (tokenSource === 'header') {
+    // RFC 9110 field-name characters: what a response header can be called.
+    if (typeof tokenHeaderName !== 'string' || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(tokenHeaderName)) {
+      problems.push('tokenSource "header" needs authConfig.tokenHeaderName, the name of the response header that carries the token');
+    }
+  } else if (tokenHeaderName !== undefined) {
+    problems.push('tokenHeaderName is only read with tokenSource "header"');
+  }
+  return problems;
+}
+
 const BLOCK_NAME = '[A-Za-z_][A-Za-z0-9_]*';
 const OPTIONAL_BLOCK = new RegExp('^' + BLOCK_NAME + '(?:\\|' + BLOCK_NAME + ')*$');
 const REPEATED_BLOCK = new RegExp('^' + BLOCK_NAME + '$');
@@ -238,6 +273,23 @@ export function xmlTemplateBlockProblems(endpointMapping) {
     if (depth !== 0) problems.push(`the block ${expr} is not closed once for every time it is opened (${BLOCK_OPENERS.close}${expr}})`);
   }
   return problems;
+}
+
+/**
+ * OAUTH2 token answers are read at the top level (RFC 6749). An adapter whose
+ * provider wraps the token fields names the wrapper in
+ * authConfig.tokenResponsePath, a dotted path of keys ("data"); see
+ * token-response.util.ts.
+ */
+export function tokenResponsePathProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object' || cfg.tokenResponsePath === undefined) return [];
+  if (connector.authType !== 'OAUTH2') return ['tokenResponsePath only applies to OAUTH2 authentication'];
+  const path = cfg.tokenResponsePath;
+  if (typeof path !== 'string' || !/^[A-Za-z0-9_$-]+(\.[A-Za-z0-9_$-]+)*$/.test(path)) {
+    return ['tokenResponsePath must be a dotted path of keys to the object that holds the token fields, such as "data"'];
+  }
+  return [];
 }
 
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
@@ -709,6 +761,14 @@ export function validateAdapter(adapter, file, region) {
 
   for (const problem of loginBasicAuthProblems(adapter.connector)) {
     errors.push(error('login-basic-auth', 'connector.authConfig.loginBasicAuth', problem, 'With loginBasicAuth: true the engine sends Authorization: Basic base64(username:password) on the login request; give username and password, and keep the password out of loginBody and loginHeaders.', 'authentication'));
+  }
+
+  for (const problem of loginTokenSourceProblems(adapter.connector)) {
+    errors.push(error('login-token-source', 'connector.authConfig.tokenSource', problem, 'Leave tokenSource out to read the token from the body (tokenJsonPath), use "cookie" with cookieName, or "header" with tokenHeaderName, e.g. "tokenSource": "header", "tokenHeaderName": "access_token".', 'authentication'));
+  }
+
+  for (const problem of tokenResponsePathProblems(adapter.connector)) {
+    errors.push(error('token-response-path', 'connector.authConfig.tokenResponsePath', problem, 'Set it only when the token endpoint wraps access_token, refresh_token and expires_in in another object, e.g. "tokenResponsePath": "data"; leave it out when they are at the top level.', 'authentication'));
   }
 
   if (adapter.checkBeforeAuthorization !== undefined) {

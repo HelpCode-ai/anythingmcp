@@ -314,6 +314,69 @@ test('optional and repeated blocks in an XML bodyTemplate are named, closed and 
   }
 });
 
+test('a LOGIN_TOKEN token in a response header needs its header name', () => {
+  const login = (authConfig, authType = 'LOGIN_TOKEN') => validateAdapter(adapter({
+    connector: { type: 'REST', authType, authConfig: {
+      loginUrl: 'https://good.test/token', loginMethod: 'GET', loginBody: {},
+      loginHeaders: { Authorization: 'Basic {{GOOD_KEY}}' },
+      username: '{{GOOD_KEY}}', password: '{{GOOD_KEY}}', ...authConfig,
+    } },
+  }), 'good.json', 'de').errors.filter((e) => e.rule === 'login-token-source');
+
+  assert.deepEqual(login({ tokenSource: 'header', tokenHeaderName: 'access_token' }), []);
+  assert.deepEqual(login({ tokenSource: 'header', tokenHeaderName: 'X-Auth-Token' }), []);
+  // The sources that existed before are left alone, with or without a name for them.
+  assert.deepEqual(login({ tokenJsonPath: 'token' }), []);
+  assert.deepEqual(login({ tokenSource: 'body', tokenJsonPath: 'token' }), []);
+  assert.deepEqual(login({ tokenSource: 'cookie', cookieName: 'SESSION' }), []);
+  assert.deepEqual(login({ tokenSource: 'cookie', cookieMode: 'all' }), []);
+  for (const [config, expected] of [
+    [{ tokenSource: 'header' }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'header', tokenHeaderName: '' }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'header', tokenHeaderName: 7 }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'header', tokenHeaderName: 'access token' }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'header', tokenHeaderName: 'access_token:' }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'headers', tokenJsonPath: 'token' }, /must be one of body, cookie, header/],
+    [{ tokenSource: 'Header', tokenJsonPath: 'token' }, /must be one of body, cookie, header/],
+    [{ tokenJsonPath: 'token', tokenHeaderName: 'access_token' }, /only read with tokenSource "header"/],
+    [{ tokenSource: 'cookie', cookieName: 'SESSION', tokenHeaderName: 'access_token' }, /only read with tokenSource "header"/],
+  ]) {
+    const errors = login(config);
+    assert.equal(errors.length, 1, JSON.stringify(config));
+    assert.match(errors[0].message, expected);
+    assert.equal(errors[0].path, 'connector.authConfig.tokenSource');
+    assert.equal(errors[0].docs, 'authentication');
+  }
+  const elsewhere = login({ tokenSource: 'header', tokenHeaderName: 'access_token' }, 'API_KEY');
+  assert.deepEqual(elsewhere.map((e) => e.message), [
+    'tokenSource only applies to LOGIN_TOKEN authentication',
+    'tokenHeaderName only applies to LOGIN_TOKEN authentication',
+  ]);
+});
+
+test('an OAUTH2 tokenResponsePath is a dotted path of keys', () => {
+  const oauth = (authConfig, authType = 'OAUTH2') => validateAdapter(adapter({
+    connector: { type: 'REST', authType, authConfig: {
+      grant: 'refresh_token', authorizationUrl: 'https://good.test/authorize', tokenUrl: 'https://good.test/token',
+      clientId: '{{GOOD_KEY}}', ...authConfig,
+    } },
+  }), 'good.json', 'de').errors.filter((e) => e.rule === 'token-response-path');
+
+  assert.deepEqual(oauth({}), []);
+  assert.deepEqual(oauth({ tokenResponsePath: 'data' }), []);
+  assert.deepEqual(oauth({ tokenResponsePath: 'result.token_set' }), []);
+  for (const value of ['', ' ', '.', 'data.', '.data', 'data..token', 'data[0]', 'data token', 7, true, null, ['data'], { path: 'data' }]) {
+    const errors = oauth({ tokenResponsePath: value });
+    assert.equal(errors.length, 1, JSON.stringify(value));
+    assert.match(errors[0].message, /must be a dotted path of keys/);
+    assert.equal(errors[0].path, 'connector.authConfig.tokenResponsePath');
+    assert.equal(errors[0].docs, 'authentication');
+  }
+  for (const authType of ['LOGIN_TOKEN', 'API_KEY', 'BEARER_TOKEN']) {
+    assert.match(oauth({ tokenResponsePath: 'data' }, authType)[0].message, /only applies to OAUTH2/);
+  }
+});
+
 test('DATABASE adapters may authenticate with a connection string', () => {
   const result = validateAdapter(adapter({
     slug: 'postgres', icon: 'postgres', region: 'intl',
