@@ -1,0 +1,202 @@
+{
+  "slug": "strava",
+  "name": "Strava",
+  "description": "Read Strava athlete profiles, permitted activities, starred segments and routes through the Strava API v3. Uses OAuth 2.0 and exposes read-only operations.",
+  "instructions": "## Strava API v3\nThis connector reads data from Strava using its REST API v3. It provides read-only access to the authenticated athlete, activities, starred segments and routes.\n\n**Authentication setup**\n1. Visit https://www.strava.com/settings/api and create a Strava API application.\n2. Set the Authorization Callback Domain to `cloud.anythingmcp.com` when using AnythingMCP Cloud, or your own AnythingMCP server hostname when self-hosting. Do not include `https://` or the callback path in this Strava setting.\n3. Copy the Client ID and Client Secret into `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET`.\n4. Install the connector and click **Authorize with Provider**. Approve the requested `read` and `activity:read` permissions.\n\nAnythingMCP uses the callback URL `<your AnythingMCP server URL>/api/mcp-oauth/callback`. Strava access tokens expire after six hours; the OAuth refresh flow renews them automatically.\n\n**Permissions and privacy**\nThe requested scopes are `read,activity:read`. `read` permits public profile, public segment and public route access. `activity:read` permits activities visible to Everyone and Followers. Private activities require `activity:read_all`; private routes and segments require `read_all`. Those additional permissions are not requested by this adapter. The authenticated athlete endpoint returns a summary profile unless `profile:read_all` is granted, which this adapter does not request.\n\n**Identifiers**\nStrava athlete, activity, segment and route IDs are numeric identifiers. Pass them as strings to avoid losing precision. Example activity ID: `12345678901`; segment ID: `229781`; route ID: `12345678`.\n\n**Pagination and limits**\nList tools use `page` (starting at 1) and `per_page` (default 30, maximum 200). Activity listing also accepts `before` and `after` Unix timestamps to filter by activity date. Strava applies per-application rate limits; avoid unnecessary polling and retry after HTTP 429 responses.\n\n**Common workflows**\n- Call `strava_get_athlete` to obtain the authenticated athlete ID, then use `strava_list_routes` with that ID.\n- Call `strava_list_activities` to find an activity, then pass its ID to `strava_get_activity` for its detailed record.\n- Call `strava_list_starred_segments` to find a starred segment, then pass its ID to `strava_get_segment` for details.\n\n**Limitations**\nThis connector is read-only. It does not create or update activities, star or unstar segments, upload files, export route files, or explore segments by geographic bounds. Private resources are not available with the requested scopes. Segment exploration requires Extended Access Tier approval and is not included.",
+  "region": "intl",
+  "category": "sports",
+  "icon": "strava",
+  "docsUrl": "https://developers.strava.com/docs/reference/",
+  "requiredEnvVars": ["STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET"],
+  "appRegistrationUrl": "https://www.strava.com/settings/api",
+  "connector": {
+    "name": "Strava API v3",
+    "type": "REST",
+    "baseUrl": "https://www.strava.com/api/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{STRAVA_CLIENT_ID}}",
+      "clientSecret": "{{STRAVA_CLIENT_SECRET}}",
+      "authorizationUrl": "https://www.strava.com/oauth/authorize",
+      "tokenUrl": "https://www.strava.com/oauth/token",
+      "scopes": "read,activity:read"
+    },
+    "healthcheckPath": "/athlete"
+  },
+  "probe": {
+    "tool": "strava_get_athlete"
+  },
+  "tools": [
+    {
+      "name": "strava_get_athlete",
+      "description": "Get the currently authenticated Strava athlete's summary profile, including their athlete ID, name, profile details and account information available under the granted permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/athlete"
+      }
+    },
+    {
+      "name": "strava_list_activities",
+      "description": "List activities belonging to the authenticated athlete that are visible under the granted activity permissions. Supports date filtering and page-based pagination; private activities are excluded without activity:read_all.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "before": {
+            "type": "integer",
+            "description": "Optional Unix timestamp. Return activities before this time."
+          },
+          "after": {
+            "type": "integer",
+            "description": "Optional Unix timestamp. Return activities after this time."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Defaults to 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 30,
+            "description": "Number of activities per page, from 1 to 200. Defaults to 30."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/athlete/activities",
+        "queryParams": {
+          "before": "$before",
+          "after": "$after",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "strava_get_activity",
+      "description": "Get the detailed record for one activity owned by the authenticated athlete, including its sport, distance, duration, start time, elevation and other fields returned by Strava. Only activities visible under the granted permissions can be read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "activity_id": {
+            "type": "string",
+            "description": "Strava activity ID as a string, for example 12345678901."
+          }
+        },
+        "required": ["activity_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/activities/{activity_id}"
+      }
+    },
+    {
+      "name": "strava_list_starred_segments",
+      "description": "List segments starred by the authenticated athlete. Private segments are filtered out unless the token has the additional read_all permission, which this adapter does not request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Defaults to 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 30,
+            "description": "Number of segments per page, from 1 to 200. Defaults to 30."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments/starred",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "strava_get_segment",
+      "description": "Get details for a Strava segment by its ID, including its name, distance, average grade, climb category and start and end coordinates when available. Private segments and athlete-specific segment information require additional permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "segment_id": {
+            "type": "string",
+            "description": "Strava segment ID as a string, for example 229781."
+          }
+        },
+        "required": ["segment_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/segments/{segment_id}"
+      }
+    },
+    {
+      "name": "strava_list_routes",
+      "description": "List routes created by the specified athlete. Use the authenticated athlete ID returned by strava_get_athlete. Private routes are excluded without the additional read_all permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "athlete_id": {
+            "type": "string",
+            "description": "Strava athlete ID as a string, normally obtained from strava_get_athlete."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. Defaults to 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 30,
+            "description": "Number of routes per page, from 1 to 200. Defaults to 30."
+          }
+        },
+        "required": ["athlete_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/athletes/{athlete_id}/routes",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "strava_get_route",
+      "description": "Get the detailed representation of a Strava route by its ID, including its name, distance, elevation gain and route metadata. Private routes require the additional read_all permission, which this adapter does not request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "route_id": {
+            "type": "string",
+            "description": "Strava route ID as a string, for example 12345678."
+          }
+        },
+        "required": ["route_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/routes/{route_id}"
+      }
+    }
+  ]
+}

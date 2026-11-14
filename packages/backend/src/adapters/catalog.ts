@@ -597,6 +597,7 @@ import * as statsig from './intl/statsig.json';
 import * as statuspage from './intl/statuspage.json';
 import * as storyblok from './intl/storyblok.json';
 import * as strapi from './intl/strapi.json';
+import * as strava from './intl/strava.json';
 import * as streak from './intl/streak.json';
 import * as stripe from './intl/stripe.json';
 import * as substack from './intl/substack.json';
@@ -1645,6 +1646,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   statuspage as unknown as AdapterDefinition,
   storyblok as unknown as AdapterDefinition,
   strapi as unknown as AdapterDefinition,
+  strava as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
   stripe as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,
