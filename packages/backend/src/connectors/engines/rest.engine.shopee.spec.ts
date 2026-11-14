@@ -213,7 +213,8 @@ describe('opt-in: adapters signed before query signing keep the original path', 
 
   it('every catalog HMAC adapter except the query-signed ones uses none of the new fields', () => {
     // Shopee, TikTok Shop and the AliExpress (IOP) adapters were written for query signing.
-    const querySigned = ['aliexpress-affiliate', 'aliexpress-dropshipping', 'falabella-seller-center', 'shopee', 'tiktok-shop'];
+    // Temu signs inside the JSON body (placement "body", plain digest).
+    const querySigned = ['aliexpress-affiliate', 'aliexpress-dropshipping', 'falabella-seller-center', 'shopee', 'temu', 'tiktok-shop'];
     // Ghost signs a JWT per request (signature.jwt) and never reaches the
     // canonical-string path these fields belong to.
     const hmac = listAdapters()
