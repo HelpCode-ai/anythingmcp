@@ -1121,6 +1121,60 @@ export function normalizeDeniedTables(input: unknown): RegExp[] {
   return out;
 }
 
+/** What a variable used inside a SQL identifier may hold: a table prefix such as `oc_`, or nothing. */
+const SQL_IDENTIFIER_VALUE = /^[A-Za-z0-9_]{0,20}$/;
+
+/**
+ * Guard for `connector.config.sqlIdentifierVars`, the opt-in list of variables
+ * a DATABASE connector may use as part of an identifier in its tools' SQL
+ * (`SELECT … FROM {{OPENCART_DB_PREFIX}}order`: the shop chooses its table
+ * prefix, and an identifier cannot be a bound parameter).
+ *
+ * `{{VAR}}` in a tool's `endpointMapping.path` is filled in as plain text by
+ * the generic interpolation before the statement reaches the engine, so the
+ * value would become SQL. Call this with the template as written, before
+ * that interpolation. With the list present:
+ * - every `{{VAR}}` in the SQL must be on the list; anything else belongs in
+ *   a `${parameter}`, which is bound;
+ * - the value of each one must be at most 20 letters, digits or underscores.
+ *   A quote, backtick, space, dot or semicolon refuses the call.
+ * A listed variable with no value at all is left alone here: the callers'
+ * unresolved-placeholder check names it.
+ *
+ * Without the list (not an array) nothing is checked and nothing changes for
+ * the connector.
+ */
+export function assertSafeSqlIdentifierVars(
+  identifierVars: unknown,
+  sqlTemplate: unknown,
+  envVars: Record<string, unknown> | null | undefined,
+): void {
+  if (!Array.isArray(identifierVars)) return;
+  if (typeof sqlTemplate !== 'string' || !sqlTemplate.includes('{{')) return;
+  const allowed = new Set(
+    identifierVars.filter((name): name is string => typeof name === 'string'),
+  );
+  for (const match of sqlTemplate.matchAll(/\{\{([^{}]+)\}\}/g)) {
+    const name = match[1].trim();
+    if (!allowed.has(name)) {
+      throw new Error(
+        `The variable ${name} cannot be used in this connector's SQL: only the table-name variables it declares ` +
+          `(${[...allowed].join(', ') || 'none'}) are filled into a statement. Pass values as \${parameter} so they are bound. ` +
+          'No query was sent to the database.',
+      );
+    }
+    const value = envVars?.[name];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'string' || !SQL_IDENTIFIER_VALUE.test(value)) {
+      throw new Error(
+        `The variable ${name} is used as part of a table name, so it may only contain letters, digits and underscores ` +
+          "(at most 20 characters, for example oc_). Correct it in the connector's variables. " +
+          'No query was sent to the database.',
+      );
+    }
+  }
+}
+
 export type SqlDriver = 'postgres' | 'mysql' | 'mssql' | 'oracle' | 'sqlite' | 'hana';
 
 /**

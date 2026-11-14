@@ -15,7 +15,7 @@ import { RestEngine } from '../connectors/engines/rest.engine';
 import { GraphqlEngine } from '../connectors/engines/graphql.engine';
 import { SoapEngine } from '../connectors/engines/soap.engine';
 import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
-import { DatabaseEngine } from '../connectors/engines/database.engine';
+import { DatabaseEngine, assertSafeSqlIdentifierVars } from '../connectors/engines/database.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
 import { LicenseGuardService, TrialEndedException } from '../license/license-guard.service';
@@ -551,6 +551,17 @@ export class DynamicMcpTools {
         ...envVars,
         ...buildCallerContextVars(context),
       };
+
+      // A DATABASE connector that declares table-name variables
+      // (config.sqlIdentifierVars) has them checked before they become SQL
+      // text below. Without the field this does nothing.
+      if (tool.connectorType === 'DATABASE') {
+        assertSafeSqlIdentifierVars(
+          tool.connectorConfig.config?.sqlIdentifierVars,
+          tool.endpointMapping?.path,
+          interpolationVars,
+        );
+      }
 
       // Interpolate {{VAR}} patterns in config and endpoint mapping
       const {

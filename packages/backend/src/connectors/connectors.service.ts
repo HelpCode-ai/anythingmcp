@@ -18,7 +18,7 @@ import { SoapEngine, WsdlReadError } from './engines/soap.engine';
 import { wsdlUrlForLog } from './parsers/wsdl.parser';
 import { connectorSecretValues } from './connector-secrets.util';
 import { GraphqlEngine } from './engines/graphql.engine';
-import { DatabaseEngine } from './engines/database.engine';
+import { DatabaseEngine, assertSafeSqlIdentifierVars } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { UserCredentialError, UserCredentialsService } from './user-credentials.service';
 import { withoutUserTokens } from './user-credential.util';
@@ -985,6 +985,15 @@ export class ConnectorsService {
       });
       authConfig = resolved.authConfig;
       credentialKey = resolved.credentialKey;
+    }
+    // Table-name variables of a DATABASE connector (config.sqlIdentifierVars)
+    // are checked before they become SQL text, exactly as DynamicMcpTools does.
+    if ((connector.type as string) === 'DATABASE') {
+      assertSafeSqlIdentifierVars(
+        (connector.config as { sqlIdentifierVars?: unknown } | null)?.sqlIdentifierVars,
+        endpointMapping.path,
+        envVars ?? {},
+      );
     }
     const { config: resolved, endpointMapping: resolvedMapping } =
       interpolateConnectorConfig(
