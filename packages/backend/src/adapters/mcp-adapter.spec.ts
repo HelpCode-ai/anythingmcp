@@ -74,6 +74,93 @@ describe('mergeDiscoveredMcpTools', () => {
     expect(Object.keys(schema.properties)).toEqual(['q', 'via', 'ref']);
   });
 
+  describe('fixed arguments (config.mcpFixedArguments)', () => {
+    const fixed = { meta: { 'ucp-agent': { profile: 'https://agent.example.test/ucp-agent.json' } } };
+    const meta = (extra: Record<string, unknown> = {}) => ({
+      type: 'object',
+      properties: {
+        'ucp-agent': { type: 'object', properties: { profile: { type: 'string' } }, required: ['profile'] },
+        ...extra,
+      },
+      required: ['ucp-agent', ...Object.keys(extra)],
+    });
+    const search = { type: 'object', properties: { meta: meta(), catalog: { type: 'object' } }, required: ['meta', 'catalog'] };
+    const complete = {
+      type: 'object',
+      properties: { meta: meta({ 'idempotency-key': { type: 'string' } }), id: { type: 'string' }, via: { type: 'string' } },
+      required: ['meta', 'id'],
+    };
+    const catalogTools = [
+      { name: 'shop_search_catalog', description: '', parameters: {}, endpointMapping: { method: 'search_catalog', path: '/mcp' } },
+      {
+        name: 'shop_complete_checkout',
+        description: '',
+        parameters: {},
+        endpointMapping: { method: 'complete_checkout', path: '/mcp' },
+        enabled: false,
+        omitParameters: ['via'],
+      },
+    ];
+    const discovered = () => [
+      remote('search_catalog', { parameters: search }),
+      remote('complete_checkout', { parameters: complete }),
+      remote('brand_new', { parameters: search }),
+    ];
+
+    it("drops the fixed paths from every tool's schema, known to the catalog or not, next to omitParameters", () => {
+      const out = mergeDiscoveredMcpTools(catalogTools, discovered(), 'shop_', fixed);
+      expect(out.map((t) => [t.name, t.enabled])).toEqual([
+        ['shop_search_catalog', undefined],
+        ['shop_complete_checkout', false],
+        ['shop_brand_new', undefined],
+      ]);
+      expect(out[0].parameters).toEqual({ type: 'object', properties: { catalog: { type: 'object' } }, required: ['catalog'] });
+      expect(out[1].parameters).toEqual({
+        type: 'object',
+        properties: {
+          meta: { type: 'object', properties: { 'idempotency-key': { type: 'string' } }, required: ['idempotency-key'] },
+          id: { type: 'string' },
+        },
+        required: ['meta', 'id'],
+      });
+      expect(out[2].parameters).toEqual(out[0].parameters);
+      // The server's own objects are not changed.
+      expect(search.required).toEqual(['meta', 'catalog']);
+      expect(Object.keys(complete.properties)).toEqual(['meta', 'id', 'via']);
+    });
+
+    it('leaves the schemas as the server lists them without the setting', () => {
+      const out = mergeDiscoveredMcpTools(catalogTools, discovered(), 'shop_');
+      expect(out[0].parameters).toBe(search);
+      expect(out[2].parameters).toBe(search);
+      expect(mergeDiscoveredMcpTools(catalogTools, discovered(), 'shop_', undefined)[0].parameters).toBe(search);
+    });
+
+    it('applies on "Discover tools" from the connector settings, for a hand-made connector too', () => {
+      const own = catalogMcpToolsFor({ mcpToolPrefix: 'mine_', mcpFixedArguments: fixed }, discovered());
+      expect(own.map((t) => t.name)).toEqual(['mine_search_catalog', 'mine_complete_checkout', 'mine_brand_new']);
+      expect(own[0].parameters).toEqual({ type: 'object', properties: { catalog: { type: 'object' } }, required: ['catalog'] });
+      expect((own[1].parameters.properties as Record<string, unknown>).meta).toEqual({
+        type: 'object',
+        properties: { 'idempotency-key': { type: 'string' } },
+        required: ['idempotency-key'],
+      });
+      // No setting: exactly what the server listed.
+      expect(catalogMcpToolsFor({ mcpToolPrefix: 'mine_' }, discovered())[0].parameters).toBe(search);
+      expect(catalogMcpToolsFor(null, discovered())[1].parameters).toBe(complete);
+    });
+
+    it('applies on "Discover tools" for a connector installed from an MCP catalog adapter', () => {
+      const later = catalogMcpToolsFor({ adapterSlug: 'splunk', mcpFixedArguments: fixed }, [
+        remote('splunk_update_dashboard', { parameters: search }),
+      ]);
+      expect(later[0]).toMatchObject({ name: 'splunk_update_dashboard', enabled: false, origin: 'catalog' });
+      expect(later[0].parameters).toEqual({ type: 'object', properties: { catalog: { type: 'object' } }, required: ['catalog'] });
+      // The adapter itself has no such setting, so its installs are untouched.
+      expect(catalogMcpToolsFor({ adapterSlug: 'splunk' }, [remote('splunk_x', { parameters: search })])[0].parameters).toBe(search);
+    });
+  });
+
   it('names the tools with the prefix, matches the policy by local or remote name, and calls the remote name', () => {
     const prefixed = mergeDiscoveredMcpTools(
       [

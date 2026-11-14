@@ -62,7 +62,7 @@ import { setupEffort } from './setup-guide';
 import { fileSearchSetupPath } from './file-search-setup';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
-import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
+import { mcpFixedArgumentsOf, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
 import { APP_APPROVAL_ADAPTERS } from './app-approval-watch';
 import { describeHtmlAnswer, looksLikeHtml } from './html-excerpt';
@@ -1064,6 +1064,7 @@ export class AdaptersService {
           adapter.tools,
           discovered,
           mcpToolPrefixOf(adapter.connector.config),
+          mcpFixedArgumentsOf(adapter.connector.config),
         );
         mcpProbe = {
           ok: true,

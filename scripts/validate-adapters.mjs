@@ -321,6 +321,21 @@ export function errorWhenProblems(value) {
   return problems;
 }
 
+/**
+ * Problems with `connector.config.mcpFixedArguments`, the arguments an MCP
+ * bridge sends with every tool call (mcp-connector-config.util.ts). Other
+ * engines never read it, and anything but an object is ignored at call time,
+ * so both mistakes would otherwise go unnoticed until a call fails upstream.
+ */
+export function mcpFixedArgumentsProblems(connector) {
+  const value = connector?.config?.mcpFixedArguments;
+  if (value === undefined) return [];
+  const problems = [];
+  if (connector.type !== 'MCP') problems.push(`mcpFixedArguments only applies to connectors of type "MCP", not "${connector.type}"`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) problems.push('mcpFixedArguments must be an object of argument names and their values');
+  return problems;
+}
+
 const SETUP_EFFORTS = new Set(['none', 'one_click', 'api_key', 'own_app', 'admin_needed']);
 const GUIDE_FIELDS = new Set(['effort', 'minutes', 'examples', 'needs', 'why', 'steps']);
 const STEP_FIELDS = new Set(['id', 'title', 'body', 'action', 'values', 'image', 'fields', 'problems', 'confirm', 'saveAndCheck', 'waitForProvider']);
@@ -607,6 +622,10 @@ export function validateAdapter(adapter, file, region) {
 
   for (const problem of errorWhenProblems(adapter.connector?.config?.errorWhen)) {
     errors.push(error('error-when', 'connector.config.errorWhen', problem, 'Each rule needs a path and may set equals, in, matches, messagePath, messageMatches and an error status (400-599).', 'errors-inside-a-200-response'));
+  }
+
+  for (const problem of mcpFixedArgumentsProblems(adapter.connector)) {
+    errors.push(error('mcp-fixed-arguments', 'connector.config.mcpFixedArguments', problem, 'Use an object such as { "meta": { "agent": "…" } } on an MCP connector, or remove the field.', 'mcp-adapters-a-vendors-own-mcp-server'));
   }
 
   const slugUnderscored = adapter.slug.replace(/-/g, '_');

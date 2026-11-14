@@ -105,6 +105,88 @@ describe('McpClientEngine endpoint resolution', () => {
     });
   });
 
+  describe('fixed arguments (config.mcpFixedArguments)', () => {
+    const fixed = { meta: { 'ucp-agent': { profile: 'https://agent.example.test/ucp-agent.json' } } };
+
+    it("sends the caller's own arguments object when the connector fixes nothing", async () => {
+      const params = { catalog: { query: 'tent' } };
+      await engine.execute(config('https://shop.example.test/api/ucp/mcp'), { method: 'search_catalog', path: '/mcp' }, params);
+
+      expect(client.callTool).toHaveBeenCalledTimes(1);
+      expect(client.callTool.mock.calls[0][0].arguments).toBe(params);
+    });
+
+    it('merges them into the arguments of the call, without touching what the caller passed', async () => {
+      const params = { catalog: { query: 'tent' } };
+      await engine.execute(
+        { ...config('https://shop.example.test/api/ucp/mcp'), fixedArguments: fixed },
+        { method: 'search_catalog', path: '/mcp' },
+        params,
+      );
+
+      expect(client.callTool).toHaveBeenCalledWith({
+        name: 'search_catalog',
+        arguments: { catalog: { query: 'tent' }, meta: { 'ucp-agent': { profile: 'https://agent.example.test/ucp-agent.json' } } },
+      });
+      expect(params).toEqual({ catalog: { query: 'tent' } });
+    });
+
+    it('lets the fixed value win over what the caller sent, and keeps the rest of the object', async () => {
+      await engine.execute(
+        { ...config('https://shop.example.test/api/ucp/mcp'), fixedArguments: fixed },
+        { method: 'complete_checkout', path: '/mcp' },
+        { id: 'chk_1', meta: { 'idempotency-key': 'k-1', 'ucp-agent': { profile: 'https://other.example.test/p.json' } } },
+      );
+
+      expect(client.callTool.mock.calls[0][0].arguments).toEqual({
+        id: 'chk_1',
+        meta: { 'idempotency-key': 'k-1', 'ucp-agent': { profile: 'https://agent.example.test/ucp-agent.json' } },
+      });
+    });
+
+    it('sends no Authorization header to a server that needs no credentials (NONE)', async () => {
+      await engine.execute(
+        { ...config('https://shop.example.test/api/ucp/mcp'), fixedArguments: fixed },
+        { method: 'search_catalog', path: '/mcp' },
+        {},
+      );
+      await engine.listTools(config('https://shop.example.test/api/ucp/mcp'));
+
+      for (const call of MockedTransport.mock.calls) {
+        expect(Object.keys(call[1].requestInit.headers).map((h) => h.toLowerCase())).not.toContain('authorization');
+      }
+      expect(transportUrl(1)).toBe('https://shop.example.test/api/ucp/mcp');
+    });
+
+    it('sends them again on the retry after a renewed OAuth2 token', async () => {
+      const tokens = {
+        getAccessToken: jest.fn().mockResolvedValue('expired'),
+        renewAfterRejection: jest.fn().mockResolvedValue('renewed'),
+      };
+      engine = new McpClientEngine(tokens as unknown as OAuth2TokenService);
+      client.callTool.mockRejectedValueOnce(
+        Object.assign(new Error('Error POSTing to endpoint: {"error":"invalid_token"}'), { data: { status: 401 } }),
+      );
+
+      await engine.execute(
+        {
+          baseUrl: 'https://shop.example.test/mcp',
+          authType: 'OAUTH2',
+          authConfig: { tokenUrl: 'https://shop.example.test/token', refreshToken: 'rt' },
+          connectorId: 'c1',
+          fixedArguments: { channel: 'amcp' },
+        },
+        { method: 'search', path: '/mcp' },
+        { q: 'tent', channel: 'model' },
+      );
+
+      expect(client.callTool).toHaveBeenCalledTimes(2);
+      for (const call of client.callTool.mock.calls) {
+        expect(call[0]).toEqual({ name: 'search', arguments: { q: 'tent', channel: 'amcp' } });
+      }
+    });
+  });
+
   describe('headers', () => {
     it('forwards connector headers alongside the injected auth header', async () => {
       // Snowflake needs both: the PAT in Authorization AND a token-type header.

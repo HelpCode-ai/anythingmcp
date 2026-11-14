@@ -197,6 +197,7 @@ test('diagnostic docs use ordinary GitHub heading slugs', () => {
     ['Tools', 'tools'], ['Connector', 'connector'], ['Authentication', 'authentication'],
     ['Adapter file errors', 'adapter-file-errors'], ['GraphQL variables', 'graphql-variables'],
     ['Errors inside a 200 response', 'errors-inside-a-200-response'],
+    ["MCP adapters \\(a vendor's own MCP server\\)", 'mcp-adapters-a-vendors-own-mcp-server'],
   ]) {
     assert.match(docs, new RegExp(`^#{2,3} ${heading}$`, 'm'));
     const diagnostic = renderReport([{
@@ -440,6 +441,24 @@ test('connector.config.errorWhen rules are checked', () => {
     'errorWhen[3].typo is not a known field',
   ]);
   assert.ok(bad.errors.every((e) => e.rule === 'error-when' && e.docs === 'errors-inside-a-200-response'));
+});
+
+test('connector.config.mcpFixedArguments is an object on an MCP connector', () => {
+  const check = (connector) => validateAdapter(adapter({ connector }), 'good.json', 'de').errors;
+  const fixed = { meta: { 'ucp-agent': { profile: 'https://example.test/agent.json' } } };
+
+  assert.deepEqual(check({ type: 'MCP', authType: 'NONE', config: { mcpToolPrefix: 'good_', mcpFixedArguments: fixed } }), []);
+  // Absent: nothing to check, on any connector type.
+  assert.deepEqual(check({ type: 'MCP', authType: 'NONE', config: { mcpToolPrefix: 'good_' } }), []);
+  assert.deepEqual(check({ type: 'REST', authType: 'API_KEY', config: {} }), []);
+
+  const onRest = check({ type: 'REST', authType: 'API_KEY', config: { mcpFixedArguments: fixed } });
+  assert.deepEqual(onRest.map((e) => e.message), ['mcpFixedArguments only applies to connectors of type "MCP", not "REST"']);
+  for (const value of ['meta', ['meta'], null, 7]) {
+    const errors = check({ type: 'MCP', authType: 'NONE', config: { mcpFixedArguments: value } });
+    assert.deepEqual(errors.map((e) => e.message), ['mcpFixedArguments must be an object of argument names and their values']);
+    assert.ok(errors.every((e) => e.rule === 'mcp-fixed-arguments' && e.path === 'connector.config.mcpFixedArguments' && e.docs === 'mcp-adapters-a-vendors-own-mcp-server'));
+  }
 });
 
 test('setupGuide asks for every required variable once, with https links and real screenshots', () => {

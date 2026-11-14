@@ -51,7 +51,7 @@ import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
 import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
 import { egressIps } from '../connectors/egress';
-import { envVarsForMcpTool } from '../connectors/mcp-connector-config.util';
+import { envVarsForMcpTool, resolveMcpFixedArguments } from '../connectors/mcp-connector-config.util';
 import { processGauges } from '../common/process-vitals';
 import { recordToolCall } from '../common/metrics';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
@@ -614,6 +614,11 @@ export class DynamicMcpTools {
         envVars,
       );
 
+      const mcpFixedArguments =
+        tool.connectorType === 'MCP'
+          ? resolveMcpFixedArguments(tool.connectorConfig.config, envVars)
+          : undefined;
+
       const engineConfig = {
         baseUrl: interpolatedConfig.baseUrl,
         authType: tool.connectorConfig.authType,
@@ -634,6 +639,8 @@ export class DynamicMcpTools {
         // Masked in the engines' log lines (a bot token in the URL path).
         logSecrets: secretValues,
         ...(proxyUrl ? { proxyUrl } : {}),
+        // Arguments an MCP bridge sends with every call (mcpFixedArguments).
+        ...(mcpFixedArguments ? { fixedArguments: mcpFixedArguments } : {}),
       };
 
       // An OAuth connector nobody has authorized carries a placeholder where
@@ -665,6 +672,13 @@ export class DynamicMcpTools {
         `the connector behind ${tool.name}`,
         connectorPageUrl(tool.connectorId),
       );
+      if (mcpFixedArguments) {
+        assertNoUnresolvedPlaceholders(
+          { body: mcpFixedArguments },
+          `the connector behind ${tool.name}`,
+          connectorPageUrl(tool.connectorId),
+        );
+      }
       // A base URL without https:// (a variable typed as `shop.example.com`
       // on an older install) would otherwise fail in the SSRF guard as
       // "invalid URL", naming neither the variable nor the fix.

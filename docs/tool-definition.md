@@ -480,6 +480,18 @@ leaves out (the server's own hints win). `omitParameters` (an array of
 top-level parameter names) drops those parameters from the schema the server
 lists, at install and on every **Discover tools**, for vendor fields such as
 attribution that a workspace has no use for.
+When the server needs the same argument on every call instead (an agent
+profile URL, a fixed channel), set `connector.config.mcpFixedArguments` to an
+object: it is merged into the arguments of every tool call, its values win
+over the caller's, `{{VAR}}` is resolved in them, and its paths are dropped
+from the listed schemas (nested ones too, so
+`{ "meta": { "ucp-agent": { "profile": "…" } } }` removes `meta` where it holds
+nothing else). Write the snapshot's `parameters` without those paths: the
+snapshot is installed as it is when the server cannot be reached. The
+validator accepts the setting on `MCP` connectors only, as an object. See
+[MCP Bridge](connectors/mcp-bridge.md#fixed-arguments-mcpfixedarguments).
+A public server that needs no credentials uses `authType: "NONE"` with no
+`authConfig` and an empty `requiredEnvVars` (see `intl/decathlon-shop.json`).
 Each tool's `endpointMapping` is `{ "method": "<remote tool name>", "path": "/mcp" }`
 (`"/"` for a server at the root of its host, together with
 `connector.config.mcpPath: "/"`).
