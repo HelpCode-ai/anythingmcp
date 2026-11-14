@@ -493,7 +493,7 @@ without `nonceLength` (rule `hmac-signature`).
 
 #### Shop authorization (token providers)
 
-Two marketplaces authorize a shop with their own flow instead of OAuth 2, set
+Some marketplaces authorize a shop with their own flow instead of OAuth 2, set
 with `authConfig.tokenProvider` on an `HMAC` connector. The provider stores the
 shop's tokens encrypted on the connector, renews them before they expire, adds
 them to every call, and marks the connector as needing a new authorization when
@@ -504,6 +504,7 @@ the marketplace refuses the refresh token. The connector page shows
 |-----------------|------|---------------------------|
 | `shopee` | Signed `auth_partner` link; callback `<SERVER_URL>/api/shopee/callback/<state>` | `access_token` and `shop_id` query parameters, signed |
 | `tiktok-shop` | `services.tiktokshop.com/open/authorize?service_id=...` (US: `services.us.tiktokshop.com`); callback `<SERVER_URL>/api/tiktok-shop/callback`, set as the app's Redirect URL | the access token in the `x-tts-access-token` header (not signed) and `shop_cipher` in the query (signed), except on `/authorization/`, `/seller/` and upload paths |
+| `iop` | The Alibaba IOP gateways (Lazada, Miravia, AliExpress seller): `authConfig.iop.authorizeUrl` with `response_type=code`, `client_id`, `redirect_uri` and `state`; callback `<SERVER_URL>/api/iop-auth/callback`, set as the app's callback URL | `access_token` query parameter, signed |
 
 The TikTok Shop provider reads the app key from `authConfig.appKey` (or the
 `app_key` query parameter), the secret from `signature.secret` and the Service
@@ -528,6 +529,77 @@ install record for 30 minutes when its `app_key` is the server's; the
 dashboard completes it with `POST /api/tiktok-shop/install` once the seller is
 signed in, reusing the workspace's newest TikTok Shop connector that uses the
 server's app and has no shop authorized yet, or installing a new one.
+
+The `iop` provider (`iop-token.service.ts`, `iop-auth.controller.ts`) takes
+the gateway from the adapter, not from code per vendor:
+
+```json
+"authType": "HMAC",
+"authConfig": {
+  "tokenProvider": "iop",
+  "iop": {
+    "appKey": "{{LAZADA_APP_KEY}}",
+    "authorizeUrl": "https://auth.lazada.com/oauth/authorize",
+    "tokenBaseUrl": "https://auth.lazada.com/rest",
+    "tokenPath": "/auth/token/create",
+    "refreshPath": "/auth/token/refresh",
+    "authorizeParams": { "force_auth": "true" }
+  },
+  "signature": {
+    "algorithm": "sha256",
+    "encoding": "hex-upper",
+    "secret": "{{LAZADA_APP_SECRET}}",
+    "placement": "query",
+    "paramName": "sign",
+    "timestampParam": "timestamp",
+    "timestampFormat": "ms",
+    "queryParams": { "app_key": "{{LAZADA_APP_KEY}}", "sign_method": "sha256" },
+    "template": "${apiPath}${sortedParams}"
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `iop.appKey` | The app key, sent as `client_id` and signed as `app_key`. Default: `signature.queryParams.app_key`. |
+| `iop.authorizeUrl` | https URL of the seller authorize page, without a query. |
+| `iop.tokenBaseUrl` | https URL the token paths are appended to. |
+| `iop.tokenPath` / `iop.refreshPath` | The token-create and token-refresh operations. |
+| `iop.authorizeParams` | Optional static query parameters of the authorize URL. They cannot set `response_type`, `client_id`, `redirect_uri` or `state`. |
+| `iop.tokenResponsePath` | Optional dotted path of the object that holds the token fields, for a gateway that wraps them. Unset, they are read at the top level, where Lazada, Miravia and AliExpress put them. |
+
+The callback exchanges `code` at `tokenBaseUrl + tokenPath`; before a call,
+an access token with less than 30 minutes (or half its lifetime) left is
+renewed at `tokenBaseUrl + refreshPath` with `refresh_token`. Both token calls
+reuse the connector's `signature` block (secret, algorithm, `paramName`,
+`timestampParam`, `queryParams`) and are always signed as IOP system calls,
+the operation's path in front of the sorted parameters, even when the
+business calls sign `${sortedParams}` alone (AliExpress `/sync`). As in the
+gateways' SDKs, `app_key`, `sign_method`, `timestamp` and `sign` go in the
+query and `code` or `refresh_token` in a form body. Lifetimes come from the
+answer: `expires_in` and `refresh_expires_in` in seconds (AliExpress's
+absolute `expire_time` and `refresh_token_valid_time` are read only when
+those are missing); a token without a lifetime is used until it is refused.
+The stored fields are `accessToken`, `refreshToken`, `expiresAt`,
+`expiresIn`, `refreshExpiresAt`, `refreshExpiresIn`, `authorizedAt` and
+`lastRefreshedAt`, encrypted with the rest of the authConfig.
+
+A call refused with 401 (an `errorWhen` rule with `status: 401`, such as
+`IllegalAccessToken`, or HTTP 401) is renewed once and resent once, unless
+the gateway's code names the signature, the app key, the timestamp or a
+permission, which a new token cannot fix. A refresh token the gateway
+refuses (`IllegalRefreshToken`, `AUTH_TYPE_UNSUPPORTED`), or one past its own
+`refresh_expires_in` (or issued with `refresh_expires_in` 0), marks the
+connector as needing a new authorization, with one email to the owner,
+without asking the gateway again. No access-token variable is needed, and
+`signature.queryParams` must not set `access_token`. The setup page fills
+`{{redirectUri}}` in such an adapter's setup guide with
+`<SERVER_URL>/api/iop-auth/callback` (on AnythingMCP Cloud:
+`https://cloud.anythingmcp.com/api/iop-auth/callback`), and its last step
+sends the seller to the authorize page. `scripts/validate-adapters.mjs`
+checks the block (rule `iop-token-provider`): `HMAC` only, https URLs, paths,
+and the IOP signature (`placement: "query"`, `encoding: "hex-upper"`,
+`timestampFormat: "ms"`, a template with `${sortedParams}`).
 
 #### Meta sign-in (Instagram connectors)
 

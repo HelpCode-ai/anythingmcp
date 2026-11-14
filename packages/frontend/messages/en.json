@@ -1544,6 +1544,10 @@
       "title": "Shopee shop authorization",
       "body": "Sign in with the shop account and approve this app. The tokens are stored encrypted and renewed automatically. Authorize again when the authorization expires or the connector asks for it."
     },
+    "iopSeller": {
+      "title": "Seller authorization",
+      "body": "Sign in with the seller account and approve the app (Lazada, Miravia, AliExpress). The app's callback URL must be your AnythingMCP address followed by /api/iop-auth/callback. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."
+    },
     "tiktokShop": {
       "title": "TikTok Shop authorization",
       "body": "Sign in to TikTok Shop Seller Center with the shop owner account and approve the app. With an app of your own, its Redirect URL in Partner Center must be your AnythingMCP address followed by /api/tiktok-shop/callback; without one, the connector uses this server's TikTok Shop app. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."

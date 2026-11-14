@@ -725,3 +725,83 @@ test('hmac signature options for a digest in the body and a nonce are checked', 
   assert.match(docs, /^#### Plain digest and body placement \(opt-in\)$/m);
   assert.match(docs, /^#### Nonce and header template \(opt-in\)$/m);
 });
+
+test('tokenProvider "iop": HMAC only, https gateway URLs, token paths and the IOP signature', () => {
+  const lazada = () => ({
+    tokenProvider: 'iop',
+    iop: {
+      appKey: '{{GOOD_KEY}}',
+      authorizeUrl: 'https://auth.lazada.com/oauth/authorize',
+      tokenBaseUrl: 'https://auth.lazada.com/rest',
+      tokenPath: '/auth/token/create',
+      refreshPath: '/auth/token/refresh',
+      authorizeParams: { force_auth: 'true' },
+    },
+    signature: {
+      algorithm: 'sha256', encoding: 'hex-upper', secret: '{{GOOD_SECRET}}', placement: 'query', paramName: 'sign',
+      timestampParam: 'timestamp', timestampFormat: 'ms', queryParams: { app_key: '{{GOOD_KEY}}', sign_method: 'sha256' },
+      template: '${apiPath}${sortedParams}',
+    },
+  });
+  const problems = (authConfig, authType = 'HMAC') => validatorModule.iopTokenProviderProblems({ authType, authConfig });
+
+  // The documented shape passes, with no access-token variable anywhere.
+  assert.deepEqual(problems(lazada()), []);
+  // AliExpress: business calls signed without the path, app key from the signed query.
+  const ae = lazada();
+  ae.signature.template = '${sortedParams}';
+  delete ae.iop.appKey;
+  delete ae.iop.authorizeParams;
+  assert.deepEqual(problems({ ...ae, iop: { ...ae.iop, tokenResponsePath: 'data' } }), []);
+  // Connectors without the provider are not looked at.
+  assert.deepEqual(problems({ signature: { placement: 'header' } }), []);
+  assert.deepEqual(problems({ tokenProvider: 'shopee' }), []);
+  assert.deepEqual(problems({ iop: { nonsense: true } }), []);
+
+  assert.match(problems(lazada(), 'OAUTH2')[0], /only applies to HMAC/);
+  assert.match(problems({ tokenProvider: 'iop', signature: lazada().signature })[0], /needs an authConfig.iop object/);
+
+  const broken = (edit) => {
+    const cfg = lazada();
+    edit(cfg);
+    return problems(cfg);
+  };
+  for (const [edit, expected] of [
+    [(c) => { c.iop.authorizeUrl = 'http://auth.lazada.com/oauth/authorize'; }, /authorizeUrl must be an https URL/],
+    [(c) => { c.iop.authorizeUrl = '{{AUTH_URL}}'; }, /authorizeUrl must be an https URL/],
+    [(c) => { c.iop.authorizeUrl = 'https://auth.lazada.com/oauth/authorize?force_auth=true'; }, /must not carry a query/],
+    [(c) => { delete c.iop.tokenBaseUrl; }, /tokenBaseUrl must be an https URL/],
+    [(c) => { c.iop.tokenPath = 'auth/token/create'; }, /tokenPath must be a path/],
+    [(c) => { c.iop.refreshPath = 'https://auth.lazada.com/rest/auth/token/refresh'; }, /refreshPath must be a path/],
+    [(c) => { c.iop.refreshPath = '/auth/token/refresh?x=1'; }, /refreshPath must be a path/],
+    [(c) => { c.iop.authorizeParams = { force_auth: true }; }, /authorizeParams must map parameter names to text/],
+    [(c) => { c.iop.authorizeParams = { client_id: 'x' }; }, /must not set "client_id"/],
+    [(c) => { c.iop.authorizeParams = { redirect_uri: 'https://evil.test' }; }, /must not set "redirect_uri"/],
+    [(c) => { c.iop.tokenResponsePath = 'data..x'; }, /tokenResponsePath must be a dotted path/],
+    [(c) => { c.iop.tokenUrl = 'https://x.test'; }, /authConfig.iop.tokenUrl is not a known field/],
+    [(c) => { c.iop.appKey = ''; }, /needs the app key/],
+    [(c) => { delete c.iop.appKey; delete c.signature.queryParams.app_key; }, /needs the app key/],
+    [(c) => { delete c.signature; }, /needs authConfig.signature/],
+    [(c) => { delete c.signature.secret; }, /needs signature.secret/],
+    [(c) => { c.signature.placement = 'header'; }, /placement "query"/],
+    [(c) => { c.signature.encoding = 'hex'; }, /encoding "hex-upper"/],
+    [(c) => { c.signature.timestampFormat = 's'; }, /timestampFormat "ms"/],
+    [(c) => { c.signature.template = '${apiPath}'; }, /\$\{sortedParams\}/],
+    [(c) => { c.signature.queryParams.access_token = '{{GOOD_TOKEN}}'; }, /must not set access_token/],
+  ]) {
+    const found = broken(edit);
+    assert.ok(found.some((p) => expected.test(p)), `${expected} -> ${JSON.stringify(found)}`);
+  }
+
+  const result = validateAdapter(
+    adapter({ connector: { type: 'REST', authType: 'HMAC', authConfig: { ...lazada(), iop: { ...lazada().iop, tokenPath: 'x' } } } }),
+    'good.json',
+    'de',
+  );
+  const iopErrors = result.errors.filter((e) => e.rule === 'iop-token-provider');
+  assert.equal(iopErrors.length, 1);
+  assert.equal(iopErrors[0].path, 'connector.authConfig.iop');
+  assert.equal(iopErrors[0].docs, 'shop-authorization-token-providers');
+  assert.match(docs, /^#### Shop authorization \(token providers\)$/m);
+  assert.match(docs, /`iop`/);
+});

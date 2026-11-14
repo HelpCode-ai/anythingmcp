@@ -356,6 +356,74 @@ export function hmacSignatureProblems(connector) {
   return problems;
 }
 
+const IOP_FIELDS = new Set(['appKey', 'authorizeUrl', 'tokenBaseUrl', 'tokenPath', 'refreshPath', 'authorizeParams', 'tokenResponsePath']);
+const IOP_FLOW_PARAMS = new Set(['response_type', 'client_id', 'redirect_uri', 'state']);
+
+/**
+ * `authConfig.tokenProvider: "iop"` (Alibaba IOP gateways: Lazada, Miravia,
+ * AliExpress seller): the engine obtains and renews the seller's access
+ * token (iop-token.service.ts) from the `authConfig.iop` block and signs it
+ * into every call. Checked: HMAC only; the authorize page and the token
+ * base are https URLs; the token operations are paths; static authorize
+ * parameters do not replace the flow's own; an app key is given; the
+ * signature is the IOP one the token calls reuse (query placement,
+ * upper-case hex, milliseconds, sorted parameters) and carries no
+ * access_token of its own. No access-token variable is needed.
+ */
+export function iopTokenProviderProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object' || cfg.tokenProvider !== 'iop') return [];
+  if (connector.authType !== 'HMAC') return ['tokenProvider "iop" only applies to HMAC authentication'];
+  const iop = cfg.iop;
+  if (!iop || typeof iop !== 'object' || Array.isArray(iop)) return ['tokenProvider "iop" needs an authConfig.iop object'];
+  const problems = [];
+  for (const key of Object.keys(iop)) {
+    if (!IOP_FIELDS.has(key)) problems.push(`authConfig.iop.${key} is not a known field (${[...IOP_FIELDS].join(', ')})`);
+  }
+  for (const key of ['authorizeUrl', 'tokenBaseUrl']) {
+    const value = iop[key];
+    if (typeof value !== 'string' || !/^https:\/\/[^/\s?#]+/.test(value)) problems.push(`authConfig.iop.${key} must be an https URL`);
+    else if (/[?#]/.test(value)) problems.push(`authConfig.iop.${key} must not carry a query or fragment: put static parameters in authorizeParams`);
+  }
+  for (const key of ['tokenPath', 'refreshPath']) {
+    const value = iop[key];
+    if (typeof value !== 'string' || !/^\/[^\s?#]*$/.test(value) || value.includes('//')) {
+      problems.push(`authConfig.iop.${key} must be a path starting with "/", such as "/auth/token/create"`);
+    }
+  }
+  if (iop.authorizeParams !== undefined) {
+    const params = iop.authorizeParams;
+    if (!params || typeof params !== 'object' || Array.isArray(params) || !Object.values(params).every((v) => typeof v === 'string')) {
+      problems.push('authConfig.iop.authorizeParams must map parameter names to text, such as { "force_auth": "true" }');
+    } else {
+      for (const key of Object.keys(params)) {
+        if (IOP_FLOW_PARAMS.has(key)) problems.push(`authConfig.iop.authorizeParams must not set "${key}": the engine sets it`);
+      }
+    }
+  }
+  if (iop.tokenResponsePath !== undefined && (typeof iop.tokenResponsePath !== 'string' || !/^[A-Za-z0-9_$-]+(\.[A-Za-z0-9_$-]+)*$/.test(iop.tokenResponsePath))) {
+    problems.push('authConfig.iop.tokenResponsePath must be a dotted path of keys, such as "data"');
+  }
+  const sig = cfg.signature;
+  const statics = sig && typeof sig.queryParams === 'object' && sig.queryParams ? sig.queryParams : {};
+  if (iop.appKey !== undefined ? typeof iop.appKey !== 'string' || !iop.appKey.trim() : typeof statics.app_key !== 'string' || !statics.app_key.trim()) {
+    problems.push('tokenProvider "iop" needs the app key in authConfig.iop.appKey (or signature.queryParams.app_key)');
+  }
+  if (!sig || typeof sig !== 'object' || Array.isArray(sig)) {
+    problems.push('tokenProvider "iop" needs authConfig.signature: the token calls are signed with it');
+    return problems;
+  }
+  if (typeof sig.secret !== 'string' || !sig.secret.trim()) problems.push('tokenProvider "iop" needs signature.secret (the app secret)');
+  if (sig.placement !== 'query') problems.push('tokenProvider "iop" needs signature.placement "query"');
+  if (sig.encoding !== 'hex-upper') problems.push('tokenProvider "iop" needs signature.encoding "hex-upper"');
+  if (sig.timestampFormat !== 'ms') problems.push('tokenProvider "iop" needs signature.timestampFormat "ms"');
+  if (typeof sig.template !== 'string' || !sig.template.includes('${sortedParams}')) problems.push('tokenProvider "iop" needs a signature.template with ${sortedParams}');
+  if (Object.prototype.hasOwnProperty.call(statics, 'access_token')) {
+    problems.push('signature.queryParams must not set access_token with tokenProvider "iop": the provider adds the seller\'s token');
+  }
+  return problems;
+}
+
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
 // real adapters mention "to-do" lists, and only the uppercase word is ours.
 const TODO_MARKER = /\bTODO\b/;
@@ -837,6 +905,10 @@ export function validateAdapter(adapter, file, region) {
 
   for (const problem of hmacSignatureProblems(adapter.connector)) {
     errors.push(error('hmac-signature', 'connector.authConfig.signature', problem, 'See the tables under "Plain digest and body placement" and "Nonce and header template" for the fields and their values.', 'hmac-signed-requests'));
+  }
+
+  for (const problem of iopTokenProviderProblems(adapter.connector)) {
+    errors.push(error('iop-token-provider', 'connector.authConfig.iop', problem, 'Give authorizeUrl and tokenBaseUrl as https URLs, tokenPath and refreshPath as paths ("/auth/token/create", "/auth/token/refresh"), and the IOP signature (placement "query", encoding "hex-upper", timestampFormat "ms", ${sortedParams}).', 'shop-authorization-token-providers'));
   }
 
   if (adapter.checkBeforeAuthorization !== undefined) {
