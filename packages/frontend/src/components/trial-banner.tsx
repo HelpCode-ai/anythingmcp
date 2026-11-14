@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import * as Dialog from '@radix-ui/react-dialog';
+import { useLocale, useTranslations } from 'next-intl';
 import { license, productEvents } from '@/lib/api';
 import { PlanFitNotice } from '@/components/plan-fit-notice';
 import { buttonVariants } from '@/components/ui/button';
@@ -27,6 +28,9 @@ import {
 export function TrialBanner() {
   const { token, user, deploymentMode } = useAuth();
   const router = useRouter();
+  const t = useTranslations('trialBanner');
+  // Dates in the UI language; English keeps the British "7 Oct".
+  const locale = useLocale();
   const pricingUrl = usePricingUrl(undefined, 'trial_banner');
   const checkout = useCardCheckout();
   const [daysLeft, setDaysLeft] = useState<number | null>(null);
@@ -69,11 +73,7 @@ export function TrialBanner() {
   const tone = isUrgent ? 'danger' : isWarning ? 'warn' : 'info';
 
   const countdown =
-    daysLeft === 0
-      ? 'Your trial expires today.'
-      : daysLeft === 1
-        ? 'Your trial expires tomorrow.'
-        : `Trial: ${daysLeft} days left.`;
+    daysLeft === 0 ? t('today') : daysLeft === 1 ? t('tomorrow') : t('daysLeft', { days: daysLeft });
 
   const trackChange = (action: 'plan_fit_shown' | 'plan_fit_details_opened', plan: 'starter' | 'team') => {
     if (token) productEvents.track('paywall_action', token, { source: 'trial_banner', action, plan, device: deviceKind() });
@@ -87,7 +87,12 @@ export function TrialBanner() {
     role: user?.role,
     license: { plan, status: status ?? '', expiresAt, trialDaysLeft: daysLeft },
   });
-  const chargeDate = formatTrialEnd(cardTrialDisplayEnd(expiresAt), 'short');
+  const chargeDate = formatTrialEnd(
+    cardTrialDisplayEnd(expiresAt),
+    'short',
+    undefined,
+    locale === 'en' ? 'en-GB' : locale,
+  );
   // An address that had a subscription before gets no card trial: its plan
   // starts and is billed today, which /start-trial says before checkout.
   const paysToday = cardTrialKind === 'pay';
@@ -107,13 +112,15 @@ export function TrialBanner() {
 
   return (
     <div
-      className="text-sm py-2 px-4 text-center"
+      className="text-sm py-2 px-4 text-center text-balance"
       style={{
         backgroundColor: `var(--t-${tone}-bg)`,
         color: `var(--t-${tone}-fg)`,
       }}
     >
-      <span>{countdown} Your trial includes everything in Team.</span>{' '}
+      <span>
+        {countdown} {t('includesTeam')}
+      </span>{' '}
       {aboveStarter && (
         <>
           <button
@@ -121,7 +128,7 @@ export function TrialBanner() {
             onClick={() => setChangesOpen(true)}
             className="underline font-medium hover:no-underline"
           >
-            Above Starter: see what changes
+            {t('aboveStarter.link')}
           </button>
           {offerOnScreen ? ' ' : ' · '}
           <Dialog.Root open={changesOpen} onOpenChange={setChangesOpen}>
@@ -129,21 +136,22 @@ export function TrialBanner() {
               <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
               <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 text-left shadow-[var(--shadow)]">
                 <Dialog.Title className="text-[16px] font-semibold text-[var(--text)]">
-                  Your workspace is above Starter
+                  {t('aboveStarter.title')}
                 </Dialog.Title>
                 <Dialog.Description className="mt-1 mb-4 text-sm text-[var(--text-2)]">
-                  Your trial includes everything in Team. If you choose Starter, this changes when the trial ends.
-                  Team keeps everything as it is.
+                  {t('aboveStarter.body')}
                 </Dialog.Description>
                 {changesOpen && <PlanFitNotice fit={starterFit} onTrack={trackChange} />}
                 <div className="mt-5 flex flex-wrap justify-end gap-2">
-                  <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>Close</Dialog.Close>
+                  <Dialog.Close className={cn(buttonVariants({ variant: 'secondary', size: 'md' }))}>
+                    {t('aboveStarter.close')}
+                  </Dialog.Close>
                   <Link
                     href={startTrialPath('trial_banner')}
                     onClick={() => setChangesOpen(false)}
                     className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}
                   >
-                    Choose a plan
+                    {t('choosePlan')}
                   </Link>
                 </div>
               </Dialog.Content>
@@ -159,12 +167,12 @@ export function TrialBanner() {
           className="underline font-medium hover:no-underline disabled:opacity-60"
         >
           {checkout.loading
-            ? 'Opening checkout…'
+            ? t('openingCheckout')
             : paysToday
-              ? 'Choose a plan'
+              ? t('choosePlan')
               : chargeDate
-                ? `Add a payment method: no charge before ${chargeDate}`
-                : 'Add a payment method'}
+                ? t('addPaymentBefore', { date: chargeDate })
+                : t('addPayment')}
         </button>
       ) : (
         <a
@@ -173,7 +181,7 @@ export function TrialBanner() {
           rel="noopener noreferrer"
           className="underline font-medium hover:no-underline"
         >
-          Upgrade now
+          {t('upgrade')}
         </a>
       )}
     </div>

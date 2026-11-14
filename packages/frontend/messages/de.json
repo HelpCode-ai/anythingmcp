@@ -3737,7 +3737,55 @@
     "workspaces": "{count} Workspaces auf AnythingMCP Cloud",
     "directory": "Gelistet im Claude Directory",
     "directoryChatgpt": "Gelistet im ChatGPT-Plugin-Verzeichnis",
-    "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT"
+    "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT",
+    "workspaceLabel": "Workspace:",
+    "reasons": {
+      "paymentFailed": {
+        "title": "Ihre Zahlung ist fehlgeschlagen",
+        "bodyAdmin": "Ihre letzte Zahlung ist fehlgeschlagen, daher ruht Ihr Abo. Aktualisieren Sie Ihre Zahlungsmethode, und es läuft sofort weiter: Die offene Zahlung wird eingezogen, sobald die neue gespeichert ist. Ihre Connectors und Einstellungen bleiben erhalten.",
+        "bodyMember": "Die letzte Zahlung für das Abo dieses Workspace ist fehlgeschlagen, daher ruht das Abo. Bitten Sie einen Workspace-Admin, die Zahlungsmethode zu aktualisieren. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "noLicense": {
+        "title": "Lizenz erforderlich",
+        "body": "Dieser Workspace hat keine aktive Lizenz. Starten Sie eine Testphase oder kaufen Sie einen Tarif, um fortzufahren."
+      },
+      "trialEnded": {
+        "title": "Ihre Testphase ist abgelaufen",
+        "body": "Ihre 7-tägige Testphase ist beendet. Kaufen Sie eine Lizenz, um AnythingMCP Cloud weiter zu nutzen. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "lapsed": {
+        "title": "Ihr Abo ist nicht aktiv",
+        "body": "Ihr Abo ist nicht aktiv, meist wegen einer fehlgeschlagenen Verlängerungszahlung. Aktualisieren Sie Ihre Zahlungsmethode im Abrechnungsportal, und es läuft weiter; ein neuer Tarif würde ein zweites Abo neben diesem starten. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "expired": {
+        "title": "Ihre Lizenz ist abgelaufen",
+        "body": "Ihre Lizenz ist nicht mehr aktiv. Kaufen oder verlängern Sie eine Lizenz, um AnythingMCP weiter zu nutzen. Ihre Connectors und Einstellungen bleiben erhalten."
+      }
+    },
+    "startTrial": {
+      "start": "7 Tage kostenlos testen",
+      "starting": "Wird gestartet…",
+      "failed": "Die Testphase konnte nicht gestartet werden. Bitte versuchen Sie es erneut oder wenden Sie sich an den Support."
+    },
+    "viewPlans": "Tarife ansehen und Lizenz kaufen",
+    "openingCheckout": "Checkout wird geöffnet…",
+    "subscribeTo": "{plan} abonnieren",
+    "comparePlans": "Tarife vergleichen",
+    "opening": "Wird geöffnet…",
+    "payment": {
+      "update": "Zahlungsmethode aktualisieren",
+      "updated": "Ich habe meine Zahlungsmethode aktualisiert",
+      "checking": "Wird geprüft…",
+      "openFailed": "Die Zahlungsseite konnte nicht geöffnet werden. Bitte versuchen Sie es erneut oder wenden Sie sich an den Support.",
+      "notYet": "Die Zahlung ist noch nicht eingegangen. Wenn Sie Ihre Zahlungsmethode gerade aktualisiert haben, versuchen Sie es in einer Minute erneut.",
+      "checkFailed": "Die Prüfung ist gerade nicht möglich. Bitte versuchen Sie es in einer Minute erneut."
+    },
+    "updateBilling": "Zahlungsdaten aktualisieren",
+    "switchWorkspace": "Zu einem anderen Workspace wechseln",
+    "alreadyPurchased": "Bereits gekauft?",
+    "enterKey": "Lizenzschlüssel eingeben",
+    "notContinuing": "Sie möchten nicht weitermachen?",
+    "deleteAccount": "Konto löschen"
   },
   "planFit": {
     "title": "Was sich mit {plan} ändert",
@@ -3824,5 +3872,53 @@
     "after": "Nach der Kündigung kommst du hierher zurück.",
     "openFailed": "Die Kündigungsseite konnte nicht geöffnet werden.",
     "licensePage": "Einstellungen → Lizenz öffnen"
+  },
+  "planPicker": {
+    "periodLabel": "Abrechnungszeitraum",
+    "planLabel": "Tarif",
+    "monthly": "Monatlich",
+    "yearly": "Jährlich",
+    "twoMonthsFree": "2 Monate gratis",
+    "mostPopular": "Am beliebtesten",
+    "summary": "{connectors} Connectors · {mcpServers} MCP-Server · {users, plural, one {# Nutzer} other {bis zu # Nutzer}}",
+    "price": "{amount}/{period, select, yearly {Jahr} other {Monat}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {Jahr} other {Monat}}",
+    "exactly": "genau {price}",
+    "yearlyPerMonth": "≈ {amount}/Monat",
+    "outgrown": "Dieser Workspace hat {items}",
+    "usage": {
+      "connectors": "{count, plural, one {# Connector} other {# Connectors}}",
+      "mcpServers": "{count, plural, one {# MCP-Server} other {# MCP-Server}}",
+      "users": "{count, plural, one {# Nutzer} other {# Nutzer}}"
+    },
+    "footer": {
+      "vat": "Preise in EUR, inkl. MwSt.",
+      "noVat": "Preise in EUR.",
+      "local": "Preise in EUR, Zahlung im Checkout in {currency}.",
+      "localVat": "Preise in EUR, Zahlung im Checkout in {currency}, inkl. MwSt."
+    },
+    "enterpriseQuestion": "Mehr Nutzer, Single Sign-on oder SCIM?",
+    "pastTeam": "Dieser Workspace geht über Team hinaus.",
+    "enterpriseLink": "Enterprise anfragen"
+  },
+  "cardCheckout": {
+    "failed": "Der Checkout konnte gerade nicht geöffnet werden. Bitte versuchen Sie es gleich noch einmal."
+  },
+  "trialBanner": {
+    "today": "Ihre Testphase endet heute.",
+    "tomorrow": "Ihre Testphase endet morgen.",
+    "daysLeft": "Testphase: noch {days} Tage.",
+    "includesTeam": "Sie enthält alles aus Team.",
+    "aboveStarter": {
+      "link": "Über Starter: Was sich ändert",
+      "title": "Ihr Workspace liegt über Starter",
+      "body": "Ihre Testphase enthält alles aus Team. Wenn Sie Starter wählen, ändert sich das mit dem Ende der Testphase. Mit Team bleibt alles, wie es ist.",
+      "close": "Schließen"
+    },
+    "choosePlan": "Tarif wählen",
+    "openingCheckout": "Checkout wird geöffnet…",
+    "addPaymentBefore": "Zahlungsmethode hinterlegen: keine Abbuchung vor dem {date}",
+    "addPayment": "Zahlungsmethode hinterlegen",
+    "upgrade": "Jetzt upgraden"
   }
 }

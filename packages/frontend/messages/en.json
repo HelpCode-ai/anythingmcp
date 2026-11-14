@@ -3737,7 +3737,55 @@
     "workspaces": "{count} workspaces on AnythingMCP Cloud",
     "directory": "Listed in the Claude Directory",
     "directoryChatgpt": "Listed in the ChatGPT Plugin Directory",
-    "directoryBoth": "Listed in the Claude and ChatGPT directories"
+    "directoryBoth": "Listed in the Claude and ChatGPT directories",
+    "workspaceLabel": "Workspace:",
+    "reasons": {
+      "paymentFailed": {
+        "title": "Your payment didn’t go through",
+        "bodyAdmin": "Your last payment didn’t go through, so your subscription is on hold. Update your payment method and it resumes right away: the open payment is taken as soon as the new one is saved. Your connectors and configurations are preserved.",
+        "bodyMember": "The last payment for this workspace’s subscription didn’t go through, so the subscription is on hold. Ask a workspace admin to update the payment method. Your connectors and configurations are preserved."
+      },
+      "noLicense": {
+        "title": "License Required",
+        "body": "This workspace doesn’t have an active license. Start a trial or purchase a plan to continue."
+      },
+      "trialEnded": {
+        "title": "Your Trial Has Expired",
+        "body": "Your 7-day trial period has ended. Purchase a license to continue using AnythingMCP Cloud. Your connectors and configurations are preserved."
+      },
+      "lapsed": {
+        "title": "Your Subscription Is Not Active",
+        "body": "Your subscription is not active — usually a renewal payment that did not go through. Update your payment method in the billing portal and it resumes; buying a new plan would start a second subscription beside this one. Your connectors and configurations are preserved."
+      },
+      "expired": {
+        "title": "Your License Has Expired",
+        "body": "Your license is no longer active. Purchase or renew a license to continue using AnythingMCP. Your connectors and configurations are preserved."
+      }
+    },
+    "startTrial": {
+      "start": "Start 7-Day Free Trial",
+      "starting": "Starting…",
+      "failed": "Could not start the trial. Please try again or contact support."
+    },
+    "viewPlans": "View Plans & Purchase License",
+    "openingCheckout": "Opening checkout…",
+    "subscribeTo": "Subscribe to {plan}",
+    "comparePlans": "Compare plans",
+    "opening": "Opening…",
+    "payment": {
+      "update": "Update payment method",
+      "updated": "I’ve updated my payment method",
+      "checking": "Checking…",
+      "openFailed": "Could not open the payment page. Please try again or contact support.",
+      "notYet": "The payment has not come through yet. If you just updated your payment method, try again in a minute.",
+      "checkFailed": "Could not check right now. Please try again in a minute."
+    },
+    "updateBilling": "Update Billing",
+    "switchWorkspace": "Switch to another workspace",
+    "alreadyPurchased": "Already purchased?",
+    "enterKey": "Enter your license key",
+    "notContinuing": "Not continuing?",
+    "deleteAccount": "Delete your account"
   },
   "planFit": {
     "title": "What changes with {plan}",
@@ -3824,5 +3872,53 @@
     "after": "You will return here once it is cancelled.",
     "openFailed": "Could not open the cancellation page.",
     "licensePage": "Open Settings → License"
+  },
+  "planPicker": {
+    "periodLabel": "Billing period",
+    "planLabel": "Plan",
+    "monthly": "Monthly",
+    "yearly": "Yearly",
+    "twoMonthsFree": "2 months free",
+    "mostPopular": "Most popular",
+    "summary": "{connectors} connectors · {mcpServers} MCP servers · {users, plural, one {# user} other {up to # users}}",
+    "price": "{amount}/{period, select, yearly {year} other {month}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {year} other {month}}",
+    "exactly": "{price} exactly",
+    "yearlyPerMonth": "≈ {amount}/month",
+    "outgrown": "This workspace has {items}",
+    "usage": {
+      "connectors": "{count, plural, one {# connector} other {# connectors}}",
+      "mcpServers": "{count, plural, one {# MCP server} other {# MCP servers}}",
+      "users": "{count, plural, one {# user} other {# users}}"
+    },
+    "footer": {
+      "vat": "Prices in EUR, VAT included.",
+      "noVat": "Prices in EUR.",
+      "local": "Prices in EUR, paid in {currency} at checkout.",
+      "localVat": "Prices in EUR, paid in {currency} at checkout, VAT included."
+    },
+    "enterpriseQuestion": "More users, single sign-on or SCIM?",
+    "pastTeam": "This workspace goes past Team.",
+    "enterpriseLink": "Ask about Enterprise"
+  },
+  "cardCheckout": {
+    "failed": "We could not open the checkout. Please try again in a moment."
+  },
+  "trialBanner": {
+    "today": "Your trial expires today.",
+    "tomorrow": "Your trial expires tomorrow.",
+    "daysLeft": "Trial: {days} days left.",
+    "includesTeam": "Your trial includes everything in Team.",
+    "aboveStarter": {
+      "link": "Above Starter: see what changes",
+      "title": "Your workspace is above Starter",
+      "body": "Your trial includes everything in Team. If you choose Starter, this changes when the trial ends. Team keeps everything as it is.",
+      "close": "Close"
+    },
+    "choosePlan": "Choose a plan",
+    "openingCheckout": "Opening checkout…",
+    "addPaymentBefore": "Add a payment method: no charge before {date}",
+    "addPayment": "Add a payment method",
+    "upgrade": "Upgrade now"
   }
 }
