@@ -292,6 +292,70 @@ export function tokenResponsePathProblems(connector) {
   return [];
 }
 
+const SIGNATURE_MODES = new Set(['hmac', 'digest']);
+const SIGNATURE_PLACEMENTS = new Set(['header', 'query', 'body']);
+const SIGNATURE_ENCODINGS = new Set(['hex', 'base64', 'hex-upper', 'hex-base64']);
+const HMAC_ALGORITHMS = new Set(['sha256', 'sha1', 'sha512']);
+
+/**
+ * `authConfig.signature` of an HMAC connector: the options added for a plain
+ * digest in the JSON body (Temu) and for a nonce in the key with a wrapped
+ * header value (SHEIN). The engine (applyHmacSignature in
+ * packages/backend/src/connectors/engines/rest.engine.ts) reads these fields
+ * leniently, so a typing mistake here would sign differently without failing:
+ * the mistakes are refused at this gate instead. A signed-JWT signature
+ * (`signature.jwt`) has its own fields and is not checked here.
+ */
+export function hmacSignatureProblems(connector) {
+  const sig = connector?.authConfig?.signature;
+  if (connector?.authType !== 'HMAC' || !sig || typeof sig !== 'object' || Array.isArray(sig) || sig.jwt !== undefined) return [];
+  const problems = [];
+  const mode = sig.mode ?? 'hmac';
+  const placement = sig.placement ?? 'header';
+  const template = typeof sig.template === 'string' ? sig.template : '';
+  const secret = typeof sig.secret === 'string' ? sig.secret : '';
+  const headerTemplate = typeof sig.headerTemplate === 'string' ? sig.headerTemplate : '';
+  const usesNonce = (text) => text.includes('${nonce}');
+
+  if (!SIGNATURE_MODES.has(mode)) problems.push('signature.mode must be "hmac" or "digest"');
+  if (!SIGNATURE_PLACEMENTS.has(placement)) problems.push('signature.placement must be "header", "query" or "body"');
+  if (sig.encoding !== undefined && !SIGNATURE_ENCODINGS.has(sig.encoding)) problems.push('signature.encoding must be "hex", "base64", "hex-upper" or "hex-base64"');
+  if (sig.algorithm !== undefined && !HMAC_ALGORITHMS.has(sig.algorithm) && !(sig.algorithm === 'md5' && mode === 'digest')) {
+    problems.push(sig.algorithm === 'md5'
+      ? 'signature.algorithm "md5" is only accepted with signature.mode "digest"'
+      : 'signature.algorithm must be "sha256", "sha1" or "sha512" (or "md5" with signature.mode "digest")');
+  }
+  if (mode === 'digest') {
+    if (!template.trim()) problems.push('signature.mode "digest" needs signature.template: a plain hash has no key, so the template must hold the secret where the vendor puts it');
+    if (sig.secret !== undefined) problems.push('signature.mode "digest" does not use signature.secret: put the secret in signature.template');
+  }
+  if (sig.bodyParams !== undefined) {
+    const flat = sig.bodyParams && typeof sig.bodyParams === 'object' && !Array.isArray(sig.bodyParams)
+      && Object.values(sig.bodyParams).every((v) => ['string', 'number', 'boolean'].includes(typeof v));
+    if (!flat) problems.push('signature.bodyParams must map field names to text, numbers or true/false');
+    if (placement !== 'body') problems.push('signature.bodyParams only applies to signature.placement "body"');
+  }
+  if (placement === 'body') {
+    const paramName = sig.paramName ?? 'sign';
+    if (sig.bodyParams && typeof sig.bodyParams === 'object' && paramName in sig.bodyParams) problems.push(`signature.bodyParams must not set "${paramName}", the field the signature is written to`);
+    if (sig.timestampParam !== undefined && sig.timestampParam === paramName) problems.push('signature.timestampParam and signature.paramName must be different fields');
+    if (sig.headerName !== undefined || sig.headerTemplate !== undefined) problems.push('signature.headerName and signature.headerTemplate do not apply to signature.placement "body"');
+    if (sig.queryParams !== undefined) problems.push('signature.queryParams does not apply to signature.placement "body": use signature.bodyParams');
+  }
+  if (sig.nonceLength !== undefined) {
+    if (!Number.isInteger(sig.nonceLength) || sig.nonceLength < 1 || sig.nonceLength > 64) problems.push('signature.nonceLength must be a whole number from 1 to 64');
+    if (!usesNonce(template) && !usesNonce(secret) && !usesNonce(headerTemplate)) problems.push('signature.nonceLength is set, but ${nonce} is used in neither template, secret nor headerTemplate');
+  } else if (usesNonce(template) || usesNonce(secret) || usesNonce(headerTemplate)) {
+    problems.push('${nonce} needs signature.nonceLength');
+  }
+  if (mode === 'digest' && usesNonce(secret)) problems.push('${nonce} in signature.secret has no effect with signature.mode "digest"');
+  if (sig.headerTemplate !== undefined) {
+    if (!headerTemplate.includes('${signature}')) problems.push('signature.headerTemplate must contain ${signature}');
+    if (placement === 'query') problems.push('signature.headerTemplate does not apply to signature.placement "query"');
+  }
+  return problems;
+}
+
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
 // real adapters mention "to-do" lists, and only the uppercase word is ours.
 const TODO_MARKER = /\bTODO\b/;
@@ -769,6 +833,10 @@ export function validateAdapter(adapter, file, region) {
 
   for (const problem of tokenResponsePathProblems(adapter.connector)) {
     errors.push(error('token-response-path', 'connector.authConfig.tokenResponsePath', problem, 'Set it only when the token endpoint wraps access_token, refresh_token and expires_in in another object, e.g. "tokenResponsePath": "data"; leave it out when they are at the top level.', 'authentication'));
+  }
+
+  for (const problem of hmacSignatureProblems(adapter.connector)) {
+    errors.push(error('hmac-signature', 'connector.authConfig.signature', problem, 'See the tables under "Plain digest and body placement" and "Nonce and header template" for the fields and their values.', 'hmac-signed-requests'));
   }
 
   if (adapter.checkBeforeAuthorization !== undefined) {

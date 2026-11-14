@@ -664,3 +664,64 @@ test('setupGuide saves and checks the keys mid-way only when the provider can be
 test('docs explain the setup guide the validator links to', () => {
   assert.match(docs, /^### Setup guide$/m);
 });
+
+test('hmac signature options for a digest in the body and a nonce are checked', () => {
+  const problems = (signature, authType = 'HMAC') => validatorModule.hmacSignatureProblems({ authType, authConfig: { signature } });
+  const temu = {
+    mode: 'digest', algorithm: 'md5', encoding: 'hex-upper', placement: 'body', paramName: 'sign', timestampParam: 'timestamp',
+    bodyParams: { app_key: '{{GOOD_KEY}}', data_type: 'JSON' }, template: '{{GOOD_KEY}}${sortedParams}{{GOOD_KEY}}',
+  };
+  const shein = {
+    algorithm: 'sha256', encoding: 'hex-base64', secret: '{{GOOD_KEY}}${nonce}', nonceLength: 5, template: 'id&${timestamp}&${pathname}',
+    timestampFormat: 'ms', headerName: 'x-lt-signature', headerTemplate: '${nonce}${signature}', timestampHeader: 'x-lt-timestamp',
+  };
+  assert.deepEqual(problems(temu), []);
+  assert.deepEqual(problems(shein), []);
+  // Signatures written before these options, and the signed-JWT kind, pass untouched.
+  assert.deepEqual(problems({ algorithm: 'sha256', encoding: 'hex', secret: '{{GOOD_KEY}}', template: '${method}', headerName: 'X' }), []);
+  assert.deepEqual(problems({ algorithm: 'sha256', encoding: 'hex-upper', secret: '{{GOOD_KEY}}', placement: 'query', queryParams: { a: 'b' }, template: '${sortedParams}' }), []);
+  assert.deepEqual(problems({ jwt: { key: '{{GOOD_KEY}}' }, headerTemplate: 'Ghost ${jwt}', mode: 'whatever' }), []);
+  assert.deepEqual(problems({ mode: 'whatever' }, 'API_KEY'), []);
+
+  for (const [change, expected] of [
+    [{ mode: 'plain' }, /mode must be "hmac" or "digest"/],
+    [{ placement: 'cookie' }, /placement must be/],
+    [{ encoding: 'base32' }, /encoding must be/],
+    [{ mode: 'hmac', secret: 'k' }, /"md5" is only accepted with signature.mode "digest"/],
+    [{ algorithm: 'sha3' }, /algorithm must be/],
+    [{ template: '' }, /needs signature.template/],
+    [{ secret: '{{GOOD_KEY}}' }, /does not use signature.secret/],
+    [{ bodyParams: { nested: { a: 1 } } }, /text, numbers or true\/false/],
+    [{ placement: 'query' }, /bodyParams only applies/],
+    [{ bodyParams: { sign: 'x' } }, /must not set "sign"/],
+    [{ timestampParam: 'sign' }, /must be different fields/],
+    [{ headerName: 'X-Sign' }, /do not apply to signature.placement "body"/],
+    [{ queryParams: { a: 'b' } }, /use signature.bodyParams/],
+  ]) {
+    const found = problems({ ...temu, ...change });
+    assert.ok(found.some((p) => expected.test(p)), `${JSON.stringify(change)} -> ${JSON.stringify(found)}`);
+  }
+  for (const [change, expected] of [
+    [{ nonceLength: 0 }, /whole number from 1 to 64/],
+    [{ nonceLength: 2.5 }, /whole number from 1 to 64/],
+    [{ nonceLength: undefined }, /\$\{nonce\} needs signature.nonceLength/],
+    [{ secret: 'k', headerTemplate: '${signature}' }, /used in neither template, secret nor headerTemplate/],
+    [{ headerTemplate: '${nonce}' }, /must contain \$\{signature\}/],
+    [{ placement: 'query' }, /headerTemplate does not apply/],
+    [{ mode: 'digest', secret: undefined, template: 'k${nonce}', headerTemplate: '${signature}' }, /^$/],
+  ]) {
+    const found = problems({ ...shein, ...change });
+    if (String(expected) === '/^$/') assert.deepEqual(found, []);
+    else assert.ok(found.some((p) => expected.test(p)), `${JSON.stringify(change)} -> ${JSON.stringify(found)}`);
+  }
+  assert.ok(problems({ mode: 'digest', template: 't', secret: 'k${nonce}', nonceLength: 5 }).some((p) => /has no effect/.test(p)));
+
+  const result = validateAdapter(adapter({ connector: { type: 'REST', authType: 'HMAC', authConfig: { signature: { ...temu, encoding: 'base32' } } } }), 'good.json', 'de');
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].rule, 'hmac-signature');
+  assert.equal(result.errors[0].path, 'connector.authConfig.signature');
+  assert.equal(result.errors[0].docs, 'hmac-signed-requests');
+  assert.match(docs, /^### HMAC-signed requests$/m);
+  assert.match(docs, /^#### Plain digest and body placement \(opt-in\)$/m);
+  assert.match(docs, /^#### Nonce and header template \(opt-in\)$/m);
+});
