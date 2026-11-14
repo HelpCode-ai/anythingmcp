@@ -6,6 +6,7 @@ import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
   LoginTokenAuthConfig,
+  loginTokenHeaderInterpolator,
 } from './login-token.service';
 import { GraphqlSchemaService } from './graphql-schema.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
@@ -284,7 +285,7 @@ export class GraphqlEngine {
 
 /**
  * Apply LOGIN_TOKEN headers (main bearer + extraHeaders) into a plain headers map,
- * interpolating `${token}` and `${aud}` placeholders.
+ * interpolating `${token}`, `${aud}` and `${uuid}` placeholders.
  */
 export function applyLoginTokenHeaders(
   headers: Record<string, string>,
@@ -294,8 +295,7 @@ export function applyLoginTokenHeaders(
 ): void {
   const headerName = auth.headerName || 'Authorization';
   const headerTemplate = auth.headerTemplate || 'Bearer ${token}';
-  const interpolate = (s: string): string =>
-    s.replace(/\$\{token\}/g, token).replace(/\$\{aud\}/g, aud || '');
+  const interpolate = loginTokenHeaderInterpolator(token, aud);
   headers[headerName] = interpolate(headerTemplate);
   for (const [k, v] of Object.entries(auth.extraHeaders || {})) {
     headers[k] = interpolate(String(v));

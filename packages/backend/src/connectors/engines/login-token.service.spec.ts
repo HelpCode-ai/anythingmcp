@@ -1066,6 +1066,67 @@ describe('LoginTokenService - loginBasicAuth (Wazuh pattern)', () => {
  * "token not found at <our json path>" describes our own configuration and
  * hides theirs, which is what thirteen Sorare failures looked like.
  */
+describe('LoginTokenService - form-encoded client-credentials login with ${uuid} headers (Walmart pattern)', () => {
+  let service: LoginTokenService;
+  const SECRET = ['cs', 'y'.repeat(10)].join('');
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const walmartAuth: LoginTokenAuthConfig = {
+    loginUrl: 'https://marketplace.walmartapis.com/v3/token',
+    loginMethod: 'POST',
+    loginBasicAuth: true,
+    username: 'client-id-1',
+    password: SECRET,
+    loginBody: 'grant_type=client_credentials',
+    loginHeaders: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+      'WM_SVC.NAME': 'AnythingMCP',
+      'WM_QOS.CORRELATION_ID': '${uuid}',
+    },
+    tokenJsonPath: 'access_token',
+    tokenTTLSeconds: 900,
+    headerName: 'WM_SEC.ACCESS_TOKEN',
+    headerTemplate: '${token}',
+    extraHeaders: { 'WM_SVC.NAME': 'AnythingMCP', 'WM_QOS.CORRELATION_ID': '${uuid}', 'X-Trace': 'a-${uuid}' },
+  };
+  const axiosMock = () => mockedAxios as unknown as jest.Mock;
+
+  beforeEach(() => {
+    const mockPrisma = {
+      connectorAuthCache: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    } as any;
+    service = new LoginTokenService(mockPrisma, { get: jest.fn().mockReturnValue('test-encryption-key-32-chars-ok!') } as any);
+    jest.clearAllMocks();
+  });
+
+  it('posts the string body as is, with the form content type and a fresh correlation id', async () => {
+    axiosMock().mockResolvedValue({ data: { access_token: 'tok-1', token_type: 'Bearer', expires_in: 900 }, headers: {} });
+    const bundle = await service.getToken(walmartAuth, 'conn-walmart');
+    const call = axiosMock().mock.calls[0][0];
+    expect(call.data).toBe('grant_type=client_credentials');
+    expect(call.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+    expect(call.headers.Authorization).toBe(`Basic ${Buffer.from(`client-id-1:${SECRET}`).toString('base64')}`);
+    expect(call.headers['WM_QOS.CORRELATION_ID']).toMatch(UUID_RE);
+    expect(bundle.token).toBe('tok-1');
+  });
+
+  it('puts the token in its own header and draws one new UUID per request', () => {
+    const first: any = { headers: {} };
+    const second: any = { headers: {} };
+    injectLoginTokenHeaders(first, walmartAuth, 'tok-1');
+    injectLoginTokenHeaders(second, walmartAuth, 'tok-1');
+    expect(first.headers['WM_SEC.ACCESS_TOKEN']).toBe('tok-1');
+    expect(first.headers.Authorization).toBeUndefined();
+    expect(first.headers['WM_QOS.CORRELATION_ID']).toMatch(UUID_RE);
+    expect(first.headers['X-Trace']).toBe(`a-${first.headers['WM_QOS.CORRELATION_ID']}`);
+    expect(second.headers['WM_QOS.CORRELATION_ID']).toMatch(UUID_RE);
+    expect(second.headers['WM_QOS.CORRELATION_ID']).not.toBe(first.headers['WM_QOS.CORRELATION_ID']);
+  });
+});
+
 describe('extractLoginRefusal', () => {
   it('reads a GraphQL errors array nested under the mutation payload', () => {
     expect(
