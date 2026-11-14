@@ -5,6 +5,9 @@ import { DeploymentService } from '../../common/deployment.service';
 import { LicenseService } from '../../license/license.service';
 import { instanceHost, supportChatConfig } from './support-config';
 import { compactError } from './support-redact';
+import { getAdapter } from '../../adapters/catalog';
+import { isMachineGrant } from '../../connectors/oauth-grant.util';
+import { findUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 
 /** Contact attributes shown to agents and read by the triage. All strings. */
 export type SupportContactAttributes = Record<string, string>;
@@ -104,7 +107,17 @@ export class SupportIdentityService {
       this.license.getCurrentLicense(organizationId).catch(() => null),
       this.prisma.connector.findMany({
         where: { organizationId },
-        select: { id: true, name: true, isActive: true, authStatus: true, authStatusMessage: true, config: true },
+        select: {
+          id: true,
+          name: true,
+          isActive: true,
+          authStatus: true,
+          authStatusMessage: true,
+          config: true,
+          type: true,
+          authType: true,
+          envVars: true,
+        },
         orderBy: { createdAt: 'asc' },
       }),
       this.prisma.mcpServerConfig.findMany({
@@ -158,7 +171,9 @@ export class SupportIdentityService {
    */
   private async connectorIssues(
     organizationId: string,
-    connectors: Array<{ id: string; name: string; authStatus: string | null; authStatusMessage: string | null }>,
+    connectors: Array<
+      { id: string; name: string; authStatus: string | null; authStatusMessage: string | null } & AppKeysInput
+    >,
   ): Promise<string> {
     if (connectors.length === 0) return '';
     const since = new Date(Date.now() - ERROR_WINDOW_MS);
@@ -174,6 +189,10 @@ export class SupportIdentityService {
     for (const c of connectors) {
       if (lines.length >= MAX_ISSUES) break;
       const parts: string[] = [];
+      const missingKeys = missingOAuthAppKeys(c);
+      if (missingKeys.length) {
+        parts.push(`app keys not saved: ${missingKeys.join(', ')} (Authorize cannot start)`);
+      }
       if (c.authStatus) {
         parts.push(`auth ${c.authStatus}${c.authStatusMessage ? ` (${compactError(c.authStatusMessage, 80)})` : ''}`);
       }
@@ -192,6 +211,45 @@ export class SupportIdentityService {
     const text = lines.join(' | ');
     return text.length > ISSUES_MAX_CHARS ? `${text.slice(0, ISSUES_MAX_CHARS - 1)}…` : text;
   }
+}
+
+export interface AppKeysInput {
+  type?: string | null;
+  authType?: string | null;
+  config?: unknown;
+  /** Decrypted by the Prisma extension; only presence is looked at. */
+  envVars?: unknown;
+}
+
+/**
+ * The labels of a catalog OAuth2 connector's app keys that are still empty
+ * (Etsy: "Keystring", "Shared Secret"). Without them "Authorize with
+ * Provider" cannot start, and the customer sees nothing happen on the
+ * connector page (desk #290, Nov 2026). Looks at the catalog adapter's
+ * client id/secret placeholders and whether the connector's variables fill
+ * them; values are never returned. MCP bridges register a client on their
+ * own and machine grants have no browser step, so both are left out.
+ */
+export function missingOAuthAppKeys(connector: AppKeysInput): string[] {
+  if (connector.authType !== 'OAUTH2' || connector.type === 'MCP') return [];
+  const slug = (connector.config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
+  if (typeof slug !== 'string' || !slug) return [];
+  const adapter = getAdapter(slug);
+  const auth = adapter?.connector.authConfig;
+  if (!adapter || adapter.connector.type === 'MCP' || !auth || isMachineGrant(auth.grant)) return [];
+  const names = findUnresolvedPlaceholders([auth.clientId, auth.clientSecret]);
+  const vars = (connector.envVars && typeof connector.envVars === 'object' ? connector.envVars : {}) as Record<
+    string,
+    unknown
+  >;
+  return names
+    .filter((name) => {
+      const value = vars[name];
+      if (value === undefined || value === null) return true;
+      const text = String(value).trim();
+      return text === '' || findUnresolvedPlaceholders(text).length > 0 || /^PASTE_/i.test(text);
+    })
+    .map((name) => (adapter.envVarMeta?.[name]?.label || name).slice(0, 40));
 }
 
 /** The installed connectors' names, bounded. */

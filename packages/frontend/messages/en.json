@@ -1532,7 +1532,11 @@
       "authorizeRemote": "Authorize with Remote Server",
       "authorizeProvider": "Authorize with Provider",
       "discovering": "Discovering...",
-      "rediscover": "Re-discover Tools"
+      "rediscover": "Re-discover Tools",
+      "keysMissing": "Save your app's client ID and secret first, then authorize. The provider needs them to open its sign-in page (for Etsy: the Keystring and the Shared Secret).",
+      "keysStillEmpty": "Still empty: {names}",
+      "enterKeys": "Enter the keys",
+      "clientId": "client ID"
     },
     "shopee": {
       "title": "Shopee shop authorization",
