@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は Claude、ChatGPT、Copilot、Gemini を ERP、E コマース、REST、SOAP、SQL の各システムと社内のファイルサーバーにつなぎます。774 のコネクターに加え、社内メモリ、AI スキル、ファイル検索も備えています。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は Claude、ChatGPT、Copilot、Gemini を ERP、E コマース、REST、SOAP、SQL の各システムと社内のファイルサーバーにつなぎます。776 のコネクターに加え、社内メモリ、AI スキル、ファイル検索も備えています。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：企業の頭脳になるオープンソースの MCP ゲートウェイ</h1>
@@ -20,7 +20,7 @@
 <p align="center">
   <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、Claude、ChatGPT、Copilot、Gemini を、自社で使っているソフトウェアやファイルサーバー上の文書につなぎます。</strong><br/>
   ゲートウェイの上には企業の頭脳を保持します。システム同士のつながりを表すナレッジグラフ、AI スキル、社内メモリです。すべての AI クライアントで共有され、ユーザーごとのロールで範囲が制限されます。<br/>
-  SAP、Odoo、weclapp、Amazon Seller などを含む 774 種類の既製アダプターで 12,000 以上のツールを提供しており、うち 45 は API キー不要です。
+  SAP、Odoo、weclapp、Amazon Seller などを含む 776 種類の既製アダプターで 12,000 以上のツールを提供しており、うち 45 は API キー不要です。
 </p>
 
 <p align="center">
@@ -139,7 +139,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ## コネクターカタログ
 
-774 個のアダプターで 12,000 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
+776 個のアダプターで 12,000 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
 
 | カテゴリー | 例 |
 |---|---|

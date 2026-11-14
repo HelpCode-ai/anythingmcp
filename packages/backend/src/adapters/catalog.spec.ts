@@ -97,6 +97,11 @@ function argumentsSent(em: Record<string, unknown>): Set<string> {
     for (const m of em.bodyTemplate.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)) {
       sent.add(m[1]);
     }
+    // XML templates: an optional block `${?a|b}…` and a repeated block
+    // `${*items}…` read their arguments too (xml-body-template.util.ts).
+    for (const m of em.bodyTemplate.matchAll(/\$\{[?*]([A-Za-z_][A-Za-z0-9_|]*)\}/g)) {
+      for (const name of m[1].split('|')) sent.add(name);
+    }
   }
   return sent;
 }

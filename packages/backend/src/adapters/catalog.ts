@@ -487,6 +487,7 @@ import * as onepasswordEvents from './intl/onepassword-events.json';
 import * as onesignal from './intl/onesignal.json';
 import * as openai from './intl/openai.json';
 import * as openalex from './intl/openalex.json';
+import * as opencart from './intl/opencart.json';
 import * as openrouter from './intl/openrouter.json';
 import * as openrouteservice from './intl/openrouteservice.json';
 import * as opentable from './intl/opentable.json';
@@ -757,6 +758,7 @@ import * as quipu from './es/quipu.json';
 import * as axonaut from './fr/axonaut.json';
 import * as but from './fr/but.json';
 import * as dolibarr from './fr/dolibarr.json';
+import * as fnac from './fr/fnac.json';
 import * as frCompanyData from './fr/fr-company-data.json';
 import * as laRedoute from './fr/la-redoute.json';
 import * as manomano from './fr/manomano.json';
@@ -1577,6 +1579,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   onesignal as unknown as AdapterDefinition,
   openai as unknown as AdapterDefinition,
   openalex as unknown as AdapterDefinition,
+  opencart as unknown as AdapterDefinition,
   openrouter as unknown as AdapterDefinition,
   openrouteservice as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
@@ -1847,6 +1850,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   axonaut as unknown as AdapterDefinition,
   but as unknown as AdapterDefinition,
   dolibarr as unknown as AdapterDefinition,
+  fnac as unknown as AdapterDefinition,
   frCompanyData as unknown as AdapterDefinition,
   laRedoute as unknown as AdapterDefinition,
   manomano as unknown as AdapterDefinition,
