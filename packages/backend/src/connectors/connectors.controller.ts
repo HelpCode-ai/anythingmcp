@@ -57,7 +57,8 @@ import { PrismaService } from '../common/prisma.service';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { getRequiredSecret } from '../common/secrets.util';
-import { decrypt } from '../common/crypto/encryption.util';
+import { decrypt, encrypt } from '../common/crypto/encryption.util';
+import { keepMaskedUrlPassword, moveUrlCredentials } from './database-url-credentials.util';
 import { getAdapter } from '../adapters/catalog';
 import { resolvePkce } from './oauth-authorize-settings';
 import { isMachineGrant } from './oauth-grant.util';
@@ -840,7 +841,8 @@ export class ConnectorsController {
     summary: 'List connectors for current organization',
     description:
       'Every connector of your workspace, newest first, with its tools. Secrets are never returned: secret variables and ' +
-      'headers come back empty and are named in `maskedEnvVars` / `maskedHeaders`, and `authConfig` is left out. ' +
+      'headers come back empty and are named in `maskedEnvVars` / `maskedHeaders`, `authConfig` is left out, and a ' +
+      'DATABASE connection string shows its password as `********`. ' +
       '`setupStatus` says whether the connector can serve calls: `ready`, `needs_input` (the variables in ' +
       '`missingVariables` are empty) or `needs_authorization` (a sign-in at the provider is pending). ' +
       'Without `limit` all connectors are returned.\n\n' +
@@ -1361,9 +1363,11 @@ export class ConnectorsController {
       'variables and headers are exported only to admins, so that a backup ' +
       'can be restored; for every other role, and for a read-only ' +
       '(MANAGEMENT_READ) API key, they are left empty and named in ' +
-      '`maskedEnvVars` / `maskedHeaders`. In a workspace with restricted ' +
-      'member visibility, a member who is not an admin exports only the ' +
-      'connectors they own.',
+      '`maskedEnvVars` / `maskedHeaders`, and a DATABASE connection string ' +
+      'shows its password as `********`. A database password kept in ' +
+      'authConfig is in no export, so a restored connector needs it typed in again. ' +
+      'In a workspace with restricted member visibility, a member who is not ' +
+      'an admin exports only the connectors they own.',
   })
   async exportAll(@Req() req: any) {
     const organizationId = requireOrganizationId(req);
@@ -1390,7 +1394,9 @@ export class ConnectorsController {
       'so it can be restored with import-all or import. authConfig is never ' +
       'exported. Secret environment variables and headers are exported only ' +
       'to admins; for every other role, and for a read-only (MANAGEMENT_READ) ' +
-      'API key, they are left empty and named in `maskedEnvVars` / `maskedHeaders`. ' +
+      'API key, they are left empty and named in `maskedEnvVars` / `maskedHeaders`, ' +
+      'and a DATABASE connection string shows its password as `********`. A database ' +
+      'password kept in authConfig is in no export. ' +
       'The `X-Secrets-Included` response header says which it was. In a workspace with restricted member ' +
       'visibility, a member who is not an admin gets 404 for a connector they do not own.\n\n' +
       '```bash\ncurl -s "$AMCP_URL/api/connectors/<id>/export?format=yaml" -H "Authorization: Bearer $AMCP_API_KEY" -o acme.yaml\n```',
@@ -1557,6 +1563,10 @@ export class ConnectorsController {
     // means "unchanged", not "erase".
     const ctx = secretContext(connector);
     const data = { ...dto };
+    if (connector.type === 'DATABASE' && dto.baseUrl !== undefined) {
+      // The connection string was shown with its password masked.
+      data.baseUrl = keepMaskedUrlPassword(dto.baseUrl, connector.baseUrl);
+    }
     if ((connector.type as string) === 'EMAIL') {
       data.authConfig = this.mergeEmailAuthConfig(connector.authConfig, dto.authConfig);
     }
@@ -2197,7 +2207,8 @@ export class ConnectorsController {
     summary: 'Import connectors and tools from a backup JSON',
     description:
       'Import a previously exported configuration. Skips connectors ' +
-      'with duplicate names. Does not import auth credentials.',
+      'with duplicate names. authConfig is never read from the file; a ' +
+      'password in a DATABASE connection string is moved into the encrypted authConfig.',
   })
   async importAll(@Req() req: any, @Body() body: ImportAllDto) {
     this.assertCanCreate(req);
@@ -2214,8 +2225,8 @@ export class ConnectorsController {
     description:
       'Takes the text of a file written by export-all or :id/export, in JSON ' +
       'or YAML, and imports it like import-all: into the caller\'s ' +
-      'organization only, skipping connectors with duplicate names, never ' +
-      'restoring auth credentials. Not to be confused with POST :id/import, ' +
+      'organization only, skipping connectors with duplicate names and never ' +
+      'reading authConfig from the file. Not to be confused with POST :id/import, ' +
       'which imports tools from an API spec into an existing connector.\n\n' +
       '```bash\namcp api POST /api/connectors/import --data "$(jq -Rs \'{content: .}\' acme.yaml)" --yes\n```',
   })
@@ -2282,7 +2293,13 @@ export class ConnectorsController {
       // headers and tools: restored, they land in variables instead.
       const secrets = new SecretExtractor(c.name, c.envVars as Record<string, string> | undefined);
       const guarded = SECRET_GUARDED_TYPES.has(c.type);
-      const baseUrl = guarded ? secrets.extractUrl(c.baseUrl, 'baseUrl') : c.baseUrl;
+      // An export carries no authConfig, so a database password restored
+      // from it can only be in the connection string: move it there.
+      const dbCredentials =
+        c.type === 'DATABASE' ? moveUrlCredentials(c.baseUrl, undefined) : null;
+      const baseUrl = guarded
+        ? secrets.extractUrl(c.baseUrl, 'baseUrl')
+        : (dbCredentials?.baseUrl ?? c.baseUrl);
       // A catalog connector's headers are rebuilt from its own template when
       // its variables change (catalog-env-rebuild.util.ts); they are left alone.
       const fromCatalog = !!(c.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
@@ -2313,6 +2330,9 @@ export class ConnectorsController {
             baseUrl,
             isActive: c.isActive ?? true,
             authType: c.authType || 'NONE',
+            ...(dbCredentials
+              ? { authConfig: encrypt(JSON.stringify(dbCredentials.authConfig), this.encryptionKey) }
+              : {}),
             specUrl: c.specUrl,
             headers: headers as any,
             config: config as any,
