@@ -1,6 +1,11 @@
 import { getAdapter, type AdapterDefinition } from './catalog';
 import type { DiscoveredMcpTool } from '../connectors/connectors.service';
-import { localMcpToolName, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
+import {
+  localMcpToolName,
+  mcpFixedArgumentsOf,
+  mcpToolPrefixOf,
+  withoutMcpFixedArguments,
+} from '../connectors/mcp-connector-config.util';
 
 type CatalogTool = AdapterDefinition['tools'][number];
 
@@ -28,11 +33,16 @@ type CatalogTool = AdapterDefinition['tools'][number];
  * A vendor server that is a gateway over several backends may list a tool
  * under a namespace the catalog's snapshot does not carry: TradingView's
  * lists `get_ohlcv` as `mcp-tv-get-ohlcv`. See namespacedCatalogMatches.
+ *
+ * With `fixedArguments` (the adapter's `config.mcpFixedArguments`) the paths
+ * the bridge fills in on every call are dropped from every tool's schema,
+ * whether the catalog knows the tool or not.
  */
 export function mergeDiscoveredMcpTools(
   catalogTools: CatalogTool[],
   discovered: DiscoveredMcpTool[],
   prefix?: string,
+  fixedArguments?: Record<string, unknown>,
 ): CatalogTool[] {
   const byName = new Map(catalogTools.map((t) => [t.name, t]));
   const byMethod = new Map(
@@ -58,7 +68,10 @@ export function mergeDiscoveredMcpTools(
     return {
       name,
       description: d.description,
-      parameters: withoutParameters(d.parameters, own?.omitParameters),
+      parameters: withoutMcpFixedArguments(
+        withoutParameters(d.parameters, own?.omitParameters),
+        fixedArguments,
+      ),
       endpointMapping: d.endpointMapping,
       ...(d.outputSchema ? { outputSchema: d.outputSchema } : {}),
       ...(own?.annotations || d.annotations
@@ -148,7 +161,7 @@ function namespacedCatalogMatches(
  * The tools a remote server listed, as this connector should store them:
  * through the catalog policy above when the connector was installed from an
  * MCP adapter, and only renamed with the connector's tool prefix (if any)
- * otherwise. Used by every path that imports tools after install: the
+ * otherwise. Either way the connector's `mcpFixedArguments` leave the schemas. Used by every path that imports tools after install: the
  * authorization callback and "Discover tools".
  */
 export function catalogMcpToolsFor(
@@ -156,10 +169,11 @@ export function catalogMcpToolsFor(
   discovered: DiscoveredMcpTool[],
 ): Array<CatalogTool & { origin?: 'catalog' }> {
   const prefix = mcpToolPrefixOf(connectorConfig);
+  const fixedArguments = mcpFixedArgumentsOf(connectorConfig);
   const slug = (connectorConfig as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
   const adapter = typeof slug === 'string' ? getAdapter(slug) : null;
   if (adapter && adapter.connector.type === 'MCP') {
-    return mergeDiscoveredMcpTools(adapter.tools, discovered, prefix).map((t) => ({
+    return mergeDiscoveredMcpTools(adapter.tools, discovered, prefix, fixedArguments).map((t) => ({
       ...t,
       origin: 'catalog' as const,
     }));
@@ -167,7 +181,7 @@ export function catalogMcpToolsFor(
   return discovered.map((d) => ({
     name: localMcpToolName(d.name, prefix),
     description: d.description,
-    parameters: d.parameters,
+    parameters: withoutMcpFixedArguments(d.parameters, fixedArguments),
     endpointMapping: d.endpointMapping,
     ...(d.outputSchema ? { outputSchema: d.outputSchema } : {}),
     ...(d.annotations ? { annotations: d.annotations } : {}),

@@ -39,7 +39,7 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { connectorPageUrl, normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
-import { envVarsForMcpTool, mcpPathOf } from './mcp-connector-config.util';
+import { envVarsForMcpTool, mcpPathOf, resolveMcpFixedArguments } from './mcp-connector-config.util';
 import { applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
@@ -1012,6 +1012,17 @@ export class ConnectorsService {
       toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
       connectorPageUrl(connector.id),
     );
+    // Arguments an MCP bridge sends with every call (mcpFixedArguments), as
+    // on a real call (DynamicMcpTools).
+    const mcpFixedArguments =
+      connector.type === 'MCP' ? resolveMcpFixedArguments(connector.config, envVars) : undefined;
+    if (mcpFixedArguments) {
+      assertNoUnresolvedPlaceholders(
+        { body: mcpFixedArguments },
+        toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
+        connectorPageUrl(connector.id),
+      );
+    }
     assertAbsoluteBaseUrl(
       {
         baseUrl: resolved.baseUrl,
@@ -1035,6 +1046,7 @@ export class ConnectorsService {
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
         ? { proxyUrl: process.env.CONNECTOR_PROXY_URL }
         : {}),
+      ...(mcpFixedArguments ? { fixedArguments: mcpFixedArguments } : {}),
     };
 
     if (
