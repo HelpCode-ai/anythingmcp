@@ -32,7 +32,8 @@ import { followDownload, type DownloadFollowConfig } from './download-follow.uti
 import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http-header-name.util';
-import { XMLParser } from 'fast-xml-parser';
+import { isXmlContentType, xmlParser } from './xml-parse.util';
+import { hasXmlTemplateBlocks, renderXmlTemplateBlocks } from './xml-body-template.util';
 import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
 import {
@@ -40,7 +41,7 @@ import {
   toolResponseLimitBytes,
   toolTimeoutMs,
 } from './request-limits.util';
-import { assertNoResponseBodyError } from './response-error.util';
+import { assertNoResponseBodyError, ResponseBodyError } from './response-error.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
 import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
@@ -349,7 +350,11 @@ export class RestEngine {
 
     // Inject authentication
     const headersBeforeAuth = headerNames(axiosConfig.headers);
-    await this.injectAuth(axiosConfig, config);
+    // Set only for LOGIN_TOKEN with `tokenPlacement: "body"`: the token is
+    // then `${loginToken}` in the tool's bodyTemplate instead of a header.
+    const loginBodyToken = await this.injectAuth(axiosConfig, config);
+    // Renders the body again with a new token, for the retry after a re-login.
+    let renderTokenBody: ((token: string) => unknown) | undefined;
     // Headers that carry the connector's credentials stay behind when a
     // redirect leaves the origin: whatever auth added, plus the connector's
     // own headers and templated ones, which often hold a key.
@@ -398,31 +403,43 @@ export class RestEngine {
     const xmlBody = endpointMapping.bodyEncoding === 'xml';
     if (REQUEST_BODY_METHODS.has(httpMethod)) {
       if (endpointMapping.bodyTemplate && xmlBody) {
-        axiosConfig.data = renderXmlBodyTemplate(endpointMapping.bodyTemplate, params);
-      } else if (endpointMapping.bodyTemplate) {
-        const rendered = renderBodyTemplate(
-          endpointMapping.bodyTemplate,
-          params,
-        );
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(rendered);
-        } catch (e: any) {
-          // The parser's "position 38" is a position in a string the caller
-          // cannot see, and we must not show it: env vars are interpolated into
-          // the template too, so the rendered body can carry a credential. Name
-          // the placeholders that had nothing to substitute instead — that is
-          // the usual cause and the only part that is safe to repeat.
-          const missing = missingTemplateParams(endpointMapping.bodyTemplate, params);
-          const hint = missing.length
-            ? ` No value was supplied for ${missing.map((m) => `\`\${${m}}\``).join(', ')}, which is the usual cause.`
-            : '';
-          throw new Error(
-            `bodyTemplate produced invalid JSON after interpolation: ${e.message}.${hint}`,
-          );
+        const template = endpointMapping.bodyTemplate;
+        if (loginBodyToken === undefined) {
+          axiosConfig.data = renderXmlBodyTemplate(template, params);
+        } else {
+          renderTokenBody = (token) => renderXmlBodyTemplate(template, params, { loginToken: token });
+          axiosConfig.data = renderTokenBody(loginBodyToken);
         }
-        assertNoPrototypePollution(parsed);
-        axiosConfig.data = parsed;
+      } else if (endpointMapping.bodyTemplate) {
+        const template = endpointMapping.bodyTemplate;
+        const renderJson = (templateParams: Record<string, unknown>): unknown => {
+          const rendered = renderBodyTemplate(template, templateParams);
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(rendered);
+          } catch (e: any) {
+            // The parser's "position 38" is a position in a string the caller
+            // cannot see, and we must not show it: env vars are interpolated into
+            // the template too, so the rendered body can carry a credential. Name
+            // the placeholders that had nothing to substitute instead — that is
+            // the usual cause and the only part that is safe to repeat.
+            const missing = missingTemplateParams(template, templateParams);
+            const hint = missing.length
+              ? ` No value was supplied for ${missing.map((m) => `\`\${${m}}\``).join(', ')}, which is the usual cause.`
+              : '';
+            throw new Error(
+              `bodyTemplate produced invalid JSON after interpolation: ${e.message}.${hint}`,
+            );
+          }
+          assertNoPrototypePollution(parsed);
+          return parsed;
+        };
+        if (loginBodyToken === undefined) {
+          axiosConfig.data = renderJson(params);
+        } else {
+          renderTokenBody = (token) => renderJson({ ...params, loginToken: token });
+          axiosConfig.data = renderTokenBody(loginBodyToken);
+        }
       } else if (endpointMapping.bodyMapping) {
         let bodyMapping = endpointMapping.bodyMapping;
         let bodyParams = params;
@@ -579,6 +596,8 @@ export class RestEngine {
     const outbound: OutboundRequestOptions = {
       data: buildBody,
       credentialHeaders: [...credentialHeaders],
+      // A body that carries the login token is not resent to another origin.
+      ...(renderTokenBody ? { credentialsInBody: true } : {}),
     };
 
     // Origin, path template and query parameter names only, with the
@@ -637,12 +656,17 @@ export class RestEngine {
         );
         if (renewalFailed) throw renewalFailed;
       }
-      // LOGIN_TOKEN auto-relogin: retry once on 401 when refreshOn401 is enabled
+      // LOGIN_TOKEN auto-relogin: retry once on 401 when refreshOn401 is enabled.
+      // With `refreshOnBody401: true` also when the API says so in the body:
+      // an `errorWhen` rule with status 401 matches a 2xx answer, or the body
+      // of an HTTP error answer (see bodyReports401).
       if (
-        error instanceof AxiosError &&
-        error.response?.status === 401 &&
         config.authType === 'LOGIN_TOKEN' &&
-        (config.authConfig as Record<string, unknown> | undefined)?.refreshOn401 !== false
+        ((error instanceof AxiosError &&
+          error.response?.status === 401 &&
+          (config.authConfig as Record<string, unknown> | undefined)?.refreshOn401 !== false) ||
+          ((config.authConfig as Record<string, unknown> | undefined)?.refreshOnBody401 === true &&
+            bodyReports401(error, config.errorWhen)))
       ) {
         this.logger.debug('LOGIN_TOKEN: 401 received, re-issuing token...');
         const authConfig = config.authConfig as unknown as LoginTokenAuthConfig;
@@ -652,6 +676,7 @@ export class RestEngine {
           { proxyUrl: config.proxyUrl },
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
+        if (renderTokenBody) axiosConfig.data = renderTokenBody(bundle.token);
         rebuildBody(axiosConfig, buildBody);
         const retryResponse = await outboundRequest(axiosConfig, outbound);
         return withMeta(retryResponse);
@@ -874,8 +899,8 @@ export class RestEngine {
       connectorId?: string;
       proxyUrl?: string;
     },
-  ): Promise<void> {
-    if (!config.authConfig) return;
+  ): Promise<string | undefined> {
+    if (!config.authConfig) return undefined;
 
     switch (config.authType) {
       case 'API_KEY': {
@@ -964,6 +989,9 @@ export class RestEngine {
           bundle.token,
           bundle.aud,
         );
+        // `tokenPlacement: "body"`: the caller renders the token into the
+        // tool's bodyTemplate as `${loginToken}`.
+        if (config.authConfig.tokenPlacement === 'body') return bundle.token;
         break;
       }
       case 'OAUTH1':
@@ -971,6 +999,7 @@ export class RestEngine {
         // built yet. Handled by applyOAuth1Signature() after they are.
         break;
     }
+    return undefined;
   }
 
   /**
@@ -1941,11 +1970,19 @@ function missingTemplateParams(
  * the parameter's value, XML-escaped; a missing one becomes empty. No quoting
  * rules apply, unlike the JSON renderer: the template is markup and the value
  * lands in element text or an attribute either way.
+ *
+ * A template that uses optional or repeated blocks (`${?name}…${/name}`,
+ * `${*items}…${/items}`) is rendered by xml-body-template.util.ts; one that
+ * does not is rendered here, as before. `locked` holds values the engine
+ * supplies itself (`loginToken`), which win over the call's parameters.
  */
 export function renderXmlBodyTemplate(
   template: string,
   params: Record<string, unknown>,
+  locked?: Record<string, unknown>,
 ): string {
+  if (hasXmlTemplateBlocks(template)) return renderXmlTemplateBlocks(template, params, locked);
+  if (locked) params = { ...params, ...locked };
   return template.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name: string) => {
     if (!Object.prototype.hasOwnProperty.call(params, name)) return '';
     const value = params[name];
@@ -2013,6 +2050,10 @@ export function buildOauth2TokenHeader(
  * Both the main header and extraHeaders support `${token}` / `${aud}` placeholders,
  * and `${uuid}`: a new random UUID for every request (Walmart wants a fresh
  * WM_QOS.CORRELATION_ID on each call).
+ *
+ * With `tokenPlacement: "body"` the token travels in the request body (Fnac
+ * Darty: an attribute of every XML request), so the token header is not
+ * sent. extraHeaders, which the adapter wrote out itself, still are.
  */
 export function injectLoginTokenHeaders(
   axiosConfig: AxiosRequestConfig,
@@ -2024,13 +2065,37 @@ export function injectLoginTokenHeaders(
   const headerTemplate = authConfig.headerTemplate || 'Bearer ${token}';
   const interpolate = loginTokenHeaderInterpolator(token, aud);
 
-  axiosConfig.headers = {
-    ...axiosConfig.headers,
-    [headerName]: interpolate(headerTemplate),
-  };
+  axiosConfig.headers =
+    authConfig.tokenPlacement === 'body'
+      ? { ...axiosConfig.headers }
+      : {
+          ...axiosConfig.headers,
+          [headerName]: interpolate(headerTemplate),
+        };
   for (const [k, v] of Object.entries(authConfig.extraHeaders || {})) {
     axiosConfig.headers[k] = interpolate(String(v));
   }
+}
+
+/**
+ * Whether a failed call says, in its body, that the token was refused: an
+ * `errorWhen` rule with status 401 matched a 2xx answer (the error is then a
+ * ResponseBodyError), or matches the body of an HTTP error answer. Fnac Darty
+ * answers an expired token with an XML `<error code="ERR_098">` and no 401.
+ * Used only when the connector sets `authConfig.refreshOnBody401`.
+ */
+export function bodyReports401(error: unknown, errorWhen: unknown): boolean {
+  if (error instanceof ResponseBodyError) return error.status === 401;
+  if (!(error instanceof AxiosError) || !error.response) return false;
+  try {
+    assertNoResponseBodyError(
+      parseXmlBody(error.response as { data: unknown; headers?: Record<string, unknown> }),
+      errorWhen,
+    );
+  } catch (matched) {
+    return matched instanceof ResponseBodyError && matched.status === 401;
+  }
+  return false;
 }
 
 /**
@@ -2161,24 +2226,13 @@ const PROXY_ERROR_HINTS: Record<string, string> = {
  * Anything that is not declared as XML, or fails to parse, is returned as
  * axios delivered it — a JSON API is never touched.
  */
-const xmlParser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '',
-  removeNSPrefix: true,
-  parseTagValue: false,
-  parseAttributeValue: false,
-  trimValues: true,
-});
-
 export function parseXmlBody(response: {
   data: unknown;
   headers?: Record<string, unknown>;
 }): unknown {
   const { data } = response;
   if (typeof data !== 'string') return data;
-  const contentType = String(response.headers?.['content-type'] ?? '').toLowerCase();
-  const declaredXml = /(^|[/+])xml([;\s]|$)/.test(contentType);
-  if (!declaredXml) return data;
+  if (!isXmlContentType(response.headers?.['content-type'])) return data;
   try {
     const parsed = xmlParser.parse(data);
     // fast-xml-parser hands back an empty object for non-XML text; keep the

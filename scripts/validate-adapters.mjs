@@ -141,6 +141,105 @@ export function loginBasicAuthProblems(connector) {
   return problems;
 }
 
+/**
+ * LOGIN_TOKEN for XML APIs (Fnac Darty): a login sent and answered in XML
+ * (`loginBodyFormat`, `loginResponseFormat`), the token placed in the request
+ * body as the `loginToken` placeholder instead of a header
+ * (`tokenPlacement: "body"`), and a re-login when the body reports a refused
+ * token (`refreshOnBody401`). Each is opt-in; this catches a combination the
+ * engine would run without doing what the adapter meant.
+ */
+const LOGIN_TOKEN_PLACEHOLDER = '$' + '{loginToken}';
+export function loginTokenXmlProblems(adapter) {
+  const connector = adapter?.connector;
+  const cfg = connector?.authConfig;
+  const tools = Array.isArray(adapter?.tools) ? adapter.tools : [];
+  const templates = tools.map((t) => t?.endpointMapping?.bodyTemplate).filter((t) => typeof t === 'string');
+  const usesLoginToken = templates.some((t) => t.includes(LOGIN_TOKEN_PLACEHOLDER));
+  const problems = [];
+  const fields = ['loginBodyFormat', 'loginResponseFormat', 'tokenPlacement', 'refreshOnBody401'];
+  const set = cfg && typeof cfg === 'object' ? fields.filter((f) => cfg[f] !== undefined) : [];
+  if (connector?.authType !== 'LOGIN_TOKEN') {
+    for (const f of set) problems.push(`${f} only applies to LOGIN_TOKEN authentication`);
+    if (usesLoginToken) problems.push(`${LOGIN_TOKEN_PLACEHOLDER} in a bodyTemplate needs LOGIN_TOKEN authentication with tokenPlacement: "body"`);
+    return problems;
+  }
+  if (!cfg || typeof cfg !== 'object') return problems;
+  if (cfg.loginBodyFormat !== undefined) {
+    if (cfg.loginBodyFormat !== 'xml') problems.push('loginBodyFormat must be "xml"');
+    else if (typeof cfg.loginBody !== 'string') problems.push('loginBodyFormat: "xml" needs loginBody to be the XML document as a string');
+  }
+  if (cfg.loginResponseFormat !== undefined && cfg.loginResponseFormat !== 'xml') problems.push('loginResponseFormat must be "xml"');
+  if (cfg.tokenPlacement !== undefined && !['header', 'body'].includes(cfg.tokenPlacement)) problems.push('tokenPlacement must be "header" or "body"');
+  if (cfg.tokenPlacement === 'body') {
+    if (connector.type !== 'REST') problems.push('tokenPlacement: "body" is only supported by REST connectors');
+    if (!usesLoginToken) problems.push(`tokenPlacement: "body" sends no token header, so at least one tool's bodyTemplate must contain ${LOGIN_TOKEN_PLACEHOLDER}`);
+    for (const f of ['headerName', 'headerTemplate']) {
+      if (cfg[f] !== undefined) problems.push(`${f} is not sent with tokenPlacement: "body"; remove it`);
+    }
+  } else if (usesLoginToken && (cfg.tokenPlacement === undefined || cfg.tokenPlacement === 'header')) {
+    problems.push(`${LOGIN_TOKEN_PLACEHOLDER} in a bodyTemplate renders empty without authConfig.tokenPlacement: "body"`);
+  }
+  if (cfg.refreshOnBody401 !== undefined) {
+    if (typeof cfg.refreshOnBody401 !== 'boolean') problems.push('refreshOnBody401 must be true or false');
+    else if (cfg.refreshOnBody401) {
+      const rules = connector.config?.errorWhen;
+      const list = rules === undefined ? [] : Array.isArray(rules) ? rules : [rules];
+      if (!list.some((r) => r && typeof r === 'object' && r.status === 401)) problems.push('refreshOnBody401 needs a connector.config.errorWhen rule with status 401 that recognises the refused token');
+    }
+  }
+  return problems;
+}
+
+const BLOCK_NAME = '[A-Za-z_][A-Za-z0-9_]*';
+const OPTIONAL_BLOCK = new RegExp('^' + BLOCK_NAME + '(?:\\|' + BLOCK_NAME + ')*$');
+const REPEATED_BLOCK = new RegExp('^' + BLOCK_NAME + '$');
+const BLOCK_OPENERS = { optional: '$' + '{?', repeated: '$' + '{*', close: '$' + '{/' };
+
+/**
+ * Optional (`?name` … `/name`) and repeated (`#items` … `/items`) blocks of an
+ * XML bodyTemplate, written inside the usual dollar-brace placeholder: each
+ * opener names its parameter(s) and has its closing tag, and the mapping is an
+ * XML body. The engine stops a call whose template breaks these rules
+ * (xml-body-template.util.ts); found here, the adapter never ships.
+ */
+export function xmlTemplateBlockProblems(endpointMapping) {
+  const template = endpointMapping?.bodyTemplate;
+  if (typeof template !== 'string') return [];
+  if (!template.includes(BLOCK_OPENERS.optional) && !template.includes(BLOCK_OPENERS.repeated)) return [];
+  if (endpointMapping.bodyEncoding !== 'xml') return ['optional and repeated blocks need bodyEncoding: "xml"'];
+  const problems = [];
+  let pos = 0;
+  for (;;) {
+    const optional = template.indexOf(BLOCK_OPENERS.optional, pos);
+    const repeated = template.indexOf(BLOCK_OPENERS.repeated, pos);
+    const open = optional === -1 ? repeated : repeated === -1 ? optional : Math.min(optional, repeated);
+    if (open === -1) break;
+    const kind = template[open + 2];
+    const tagEnd = template.indexOf('}', open);
+    const expr = tagEnd === -1 ? '' : template.slice(open + 3, tagEnd);
+    const opener = BLOCK_OPENERS[kind === '?' ? 'optional' : 'repeated'];
+    if (!(kind === '?' ? OPTIONAL_BLOCK : REPEATED_BLOCK).test(expr)) {
+      problems.push(`a block opener must name a parameter, as in ${opener}name}`);
+      break;
+    }
+    pos = tagEnd + 1;
+  }
+  // Every opener has its closing tag: as many closers as openers per name,
+  // and never a closer before its opener (blocks nest, also under one name).
+  const names = new Set([...template.matchAll(/\$\{[?*]([^}]*)\}/g)].map((m) => m[1]));
+  for (const expr of problems.length ? [] : names) {
+    const tags = [...template.matchAll(/\$\{([?*/])([^}]*)\}/g)].filter((m) => m[2] === expr);
+    let depth = 0;
+    for (const tag of tags) {
+      depth += tag[1] === '/' ? -1 : 1;
+      if (depth < 0) break;
+    }
+    if (depth !== 0) problems.push(`the block ${expr} is not closed once for every time it is opened (${BLOCK_OPENERS.close}${expr}})`);
+  }
+  return problems;
+}
+
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
 // real adapters mention "to-do" lists, and only the uppercase word is ours.
 const TODO_MARKER = /\bTODO\b/;
@@ -620,6 +719,10 @@ export function validateAdapter(adapter, file, region) {
     if (adapter.connector?.authType !== 'OAUTH2') errors.push(error('check-before-authorization', 'checkBeforeAuthorization', 'checkBeforeAuthorization only runs for adapters signed in through the browser (OAUTH2)', 'Remove it, or use probe for other adapters.', 'adapter-fields'));
   }
 
+  for (const problem of loginTokenXmlProblems(adapter)) {
+    errors.push(error('login-token-xml', 'connector.authConfig', problem, 'See the "XML logins and a token in the request body" section of docs/connectors/login-token-auth.md: loginBodyFormat and loginResponseFormat take "xml", tokenPlacement takes "header" or "body", refreshOnBody401 takes true or false.', 'authentication'));
+  }
+
   for (const problem of errorWhenProblems(adapter.connector?.config?.errorWhen)) {
     errors.push(error('error-when', 'connector.config.errorWhen', problem, 'Each rule needs a path and may set equals, in, matches, messagePath, messageMatches and an error status (400-599).', 'errors-inside-a-200-response'));
   }
@@ -654,6 +757,9 @@ export function validateAdapter(adapter, file, region) {
       for (const [pname, pdef] of Object.entries(props)) {
         if (!pdef || typeof pdef !== 'object' || !pdef.description) warnings.push(warning('parameter-description', `${base}.parameters.properties.${pname}`, `tool "${tool.name}" parameter "${pname}" missing description`));
       }
+    }
+    for (const problem of xmlTemplateBlockProblems(tool.endpointMapping)) {
+      errors.push(error('xml-template-blocks', `${base}.endpointMapping.bodyTemplate`, problem, 'Open a block with a parameter name and close it with the same name, on a mapping with bodyEncoding "xml".', 'xml-bodies'));
     }
     if (adapter.connector?.type === 'GRAPHQL') errors.push(...graphqlVariableErrors(adapter, tool, base));
   }

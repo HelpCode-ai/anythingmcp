@@ -789,6 +789,39 @@ break the document:
 Without `bodyEncoding: "xml"`, `__raw` values are inserted as they are, as
 before.
 
+**Optional and repeated blocks.** An API that validates requests against a
+schema refuses an element that is present but empty (`<paging></paging>` where
+a number is expected), so an XML `bodyTemplate` can leave parts out and repeat
+parts per item of a list:
+
+| Block | Meaning |
+|-------|---------|
+| `${?name}…${/name}` | Kept when the parameter `name` has a value. |
+| `${?a\|b}…${/a\|b}` | Kept when `a` or `b` has a value. |
+| `${*items}…${/items}` | Repeated for every item of the list `items` (a single value counts as a list of one). Inside, `${.}` is the item, and the fields of an object item are placeholders of their own (`${sku}`), on top of the call's parameters. |
+
+"Has a value" means not missing, not `null`, not `""` and not an empty list;
+`0` and `false` are values. Blocks nest, also under the same name, so a wrapper
+element goes with its list:
+
+```json
+{
+  "method": "POST",
+  "path": "/orders_query",
+  "bodyEncoding": "xml",
+  "bodyTemplate": "<orders_query${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?states}<states>${*states}<state>${.}</state>${/states}</states>${/states}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}</orders_query>"
+}
+```
+
+With `{"page": 1, "states": ["Created", "ToShip"]}` this sends
+`<orders_query><paging>1</paging><states><state>Created</state><state>ToShip</state></states></orders_query>`.
+Every substituted value is XML-escaped, as elsewhere in an XML body. A block
+that is opened and never closed, or that names no parameter, stops the call
+before anything is sent; `scripts/validate-adapters.mjs` reports it (rule
+`xml-template-blocks`). Blocks exist only in a `bodyTemplate` with
+`bodyEncoding: "xml"`, and a template without them is rendered exactly as
+before.
+
 ### Response headers and pagination (`exposeHeaders`)
 
 By default a tool receives the response **body** and nothing else. Some APIs put
@@ -1404,6 +1437,8 @@ The engine handles salt fetch → bcrypt → login → token cache → proactive
 A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenticate`) sets `"loginBasicAuth": true`: the engine sends `Authorization: Basic base64(username:password)` on the login request only (the API calls keep using `headerTemplate`), the password is never offered to the body templates (`${password}` renders empty), and no body is sent without a `loginBody`. An `Authorization` in `loginHeaders` is refused rather than overridden, as are `signedJwt`, bcrypt `passwordHashing` and a username containing `:`; `scripts/validate-adapters.mjs` reports the same mistakes (rule `login-basic-auth`).
 
 When the login answer is not documented, `tokenJsonPath` may be a list of paths tried in order (the first non-empty string wins), e.g. `["AuthenticationResult.IdToken", "idToken", "token", "."]`.
+
+An XML API (Fnac Darty's marketplace) logs in with an XML document and carries the token in the body of every request instead of a header. Four opt-in fields cover it: `"loginBodyFormat": "xml"` (a string `loginBody` is XML, its values are XML-escaped), `"loginResponseFormat": "xml"` (the XML login answer is parsed, so `tokenJsonPath` reads `auth_response.token`), `"tokenPlacement": "body"` (no token header; the token is `${loginToken}` in a tool's `bodyTemplate`) and `"refreshOnBody401": true` (log in again when a `config.errorWhen` rule with `status: 401` matches the response body). `scripts/validate-adapters.mjs` checks the combinations (rule `login-token-xml`).
 
 See [`docs/connectors/login-token-auth.md`](connectors/login-token-auth.md) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
 

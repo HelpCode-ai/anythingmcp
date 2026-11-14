@@ -15,6 +15,9 @@ import {
   proactiveRefreshWindowMs,
   signLoginJwt,
   loginBasicAuthHeader,
+  renderXmlLoginBody,
+  parseXmlLoginAnswer,
+  extractXmlLoginRefusal,
 } from './login-token.service';
 import { generateKeyPairSync, verify } from 'crypto';
 import { injectLoginTokenHeaders } from './rest.engine';
@@ -1124,6 +1127,173 @@ describe('LoginTokenService - form-encoded client-credentials login with ${uuid}
     expect(first.headers['X-Trace']).toBe(`a-${first.headers['WM_QOS.CORRELATION_ID']}`);
     expect(second.headers['WM_QOS.CORRELATION_ID']).toMatch(UUID_RE);
     expect(second.headers['WM_QOS.CORRELATION_ID']).not.toBe(first.headers['WM_QOS.CORRELATION_ID']);
+  });
+});
+
+describe('LoginTokenService - XML login (Fnac Darty pattern)', () => {
+  let service: LoginTokenService;
+  // Built at runtime so no literal looks like a real credential.
+  const KEY = ['k', 'e'.repeat(6), '&<y>'].join('');
+  const TOKEN = '61DF8A84-4465-7D36-20A4-00F941207026';
+  const xmlAuth: LoginTokenAuthConfig = {
+    loginUrl: 'https://vendeur.fnac.com/api.php/auth',
+    loginMethod: 'POST',
+    loginBodyFormat: 'xml',
+    loginBody:
+      '<?xml version="1.0" encoding="utf-8"?><auth xmlns="http://www.fnac.com/schemas/mp-dialog.xsd">' +
+      '<partner_id>${username}</partner_id><shop_id>${aud}</shop_id><key>${password}</key></auth>',
+    username: 'PARTNER-1',
+    password: KEY,
+    aud: 'SHOP "A"',
+    loginResponseFormat: 'xml',
+    tokenJsonPath: 'auth_response.token',
+    expiryJsonPath: 'auth_response.validity',
+    expiryFormat: 'iso8601',
+    tokenTTLSeconds: 900,
+    tokenPlacement: 'body',
+  };
+  const answer = (validity: string) =>
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<auth_response status="OK" xmlns="http://www.fnac.com/schemas/mp-dialog.xsd">\n' +
+    `  <token>${TOKEN}</token>\n  <validity>${validity}</validity>\n  <version>2.6.0</version>\n</auth_response>`;
+  const axiosMock = () => mockedAxios as unknown as jest.Mock;
+
+  beforeEach(() => {
+    const mockPrisma = {
+      connectorAuthCache: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+    } as any;
+    service = new LoginTokenService(mockPrisma, { get: jest.fn().mockReturnValue('test-encryption-key-32-chars-ok!') } as any);
+    jest.clearAllMocks();
+  });
+
+  it('reads the token and its expiry from an XML answer declared as text/xml', async () => {
+    const validity = new Date(Date.now() + 40 * 60 * 1000).toISOString();
+    axiosMock().mockResolvedValue({ data: answer(validity), headers: { 'content-type': 'text/xml; charset=UTF-8' } });
+    const bundle = await service.getToken(xmlAuth, 'conn-fnac');
+    expect(bundle.token).toBe(TOKEN);
+    expect(bundle.expiresAt).toBe(Date.parse(validity));
+    // The shop id stays available as ${aud}.
+    expect(bundle.aud).toBe('SHOP "A"');
+  });
+
+  it('parses an XML answer that carries no XML content type but starts with <', async () => {
+    axiosMock().mockResolvedValue({ data: `\n  ${answer('2031-04-01T18:04:13+02:00')}`, headers: { 'content-type': 'text/html' } });
+    const bundle = await service.getToken(xmlAuth, 'conn-fnac');
+    expect(bundle.token).toBe(TOKEN);
+    expect(bundle.expiresAt).toBe(Date.parse('2031-04-01T18:04:13+02:00'));
+  });
+
+  it('leaves an XML answer as text without loginResponseFormat, as before', async () => {
+    const { loginResponseFormat: _format, ...plain } = xmlAuth;
+    axiosMock().mockResolvedValue({ data: answer('2031-04-01T18:04:13+02:00'), headers: { 'content-type': 'text/xml' } });
+    await expect(service.getToken(plain, 'conn-fnac')).rejects.toThrow(/token not found at "auth_response\.token"/);
+  });
+
+  it('still reads a JSON answer with loginResponseFormat xml', async () => {
+    axiosMock().mockResolvedValue({ data: { auth_response: { token: 'json-token' } }, headers: { 'content-type': 'application/json' } });
+    const bundle = await service.getToken(xmlAuth, 'conn-fnac');
+    expect(bundle.token).toBe('json-token');
+  });
+
+  it("reports the service's own refusal when the XML answer carries an error instead of a token", async () => {
+    axiosMock().mockResolvedValue({
+      data:
+        '<?xml version="1.0" encoding="UTF-8" ?>\n<auth_response status="ERROR" xmlns="http://www.fnac.com/schemas/mp-dialog.xsd">\n' +
+        '    <error severity="ERROR" code="ERR_097">Authentication failed : one of the parameters (partner_id, key, shop_id) is invalid</error>\n</auth_response>',
+      headers: { 'content-type': 'text/xml; charset=UTF-8' },
+    });
+    await expect(service.getToken(xmlAuth, 'conn-fnac')).rejects.toThrow(
+      'LOGIN_TOKEN: the service refused the login — ERR_097: Authentication failed : one of the parameters (partner_id, key, shop_id) is invalid',
+    );
+  });
+
+  it('sends the XML login body with every value escaped and labels it as XML', async () => {
+    axiosMock().mockResolvedValue({ data: answer('2031-04-01T18:04:13+02:00'), headers: { 'content-type': 'text/xml' } });
+    await service.getToken(xmlAuth, 'conn-fnac');
+    const call = axiosMock().mock.calls[0][0];
+    expect(call.method).toBe('POST');
+    expect(call.url).toBe('https://vendeur.fnac.com/api.php/auth');
+    expect(call.data).toBe(
+      '<?xml version="1.0" encoding="utf-8"?><auth xmlns="http://www.fnac.com/schemas/mp-dialog.xsd">' +
+        '<partner_id>PARTNER-1</partner_id><shop_id>SHOP &quot;A&quot;</shop_id><key>keeeeee&amp;&lt;y&gt;</key></auth>',
+    );
+    expect(call.headers['Content-Type']).toBe('application/xml; charset=utf-8');
+  });
+
+  it("keeps the adapter's own login Content-Type, in any spelling", async () => {
+    for (const [name, value] of [
+      ['Content-Type', 'text/xml; charset=utf-8'],
+      ['content-type', 'text/xml'],
+    ]) {
+      jest.clearAllMocks();
+      axiosMock().mockResolvedValue({ data: answer('2031-04-01T18:04:13+02:00'), headers: { 'content-type': 'text/xml' } });
+      await service.forceRelogin({ ...xmlAuth, loginHeaders: { [name]: value } }, 'conn-fnac');
+      const sent = axiosMock().mock.calls[0][0].headers as Record<string, string>;
+      const types = Object.entries(sent).filter(([k]) => k.toLowerCase() === 'content-type');
+      expect(types).toEqual([[name, value]]);
+    }
+  });
+
+  it('sends a string loginBody unescaped and as JSON without loginBodyFormat, as before', async () => {
+    const { loginBodyFormat: _format, ...plain } = xmlAuth;
+    axiosMock().mockResolvedValue({ data: answer('2031-04-01T18:04:13+02:00'), headers: { 'content-type': 'text/xml' } });
+    await service.getToken(plain, 'conn-fnac');
+    const call = axiosMock().mock.calls[0][0];
+    expect(call.data).toContain(`<key>${KEY}</key>`);
+    expect(call.data).toContain('<shop_id>SHOP "A"</shop_id>');
+    expect(call.headers['Content-Type']).toBe('application/json');
+  });
+
+  it('ignores loginBodyFormat for a structured loginBody', async () => {
+    axiosMock().mockResolvedValue({ data: answer('2031-04-01T18:04:13+02:00'), headers: { 'content-type': 'text/xml' } });
+    await service.getToken({ ...xmlAuth, loginBody: { key: '${password}' } }, 'conn-fnac');
+    const call = axiosMock().mock.calls[0][0];
+    expect(call.data).toEqual({ key: KEY });
+    expect(call.headers['Content-Type']).toBe('application/json');
+  });
+
+  it('sends no token header for tokenPlacement body, but keeps extraHeaders', () => {
+    const request: any = { headers: { 'Content-Type': 'text/xml' } };
+    injectLoginTokenHeaders(request, { ...xmlAuth, extraHeaders: { 'X-Shop': '${aud}' } }, TOKEN, 'SHOP');
+    expect(request.headers).toEqual({ 'Content-Type': 'text/xml', 'X-Shop': 'SHOP' });
+    const header: any = { headers: {} };
+    injectLoginTokenHeaders(header, { ...xmlAuth, tokenPlacement: 'header' }, TOKEN);
+    expect(header.headers).toEqual({ Authorization: `Bearer ${TOKEN}` });
+  });
+});
+
+describe('XML login helpers', () => {
+  it('renderXmlLoginBody escapes values, empties unknown names and never reads the prototype', () => {
+    expect(renderXmlLoginBody('<a k="${k}">${v}</a><b>${missing}</b><c>${constructor}</c>', { k: '"q"', v: 'Tom & Jerry <3' })).toBe(
+      '<a k="&quot;q&quot;">Tom &amp; Jerry &lt;3</a><b></b><c></c>',
+    );
+  });
+
+  it('parseXmlLoginAnswer hoists attributes, drops namespace prefixes and keeps values as strings', () => {
+    expect(
+      parseXmlLoginAnswer({
+        data: '<m:auth_response xmlns:m="urn:x" status="OK"><m:token>0810</m:token></m:auth_response>',
+        headers: { 'content-type': 'application/xml' },
+      }),
+    ).toMatchObject({ auth_response: { status: 'OK', token: '0810' } });
+  });
+
+  it('parseXmlLoginAnswer returns anything that is not an XML document as it arrived', () => {
+    const object = { token: 't' };
+    expect(parseXmlLoginAnswer({ data: object, headers: {} })).toBe(object);
+    expect(parseXmlLoginAnswer({ data: 'plain-token', headers: { 'content-type': 'text/plain' } })).toBe('plain-token');
+    expect(parseXmlLoginAnswer({ data: 'not xml at all', headers: { 'content-type': 'text/xml' } })).toBe('not xml at all');
+    expect(parseXmlLoginAnswer({ data: 'plain-token' })).toBe('plain-token');
+  });
+
+  it('extractXmlLoginRefusal reads the first error element, with its code when there is one', () => {
+    expect(extractXmlLoginRefusal({ auth_response: { status: 'ERROR', error: { '#text': 'Bad key', code: 'ERR_097', severity: 'ERROR' } } })).toBe('ERR_097: Bad key');
+    expect(extractXmlLoginRefusal({ r: { error: [{ '#text': 'First' }, { '#text': 'Second', code: 'E2' }] } })).toBe('First');
+    expect(extractXmlLoginRefusal({ auth_response: { status: 'OK' } })).toBeNull();
+    expect(extractXmlLoginRefusal('text')).toBeNull();
   });
 });
 
