@@ -225,6 +225,16 @@ Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
 value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
 leaves out the PKCE challenge and verifier for providers that do not use them.
 
+The token answer is read as RFC 6749 has it, with `access_token`,
+`refresh_token` and `expires_in` at the top level. A provider that wraps them
+(Joom answers `{ "code": 0, "message": "", "data": { "access_token": … } }`)
+names the wrapping object in `authConfig.tokenResponsePath`, a dotted path of
+keys such as `"data"`. The code exchange, the refreshes and the
+`client_credentials` and `password` grants then read the token fields from
+that object, and fail with the provider's own `code` and `message` when it is
+missing. Without the field nothing changes. See
+[REST connectors](connectors/rest.md#token-answers-inside-a-wrapper-tokenresponsepath).
+
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
 also sent on the token requests: the authorization-code exchange, refreshes
@@ -1447,6 +1457,8 @@ A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenti
 When the login answer is not documented, `tokenJsonPath` may be a list of paths tried in order (the first non-empty string wins), e.g. `["AuthenticationResult.IdToken", "idToken", "token", "."]`.
 
 An XML API (Fnac Darty's marketplace) logs in with an XML document and carries the token in the body of every request instead of a header. Four opt-in fields cover it: `"loginBodyFormat": "xml"` (a string `loginBody` is XML, its values are XML-escaped), `"loginResponseFormat": "xml"` (the XML login answer is parsed, so `tokenJsonPath` reads `auth_response.token`), `"tokenPlacement": "body"` (no token header; the token is `${loginToken}` in a tool's `bodyTemplate`) and `"refreshOnBody401": true` (log in again when a `config.errorWhen` rule with `status: 401` matches the response body). `scripts/validate-adapters.mjs` checks the combinations (rule `login-token-xml`).
+
+A login that answers the token in a response header instead of the body (Ceneo's `GetToken` answers it in a header called `access_token`) sets `"tokenSource": "header"` and `"tokenHeaderName": "access_token"`. The name is matched without regard to case, `tokenJsonPath` is not needed, and the lifetime comes from `tokenTTLSeconds`. `scripts/validate-adapters.mjs` checks the pair (rule `login-token-source`).
 
 See [`docs/connectors/login-token-auth.md`](connectors/login-token-auth.md) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
 

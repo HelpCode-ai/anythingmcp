@@ -12,6 +12,11 @@ import {
 } from './engines/client-assertion.util';
 import { outboundAxiosOptions } from '../common/outbound-http';
 import { urlForLog } from '../common/log-safe-url.util';
+import {
+  describeMissingTokenFields,
+  tokenFieldsAt,
+  tokenResponsePathOf,
+} from './engines/token-response.util';
 
 export interface OAuthMetadata {
   issuer: string;
@@ -80,6 +85,12 @@ export interface PendingOAuthFlow {
    * as well (see tokenEndpointUserAgent). Unset leaves the default.
    */
   userAgent?: string;
+  /**
+   * `authConfig.tokenResponsePath`: the object of the token answer that holds
+   * the token fields, for providers that wrap them (Joom: `data`). Unset, the
+   * fields are read at the top level. REST and GraphQL connectors only.
+   */
+  tokenResponsePath?: string;
   /**
    * RFC 8707 resource indicator of the MCP server, sent with the code
    * exchange and stored for the refreshes. MCP connectors only.
@@ -494,6 +505,11 @@ export class McpOAuthService {
     userAgent?: string;
     /** RFC 8707 resource indicator (MCP servers). */
     resource?: string;
+    /**
+     * Where the token fields sit in the answer when the provider wraps them
+     * (see token-response.util.ts). Unset reads them at the top level.
+     */
+    tokenResponsePath?: string;
   }): Promise<{
     accessToken: string;
     refreshToken?: string;
@@ -595,6 +611,29 @@ export class McpOAuthService {
         response.status,
         String(data.error),
       );
+    }
+
+    // A provider that wraps the token fields (Joom: { code, message, data }).
+    const wrapper = tokenResponsePathOf(params.tokenResponsePath);
+    if (wrapper) {
+      const fields = tokenFieldsAt(data, wrapper);
+      if (!fields) {
+        throw new TokenExchangeError(
+          `Token exchange failed: ${describeMissingTokenFields(data, wrapper)}`,
+          response.status,
+        );
+      }
+      if (typeof fields.access_token !== 'string' || !fields.access_token) {
+        throw new TokenExchangeError(
+          `Token exchange failed: the object at "${wrapper}" of the token answer carries no access_token`,
+          response.status,
+        );
+      }
+      return {
+        accessToken: fields.access_token,
+        refreshToken: fields.refresh_token,
+        expiresIn: fields.expires_in,
+      };
     }
 
     return {

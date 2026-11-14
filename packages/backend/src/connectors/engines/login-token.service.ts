@@ -144,7 +144,9 @@ export interface LoginTokenAuthConfig {
 
   // One path, or several tried in order when the vendor does not document
   // the login answer's shape: the first that holds a non-empty string wins.
-  tokenJsonPath: string | string[];
+  // Required when the token is read from the body (the default); not read
+  // with tokenSource 'cookie' or 'header'.
+  tokenJsonPath?: string | string[];
   expiryJsonPath?: string;
   audJsonPath?: string;
   expiryFormat?: 'iso8601' | 'unix' | 'ttl_seconds';
@@ -155,8 +157,13 @@ export interface LoginTokenAuthConfig {
   // 'cookie'         → parse Set-Cookie header for the cookie named
   //                    {cookieName}, return its value. SAP B1 Service Layer
   //                    uses this with cookieName="B1SESSION".
-  tokenSource?: 'body' | 'cookie';
+  // 'header'         → the value of the response header named
+  //                    {tokenHeaderName}, matched without regard to case.
+  //                    Ceneo's token call answers the bearer token in a
+  //                    response header called `access_token`.
+  tokenSource?: 'body' | 'cookie' | 'header';
   cookieName?: string;
+  tokenHeaderName?: string;
   // With tokenSource 'cookie': 'single' (default) keeps the value of
   // {cookieName}; 'all' keeps every cookie the login sets, as one
   // "a=1; b=2" string for a `Cookie: ${token}` header. For logins that set a
@@ -348,7 +355,15 @@ export class LoginTokenService {
       this.requireString(authConfig.username, 'username');
       this.requireString(authConfig.password, 'password');
     }
-    if (authConfig.tokenSource !== 'cookie') {
+    if (authConfig.tokenSource === 'header') {
+      // Checked before the request: a login whose answer cannot be read is
+      // not worth sending.
+      if (!authConfig.tokenHeaderName || typeof authConfig.tokenHeaderName !== 'string' || !authConfig.tokenHeaderName.trim()) {
+        throw new Error(
+          'LOGIN_TOKEN: tokenSource=header requires "tokenHeaderName" to be set',
+        );
+      }
+    } else if (authConfig.tokenSource !== 'cookie') {
       tokenJsonPaths(authConfig.tokenJsonPath);
     }
 
@@ -478,6 +493,14 @@ export class LoginTokenService {
       if (!token) {
         throw new Error(
           `LOGIN_TOKEN: cookie "${cookieName}" not found in Set-Cookie response headers`,
+        );
+      }
+    } else if (authConfig.tokenSource === 'header') {
+      const headerName = String(authConfig.tokenHeaderName).trim();
+      token = extractResponseHeader(response.headers, headerName);
+      if (!token) {
+        throw new Error(
+          `LOGIN_TOKEN: header "${headerName}" not found in the login response headers`,
         );
       }
     } else {
@@ -922,6 +945,32 @@ export function extractSetCookieValue(
     }
   }
   return found;
+}
+
+/**
+ * The value of a named response header, matched without regard to case (HTTP
+ * header names are case-insensitive, and Node hands them over in lower case
+ * whatever the server wrote). Surrounding white space is dropped; when the
+ * header came more than once, the first non-empty value is taken. Null when
+ * the response has no such header or only an empty one.
+ *
+ * Example: extractResponseHeader(headers, "access_token") reads the bearer
+ * token Ceneo's GetToken call answers in its `access_token` header.
+ */
+export function extractResponseHeader(
+  headers: Record<string, unknown> | undefined,
+  headerName: string,
+): string | null {
+  if (!headers || typeof headers !== 'object') return null;
+  const wanted = headerName.trim().toLowerCase();
+  if (!wanted) return null;
+  for (const [name, raw] of Object.entries(headers)) {
+    if (name.toLowerCase() !== wanted) continue;
+    for (const value of Array.isArray(raw) ? raw : [raw]) {
+      if (typeof value === 'string' && value.trim() !== '') return value.trim();
+    }
+  }
+  return null;
 }
 
 /**
