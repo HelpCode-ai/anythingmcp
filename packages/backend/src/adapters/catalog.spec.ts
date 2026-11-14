@@ -396,6 +396,9 @@ describe('adapter catalog', () => {
         // optional.
         if (cfg.tokenSource === 'cookie') {
           if (cfg.cookieMode !== 'all') expect(typeof cfg.cookieName).toBe('string');
+        } else if (cfg.tokenSource === 'header') {
+          // The token arrives in a response header of the login answer.
+          expect(typeof cfg.tokenHeaderName).toBe('string');
         } else if (Array.isArray(cfg.tokenJsonPath)) {
           // Several candidate paths, tried in order (tokenJsonPaths()).
           expect(cfg.tokenJsonPath.length).toBeGreaterThan(0);
