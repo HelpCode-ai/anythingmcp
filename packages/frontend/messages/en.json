@@ -355,30 +355,34 @@
       "paysToday": "Keep your workspace running",
       "trial": "Your free trial"
     },
-    "ending": "Your free trial ends on <strong>{date}</strong>, too soon to carry on with a card trial. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
-    "endingSoon": "Your free trial ends soon, too soon to carry on with a card trial. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
-    "returning": "This email address has had an AnythingMCP subscription before, so a new free trial is not available with a card. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are, and your current trial keeps running until <strong>{date}</strong> if you decide later.",
-    "returningNoDate": "This email address has had an AnythingMCP subscription before, so a new free trial is not available with a card. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
-    "trial": "Every feature, free until <strong>{date}</strong>. Add a card now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: the no-card trial has a <strong>lower connector limit</strong>, and you can add a card any time to unlock your full plan.",
-    "trialNoDate": "Every feature, free until your trial ends. Add a card now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: the no-card trial has a <strong>lower connector limit</strong>, and you can add a card any time to unlock your full plan.",
+    "ending": "Your free trial ends on <strong>{date}</strong>, too soon to add a payment method and keep trying for free. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "endingSoon": "Your free trial ends soon, too soon to add a payment method and keep trying for free. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "returning": "This email address has had an AnythingMCP subscription before, so a new free trial with a payment method is not available. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are, and your current trial keeps running until <strong>{date}</strong> if you decide later.",
+    "returningNoDate": "This email address has had an AnythingMCP subscription before, so a new free trial with a payment method is not available. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "trial": "Every feature, free until <strong>{date}</strong>. Add a payment method now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: that trial has a <strong>lower connector limit</strong>, and you can add a payment method any time to unlock your full plan.",
+    "trialNoDate": "Every feature, free until your trial ends. Add a payment method now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: that trial has a <strong>lower connector limit</strong>, and you can add a payment method any time to unlock your full plan.",
     "authorizationReturn": "Either way, you go straight back to finish connecting your AI client.",
     "chargesToday": "This address already had a subscription, so the checkout will charge {amount} today.",
     "start": {
       "opening": "Opening checkout…",
       "tryAgain": "Try again",
       "checkout": "Continue to checkout",
-      "withCard": "Start free trial with card"
+      "trial": "Start free trial"
     },
     "promo": "Code {code} will be applied at checkout.",
     "price": "{amount}/{period, select, yearly {year} other {month}}",
     "priceLocal": "≈ {local}/{period, select, yearly {year} other {month}} ({exact})",
     "finePrintPaysToday": "{plan}, {price}, billed today and then {period, select, yearly {every year} other {every month}}. Secure checkout by Stripe. Cancel anytime from the billing portal.",
-    "finePrintTrial": "€0 today. {plan}, billed {period, select, yearly {yearly} other {monthly}} from {date}. Secure checkout by Stripe. Cancel before then and you pay nothing.",
-    "finePrintTrialNoDate": "€0 today. {plan}, billed {period, select, yearly {yearly} other {monthly}} from the end of your trial. Secure checkout by Stripe. Cancel before then and you pay nothing.",
+    "finePrintTrial": "{plan}, billed {period, select, yearly {yearly} other {monthly}} from {date}. Secure checkout by Stripe. Cancel before then and you pay nothing.",
+    "finePrintTrialNoDate": "{plan}, billed {period, select, yearly {yearly} other {monthly}} from the end of your trial. Secure checkout by Stripe. Cancel before then and you pay nothing.",
     "notReady": "Not ready yet?",
-    "notReadyCard": "Not ready to add a card?",
+    "notReadyCard": "Not ready to add a payment method?",
     "keepFree": "Keep using the free trial",
-    "tryFree": "Try free without payment details"
+    "tryFree": "Try free without payment details",
+    "methods": {
+      "trial": "€0 today · card, PayPal and other methods",
+      "pay": "Card, PayPal and other methods"
+    }
   },
   "appShell": {
     "toggleTheme": "Toggle theme",
@@ -3899,7 +3903,8 @@
     },
     "enterpriseQuestion": "More users, single sign-on or SCIM?",
     "pastTeam": "This workspace goes past Team.",
-    "enterpriseLink": "Ask about Enterprise"
+    "enterpriseLink": "Ask about Enterprise",
+    "listSeparator": ", "
   },
   "cardCheckout": {
     "failed": "We could not open the checkout. Please try again in a moment."

@@ -180,7 +180,7 @@ export function PlanPicker({
                 {exceeded.length > 0 && usage && (
                   <p className={cn('text-xs text-[var(--warning-text)]', compact ? 'mt-0.5 pl-6' : 'mt-1')}>
                     {t('outgrown', {
-                      items: exceeded.map((k) => t(`usage.${k}`, { count: usage[k] })).join(', '),
+                      items: exceeded.map((k) => t(`usage.${k}`, { count: usage[k] })).join(t('listSeparator')),
                     })}
                   </p>
                 )}

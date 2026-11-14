@@ -18,6 +18,7 @@ import {
   yearlySaving,
 } from '../../src/lib/card-trial';
 import { formatLocal, parseLocalPricing } from '../../src/lib/local-currency';
+import { pickPaywallLang } from '../../src/lib/paywall-lang';
 
 /**
  * The card trial on AnythingMCP Cloud: right after sign-up an admin on a
@@ -127,12 +128,33 @@ test.describe('card-trial helpers', () => {
     expect(cardTrialDisplayEnd(null, now)).toBeNull();
   });
 
+  test('picks an extra paywall language only when the dashboard has none for the browser', () => {
+    // The first browser language either side has decides.
+    expect(pickPaywallLang('', ['es-MX', 'en'])).toBe('es');
+    expect(pickPaywallLang('', ['zh-CN'])).toBe('zh');
+    expect(pickPaywallLang('', ['ja'])).toBe('ja');
+    expect(pickPaywallLang('', ['fr-FR', 'ru-RU'])).toBe('ru');
+    expect(pickPaywallLang('', ['de-DE', 'es'])).toBeNull();
+    expect(pickPaywallLang('', ['en-US', 'es'])).toBeNull();
+    expect(pickPaywallLang('', ['fr-FR'])).toBeNull();
+    expect(pickPaywallLang('', [])).toBeNull();
+    // A language picked in the dashboard always wins.
+    expect(pickPaywallLang('a=1; amcp_locale=en', ['es-ES'])).toBeNull();
+    expect(pickPaywallLang('amcp_locale=it', ['ru'])).toBeNull();
+    // A cookie that is not a dashboard language is ignored.
+    expect(pickPaywallLang('amcp_locale=xx', ['es-ES'])).toBe('es');
+  });
+
   test('formats the trial end and the prices', () => {
     expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC')).toBe('7 October 2026');
     expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'short', 'UTC')).toBe('7 Oct');
     // A translated page passes its UI language.
     expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC', 'de')).toBe('7. Oktober 2026');
     expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC', 'it')).toBe('7 ottobre 2026');
+    expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC', 'es')).toBe('7 de octubre de 2026');
+    // Without the Russian "г." after the year.
+    expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC', 'ru')).toBe('7 октября 2026');
+    expect(formatTrialEnd('2026-10-07T09:00:00.000Z', 'long', 'UTC', 'ja')).toBe('2026年10月7日');
     expect(formatTrialEnd('nonsense')).toBeNull();
 
     const [starter, team] = CLOUD_PLANS;
@@ -142,6 +164,11 @@ test.describe('card-trial helpers', () => {
     expect(formatEur(15.83, 'de')).toBe('15,83 €');
     expect(formatEur(15.83, 'it')).toBe('15,83 €');
     expect(formatEur(190, 'de')).toBe('190 €');
+    expect(formatEur(15.83, 'es')).toBe('15,83 €');
+    expect(formatEur(15.83, 'ru')).toBe('15,83 €');
+    // Chinese and Japanese write a point, like English.
+    expect(formatEur(15.83, 'zh')).toBe('15.83 €');
+    expect(formatEur(15.83, 'ja')).toBe('15.83 €');
     expect(yearlyPerMonth(starter)).toBe(15.83);
     expect(yearlyPerMonth(team)).toBe(40.83);
     expect(CLOUD_PLANS.map(yearlySaving)).toEqual([38, 98]);
@@ -320,7 +347,7 @@ test.describe('card-trial offer (cloud)', () => {
     // The real end date, never a length the user may no longer have.
     await expect(page.getByText(/^Free until \d{1,2} \w+ \d{4}$/)).toBeVisible();
     await expect(page.getByText(/7-day/)).toHaveCount(0);
-    await expect(page.getByText('€0 today.')).toBeVisible();
+    await expect(page.getByTestId('payment-methods')).toHaveText('€0 today · card, PayPal and other methods');
     // Starter is preselected without an intent from the pricing page.
     await expect(page.getByRole('radio', { name: /Starter/ })).toHaveAttribute('aria-checked', 'true');
 
@@ -567,7 +594,8 @@ test.describe('an address that had a subscription (cloud)', () => {
     await expect(page.getByText('Your plan starts today and is billed today.')).toBeVisible();
     await expect(page.getByText(/Starter, 19\s€\/month, billed today and then every month\./)).toBeVisible();
     await expect(page.getByText('€0 today', { exact: false })).toHaveCount(0);
-    await expect(page.getByText(/free trial with card/i)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start free trial' })).toHaveCount(0);
+    await expect(page.getByTestId('payment-methods')).toHaveText('Card, PayPal and other methods');
 
     await page.getByRole('button', { name: 'Continue to checkout' }).click();
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
@@ -580,7 +608,7 @@ test.describe('an address that had a subscription (cloud)', () => {
       checkout: () => ({ status: 200, body: { url: 'https://checkout.example.test/start?intent=i9', trial: false } }),
     });
     await page.goto('/start-trial');
-    await page.getByRole('button', { name: 'Start free trial with card' }).click({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Start free trial' }).click({ timeout: 15_000 });
     await expect(page.getByRole('status')).toContainText('the checkout will charge 19 € today');
     await expect(page).toHaveURL(/\/start-trial$/);
     await expect(page.getByText('Your plan starts today and is billed today.')).toBeVisible();
@@ -621,7 +649,7 @@ test.describe('a plan button clicked by someone already signed in (cloud)', () =
     await expect(page.getByRole('radio', { name: 'Yearly' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByText('Create your free account')).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Start free trial with card' }).click();
+    await page.getByRole('button', { name: 'Start free trial' }).click();
     await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
     expect(posted).toEqual([{ plan: 'team', billingPeriod: 'yearly', trial: true, source: 'pricing_signed_in' }]);
   });
@@ -635,7 +663,7 @@ test.describe('a plan button clicked by someone already signed in (cloud)', () =
     await page.goto(REGISTER_STARTER);
     await expect(page).toHaveURL(/\/start-trial\?source=pricing_signed_in$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Keep your workspace running' })).toBeVisible();
-    await expect(page.getByText(/too soon to carry on with a card trial/)).toBeVisible();
+    await expect(page.getByText(/too soon to add a payment method and keep trying for free/)).toBeVisible();
     await expect(page.getByText('Your plan starts today and is billed today.')).toBeVisible();
     await expect(page.getByText(/had an AnythingMCP subscription before/)).toHaveCount(0);
     await expect(page.getByText('€0 today', { exact: false })).toHaveCount(0);
@@ -852,3 +880,148 @@ test.describe('the paywall in the UI language (cloud)', () => {
     });
   });
 });
+
+test.describe('the paywall in the website\'s other languages (cloud)', () => {
+  const SHOWN = { 'amcp_card_trial_prompt:u1': 'shown' };
+  const ENDED = { plan: 'trial', status: 'active', expiresAt: new Date(Date.now() - 86_400_000).toISOString(), trialDaysLeft: 0 };
+  const TRUST = { variant: 'trust', recap: { successfulCalls: 3, connectors: ['Telegram'], client: 'Claude', blockedSinceEnd: true } };
+  const shot = async (page: Page, name: string) => {
+    if (!process.env.WALL_SHOT) return;
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: `${process.env.WALL_SHOT}/${name}-desktop.png` });
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${process.env.WALL_SHOT}/${name}-mobile-${width}.png`, fullPage: true });
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+  };
+
+  test.describe('es-ES', () => {
+    test.use({ locale: 'es-ES' });
+
+    test('the ended-trial wall is Spanish, over the English dashboard, and sells in place', async ({ page }) => {
+      const { posted } = await cloudSession(page, { seed: SHOWN, license: ENDED, wall: TRUST });
+      await page.goto('/connectors');
+      await expect(page.getByRole('heading', { name: 'Mantén tu IA conectada a tus apps' })).toBeVisible({ timeout: 15_000 });
+      // The dashboard itself has no Spanish: it stays English.
+      await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+      const starter = page.getByRole('radio', { name: /Starter/ });
+      await expect(starter).toContainText('El más elegido');
+      await expect(starter).toContainText('5 conectores · 3 servidores MCP · 1 usuario');
+      await expect(starter).toContainText('19 €/mes');
+      await expect(page.getByRole('radio', { name: /Team/ })).toContainText('15 conectores · 10 servidores MCP · hasta 3 usuarios');
+      await expect(page.getByText('Precios en EUR, IVA incluido.')).toBeVisible();
+      await expect(page.getByTestId('wall-trust')).toContainText('Cancela cuando quieras');
+      await expect(page.getByRole('link', { name: 'Comparar planes' })).toBeVisible();
+      for (const english of ['Most popular', 'Monthly', 'Prices in EUR', 'Compare plans', 'Delete your account']) {
+        await expect(page.getByText(english, { exact: false })).toHaveCount(0);
+      }
+      await shot(page, 'wall-es');
+      await page.getByRole('radio', { name: /Anual/ }).click();
+      await expect(starter).toContainText('≈ 15,83 €/mes');
+      await page.getByRole('radio', { name: 'Mensual' }).click();
+      await page.getByRole('button', { name: 'Suscribirse a Starter' }).click();
+      await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
+      expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: false, source: 'trial_ended_wall' }]);
+    });
+
+    test('the card-trial page is Spanish and names more than a card', async ({ page }) => {
+      const { posted } = await cloudSession(page);
+      await page.goto('/start-trial');
+      await expect(page.getByRole('heading', { name: 'Tu prueba gratuita' })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('payment-methods')).toHaveText('0 € hoy · tarjeta, PayPal y otros métodos');
+      await expect(page.getByRole('radio', { name: /Starter/ })).toContainText('El más elegido');
+      await shot(page, 'start-trial-es');
+      await page.getByRole('button', { name: 'Empezar la prueba gratuita', exact: true }).click();
+      await expect(page).toHaveURL('https://checkout.example.test/start?intent=i1');
+      expect(posted).toEqual([{ plan: 'starter', billingPeriod: 'monthly', trial: true, source: 'start_trial' }]);
+    });
+
+    test('the trial banner is Spanish', async ({ page }) => {
+      await cloudSession(page, { seed: SHOWN });
+      await page.goto('/connectors');
+      await expect(page.getByText('Prueba: quedan 5 días. Incluye todo lo de Team.')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('button', { name: /Añade un método de pago: sin cargos antes del/ })).toBeVisible();
+      await shot(page, 'banner-es');
+    });
+
+    test('English picked in the dashboard keeps the paywall English', async ({ page }) => {
+      await page.context().addCookies([{ name: 'amcp_locale', value: 'en', url: 'http://localhost:3100' }]);
+      await cloudSession(page, { seed: SHOWN, license: ENDED, wall: TRUST });
+      await page.goto('/connectors');
+      await expect(page.getByRole('heading', { name: 'Keep your AI connected to your apps' })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('button', { name: 'Subscribe to Starter' })).toBeVisible();
+    });
+  });
+
+  test.describe('ru-RU', () => {
+    test.use({ locale: 'ru-RU' });
+
+    test('the wall is Russian, with the right plural forms', async ({ page }) => {
+      await cloudSession(page, { seed: SHOWN, license: ENDED, wall: TRUST, usage: { connectors: 7, mcpServers: 1, users: 2 } });
+      await page.goto('/connectors');
+      await expect(page.getByRole('heading', { name: 'Сохраните связь вашего ИИ с приложениями' })).toBeVisible({ timeout: 15_000 });
+      const starter = page.getByRole('radio', { name: /Starter/ });
+      await expect(starter).toContainText('5 коннекторов · 3 MCP-сервера · 1 пользователь');
+      await expect(starter).toContainText('В этом workspace уже 7 коннекторов, 2 пользователя');
+      await expect(page.getByRole('radio', { name: /Team/ })).toContainText('15 коннекторов · 10 MCP-серверов · до 3 пользователей');
+      await expect(page.getByRole('button', { name: 'Подписаться на Team' })).toBeVisible();
+      await shot(page, 'wall-ru');
+    });
+
+    test('the card-trial page is Russian', async ({ page }) => {
+      await cloudSession(page);
+      await page.goto('/start-trial');
+      await expect(page.getByRole('button', { name: 'Начать бесплатный период', exact: true })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('payment-methods')).toHaveText('0 € сегодня · карта, PayPal и другие способы');
+      await shot(page, 'start-trial-ru');
+    });
+
+    test('the trial banner counts the days in Russian', async ({ page }) => {
+      await cloudSession(page, { seed: SHOWN });
+      await page.goto('/connectors');
+      await expect(page.getByText('Пробный период: осталось 5 дней. В него входит всё из Team.')).toBeVisible({ timeout: 15_000 });
+    });
+  });
+
+  test.describe('zh-CN', () => {
+    test.use({ locale: 'zh-CN' });
+
+    test('the wall and the card-trial page are Chinese', async ({ page }) => {
+      await cloudSession(page, { seed: SHOWN, license: ENDED, wall: TRUST });
+      await page.goto('/connectors');
+      await expect(page.getByRole('heading', { name: '让你的 AI 与你的应用保持连接' })).toBeVisible({ timeout: 15_000 });
+      const starter = page.getByRole('radio', { name: /Starter/ });
+      await expect(starter).toContainText('5 个连接器 · 3 个 MCP 服务器 · 1 位用户');
+      await expect(page.getByRole('radio', { name: /Team/ })).toContainText('最多 3 位用户');
+      await page.getByRole('radio', { name: /按年/ }).click();
+      // A point for the decimals, not a comma.
+      await expect(starter).toContainText('≈ 15.83 €/月');
+      await expect(page.getByRole('button', { name: '订阅 Starter' })).toBeVisible();
+      await shot(page, 'wall-zh');
+    });
+  });
+
+  test.describe('ja-JP', () => {
+    test.use({ locale: 'ja-JP' });
+
+    test('the wall and the card-trial page are Japanese', async ({ page }) => {
+      await cloudSession(page, { seed: SHOWN, license: ENDED, wall: TRUST });
+      await page.goto('/connectors');
+      await expect(page.getByRole('heading', { name: 'AI とアプリの接続を維持しましょう' })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('radio', { name: /Starter/ })).toContainText('コネクタ 5 個 · MCP サーバー 3 台 · ユーザー 1 名');
+      await expect(page.getByRole('button', { name: 'Starter に登録する' })).toBeVisible();
+      await shot(page, 'wall-ja');
+    });
+
+    test('the card-trial page is Japanese', async ({ page }) => {
+      await cloudSession(page);
+      await page.goto('/start-trial');
+      await expect(page.getByRole('button', { name: '無料トライアルを開始', exact: true })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('payment-methods')).toHaveText('本日 0 € · カード、PayPal など');
+      await shot(page, 'start-trial-ja');
+    });
+  });
+});
+

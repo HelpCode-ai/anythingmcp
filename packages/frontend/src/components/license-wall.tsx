@@ -24,6 +24,7 @@ import {
   type WorkspaceUsage,
 } from '@/lib/card-trial';
 import { PlanPicker } from '@/components/plan-picker';
+import { PaywallIntl } from '@/components/paywall-intl';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -37,7 +38,16 @@ import { cn } from '@/lib/utils';
 // a new purchase would bill a second subscription.
 type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed' | 'payment-failed';
 
+/** The licence wall, in the visitor's language among the website's seven. */
 export function LicenseWall() {
+  return (
+    <PaywallIntl>
+      <LicenseWallContent />
+    </PaywallIntl>
+  );
+}
+
+function LicenseWallContent() {
   const { token, user, deploymentMode, orgName, orgs, switchOrg } = useAuth();
   const managePlan = useManagePlan();
   const [reason, setReason] = useState<BlockReason | null>(null);

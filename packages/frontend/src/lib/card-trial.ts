@@ -196,13 +196,16 @@ export function planById(id: CloudPlanId): CloudPlan {
   return CLOUD_PLANS.find((p) => p.id === id) ?? CLOUD_PLANS[1];
 }
 
+/** UI languages that write decimals with a comma. Chinese and Japanese use a point, like English. */
+const COMMA_DECIMALS = new Set(['de', 'it', 'es', 'ru']);
+
 /**
  * "19 €", "15.83 €" (non-breaking space, as on the invoice). With a UI
- * language that writes decimals with a comma (German, Italian): "15,83 €".
+ * language that writes decimals with a comma: "15,83 €".
  */
 export function formatEur(amount: number, locale?: string): string {
   const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-  const comma = !!locale && locale !== 'en' && !locale.startsWith('en-');
+  const comma = COMMA_DECIMALS.has((locale ?? '').toLowerCase().split('-')[0]);
   return `${comma ? text.replace('.', ',') : text} €`;
 }
 
@@ -424,12 +427,14 @@ export function formatTrialEnd(
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(locale, {
+  const text = d.toLocaleDateString(locale, {
     day: 'numeric',
     month: style === 'long' ? 'long' : 'short',
     ...(style === 'long' && { year: 'numeric' }),
     ...(timeZone && { timeZone }),
   });
+  // Russian ends a full date with "г." (год): dropped, the date sits before a full stop.
+  return text.replace(/\s*г\.$/, '');
 }
 
 // ── Back to an AI client's authorization ────────────────────────────────────

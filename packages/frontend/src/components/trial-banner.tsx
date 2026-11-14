@@ -7,6 +7,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useLocale, useTranslations } from 'next-intl';
 import { license, productEvents } from '@/lib/api';
 import { PlanFitNotice } from '@/components/plan-fit-notice';
+import { PaywallIntl } from '@/components/paywall-intl';
 import { buttonVariants } from '@/components/ui/button';
 import { usePlanFit } from '@/lib/use-plan-fit';
 import { deviceKind } from '@/lib/paywall-tracking';
@@ -25,7 +26,16 @@ import {
   readPlanIntent,
 } from '@/lib/card-trial';
 
+/** The trial countdown, in the visitor's language among the website's seven. */
 export function TrialBanner() {
+  return (
+    <PaywallIntl>
+      <TrialBannerContent />
+    </PaywallIntl>
+  );
+}
+
+function TrialBannerContent() {
   const { token, user, deploymentMode } = useAuth();
   const router = useRouter();
   const t = useTranslations('trialBanner');

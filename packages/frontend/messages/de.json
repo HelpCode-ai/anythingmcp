@@ -355,30 +355,34 @@
       "paysToday": "Halten Sie Ihren Workspace am Laufen",
       "trial": "Ihre kostenlose Testphase"
     },
-    "ending": "Ihre kostenlose Testphase endet am <strong>{date}</strong>, zu früh, um mit einer Testphase mit Karte weiterzumachen. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "endingSoon": "Ihre kostenlose Testphase endet bald, zu früh, um mit einer Testphase mit Karte weiterzumachen. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "returning": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Karte nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind, und Ihre aktuelle Testphase läuft bis zum <strong>{date}</strong> weiter, falls Sie sich später entscheiden.",
-    "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Karte nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Karte, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Die Testphase ohne Karte hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Karte hinzufügen, um Ihren vollen Tarif freizuschalten.",
-    "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Karte, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Die Testphase ohne Karte hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Karte hinzufügen, um Ihren vollen Tarif freizuschalten.",
+    "ending": "Ihre kostenlose Testphase endet am <strong>{date}</strong>, zu früh, um eine Zahlungsmethode zu hinterlegen und kostenlos weiterzutesten. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "endingSoon": "Ihre kostenlose Testphase endet bald, zu früh, um eine Zahlungsmethode zu hinterlegen und kostenlos weiterzutesten. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "returning": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Zahlungsmethode nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind, und Ihre aktuelle Testphase läuft bis zum <strong>{date}</strong> weiter, falls Sie sich später entscheiden.",
+    "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Zahlungsmethode nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
+    "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
     "authorizationReturn": "So oder so geht es danach direkt zurück, um die Verbindung Ihres KI-Clients abzuschließen.",
     "chargesToday": "Diese Adresse hatte bereits ein Abonnement, daher berechnet der Checkout heute {amount}.",
     "start": {
       "opening": "Checkout wird geöffnet…",
       "tryAgain": "Erneut versuchen",
       "checkout": "Weiter zum Checkout",
-      "withCard": "Kostenlos testen mit Karte"
+      "trial": "Kostenlos testen"
     },
     "promo": "Der Code {code} wird beim Checkout angewendet.",
     "price": "{amount}/{period, select, yearly {Jahr} other {Monat}}",
     "priceLocal": "≈ {local}/{period, select, yearly {Jahr} other {Monat}} ({exact})",
     "finePrintPaysToday": "{plan}, {price}, heute abgerechnet und danach {period, select, yearly {jährlich} other {monatlich}}. Sicherer Checkout über Stripe. Jederzeit im Abrechnungsportal kündbar.",
-    "finePrintTrial": "Heute 0 €. {plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab dem {date}. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
-    "finePrintTrialNoDate": "Heute 0 €. {plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab Ende Ihrer Testphase. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
+    "finePrintTrial": "{plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab dem {date}. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
+    "finePrintTrialNoDate": "{plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab Ende Ihrer Testphase. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
     "notReady": "Noch nicht so weit?",
-    "notReadyCard": "Noch keine Karte hinterlegen?",
+    "notReadyCard": "Noch keine Zahlungsmethode hinterlegen?",
     "keepFree": "Kostenlose Testphase weiter nutzen",
-    "tryFree": "Kostenlos ohne Zahlungsdaten testen"
+    "tryFree": "Kostenlos ohne Zahlungsdaten testen",
+    "methods": {
+      "trial": "Heute 0 € · Karte, PayPal und weitere Methoden",
+      "pay": "Karte, PayPal und weitere Methoden"
+    }
   },
   "appShell": {
     "toggleTheme": "Design wechseln",
@@ -3899,7 +3903,8 @@
     },
     "enterpriseQuestion": "Mehr Nutzer, Single Sign-on oder SCIM?",
     "pastTeam": "Dieser Workspace geht über Team hinaus.",
-    "enterpriseLink": "Enterprise anfragen"
+    "enterpriseLink": "Enterprise anfragen",
+    "listSeparator": ", "
   },
   "cardCheckout": {
     "failed": "Der Checkout konnte gerade nicht geöffnet werden. Bitte versuchen Sie es gleich noch einmal."
