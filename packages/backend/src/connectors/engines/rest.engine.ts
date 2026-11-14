@@ -25,6 +25,7 @@ import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
   LoginTokenAuthConfig,
+  loginTokenHeaderInterpolator,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { followDownload, type DownloadFollowConfig } from './download-follow.util';
@@ -2009,7 +2010,9 @@ export function buildOauth2TokenHeader(
 
 /**
  * Inject the bearer header (and any extraHeaders) for a LOGIN_TOKEN connector.
- * Both the main header and extraHeaders support `${token}` / `${aud}` placeholders.
+ * Both the main header and extraHeaders support `${token}` / `${aud}` placeholders,
+ * and `${uuid}`: a new random UUID for every request (Walmart wants a fresh
+ * WM_QOS.CORRELATION_ID on each call).
  */
 export function injectLoginTokenHeaders(
   axiosConfig: AxiosRequestConfig,
@@ -2019,8 +2022,7 @@ export function injectLoginTokenHeaders(
 ): void {
   const headerName = authConfig.headerName || 'Authorization';
   const headerTemplate = authConfig.headerTemplate || 'Bearer ${token}';
-  const interpolate = (s: string): string =>
-    s.replace(/\$\{token\}/g, token).replace(/\$\{aud\}/g, aud || '');
+  const interpolate = loginTokenHeaderInterpolator(token, aud);
 
   axiosConfig.headers = {
     ...axiosConfig.headers,
