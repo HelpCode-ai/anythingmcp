@@ -198,6 +198,7 @@ test('diagnostic docs use ordinary GitHub heading slugs', () => {
     ['Adapter file errors', 'adapter-file-errors'], ['GraphQL variables', 'graphql-variables'],
     ['Errors inside a 200 response', 'errors-inside-a-200-response'],
     ["MCP adapters \\(a vendor's own MCP server\\)", 'mcp-adapters-a-vendors-own-mcp-server'],
+    ['XML bodies', 'xml-bodies'],
   ]) {
     assert.match(docs, new RegExp(`^#{2,3} ${heading}$`, 'm'));
     const diagnostic = renderReport([{
@@ -235,6 +236,82 @@ test('loginBasicAuth needs credentials and keeps the password out of the login b
     assert.equal(errors[0].docs, 'authentication');
   }
   assert.match(login({}, 'BASIC_AUTH')[0].message, /only applies to LOGIN_TOKEN/);
+});
+
+test('LOGIN_TOKEN for XML APIs: login formats, the token in the body and the re-login on a body error', () => {
+  const TOKEN = '$' + '{loginToken}';
+  const xmlTool = (bodyTemplate) => ({
+    name: 'good_lookup', description: 'x'.repeat(60), parameters: { type: 'object', properties: {} },
+    endpointMapping: { method: 'POST', path: '/q', bodyEncoding: 'xml', bodyTemplate },
+  });
+  const check = ({ authConfig = {}, authType = 'LOGIN_TOKEN', type = 'REST', config, tools } = {}) => validateAdapter(adapter({
+    connector: {
+      type, authType,
+      authConfig: {
+        loginUrl: 'https://good.test/auth', username: '{{GOOD_USER}}', password: '{{GOOD_KEY}}', tokenJsonPath: 'auth_response.token',
+        loginBodyFormat: 'xml', loginBody: '<auth><key>$' + '{password}</key></auth>', loginResponseFormat: 'xml',
+        tokenPlacement: 'body', refreshOnBody401: true, ...authConfig,
+      },
+      config: config === undefined ? { errorWhen: [{ path: 'r.error.code', equals: 'ERR_098', status: 401 }] } : config,
+    },
+    requiredEnvVars: ['GOOD_USER', 'GOOD_KEY'],
+    tools: tools ?? [xmlTool(`<q token="${TOKEN}"/>`)],
+  }), 'good.json', 'de').errors.filter((e) => e.rule === 'login-token-xml');
+
+  assert.deepEqual(check(), []);
+  // An adapter that sets none of the fields is not looked at.
+  assert.deepEqual(check({ authConfig: { loginBodyFormat: undefined, loginResponseFormat: undefined, tokenPlacement: undefined, refreshOnBody401: undefined, loginBody: {} }, tools: [xmlTool('<q/>')] }), []);
+  assert.deepEqual(check({ authConfig: { tokenPlacement: 'header', headerName: 'X-Token' }, tools: [xmlTool('<q/>')] }), []);
+  for (const [options, expected] of [
+    [{ authConfig: { loginBodyFormat: 'json' } }, /loginBodyFormat must be "xml"/],
+    [{ authConfig: { loginBody: { key: 'x' } } }, /needs loginBody to be the XML document as a string/],
+    [{ authConfig: { loginResponseFormat: true } }, /loginResponseFormat must be "xml"/],
+    [{ authConfig: { tokenPlacement: 'query' } }, /tokenPlacement must be "header" or "body"/],
+    [{ type: 'GRAPHQL' }, /only supported by REST connectors/],
+    [{ tools: [xmlTool('<q/>')] }, /at least one tool's bodyTemplate must contain/],
+    [{ authConfig: { headerTemplate: 'Bearer x' } }, /headerTemplate is not sent with tokenPlacement: "body"/],
+    [{ authConfig: { tokenPlacement: undefined } }, /renders empty without authConfig\.tokenPlacement: "body"/],
+    [{ authConfig: { refreshOnBody401: 'yes' } }, /refreshOnBody401 must be true or false/],
+    [{ config: {} }, /refreshOnBody401 needs a connector\.config\.errorWhen rule with status 401/],
+    [{ config: { errorWhen: [{ path: 'r.error', status: 400 }] } }, /rule with status 401/],
+  ]) {
+    const errors = check(options);
+    assert.equal(errors.length, 1, JSON.stringify(options));
+    assert.match(errors[0].message, expected);
+    assert.equal(errors[0].docs, 'authentication');
+  }
+  const other = check({ authType: 'API_KEY' }).map((e) => e.message);
+  assert.equal(other.length, 5);
+  assert.ok(other.slice(0, 4).every((m) => /only applies to LOGIN_TOKEN authentication/.test(m)));
+  assert.match(other[4], /needs LOGIN_TOKEN authentication with tokenPlacement: "body"/);
+});
+
+test('optional and repeated blocks in an XML bodyTemplate are named, closed and only in XML bodies', () => {
+  const open = (kind, name) => '$' + `{${kind}${name}}`;
+  const blocks = (bodyTemplate, bodyEncoding = 'xml') => validateAdapter(adapter({
+    tools: [{
+      name: 'good_lookup', description: 'x'.repeat(60), parameters: { type: 'object', properties: {} },
+      endpointMapping: { method: 'POST', path: '/q', bodyEncoding, bodyTemplate },
+    }],
+  }), 'good.json', 'de').errors.filter((e) => e.rule === 'xml-template-blocks');
+
+  const nested = `<q>${open('?', 'ids')}<ids>${open('*', 'ids')}<id/>${open('/', 'ids')}</ids>${open('/', 'ids')}${open('?', 'a|b')}<d/>${open('/', 'a|b')}</q>`;
+  assert.deepEqual(blocks(nested), []);
+  assert.deepEqual(blocks('<q>$' + '{page}</q>'), []);
+  assert.deepEqual(blocks('{"a":"$' + '{page}"}', 'json'), []);
+  for (const [template, encoding, expected] of [
+    [`<q>${open('?', 'page')}<p/></q>`, 'xml', /the block page is not closed once for every time it is opened/],
+    [`<q>${open('?', 'ids')}${open('*', 'ids')}<id/>${open('/', 'ids')}</q>`, 'xml', /the block ids is not closed once/],
+    [`<q>${open('*', 'a|b')}<p/>${open('/', 'a|b')}</q>`, 'xml', /a block opener must name a parameter/],
+    [`<q>${open('?', '')}<p/></q>`, 'xml', /a block opener must name a parameter/],
+    [`{"a":"${open('?', 'page')}x${open('/', 'page')}"}`, 'json', /need bodyEncoding: "xml"/],
+  ]) {
+    const errors = blocks(template, encoding);
+    assert.equal(errors.length, 1, template);
+    assert.match(errors[0].message, expected);
+    assert.equal(errors[0].docs, 'xml-bodies');
+    assert.equal(errors[0].path, 'tools[0].endpointMapping.bodyTemplate');
+  }
 });
 
 test('DATABASE adapters may authenticate with a connection string', () => {

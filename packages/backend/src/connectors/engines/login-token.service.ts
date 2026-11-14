@@ -12,6 +12,8 @@ import { urlForLog } from '../../common/log-safe-url.util';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { ClientAssertionError, signJwt } from './client-assertion.util';
 import { findUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
+import { escapeXmlValue } from '../../common/xml-escape.util';
+import { isXmlContentType, xmlParser } from './xml-parse.util';
 
 const DEFAULT_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const DEFAULT_PROACTIVE_REFRESH_SECONDS = 24 * 60 * 60; // 1 day
@@ -73,6 +75,25 @@ export interface LoginTokenAuthConfig {
   loginBody?: unknown;
   // …or a raw string template (deprecated, brittle for GraphQL mutations).
   loginBodyTemplate?: string;
+  /**
+   * `"xml"`: a string `loginBody` is an XML document. The values `${username}`,
+   * `${password}`, `${aud}` … insert are XML-escaped, and the request is
+   * labelled `application/xml; charset=utf-8` unless loginHeaders set a
+   * Content-Type. Absent: a string loginBody is sent as before (values
+   * inserted as they are, labelled application/json unless loginHeaders say
+   * otherwise).
+   */
+  loginBodyFormat?: 'xml';
+  /**
+   * `"xml"`: the login answers with an XML document (Fnac Darty's
+   * `<auth_response><token>…</token><validity>…</validity></auth_response>`).
+   * A string answer that is declared XML, or starts with `<`, is parsed with
+   * the parser the REST engine uses for XML answers (attributes next to child
+   * elements, no namespace prefixes, values as strings), so tokenJsonPath,
+   * expiryJsonPath and audJsonPath address it: `auth_response.token`.
+   * Absent: the answer is read as axios delivered it.
+   */
+  loginResponseFormat?: 'xml';
   loginHeaders?: Record<string, string>;
   /**
    * Send `Authorization: Basic base64(username:password)` on the login request
@@ -145,8 +166,22 @@ export interface LoginTokenAuthConfig {
   cookieMode?: 'single' | 'all';
 
   refreshOn401?: boolean;
+  /**
+   * Also re-login (and retry once) when the API refuses the token in the
+   * body instead of with HTTP 401: one of the connector's `config.errorWhen`
+   * rules with `status: 401` matches a 2xx answer, or the body of an HTTP
+   * error answer. REST tools only. Default false.
+   */
+  refreshOnBody401?: boolean;
   proactiveRefreshSeconds?: number;
 
+  /**
+   * Where a REST tool call carries the token. `"header"` (default): in
+   * headerName/headerTemplate. `"body"`: no token header is sent; the token is
+   * the placeholder `${loginToken}` in the tool's `endpointMapping.bodyTemplate`
+   * (XML-escaped with `bodyEncoding: "xml"`, JSON-escaped otherwise).
+   */
+  tokenPlacement?: 'header' | 'body';
   headerName?: string; // default Authorization
   headerTemplate?: string; // default "Bearer ${token}"
   extraHeaders?: Record<string, string>;
@@ -354,14 +389,26 @@ export class LoginTokenService {
         String(v).replace(/\$\{uuid\}/g, loginUuid),
       ]),
     );
+    // `loginBodyFormat: "xml"` with a string loginBody: an XML document.
+    const xmlLoginBody =
+      authConfig.loginBodyFormat === 'xml' && typeof authConfig.loginBody === 'string';
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      'Content-Type': xmlLoginBody ? 'application/xml; charset=utf-8' : 'application/json',
       ...loginHeaders,
       ...(basicAuth ? { Authorization: basicAuth.header } : {}),
     };
+    if (
+      xmlLoginBody &&
+      Object.keys(loginHeaders).some((h) => h !== 'Content-Type' && h.toLowerCase() === 'content-type')
+    ) {
+      // loginHeaders name the type in another spelling: theirs is the one sent.
+      delete headers['Content-Type'];
+    }
 
     let data: unknown;
-    if (authConfig.loginBody !== undefined) {
+    if (xmlLoginBody) {
+      data = renderXmlLoginBody(authConfig.loginBody as string, templateParams);
+    } else if (authConfig.loginBody !== undefined) {
       data = interpolateDeep(authConfig.loginBody, templateParams);
     } else if (authConfig.loginBodyTemplate) {
       const rendered = renderTemplate(
@@ -404,6 +451,9 @@ export class LoginTokenService {
       if (basicAuth) scrubLoginError(err, basicAuth.secrets);
       throw err;
     }
+    if (authConfig.loginResponseFormat === 'xml') {
+      response.data = parseXmlLoginAnswer(response);
+    }
 
     let token: unknown;
     if (authConfig.tokenSource === 'cookie' && authConfig.cookieMode === 'all') {
@@ -440,7 +490,9 @@ export class LoginTokenService {
         // "token not found at data.signIn.jwtToken.token" describes our own
         // JSON path and hides the vendor's explanation. Sorare accounted for
         // thirteen failures reported that way.
-        const refusal = extractLoginRefusal(response.data);
+        const refusal =
+          extractLoginRefusal(response.data) ??
+          (authConfig.loginResponseFormat === 'xml' ? extractXmlLoginRefusal(response.data) : null);
         throw new Error(
           refusal
             ? `LOGIN_TOKEN: the service refused the login — ${refusal}`
@@ -975,6 +1027,74 @@ export function extractLoginRefusal(body: unknown): string | null {
       if (typeof v === 'string' && v.trim()) return v.trim();
     }
 
+    for (const v of Object.values(obj)) {
+      const found = walk(v, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(body, 0);
+}
+
+/**
+ * A string `loginBody` with `loginBodyFormat: "xml"`: every `${name}` becomes
+ * the value XML-escaped, so a key with `&` or `<` in it cannot break the
+ * document; an unknown name becomes empty, as in the other login bodies.
+ */
+export function renderXmlLoginBody(
+  template: string,
+  params: Record<string, string>,
+): string {
+  return template.replace(
+    /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
+    (_m, name: string) =>
+      Object.prototype.hasOwnProperty.call(params, name) ? escapeXmlValue(String(params[name] ?? '')) : '',
+  );
+}
+
+/**
+ * The login answer for `loginResponseFormat: "xml"`: a string body that is
+ * declared XML, or that starts with `<`, parsed with the REST engine's XML
+ * parser. Anything else (an object axios already parsed, text that is not
+ * XML, a document that does not parse) is returned as it arrived.
+ */
+export function parseXmlLoginAnswer(response: {
+  data: unknown;
+  headers?: unknown;
+}): unknown {
+  const { data } = response;
+  if (typeof data !== 'string') return data;
+  const contentType = (response.headers as Record<string, unknown> | undefined)?.['content-type'];
+  if (!isXmlContentType(contentType) && !data.trimStart().startsWith('<')) return data;
+  try {
+    const parsed = xmlParser.parse(data);
+    return parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0 ? parsed : data;
+  } catch {
+    return data;
+  }
+}
+
+/**
+ * The refusal text of an XML login answer that carried no token: the text of
+ * the first `<error>` element. One with attributes parses to an object whose
+ * text is under `#text` (`<error code="ERR_097">Authentication failed</error>`),
+ * which {@link extractLoginRefusal} does not read. The error's `code`
+ * attribute is put in front when there is one.
+ */
+export function extractXmlLoginRefusal(body: unknown): string | null {
+  const seen = new Set<unknown>();
+  const walk = (node: unknown, depth: number): string | null => {
+    if (!node || typeof node !== 'object' || depth > 4 || seen.has(node)) return null;
+    seen.add(node);
+    const obj = node as Record<string, unknown>;
+    const errors = Array.isArray(obj.error) ? obj.error : [obj.error];
+    for (const error of errors) {
+      if (!error || typeof error !== 'object') continue;
+      const text = (error as Record<string, unknown>)['#text'];
+      if (typeof text !== 'string' || !text.trim()) continue;
+      const code = (error as Record<string, unknown>).code;
+      return typeof code === 'string' && code.trim() ? `${code.trim()}: ${text.trim()}` : text.trim();
+    }
     for (const v of Object.values(obj)) {
       const found = walk(v, depth + 1);
       if (found) return found;
