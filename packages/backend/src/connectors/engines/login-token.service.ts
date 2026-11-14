@@ -344,9 +344,19 @@ export class LoginTokenService {
     const url = authConfig.loginUrl;
     await assertSafeOutboundUrl(url);
 
+    // `${uuid}` in a login header becomes a new random UUID for this login
+    // (Walmart's token call takes the same WM_QOS.CORRELATION_ID header as its
+    // API calls).
+    const loginUuid = randomUUID();
+    const loginHeaders = Object.fromEntries(
+      Object.entries(authConfig.loginHeaders || {}).map(([k, v]) => [
+        k,
+        String(v).replace(/\$\{uuid\}/g, loginUuid),
+      ]),
+    );
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(authConfig.loginHeaders || {}),
+      ...loginHeaders,
       ...(basicAuth ? { Authorization: basicAuth.header } : {}),
     };
 
@@ -982,4 +992,21 @@ function proxyAgents(request: LoginRequestOptions) {
   if (!request.proxyUrl) return {};
   const agent = createUnblockerProxyAgent(request.proxyUrl);
   return { httpAgent: agent, httpsAgent: agent, proxy: false as const };
+}
+
+/**
+ * Placeholder renderer for LOGIN_TOKEN API headers: `${token}`, `${aud}` and
+ * `${uuid}`. The UUID is drawn once per request, so two headers that both use
+ * `${uuid}` carry the same value.
+ */
+export function loginTokenHeaderInterpolator(
+  token: string,
+  aud?: string,
+): (s: string) => string {
+  let uuid: string | undefined;
+  return (s: string): string =>
+    s
+      .replace(/\$\{token\}/g, token)
+      .replace(/\$\{aud\}/g, aud || '')
+      .replace(/\$\{uuid\}/g, () => (uuid ??= randomUUID()));
 }

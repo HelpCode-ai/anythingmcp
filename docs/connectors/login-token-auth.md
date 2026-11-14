@@ -163,7 +163,9 @@ The placeholders below are substituted by the engine when rendering `loginBody` 
 | `${otp}` | `authConfig.otp` |
 | `${signedJwt}` | a JWT signed for this login (see below; renamed via `outputParam`) |
 
-In `headerTemplate` and `extraHeaders`, only `${token}` and `${aud}` are available (these refer to the issued token, not the credentials).
+In `headerTemplate` and `extraHeaders`, only `${token}`, `${aud}` and `${uuid}` are available. `${token}` and `${aud}` refer to the issued token, not the credentials. `${uuid}` is a new random UUID for every API request (the same value wherever it appears in that request), for APIs that want a unique request or correlation id on each call. In `loginHeaders`, `${uuid}` is the only placeholder and gives each login its own UUID.
+
+A `loginBody` that is a string is sent as is. Together with `"Content-Type": "application/x-www-form-urlencoded"` in `loginHeaders` that covers OAuth-style token endpoints which take a form body, such as Walmart's client-credentials call (`"loginBody": "grant_type=client_credentials"` with `loginBasicAuth: true`).
 
 ### Signed JWT logins
 
