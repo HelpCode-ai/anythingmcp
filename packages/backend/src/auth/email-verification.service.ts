@@ -141,7 +141,9 @@ export class EmailVerificationService {
         where: { organizationId: user.organizationId },
       });
       if (existing) return;
-      await this.licenseService.requestTrialLicense(
+      // One attempt while the user waits; the licence service asks again in
+      // the background when it fails.
+      await this.licenseService.requestTrialAtSignup(
         user.email,
         user.name || user.email,
         user.organizationId,

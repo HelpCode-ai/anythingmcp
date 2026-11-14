@@ -54,6 +54,14 @@ export function licenseServiceHeaders(): Record<string, string> {
  * so a transient failure is retried rather than logged.
  */
 const TRIAL_RETRY_ATTEMPTS = 3;
+/**
+ * A sign-up does not wait for three attempts. Each one may take the full
+ * 10 seconds when the licence site is busy (14 Nov 2026: a new user sat 33 s
+ * in the Google sign-in callback and came out with no trial). It makes one
+ * attempt while the user waits, and these further ones in the background,
+ * this long after the previous one failed.
+ */
+const SIGNUP_TRIAL_RETRY_DELAYS_MS = [30_000, 120_000, 300_000];
 /** Read at call time so a test (or an operator) can shrink the wait. */
 const trialRetryBaseMs = () => Number(process.env.TRIAL_RETRY_BASE_MS ?? 600);
 /** A checkout link is asked for by someone waiting on a spinner: one retry, no more. */
@@ -267,6 +275,8 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy() {
     if (this.reverifyTimer) clearInterval(this.reverifyTimer);
     if (this.unclaimedTimer) clearInterval(this.unclaimedTimer);
+    for (const timer of this.signupTrialRetries.values()) clearTimeout(timer);
+    this.signupTrialRetries.clear();
   }
 
   // ── Instance ID ────────────────────────────────────────────────────────────
@@ -531,13 +541,12 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     return status === 429 || status >= 500;
   }
 
-  private async postTrialWithRetry(payload: {
-    email: string;
-    name: string;
-    instanceId: string;
-  }): Promise<any> {
+  private async postTrialWithRetry(
+    payload: { email: string; name: string; instanceId: string },
+    attempts = TRIAL_RETRY_ATTEMPTS,
+  ): Promise<any> {
     let lastErr: any;
-    for (let attempt = 1; attempt <= TRIAL_RETRY_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         const { data } = await axios.post(`${this.apiBase}/api/license/trial`, payload, {
           timeout: 10000,
@@ -549,7 +558,7 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
         return data;
       } catch (err: any) {
         lastErr = err;
-        if (attempt === TRIAL_RETRY_ATTEMPTS || !this.isRetriableLicenseError(err)) break;
+        if (attempt === attempts || !this.isRetriableLicenseError(err)) break;
         // Exponential with jitter: several verifications can land together and
         // retrying them in lockstep just rebuilds the burst that failed.
         const base = trialRetryBaseMs();
@@ -567,13 +576,18 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
     email: string,
     name: string,
     organizationId?: string,
+    /** `attempts`: how many times to ask the licence site before giving up (default 3). */
+    opts: { attempts?: number } = {},
   ): Promise<{ licenseKey: string; plan: string; expiresAt: string; trialDaysLeft: number }> {
     const instanceId = await this.getInstanceId();
 
     try {
       // Normalised: the licence site grants one trial per address, and an
       // account stored with capitals must not count as a different one.
-      const data = await this.postTrialWithRetry({ email: normalizeEmail(email), name, instanceId });
+      const data = await this.postTrialWithRetry(
+        { email: normalizeEmail(email), name, instanceId },
+        opts.attempts,
+      );
       if (!data?.licenseKey) {
         // The licence API hands the key back only to this server, by its
         // service token; anyone else is told it went by email. Without a key
@@ -643,6 +657,88 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       }
       this.logger.warn(`Trial license request failed: ${err.message}`);
       throw new Error('Failed to start trial. Please try again later.');
+    }
+  }
+
+  // ── Trial at sign-up (Cloud) ──────────────────────────────────────────────
+
+  /** Workspaces whose trial is being asked for again in the background. */
+  private readonly signupTrialRetries = new Map<string, NodeJS.Timeout>();
+
+  /**
+   * The trial of a new Cloud workspace, asked for while its user waits at
+   * sign-up (email verification, social sign-up).
+   *
+   * One attempt, so the wait is 10 seconds at most. When it fails, the same
+   * error is thrown as from requestTrialLicense, and the trial is asked for
+   * again in the background (SIGNUP_TRIAL_RETRY_DELAYS_MS), so the workspace
+   * usually has it within a minute instead of at the next hourly
+   * repairMissingTrials run. The retries live in memory: a restart drops
+   * them, and the hourly run still covers that workspace.
+   */
+  async requestTrialAtSignup(
+    email: string,
+    name: string,
+    organizationId: string,
+  ): Promise<{ licenseKey: string; plan: string; expiresAt: string; trialDaysLeft: number }> {
+    try {
+      return await this.requestTrialLicense(email, name, organizationId, { attempts: 1 });
+    } catch (err) {
+      // A trial that has already ended is stored as expired: nothing to retry.
+      if (!(err instanceof TrialAlreadyEndedError)) {
+        this.retrySignupTrialLater({ email, name, organizationId }, 0);
+      }
+      throw err;
+    }
+  }
+
+  private retrySignupTrialLater(
+    user: { email: string; name: string; organizationId: string },
+    attempt: number,
+  ): void {
+    if (!this.deployment.isCloud()) return;
+    // One chain of retries per workspace, however often sign-up is repeated.
+    if (attempt === 0 && this.signupTrialRetries.has(user.organizationId)) return;
+    const delay = SIGNUP_TRIAL_RETRY_DELAYS_MS[attempt];
+    if (delay === undefined) {
+      this.signupTrialRetries.delete(user.organizationId);
+      this.logger.warn(
+        `Trial for org ${user.organizationId} (${maskEmail(user.email)}) still missing after ${attempt} background retries; left to the hourly repair.`,
+      );
+      return;
+    }
+    const timer = setTimeout(() => void this.runSignupTrialRetry(user, attempt), delay);
+    // Never keep the process alive for a retry.
+    timer.unref();
+    this.signupTrialRetries.set(user.organizationId, timer);
+  }
+
+  private async runSignupTrialRetry(
+    user: { email: string; name: string; organizationId: string },
+    attempt: number,
+  ): Promise<void> {
+    try {
+      // The workspace may have been deleted, or have got a licence another
+      // way in the meantime (the wall's "Start trial", a checkout, the repair).
+      const workspace = await this.prisma.organization.findUnique({
+        where: { id: user.organizationId },
+        select: { id: true, licenses: { select: { id: true }, take: 1 } },
+      });
+      if (!workspace || workspace.licenses.length > 0) {
+        this.signupTrialRetries.delete(user.organizationId);
+        return;
+      }
+      await this.requestTrialLicense(user.email, user.name, user.organizationId, { attempts: 1 });
+      this.signupTrialRetries.delete(user.organizationId);
+      this.logger.log(
+        `Trial for org ${user.organizationId} (${maskEmail(user.email)}) obtained by background retry ${attempt + 1}.`,
+      );
+    } catch (err: any) {
+      if (err instanceof TrialAlreadyEndedError) {
+        this.signupTrialRetries.delete(user.organizationId);
+        return;
+      }
+      this.retrySignupTrialLater(user, attempt + 1);
     }
   }
 
