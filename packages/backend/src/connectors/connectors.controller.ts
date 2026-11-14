@@ -108,6 +108,7 @@ import {
 } from './user-credentials.service';
 import { supportsUserCredentials } from './user-credential.util';
 import { egressIps } from './egress';
+import { IOP_TOKEN_PROVIDER, isIopAuth } from './engines/iop-token.service';
 import {
   SECRET_GUARDED_TYPES,
   SecretExtractor,
@@ -902,6 +903,10 @@ export class ConnectorsController {
       ...toPublicConnector(connector),
       setupStatus: setup.status,
       missingVariables: setup.missing,
+      // A seller authorization at an IOP gateway (Lazada, Miravia, AliExpress
+      // seller): the connector page shows its Authorize button. Not a secret;
+      // absent on every other connector.
+      ...(isIopAuth(connector.authType, authConfig) ? { tokenProvider: IOP_TOKEN_PROVIDER } : {}),
     };
   }
 

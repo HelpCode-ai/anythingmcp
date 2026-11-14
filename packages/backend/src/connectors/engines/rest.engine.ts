@@ -21,6 +21,7 @@ import {
   resolveTikTokShopAuthConfig,
   shopCipherApplies,
 } from './tiktok-shop-token.service';
+import { IopTokenService, isIopAccessTokenRejected, isIopAuth } from './iop-token.service';
 import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
@@ -148,6 +149,7 @@ export class RestEngine {
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
     @Optional() private readonly shopeeTokens?: ShopeeTokenService,
     @Optional() private readonly tiktokShopTokens?: TikTokShopTokenService,
+    @Optional() private readonly iopTokens?: IopTokenService,
   ) {}
 
   /**
@@ -575,9 +577,11 @@ export class RestEngine {
     // of these APIs sign folds in the request body, which does not exist
     // until the block above has run. A Shopee connector also signs the
     // shop's access token and id, a TikTok Shop connector its shop cipher
-    // (its access token goes in a header, unsigned); undefined for every
-    // other connector.
+    // (its access token goes in a header, unsigned), an IOP connector
+    // (Lazada, Miravia, AliExpress seller) the seller's access token;
+    // undefined for every other connector.
     const tiktokShop = isTikTokShopAuth(config.authType, config.authConfig);
+    const iop = isIopAuth(config.authType, config.authConfig);
     // A TikTok Shop connector without an App key of its own signs, renews and
     // reads its shops with the server's app: filled in here, in memory, for
     // this call (and its retry) only.
@@ -588,7 +592,9 @@ export class RestEngine {
       ? await this.shopeeShopParams(config)
       : tiktokShop
         ? await this.tiktokShopCredentials(tiktokShopConfig, axiosConfig)
-        : undefined;
+        : iop
+          ? await this.iopCredentialParams(config)
+          : undefined;
     this.applyHmacSignature(axiosConfig, tiktokShopConfig, hmacCredentials);
     for (const h of headerNames(axiosConfig.headers)) {
       if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
@@ -683,7 +689,7 @@ export class RestEngine {
       }
       // Shopee refused the shop's access token (expired early, or replaced
       // by another process's renewal): renew once, sign again, resend.
-      if (!tiktokShop && hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
+      if (!tiktokShop && !iop && hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
         const renewed = await this.shopeeTokens.renewAfterRejection(config, sentAt);
         if (renewed) {
           this.applyHmacSignature(axiosConfig, config, renewed);
@@ -698,6 +704,17 @@ export class RestEngine {
         if (renewed) {
           const params = this.applyTikTokShopCredentials(axiosConfig, renewed);
           this.applyHmacSignature(axiosConfig, tiktokShopConfig, params);
+          rebuildBody(axiosConfig, buildBody);
+          return withMeta(await outboundRequest(axiosConfig, outbound));
+        }
+      }
+      // An IOP gateway refused the seller's access token (an errorWhen rule
+      // with status 401, e.g. IllegalAccessToken, or HTTP 401): renew once,
+      // sign again with a new timestamp, resend once.
+      if (iop && this.iopTokens && isIopAccessTokenRejected(error)) {
+        const renewed = await this.iopTokens.renewAfterRejection(config, sentAt);
+        if (renewed) {
+          this.applyHmacSignature(axiosConfig, config, renewed);
           rebuildBody(axiosConfig, buildBody);
           return withMeta(await outboundRequest(axiosConfig, outbound));
         }
@@ -1045,7 +1062,8 @@ export class RestEngine {
    *                             `${query.NAME}` (the value of a query
    *                             parameter as sent, '' when absent)
    * `credentialParams` are query parameters a token provider adds (Shopee's
-   * access_token and shop_id); they win over a tool's own parameters.
+   * access_token and shop_id, an IOP gateway's access_token); they win over
+   * a tool's own parameters.
    *
    * Sorted-parameter signing, opt-in (the Alibaba IOP gateways: AliExpress,
    * Alibaba.com, Lazada). Also on the query-signing path only:
@@ -1308,6 +1326,22 @@ export class RestEngine {
       throw new Error('Shopee connectors need the Shopee token service, which is not available here.');
     }
     return this.shopeeTokens.getShopParams(config);
+  }
+
+  /**
+   * The seller's access token an IOP call signs and sends (`access_token`),
+   * renewed first when it is about to expire. Only for `authType: HMAC`
+   * with `authConfig.tokenProvider: "iop"`; see iop-token.service.ts.
+   */
+  private async iopCredentialParams(config: {
+    baseUrl: string;
+    authConfig?: Record<string, unknown>;
+    connectorId?: string;
+  }): Promise<Record<string, string>> {
+    if (!this.iopTokens) {
+      throw new Error('IOP connectors (Lazada, Miravia, AliExpress seller) need the IOP token service, which is not available here.');
+    }
+    return this.iopTokens.getCredentialParams(config);
   }
 
   /**

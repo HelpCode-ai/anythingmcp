@@ -1098,6 +1098,24 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  // Sellers at an IOP gateway (Lazada, Miravia, AliExpress seller) authorize through the gateway's own page.
+  const handleIopAuthorize = async () => {
+    if (!token) return;
+    setAuthorizing(true);
+    try {
+      const result = await connectors.iopAuthorize(id, token);
+      if (result.authorizationUrl) {
+        window.location.href = result.authorizationUrl;
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch (err: any) {
+      setMsg(t('msg.authorizationFailed', { message: err.message }));
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   // Instagram connectors sign in with Facebook or Instagram through Meta's own flow.
   const handleMetaAuthorize = async () => {
     if (!token) return;
@@ -2106,6 +2124,19 @@ export default function ConnectorDetailPage() {
               {t('tiktokShop.body')}
             </p>
             <Button variant="primary" size="lg" onClick={handleTikTokShopAuthorize} disabled={authorizing}>
+              {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
+            </Button>
+          </Card>
+        )}
+
+        {/* Seller authorization at an IOP gateway (HMAC-signed: Lazada, Miravia, AliExpress seller) */}
+        {connector.authType === 'HMAC' && connector.tokenProvider === 'iop' && (
+          <Card className="p-[22px]">
+            <h3 className="text-sm font-semibold mb-2">{t('iopSeller.title')}</h3>
+            <p className="text-sm text-[var(--text-3)] mb-4">
+              {t('iopSeller.body')}
+            </p>
+            <Button variant="primary" size="lg" onClick={handleIopAuthorize} disabled={authorizing}>
               {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
             </Button>
           </Card>
