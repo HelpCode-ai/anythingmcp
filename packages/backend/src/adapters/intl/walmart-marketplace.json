@@ -1,0 +1,1977 @@
+{
+  "slug": "walmart-marketplace",
+  "name": "Walmart Marketplace",
+  "description": "Walmart Marketplace API for US sellers: orders with acknowledge and ship with tracking, returns, items and catalog search, inventory, prices, bulk feeds, on-request reports, WFS inbound shipments and shipping settings. Client ID and secret.",
+  "instructions": "## Walmart Marketplace\nThis connector works with the **Walmart Marketplace API** for sellers on the **US marketplace** (`https://marketplace.walmartapis.com`): orders, returns, items, inventory, prices, feeds, on-request reports, Walmart Fulfillment Services (WFS) and shipping settings. Walmart Canada and Walmart Mexico have their own APIs and are not covered.\n\n**Setup (about 5 minutes)**\n1. Sign in at https://developer.walmart.com with your **Seller Center** login (choose Marketplace seller).\n2. Open **My Account**, then **API Keys** (key management), and create or copy the **production** client ID and client secret.\n3. Paste the client ID into `WALMART_CLIENT_ID` and the client secret into `WALMART_CLIENT_SECRET`.\n\nThe connector exchanges them at `POST /v3/token` (HTTP Basic, client credentials) for an access token that lasts **15 minutes**, reuses it until shortly before it expires and fetches a new one by itself. Every call carries `WM_SEC.ACCESS_TOKEN`, `WM_SVC.NAME` and a new `WM_QOS.CORRELATION_ID`. Use your own seller client credentials: Delegated Access keys for solution providers are being retired (new ones can no longer be created, existing ones stop working after 30 April 2027).\n\n**Where to start**: `walmart_marketplace_list_released_orders` (orders waiting for you), then `walmart_marketplace_get_order`. `walmart_marketplace_list_items` lists your catalog and `walmart_marketplace_get_inventory` the stock of a SKU.\n\n**Orders**: `walmart_marketplace_list_orders` (all statuses), `walmart_marketplace_list_released_orders` (lines in Created), `walmart_marketplace_get_order`. A line goes **Created, Acknowledged, Shipped, Delivered**, or **Cancelled**. Acknowledge new orders promptly with `walmart_marketplace_acknowledge_order`, then ship each line with `walmart_marketplace_ship_order_line` (carrier, method, tracking number, ship time in epoch milliseconds); shipping captures the customer payment. `walmart_marketplace_cancel_order_line` and `walmart_marketplace_refund_order_lines` are installed switched off: a cancellation hurts your seller metrics and a refund moves money. Order lists reach 180 days back, at most 10,000 orders, and default to the last 7 days.\n\n**Paging**: orders and returns answer with `meta.nextCursor`, a ready query string that starts with `?`. Pass it unchanged as `next_cursor` and leave the other filters out. Items use `nextCursor` (start with `*`, valid 2 minutes) or limit and offset.\n\n**Returns**: `walmart_marketplace_list_returns` (statuses INITIATED, DELIVERED, COMPLETED). `walmart_marketplace_refund_return` is switched off because it refunds the customer.\n\n**Items and catalog**: `walmart_marketplace_list_items`, `walmart_marketplace_get_item`, `walmart_marketplace_count_items`, `walmart_marketplace_search_my_catalog` (your catalog with filters such as UNPUBLISHED items) and `walmart_marketplace_search_walmart_catalog` (the public Walmart.com catalog by keyword, UPC or GTIN). `walmart_marketplace_retire_item` is switched off: retiring removes the listing.\n\n**Inventory and prices**: `walmart_marketplace_get_inventory`, `walmart_marketplace_get_inventory_by_ship_node`, `walmart_marketplace_update_inventory` (absolute quantity, unit EACH), `walmart_marketplace_get_wfs_inventory` (stock held by WFS). `walmart_marketplace_update_price` sets the BASE price of one SKU in USD (100 calls per hour); `walmart_marketplace_get_promotional_prices` shows sale prices.\n\n**Feeds**: bulk changes go through feeds. `walmart_marketplace_submit_item_feed` and `walmart_marketplace_submit_price_feed` are installed switched off, because one feed changes many live listings and bulk price feeds are limited per hour and per day (10 per hour, shared by all price and promotion feeds). Check results with `walmart_marketplace_list_feeds` and `walmart_marketplace_get_feed_status` (per-item errors with include_details).\n\n**Reports**: `walmart_marketplace_request_report`, then `walmart_marketplace_list_report_requests` or `walmart_marketplace_get_report_request` until READY, then `walmart_marketplace_get_report_download_url`. Status and download calls are limited to 20 per hour each, so wait several minutes between checks. The link is a short-lived zipped CSV.\n\n**WFS**: `walmart_marketplace_list_inbound_shipments`, `walmart_marketplace_list_inbound_shipment_items`, `walmart_marketplace_create_inbound_shipment_label` (receiving labels as PDF or ZPL, free).\n\n**Settings (read only)**: `walmart_marketplace_list_ship_nodes` (ship node ids), `walmart_marketplace_list_carrier_methods`, `walmart_marketplace_list_shipping_templates`, `walmart_marketplace_get_lag_time` (20 calls per hour).\n\n**Rate limits**: each API has its own token bucket (all orders 5,000 per minute, released orders 60 per minute, ship, acknowledge and cancel 60 per minute, inventory 200 per minute, items 300 per minute). A 429 means the bucket is empty; the headers `x-current-token-count` and `X-Next-Replenishment-Time` say when to retry.\n\n**Formats**: dates are ISO 8601 in UTC; order dates in answers are epoch milliseconds. Money is in USD. SKUs are your own seller SKUs; Walmart ids are purchaseOrderId (orders), returnOrderId (returns), wpid and itemId (catalog). Errors come back as `errors.error[]` with code, field and description; a 400 INVALID_REQUEST_HEADER usually means a token or header problem.",
+  "aliases": [
+    "Walmart",
+    "Walmart Seller",
+    "Walmart Seller Center",
+    "Walmart Marketplace API",
+    "Walmart WFS"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "walmart-marketplace",
+  "docsUrl": "https://developer.walmart.com/us-marketplace/docs",
+  "requiredEnvVars": [
+    "WALMART_CLIENT_ID",
+    "WALMART_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "WALMART_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Walmart Developer Portal, signed in with your Seller Center login: My Account, API Keys. Copy the production client ID.",
+      "link": "https://developer.walmart.com/us-marketplace/docs/get-started-as-a-seller",
+      "pattern": "^[A-Za-z0-9-]{8,100}$",
+      "patternMessage": "Paste the client ID only (letters, digits and dashes), without spaces."
+    },
+    "WALMART_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the client ID under My Account, API Keys in the Walmart Developer Portal. Reset the key there if it was lost.",
+      "link": "https://developer.walmart.com/us-marketplace/docs/get-started-as-a-seller",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Walmart refused the request. INVALID_REQUEST_HEADER means a missing or wrong header or token; otherwise the message names the field.",
+    "401": "Walmart did not issue a token for this client ID and secret, or the token was rejected. Copy both again from developer.walmart.com, My Account, API Keys (production keys, not sandbox).",
+    "403": "Walmart refused the call: these keys have no permission for this API. Check the key permissions in the Developer Portal.",
+    "404": "Walmart found no order, item, return, feed or report with that id.",
+    "rate_limited": "Walmart limits each API separately (released orders 60 per minute, report status 20 per hour). Wait for X-Next-Replenishment-Time and try again."
+  },
+  "probe": {
+    "tool": "walmart_marketplace_list_orders",
+    "params": {
+      "limit": 1
+    }
+  },
+  "prerequisites": "An approved Walmart Marketplace seller account (US) with access to Seller Center, to create API keys in the Walmart Developer Portal. About 5 minutes.",
+  "connector": {
+    "name": "Walmart Marketplace API",
+    "type": "REST",
+    "baseUrl": "https://marketplace.walmartapis.com",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://marketplace.walmartapis.com/v3/token",
+      "loginMethod": "POST",
+      "loginBasicAuth": true,
+      "username": "{{WALMART_CLIENT_ID}}",
+      "password": "{{WALMART_CLIENT_SECRET}}",
+      "loginBody": "grant_type=client_credentials",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "WM_SVC.NAME": "AnythingMCP",
+        "WM_QOS.CORRELATION_ID": "${uuid}"
+      },
+      "tokenJsonPath": "access_token",
+      "tokenTTLSeconds": 900,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "WM_SEC.ACCESS_TOKEN",
+      "headerTemplate": "${token}",
+      "extraHeaders": {
+        "WM_SVC.NAME": "AnythingMCP",
+        "WM_QOS.CORRELATION_ID": "${uuid}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "walmart_marketplace_list_orders",
+      "description": "List purchase orders, newest first: list.meta (totalCount, limit, nextCursor) and list.elements.order[] with purchaseOrderId, customerOrderId, orderDate (epoch ms), shippingInfo (name, address, phone, estimatedShipDate, methodCode) and orderLines with lineNumber, item (productName, sku), charges (price and tax in USD), orderLineQuantity and orderLineStatuses (Created, Acknowledged, Shipped, Delivered, Cancelled). Defaults to orders created in the last 7 days; only the last 180 days and at most 10,000 orders are reachable. For the next page pass meta.nextCursor as next_cursor. Read-only, 5,000 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Line status to filter on: Created (new, to acknowledge), Acknowledged, Shipped, Delivered or Cancelled.",
+            "enum": [
+              "Created",
+              "Acknowledged",
+              "Shipped",
+              "Delivered",
+              "Cancelled"
+            ]
+          },
+          "created_start_date": {
+            "type": "string",
+            "description": "Orders created on or after this moment. Walmart defaults to 7 days ago; at most 180 days back. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "created_end_date": {
+            "type": "string",
+            "description": "Orders created on or before this moment (default now). ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "last_modified_start_date": {
+            "type": "string",
+            "description": "Orders changed on or after this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "last_modified_end_date": {
+            "type": "string",
+            "description": "Orders changed on or before this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "from_expected_ship_date": {
+            "type": "string",
+            "description": "Orders with a line whose expected ship date is on or after this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "to_expected_ship_date": {
+            "type": "string",
+            "description": "Orders with a line whose expected ship date is on or before this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Only orders containing this seller SKU."
+          },
+          "purchase_order_id": {
+            "type": "string",
+            "description": "One Walmart purchase order id."
+          },
+          "customer_order_id": {
+            "type": "string",
+            "description": "Walmart customer order id (one customer order can split into several purchase orders)."
+          },
+          "ship_node_type": {
+            "type": "string",
+            "description": "Who fulfils: SellerFulfilled (Walmart default), WFSFulfilled or 3PLFulfilled.",
+            "enum": [
+              "SellerFulfilled",
+              "WFSFulfilled",
+              "3PLFulfilled"
+            ]
+          },
+          "shipping_program_type": {
+            "type": "string",
+            "description": "Only TWO_DAY or ONE_DAY delivery orders.",
+            "enum": [
+              "TWO_DAY",
+              "ONE_DAY"
+            ]
+          },
+          "order_type": {
+            "type": "string",
+            "description": "REGULAR, REPLACEMENT or PREORDER (REPLACEMENT needs replacement_info true).",
+            "enum": [
+              "REGULAR",
+              "REPLACEMENT",
+              "PREORDER"
+            ]
+          },
+          "product_info": {
+            "type": "boolean",
+            "description": "true adds the product image URL and weight to each line."
+          },
+          "replacement_info": {
+            "type": "boolean",
+            "description": "true adds originalCustomerOrderID and orderType for replacement orders."
+          },
+          "incentive_info": {
+            "type": "boolean",
+            "description": "true adds incentive fields (incentiveType, originalPrice, walmartFundedIncentive, referral fee discount)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 200 (Walmart default 100).",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "meta.nextCursor of the previous page, passed back exactly as returned (it starts with \"?\" and already holds every filter). Leave the other filters out when you pass it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/orders",
+        "queryParams": {
+          "status": "$status",
+          "createdStartDate": "$created_start_date",
+          "createdEndDate": "$created_end_date",
+          "lastModifiedStartDate": "$last_modified_start_date",
+          "lastModifiedEndDate": "$last_modified_end_date",
+          "fromExpectedShipDate": "$from_expected_ship_date",
+          "toExpectedShipDate": "$to_expected_ship_date",
+          "sku": "$sku",
+          "purchaseOrderId": "$purchase_order_id",
+          "customerOrderId": "$customer_order_id",
+          "shipNodeType": "$ship_node_type",
+          "shippingProgramType": "$shipping_program_type",
+          "orderType": "$order_type",
+          "productInfo": "$product_info",
+          "replacementInfo": "$replacement_info",
+          "incentiveInfo": "$incentive_info",
+          "limit": "$limit",
+          "__rawquery": "$next_cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_list_released_orders",
+      "description": "List released orders: purchase orders with lines still in Created status, ready for you to acknowledge and ship. Same fields as walmart_marketplace_list_orders (list.meta.nextCursor, list.elements.order[] with purchaseOrderId, shippingInfo, orderLines). Defaults to the last 7 days; at most 180 days back. Read-only, limited to 60 calls per minute, so page with next_cursor instead of repeating the call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_start_date": {
+            "type": "string",
+            "description": "Orders created on or after this moment. Walmart defaults to 7 days ago; at most 180 days back. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "created_end_date": {
+            "type": "string",
+            "description": "Orders created on or before this moment (default now). ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "from_expected_ship_date": {
+            "type": "string",
+            "description": "Orders with a line whose expected ship date is on or after this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "to_expected_ship_date": {
+            "type": "string",
+            "description": "Orders with a line whose expected ship date is on or before this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Only orders containing this seller SKU."
+          },
+          "purchase_order_id": {
+            "type": "string",
+            "description": "One Walmart purchase order id."
+          },
+          "customer_order_id": {
+            "type": "string",
+            "description": "Walmart customer order id (one customer order can split into several purchase orders)."
+          },
+          "ship_node_type": {
+            "type": "string",
+            "description": "Who fulfils: SellerFulfilled (Walmart default), WFSFulfilled or 3PLFulfilled.",
+            "enum": [
+              "SellerFulfilled",
+              "WFSFulfilled",
+              "3PLFulfilled"
+            ]
+          },
+          "shipping_program_type": {
+            "type": "string",
+            "description": "Only TWO_DAY or ONE_DAY delivery orders.",
+            "enum": [
+              "TWO_DAY",
+              "ONE_DAY"
+            ]
+          },
+          "order_type": {
+            "type": "string",
+            "description": "REGULAR, REPLACEMENT or PREORDER (REPLACEMENT needs replacement_info true).",
+            "enum": [
+              "REGULAR",
+              "REPLACEMENT",
+              "PREORDER"
+            ]
+          },
+          "product_info": {
+            "type": "boolean",
+            "description": "true adds the product image URL and weight to each line."
+          },
+          "replacement_info": {
+            "type": "boolean",
+            "description": "true adds originalCustomerOrderID and orderType for replacement orders."
+          },
+          "incentive_info": {
+            "type": "boolean",
+            "description": "true adds incentive fields (incentiveType, originalPrice, walmartFundedIncentive, referral fee discount)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 200 (Walmart default 100).",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "meta.nextCursor of the previous page, passed back exactly as returned (it starts with \"?\" and already holds every filter). Leave the other filters out when you pass it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/orders/released",
+        "queryParams": {
+          "createdStartDate": "$created_start_date",
+          "createdEndDate": "$created_end_date",
+          "fromExpectedShipDate": "$from_expected_ship_date",
+          "toExpectedShipDate": "$to_expected_ship_date",
+          "sku": "$sku",
+          "purchaseOrderId": "$purchase_order_id",
+          "customerOrderId": "$customer_order_id",
+          "shipNodeType": "$ship_node_type",
+          "shippingProgramType": "$shipping_program_type",
+          "orderType": "$order_type",
+          "productInfo": "$product_info",
+          "replacementInfo": "$replacement_info",
+          "incentiveInfo": "$incentive_info",
+          "limit": "$limit",
+          "__rawquery": "$next_cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_order",
+      "description": "Read one purchase order: purchaseOrderId, customerOrderId, customerEmailId (relay address), orderDate, shippingInfo (phone, estimatedDeliveryDate, estimatedShipDate, methodCode, postalAddress) and every orderLine with lineNumber, item (productName, sku), charges, orderLineQuantity, statusDate, orderLineStatuses (status, statusQuantity, trackingInfo) and fulfillment (fulfillmentOption, shipMethod, pickUpDateTime). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_id": {
+            "type": "string",
+            "description": "Walmart purchaseOrderId of the order (from walmart_marketplace_list_orders), e.g. 1796277083022.",
+            "pattern": "^[0-9A-Za-z-]{4,40}$"
+          },
+          "product_info": {
+            "type": "boolean",
+            "description": "true adds the product image URL and weight to each line."
+          },
+          "replacement_info": {
+            "type": "boolean",
+            "description": "true adds originalCustomerOrderID and orderType for replacement orders."
+          },
+          "incentive_info": {
+            "type": "boolean",
+            "description": "true adds incentive fields (incentiveType, originalPrice, walmartFundedIncentive, referral fee discount)."
+          }
+        },
+        "required": [
+          "purchase_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/orders/{purchase_order_id}",
+        "queryParams": {
+          "productInfo": "$product_info",
+          "replacementInfo": "$replacement_info",
+          "incentiveInfo": "$incentive_info"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_acknowledge_order",
+      "description": "Acknowledge a whole purchase order (every line moves from Created to Acknowledged), confirming you will fulfil it. Walmart expects this soon after the order arrives. Returns the order with the new line statuses. No body is sent. 60 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_id": {
+            "type": "string",
+            "description": "Walmart purchaseOrderId of the order (from walmart_marketplace_list_orders), e.g. 1796277083022.",
+            "pattern": "^[0-9A-Za-z-]{4,40}$"
+          }
+        },
+        "required": [
+          "purchase_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/orders/{purchase_order_id}/acknowledge"
+      }
+    },
+    {
+      "name": "walmart_marketplace_ship_order_line",
+      "description": "Mark one order line as shipped with carrier and tracking number. Walmart then captures the customer payment, so ship only what has really left. Call once per line; several lines of one parcel can reuse the same tracking number. Returns the order with the updated line status. Check the order is not Cancelled first. 60 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_id": {
+            "type": "string",
+            "description": "Walmart purchaseOrderId of the order (from walmart_marketplace_list_orders), e.g. 1796277083022.",
+            "pattern": "^[0-9A-Za-z-]{4,40}$"
+          },
+          "line_number": {
+            "type": "string",
+            "description": "lineNumber of the order line, e.g. \"1\" (from walmart_marketplace_get_order).",
+            "pattern": "^[0-9]{1,6}$"
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Units shipped on this line, as a string, e.g. \"1\". Default \"1\".",
+            "pattern": "^[0-9]{1,6}$",
+            "default": "1"
+          },
+          "ship_date_time": {
+            "type": "integer",
+            "description": "When the parcel was shipped, in epoch milliseconds (UTC), e.g. 1763116800000 for 2025-11-14T10:40:00Z.",
+            "minimum": 1000000000000
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier name as Walmart lists it, e.g. UPS, USPS, FedEx, DHL, OnTrac, LSO. For a carrier not on Walmart's list leave this out and use other_carrier. Common values: UPS, USPS, FedEx, DHL, DHL Ecommerce - US, OnTrac, LSO, Canada Post, Royal Mail, GLS, Asendia, Landmark Global, UniUni, GOFO, Better Trucks, AxleHire, Estes, SAIA, ABF Freight System, XPO Logistics, TForce Freight, CEVA, Pilot, RL Carriers."
+          },
+          "other_carrier": {
+            "type": "string",
+            "description": "Name of a carrier that is not on Walmart's carrier list. Use instead of carrier."
+          },
+          "method_code": {
+            "type": "string",
+            "description": "Shipping method: Standard, Express, OneDay, Freight, WhiteGlove or Value.",
+            "enum": [
+              "Standard",
+              "Express",
+              "OneDay",
+              "Freight",
+              "WhiteGlove",
+              "Value"
+            ],
+            "default": "Standard"
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the parcel.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking page URL (optional).",
+            "format": "uri"
+          },
+          "seller_order_id": {
+            "type": "string",
+            "description": "Your own order number for the line (sellerOrderId), optional."
+          }
+        },
+        "required": [
+          "purchase_order_id",
+          "line_number",
+          "ship_date_time",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/orders/{purchase_order_id}/shipping",
+        "bodyMapping": {
+          "orderShipment": {
+            "orderLines": {
+              "orderLine": [
+                {
+                  "lineNumber": "$line_number",
+                  "sellerOrderId": "$seller_order_id",
+                  "orderLineStatuses": {
+                    "orderLineStatus": [
+                      {
+                        "status": "Shipped",
+                        "statusQuantity": {
+                          "unitOfMeasurement": "EACH",
+                          "amount": "$quantity"
+                        },
+                        "trackingInfo": {
+                          "shipDateTime": "$ship_date_time",
+                          "carrierName": {
+                            "carrier": "$carrier",
+                            "otherCarrier": "$other_carrier"
+                          },
+                          "methodCode": "$method_code",
+                          "trackingNumber": "$tracking_number",
+                          "trackingURL": "$tracking_url"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_cancel_order_line",
+      "description": "Cancel units of one order line you cannot ship, with a reason. It cannot be undone and counts against your cancellation rate; use CUSTOMER_REQUESTED_SELLER_TO_CANCEL only when the customer asked. Returns the order with the cancelled line. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_id": {
+            "type": "string",
+            "description": "Walmart purchaseOrderId of the order (from walmart_marketplace_list_orders), e.g. 1796277083022.",
+            "pattern": "^[0-9A-Za-z-]{4,40}$"
+          },
+          "line_number": {
+            "type": "string",
+            "description": "lineNumber of the order line to cancel, e.g. \"1\".",
+            "pattern": "^[0-9]{1,6}$"
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Units to cancel, as a string, e.g. \"1\". Default \"1\".",
+            "pattern": "^[0-9]{1,6}$",
+            "default": "1"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Cancellation reason.",
+            "enum": [
+              "CUSTOMER_REQUESTED_SELLER_TO_CANCEL",
+              "SELLER_CANCEL_OUT_OF_STOCK",
+              "SELLER_CANCEL_PRICING_ERROR",
+              "SELLER_CANCEL_FRAUD_STOP_SHIPMENT",
+              "SELLER_CANCEL_ADDRESS_NOT_SERVICEABLE"
+            ]
+          }
+        },
+        "required": [
+          "purchase_order_id",
+          "line_number",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/orders/{purchase_order_id}/cancel",
+        "bodyMapping": {
+          "orderCancellation": {
+            "orderLines": {
+              "orderLine": [
+                {
+                  "lineNumber": "$line_number",
+                  "orderLineStatuses": {
+                    "orderLineStatus": [
+                      {
+                        "status": "Cancelled",
+                        "cancellationReason": "$reason",
+                        "statusQuantity": {
+                          "unitOfMeasurement": "EACH",
+                          "amount": "$quantity"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_refund_order_lines",
+      "description": "Refund shipped order lines (full or partial) to the customer. This moves money back to the customer and cannot be undone. Lines use Walmart's orderLine shape: [{\"lineNumber\": \"1\", \"isFullRefund\": false, \"refunds\": {\"refund\": [{\"refundComments\": \"Damaged\", \"refundCharges\": {\"refundCharge\": [{\"refundReason\": \"Item damaged\", \"charge\": {\"chargeType\": \"PRODUCT\", \"chargeName\": \"Item Price\", \"chargeAmount\": {\"currency\": \"USD\", \"amount\": -5.00}, \"tax\": {\"taxName\": \"Item Price Tax\", \"taxAmount\": {\"currency\": \"USD\", \"amount\": -0.40}}}}]}}]}}]. Amounts are negative. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_id": {
+            "type": "string",
+            "description": "Walmart purchaseOrderId of the order (from walmart_marketplace_list_orders), e.g. 1796277083022.",
+            "pattern": "^[0-9A-Za-z-]{4,40}$"
+          },
+          "order_lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            },
+            "description": "orderLine objects as in the example of the tool description."
+          }
+        },
+        "required": [
+          "purchase_order_id",
+          "order_lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/orders/{purchase_order_id}/refund",
+        "bodyMapping": {
+          "orderRefund": {
+            "purchaseOrderId": "$purchase_order_id",
+            "orderLines": {
+              "orderLine": "$order_lines"
+            }
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_list_returns",
+      "description": "List return orders (RMAs), newest first: meta (totalCount, limit, nextCursor) and returnOrders[] with returnOrderId, customerOrderId, returnOrderDate, returnByDate, refundMode, totalRefundAmount, returnLineGroups (return labels with carrier and tracking) and returnOrderLines (purchaseOrderId, returnReason, item sku and name, charges, status). For the next page pass meta.nextCursor as next_cursor. Read-only, 50 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_order_id": {
+            "type": "string",
+            "description": "One return order id (RMA number)."
+          },
+          "customer_order_id": {
+            "type": "string",
+            "description": "Walmart customer order id."
+          },
+          "status": {
+            "type": "string",
+            "description": "INITIATED, DELIVERED or COMPLETED.",
+            "enum": [
+              "INITIATED",
+              "DELIVERED",
+              "COMPLETED"
+            ]
+          },
+          "return_type": {
+            "type": "string",
+            "description": "REFUND, REPLACEMENT or PREORDER.",
+            "enum": [
+              "REFUND",
+              "REPLACEMENT",
+              "PREORDER"
+            ]
+          },
+          "is_wfs_enabled": {
+            "type": "string",
+            "description": "Y = only WFS returns, N = only seller-fulfilled returns; omit for both.",
+            "enum": [
+              "Y",
+              "N"
+            ]
+          },
+          "replacement_info": {
+            "type": "boolean",
+            "description": "true adds replacement attributes (replacementCustomerOrderID, returnType, rechargeReason)."
+          },
+          "return_creation_start_date": {
+            "type": "string",
+            "description": "Returns created on or after this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "return_creation_end_date": {
+            "type": "string",
+            "description": "Returns created on or before this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "return_last_modified_start_date": {
+            "type": "string",
+            "description": "Returns changed on or after this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "return_last_modified_end_date": {
+            "type": "string",
+            "description": "Returns changed on or before this moment. ISO 8601 in UTC, a date (2026-11-01) or a date and time (2026-11-01T10:30:00Z)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Returns per page, 1 to 200 (Walmart default 10).",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "meta.nextCursor of the previous page, passed back exactly as returned (it starts with \"?\"). Leave the other filters out when you pass it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/returns",
+        "queryParams": {
+          "returnOrderId": "$return_order_id",
+          "customerOrderId": "$customer_order_id",
+          "status": "$status",
+          "returnType": "$return_type",
+          "isWFSEnabled": "$is_wfs_enabled",
+          "replacementInfo": "$replacement_info",
+          "returnCreationStartDate": "$return_creation_start_date",
+          "returnCreationEndDate": "$return_creation_end_date",
+          "returnLastModifiedStartDate": "$return_last_modified_start_date",
+          "returnLastModifiedEndDate": "$return_last_modified_end_date",
+          "limit": "$limit",
+          "__rawquery": "$next_cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_refund_return",
+      "description": "Issue the refund for lines of a return order (RMA). This moves money back to the customer and cannot be undone. Returns the refund result per line. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_order_id": {
+            "type": "string",
+            "description": "Return order id (RMA number) from walmart_marketplace_list_returns.",
+            "pattern": "^[0-9A-Za-z-]{4,40}$"
+          },
+          "customer_order_id": {
+            "type": "string",
+            "description": "customerOrderId of the return."
+          },
+          "refund_lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "returnOrderLineNumber": {
+                  "type": "integer",
+                  "description": "returnOrderLineNumber of the return line."
+                },
+                "quantity": {
+                  "type": "object",
+                  "description": "{\"unitOfMeasure\": \"EA\", \"measurementValue\": 1}"
+                }
+              },
+              "required": [
+                "returnOrderLineNumber"
+              ]
+            },
+            "description": "Lines to refund: [{\"returnOrderLineNumber\": 1, \"quantity\": {\"unitOfMeasure\": \"EA\", \"measurementValue\": 1}}]."
+          }
+        },
+        "required": [
+          "return_order_id",
+          "customer_order_id",
+          "refund_lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/returns/{return_order_id}/refund",
+        "bodyMapping": {
+          "customerOrderId": "$customer_order_id",
+          "refundLines": "$refund_lines"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_list_items",
+      "description": "List the items in your Walmart catalog: ItemResponse[] with sku, wpid, upc, gtin, productName, productType, shelf, price (amount, currency), publishedStatus, unpublishedReasons, lifecycleStatus, condition, availability and variantGroupId, plus totalItems and nextCursor. Use limit and offset (offset at most 10,000) or, for large catalogs, next_cursor (start with \"*\", the cursor lives 2 minutes). Read-only, 300 calls per minute without filters, 60 with filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Only this seller SKU."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "Only this 14-digit GTIN.",
+            "pattern": "^[0-9]{14}$"
+          },
+          "lifecycle_status": {
+            "type": "string",
+            "description": "ACTIVE, ARCHIVED or RETIRED.",
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED",
+              "RETIRED"
+            ]
+          },
+          "published_status": {
+            "type": "string",
+            "description": "PUBLISHED or UNPUBLISHED.",
+            "enum": [
+              "PUBLISHED",
+              "UNPUBLISHED"
+            ]
+          },
+          "variant_group_id": {
+            "type": "string",
+            "description": "Only items of this variant group."
+          },
+          "condition": {
+            "type": "string",
+            "description": "Item condition.",
+            "enum": [
+              "New",
+              "New without box",
+              "New without tags",
+              "Restored Premium",
+              "Restored",
+              "Remanufactured",
+              "Open Box",
+              "Pre-Owned: Like New",
+              "Pre-Owned: Good",
+              "Pre-Owned: Fair",
+              "New with defects"
+            ]
+          },
+          "availability": {
+            "type": "string",
+            "description": "In_stock, Out_of_stock or Preorder.",
+            "enum": [
+              "In_stock",
+              "Out_of_stock",
+              "Preorder"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 1000 (Walmart default 20).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based start position, at most 10,000.",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "nextCursor of the previous page; \"*\" starts cursor paging."
+          },
+          "show_duplicate_item_info": {
+            "type": "boolean",
+            "description": "true adds details of duplicate items."
+          },
+          "include_customer_favorites_status": {
+            "type": "boolean",
+            "description": "true adds isCustomerFavorite."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/items",
+        "queryParams": {
+          "sku": "$sku",
+          "gtin": "$gtin",
+          "lifecycleStatus": "$lifecycle_status",
+          "publishedStatus": "$published_status",
+          "variantGroupId": "$variant_group_id",
+          "condition": "$condition",
+          "availability": "$availability",
+          "limit": "$limit",
+          "offset": "$offset",
+          "nextCursor": "$next_cursor",
+          "showDuplicateItemInfo": "$show_duplicate_item_info",
+          "includeCustomerFavoritesStatus": "$include_customer_favorites_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_item",
+      "description": "Read one item of your catalog by SKU (default) or by another identifier: sku, wpid, upc, gtin, productName, shelf, productType, price, publishedStatus, unpublishedReasons, lifecycleStatus, condition, availability, variantGroupId and isDuplicate. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The identifier: your SKU by default, or the value of the type given in product_id_type.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "product_id_type": {
+            "type": "string",
+            "description": "What id is: SKU (default), GTIN, UPC, ISBN, EAN or ITEM_ID.",
+            "enum": [
+              "SKU",
+              "GTIN",
+              "UPC",
+              "ISBN",
+              "EAN",
+              "ITEM_ID"
+            ]
+          },
+          "include_customer_favorites_status": {
+            "type": "boolean",
+            "description": "true adds isCustomerFavorite."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/items/{id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "productIdType": "$product_id_type",
+          "includeCustomerFavoritesStatus": "$include_customer_favorites_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_search_my_catalog",
+      "description": "Search your own seller catalog with a query, filters and sort: items[] with sku, itemId, productName, brand, price, publishedStatus, lifecycleStatus, plus totalItems and nextCursor. Example query {\"field\": \"productName\", \"value\": \"lamp*\"}; example filter [{\"field\": \"publishedStatus\", \"op\": \"equals\", \"values\": [\"UNPUBLISHED\"]}]. Read-only (a POST that changes nothing), 200 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "object",
+            "description": "What to search: {\"field\": \"productName\" | \"sku\" | \"gtin\" | \"wpid\" | \"upc\" | \"isbn\" | \"ean\" | \"itemId\" | \"condition\", \"value\": \"text, * as wildcard\"}.",
+            "properties": {
+              "field": {
+                "type": "string",
+                "description": "Field to search.",
+                "enum": [
+                  "productName",
+                  "sku",
+                  "gtin",
+                  "wpid",
+                  "upc",
+                  "isbn",
+                  "ean",
+                  "itemId",
+                  "condition"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "description": "Value or wildcard pattern."
+              }
+            }
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Filters: [{\"field\": \"num_reviews\" | \"customerRating\" | \"lifecycleStatus\" | \"publishedStatus\" | \"unpublishedReasons\" | \"inventoryStatus\" | \"price\" | \"fulfillmentType\", \"op\": \"equals\" | \"between\" | \"greater_than\" | \"less_than\", \"values\": [\"...\"]}]."
+          },
+          "sort": {
+            "type": "object",
+            "description": "Sort: {\"field\": \"num_reviews\" | \"customerRating\" | \"lifecycleStatus\" | \"publishedStatus\" | \"unpublishedReasons\" | \"inventoryStatus\", \"order\": \"ASC\" | \"DESC\"}."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page (Walmart default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "nextCursor of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/items/catalog/search",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "nextCursor": "$next_cursor"
+        },
+        "bodyMapping": {
+          "query": "$query",
+          "filters": "$filters",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_search_walmart_catalog",
+      "description": "Search the public Walmart.com catalog (all sellers) by keyword or by UPC, GTIN, EAN or ISBN, to see whether a product already exists before you list it: items[] with itemId, title, description, brand, condition, price (amount, currency), images, customerRating, isMarketPlaceItem, productType and properties, or {} when nothing matches. Up to 40 results; only published items. Give exactly one of query, upc, gtin, ean, isbn. Read-only, 200 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Keywords, e.g. \"fitbit charge 6\"."
+          },
+          "upc": {
+            "type": "string",
+            "description": "12-digit UPC.",
+            "pattern": "^[0-9]{12}$"
+          },
+          "gtin": {
+            "type": "string",
+            "description": "14-digit GTIN.",
+            "pattern": "^[0-9]{14}$"
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN (13 digits).",
+            "pattern": "^[0-9]{8,14}$"
+          },
+          "isbn": {
+            "type": "string",
+            "description": "ISBN-10 or ISBN-13.",
+            "pattern": "^[0-9Xx-]{10,17}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/items/walmart/search",
+        "queryParams": {
+          "query": "$query",
+          "upc": "$upc",
+          "gtin": "$gtin",
+          "ean": "$ean",
+          "isbn": "$isbn"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_count_items",
+      "description": "Count the items of your catalog in one status (PUBLISHED, UNPUBLISHED, SYSTEM_PROBLEM, IN_PROGRESS or ALL). Read-only, cheap overview before paging through walmart_marketplace_list_items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Item status to count.",
+            "enum": [
+              "PUBLISHED",
+              "UNPUBLISHED",
+              "SYSTEM_PROBLEM",
+              "IN_PROGRESS",
+              "ALL"
+            ],
+            "default": "ALL"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/items/count",
+        "queryParams": {
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_retire_item",
+      "description": "Retire (permanently remove) one item from Walmart.com by SKU. The listing is taken down; bringing it back needs a new item setup. Returns sku and a message. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU exactly as in Seller Center (sku from walmart_marketplace_list_items). Special characters are encoded for you.",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/items/{sku}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_get_inventory",
+      "description": "Read the stock of one SKU at your default ship node, or at the ship node given: sku, quantity (unit EACH, amount = units available to sell) and inventoryAvailableDate. Read-only, 200 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU exactly as in Seller Center (sku from walmart_marketplace_list_items). Special characters are encoded for you.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "ship_node": {
+            "type": "string",
+            "description": "Ship node id (shipNode from walmart_marketplace_list_ship_nodes). Omit for the default node."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/inventory",
+        "queryParams": {
+          "sku": "$sku",
+          "shipNode": "$ship_node"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_inventory_by_ship_node",
+      "description": "Read the stock of one SKU at every ship node of your account (or one node): sku and nodes[] with shipNode, inputQty (what you set), availToSellQty, reservedQty (each with unit EACH and amount) and inventoryAvailableDate. Read-only, 200 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU exactly as in Seller Center (sku from walmart_marketplace_list_items). Special characters are encoded for you.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "ship_node": {
+            "type": "string",
+            "description": "Only this ship node id."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/inventories/{sku}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shipNode": "$ship_node"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_update_inventory",
+      "description": "Set the stock of one SKU to an absolute quantity at your default ship node (or the ship node given). The amount replaces the current value; it is not added. Returns sku and quantity. For WFS items Walmart manages the stock. 200 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU exactly as in Seller Center (sku from walmart_marketplace_list_items). Special characters are encoded for you.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "amount": {
+            "type": "integer",
+            "description": "New quantity in units (EACH), 0 or more.",
+            "minimum": 0,
+            "maximum": 10000000
+          },
+          "ship_node": {
+            "type": "string",
+            "description": "Ship node id; omit for the default node."
+          }
+        },
+        "required": [
+          "sku",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/inventory",
+        "queryParams": {
+          "sku": "$sku",
+          "shipNode": "$ship_node"
+        },
+        "bodyMapping": {
+          "sku": "$sku",
+          "quantity": {
+            "unit": "EACH",
+            "amount": "$amount"
+          }
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_wfs_inventory",
+      "description": "Read Walmart Fulfillment Services (WFS) stock: headers (totalCount, limit, offset) and payload.inventory[] with itemInformation (sku, gtin, itemName, brand) and inventoryData (availableUnits, reservedUnits, inboundUnits, onhandUnits, unavailable units, inventory age buckets, stockStatus) plus inventoryInsights (sales forecast, daysOfSupply, suggestedUnits). Read-only, 100 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Only this SKU."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "Only this 14-digit GTIN.",
+            "pattern": "^[0-9]{14}$"
+          },
+          "customer_favorite": {
+            "type": "boolean",
+            "description": "true: only customer favorites; false: only the others."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "SKUs per page, 1 to 300 (Walmart default 10).",
+            "minimum": 1,
+            "maximum": 300
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/wfs/inventory",
+        "queryParams": {
+          "sku": "$sku",
+          "gtin": "$gtin",
+          "customerFavorite": "$customer_favorite",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_update_price",
+      "description": "Set the regular (BASE) selling price of one SKU in USD. Returns an ItemPriceResponse with the sku and a message. Limited to 100 calls per hour; for many SKUs use walmart_marketplace_submit_price_feed. Sale and strike-through prices are promotions, read them with walmart_marketplace_get_promotional_prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU exactly as in Seller Center (sku from walmart_marketplace_list_items). Special characters are encoded for you.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "New price in US dollars, e.g. 19.99."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency: USD on the US marketplace.",
+            "enum": [
+              "USD"
+            ],
+            "default": "USD"
+          }
+        },
+        "required": [
+          "sku",
+          "amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/price",
+        "bodyMapping": {
+          "sku": "$sku",
+          "pricing": [
+            {
+              "currentPriceType": "BASE",
+              "currentPrice": {
+                "currency": "$currency",
+                "amount": "$amount"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_promotional_prices",
+      "description": "Read the promotional prices of one SKU: payload.itemIdentifier and pricingList.pricing[] with currentPriceType (BASE, REDUCED, CLEARANCE, ROLLBACK and others), currentPrice, comparisonPrice and comparisonPriceType, savings and the promotion dates. Read-only, 1,000 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU exactly as in Seller Center (sku from walmart_marketplace_list_items). Special characters are encoded for you.",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/promo/sku/{sku}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_submit_item_feed",
+      "description": "Submit a bulk item feed (create or update up to 10,000 items) as a JSON document in Walmart's item spec, e.g. MP_ITEM with {\"MPItemFeedHeader\": {\"businessUnit\": \"WALMART_US\", \"locale\": \"en\", \"version\": \"5.0.20250121-19_24_23-api\"}, \"MPItem\": [{\"Orderable\": {...}, \"Visible\": {\"<product type>\": {...}}}]}. Keep it under 25 MB. Answers with a feedId; check it with walmart_marketplace_get_feed_status. Installed switched off: a feed changes many live listings at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feed_type": {
+            "type": "string",
+            "description": "MP_ITEM (new items, full content), MP_MAINTENANCE (update existing items), MP_ITEM_MATCH (sell an item that already exists on Walmart.com), MP_WFS_ITEM (WFS item setup) or OMNI_WFS.",
+            "enum": [
+              "MP_ITEM",
+              "MP_MAINTENANCE",
+              "MP_ITEM_MATCH",
+              "MP_WFS_ITEM",
+              "OMNI_WFS"
+            ]
+          },
+          "feed": {
+            "type": "object",
+            "description": "The complete feed document (header plus items) as Walmart's item spec describes it."
+          }
+        },
+        "required": [
+          "feed_type",
+          "feed"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/feeds",
+        "queryParams": {
+          "feedType": "$feed_type"
+        },
+        "bodyMapping": {
+          "__raw": "$feed"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_submit_price_feed",
+      "description": "Submit a bulk price feed (feedType PRICE_AND_PROMOTION, up to 10,000 SKUs, 1,000 recommended): {\"MPItemFeedHeader\": {\"businessUnit\": \"WALMART_US\", \"locale\": \"en\", \"version\": \"2.0.20240126-12_25_52-api\"}, \"MPItem\": [{\"Promo&Discount\": {\"sku\": \"SKU-1\", \"price\": 19.99}}]}. Price feeds are limited per hour and per day (10 per hour shared with all bulk price and promotion feeds), so batch changes into one feed. Answers with a feedId; Walmart applies prices within about 15 minutes. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feed": {
+            "type": "object",
+            "description": "The complete PRICE_AND_PROMOTION feed document (MPItemFeedHeader and MPItem)."
+          }
+        },
+        "required": [
+          "feed"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/feeds",
+        "queryParams": {
+          "feedType": "PRICE_AND_PROMOTION"
+        },
+        "bodyMapping": {
+          "__raw": "$feed"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_list_feeds",
+      "description": "List your recent feeds (or one feed): totalResults and results.feed[] with feedId, feedType, feedSource, feedStatus (RECEIVED, INPROGRESS, PROCESSED, ERROR), itemsReceived, itemsSucceeded, itemsFailed, itemsProcessing and feedDate (epoch ms). Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feed_id": {
+            "type": "string",
+            "description": "Only this feedId."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based start position.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Feeds per page, at most 50.",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/feeds",
+        "queryParams": {
+          "feedId": "$feed_id",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_feed_status",
+      "description": "Read the status of one feed: feedStatus, itemsReceived, itemsSucceeded, itemsFailed, itemsProcessing and, with include_details, itemDetails.itemIngestionStatus[] (sku, ingestionStatus, ingestionErrors with the reason per item). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "feed_id": {
+            "type": "string",
+            "description": "feedId returned when the feed was submitted.",
+            "minLength": 1
+          },
+          "include_details": {
+            "type": "boolean",
+            "description": "true adds the per-item results (50 per page).",
+            "default": true
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based start of the item details.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Item details per page, at most 50.",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "feed_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/feeds/{feed_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "includeDetails": "$include_details",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_request_report",
+      "description": "Ask Walmart to generate an on-request report (ITEM catalog, INVENTORY, BUYBOX, CANCELLATION, RETURN_OVERRIDES, ITEM_PERFORMANCE, WFS reports and more). Answers with requestId and requestStatus RECEIVED; poll walmart_marketplace_get_report_request until READY, then call walmart_marketplace_get_report_download_url. Optional filters narrow the rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_type": {
+            "type": "string",
+            "description": "Report to generate.",
+            "enum": [
+              "ITEM",
+              "INVENTORY",
+              "CANCELLATION",
+              "DELIVERY_DEFECT",
+              "ITEM_PERFORMANCE",
+              "PROMO",
+              "RETURN_OVERRIDES",
+              "WALMART_FUNDED_OPTED_OUT_REPORT",
+              "RRF_ELIGIBLE_ENROLLED_REPORT",
+              "INCENTIVES_ELIGIBLE_ENROLLED_REPORT",
+              "SHIPPING_CONFIGURATION",
+              "SHIPPING_PROGRAM",
+              "BUYBOX",
+              "PRICING_INSIGHTS_ISSUES",
+              "PRICING_INSIGHTS_STALE_INVENTORY",
+              "PRICING_INSIGHTS_IMPROVE_BUYBOX_WINS",
+              "PRICING_INSIGHTS_IMPROVE_PCS",
+              "PRICING_INSIGHTS_REPRICER_OPPORTUNITIES",
+              "PRICING_INSIGHTS_UPDATE_REPRICER_PRICE",
+              "PRICING_INSIGHTS_REDUCED_REFERRAL_FEE_OPPORTUNITIES",
+              "ASSORTMENT_RECOMMENDATIONS",
+              "LAGTIME",
+              "SEARCH_INSIGHTS_PERF_REPORT",
+              "SEARCH_INSIGHTS_SQR_REPORT",
+              "INVENTORY_RECOMMENDATIONS",
+              "SEM_PERFORMANCE",
+              "SEM_SEARCH_TERMS",
+              "INVENTORY_RECON",
+              "SETTLEMENT",
+              "WFS_ORDERS",
+              "WFS_CUSTOMER_RETURNS",
+              "CONTENT_QUALITY",
+              "LISTING_QUALITY",
+              "WFS_STORAGE_FEE",
+              "WFS_INVENTORY_HEALTH",
+              "WFS_INVENTORY_LOG"
+            ]
+          },
+          "report_version": {
+            "type": "string",
+            "description": "Version: v1 for most reports; ITEM goes up to v6 and ITEM_PERFORMANCE up to v3.",
+            "pattern": "^v[0-9]{1,2}$",
+            "default": "v1"
+          },
+          "row_filters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Row filters, e.g. [{\"type\": \"enumFilter\", \"columnName\": \"Publish Status\", \"values\": [\"PUBLISHED\"]}, {\"type\": \"rangeFilter\", \"columnName\": \"Price\", \"from\": \"10\", \"to\": \"100\"}]."
+          },
+          "exclude_columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Column names to leave out."
+          },
+          "data_start_time": {
+            "type": "string",
+            "description": "Start of the data period, ISO 8601 (for performance-type reports)."
+          },
+          "data_end_time": {
+            "type": "string",
+            "description": "End of the data period, ISO 8601."
+          }
+        },
+        "required": [
+          "report_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/reports/reportRequests",
+        "queryParams": {
+          "reportType": "$report_type",
+          "reportVersion": "$report_version"
+        },
+        "bodyMapping": {
+          "rowFilters": "$row_filters",
+          "excludeColumns": "$exclude_columns",
+          "dataStartTime": "$data_start_time",
+          "dataEndTime": "$data_end_time"
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_list_report_requests",
+      "description": "List report requests of one type from the last 30 days: requests[] with requestId, requestStatus (RECEIVED, INPROGRESS, READY, ERROR), reportType, reportVersion, requestSubmissionDate and reportGenerationDate. Read-only, 200 calls per minute; prefer this over polling one request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_type": {
+            "type": "string",
+            "description": "Report type.",
+            "enum": [
+              "ITEM",
+              "INVENTORY",
+              "CANCELLATION",
+              "DELIVERY_DEFECT",
+              "ITEM_PERFORMANCE",
+              "PROMO",
+              "RETURN_OVERRIDES",
+              "WALMART_FUNDED_OPTED_OUT_REPORT",
+              "RRF_ELIGIBLE_ENROLLED_REPORT",
+              "INCENTIVES_ELIGIBLE_ENROLLED_REPORT",
+              "SHIPPING_CONFIGURATION",
+              "SHIPPING_PROGRAM",
+              "BUYBOX",
+              "PRICING_INSIGHTS_ISSUES",
+              "PRICING_INSIGHTS_STALE_INVENTORY",
+              "PRICING_INSIGHTS_IMPROVE_BUYBOX_WINS",
+              "PRICING_INSIGHTS_IMPROVE_PCS",
+              "PRICING_INSIGHTS_REPRICER_OPPORTUNITIES",
+              "PRICING_INSIGHTS_UPDATE_REPRICER_PRICE",
+              "PRICING_INSIGHTS_REDUCED_REFERRAL_FEE_OPPORTUNITIES",
+              "ASSORTMENT_RECOMMENDATIONS",
+              "LAGTIME",
+              "SEARCH_INSIGHTS_PERF_REPORT",
+              "SEARCH_INSIGHTS_SQR_REPORT",
+              "INVENTORY_RECOMMENDATIONS",
+              "SEM_PERFORMANCE",
+              "SEM_SEARCH_TERMS",
+              "INVENTORY_RECON",
+              "SETTLEMENT",
+              "WFS_ORDERS",
+              "WFS_CUSTOMER_RETURNS",
+              "CONTENT_QUALITY",
+              "LISTING_QUALITY",
+              "WFS_STORAGE_FEE",
+              "WFS_INVENTORY_HEALTH",
+              "WFS_INVENTORY_LOG"
+            ]
+          },
+          "report_version": {
+            "type": "string",
+            "description": "Version, e.g. v1.",
+            "pattern": "^v[0-9]{1,2}$"
+          },
+          "request_status": {
+            "type": "string",
+            "description": "Only requests in this status.",
+            "enum": [
+              "RECEIVED",
+              "INPROGRESS",
+              "READY",
+              "ERROR"
+            ]
+          },
+          "src": {
+            "type": "string",
+            "description": "Where the request came from: SC (Seller Center), API or Scheduler.",
+            "enum": [
+              "SC",
+              "API",
+              "Scheduler"
+            ]
+          },
+          "request_submission_start_date": {
+            "type": "string",
+            "description": "Requests submitted on or after this moment, ISO 8601 (YYYY-MM-DDTHH:mm:ssZ)."
+          },
+          "request_submission_end_date": {
+            "type": "string",
+            "description": "Requests submitted on or before this moment, ISO 8601."
+          }
+        },
+        "required": [
+          "report_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/reports/reportRequests",
+        "queryParams": {
+          "reportType": "$report_type",
+          "reportVersion": "$report_version",
+          "requestStatus": "$request_status",
+          "src": "$src",
+          "requestSubmissionStartDate": "$request_submission_start_date",
+          "requestSubmissionEndDate": "$request_submission_end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_report_request",
+      "description": "Read the status of one report request: requestId, requestStatus (RECEIVED, INPROGRESS, READY, ERROR), reportType, reportVersion, requestSubmissionDate and reportGenerationDate. Read-only, limited to 20 calls per hour: wait several minutes between checks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "requestId from walmart_marketplace_request_report.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/reports/reportRequests/{request_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_report_download_url",
+      "description": "Get the download link of a READY report: downloadURL (pre-signed, a zipped CSV), downloadURLExpirationTime, reportType and reportGenerationDate. Hand the link to the user; it expires. Read-only, limited to 20 calls per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "requestId of a report whose status is READY.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/reports/downloadReport",
+        "queryParams": {
+          "requestId": "$request_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_list_inbound_shipments",
+      "description": "List WFS inbound shipments (your stock on its way to Walmart fulfillment centers): headers.totalCount and payload[] with inboundOrderId, shipmentId, shipToAddress (fulfillment center), status, createdDate, shipmentUnits, receivedUnits, expectedDeliveryDate, actualDeliveryDate, trackingNo and carrierName. Read-only, 32 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbound_order_id": {
+            "type": "string",
+            "description": "Only this inbound order id."
+          },
+          "shipment_id": {
+            "type": "string",
+            "description": "Only this shipment id."
+          },
+          "status": {
+            "type": "string",
+            "description": "Shipment status.",
+            "enum": [
+              "SUBMITTED",
+              "AWAITING_DELIVERY",
+              "RECEIVING_IN_PROGRESS",
+              "RECEIVED",
+              "CLOSED",
+              "CANCELLED",
+              "CANCELLED_INIT",
+              "CANCELLED_GDM",
+              "FAILED",
+              "FAILED_GDM",
+              "ALLOCATED",
+              "PROCESSED",
+              "PROCESSED_GDM",
+              "MOVED",
+              "TRANSFER_IN_PROGRESS",
+              "CREATE_GDM_PUBLISH_FAILED"
+            ]
+          },
+          "from_create_date": {
+            "type": "string",
+            "description": "Created on or after this date (YYYY-MM-DD)."
+          },
+          "to_create_date": {
+            "type": "string",
+            "description": "Created on or before this date (YYYY-MM-DD)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Shipments per page (Walmart default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/inbound-shipments",
+        "queryParams": {
+          "inboundOrderId": "$inbound_order_id",
+          "shipmentId": "$shipment_id",
+          "status": "$status",
+          "fromCreateDate": "$from_create_date",
+          "toCreateDate": "$to_create_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_list_inbound_shipment_items",
+      "description": "List the SKUs of WFS inbound shipments: headers.totalCount and payload[] with inboundOrderId, shipmentId, sku, gtin, itemDesc, itemQty (expected), receivedQty, damagedQty, fillRate, shipNodeName and expectedDeliveryDate. Read-only, 300 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "Only this shipment id."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page (Walmart default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/inbound-shipment-items",
+        "queryParams": {
+          "shipmentId": "$shipment_id",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_create_inbound_shipment_label",
+      "description": "Generate the WFS receiving labels for an inbound shipment (not a carrier label: these let the fulfillment center match boxes or pallets to the shipment). Returns the label file, PDF or ZPL, to print and stick on each box or pallet. Costs nothing. 20 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId from walmart_marketplace_list_inbound_shipments.",
+            "minLength": 1
+          },
+          "label_size": {
+            "type": "string",
+            "description": "X4_6 (4 x 6 in) or X4_3 (4 x 3 1/3 in).",
+            "enum": [
+              "X4_6",
+              "X4_3"
+            ],
+            "default": "X4_6"
+          },
+          "label_format": {
+            "type": "string",
+            "description": "PDF or ZPL (ZPL only in 4 x 6).",
+            "enum": [
+              "PDF",
+              "ZPL"
+            ],
+            "default": "PDF"
+          },
+          "load_types": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "loadType": {
+                  "type": "string",
+                  "description": "BOX or PALLET."
+                },
+                "count": {
+                  "type": "integer",
+                  "description": "Number of labels.",
+                  "minimum": 1
+                }
+              }
+            },
+            "description": "Labels per load type, e.g. [{\"loadType\": \"BOX\", \"count\": 4}]."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/fulfillment/shipment-label",
+        "bodyMapping": {
+          "shipmentId": "$shipment_id",
+          "labelSize": "$label_size",
+          "labelFormat": "$label_format",
+          "loadTypes": "$load_types"
+        },
+        "headers": {
+          "Accept": "application/pdf, application/octet-stream, */*"
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_list_ship_nodes",
+      "description": "List your fulfillment centers (ship nodes): shipNode (the id other tools take), shipNodeName, nodeType, status, timeZone, postalAddress, shippingDetails and, with include_calendar, the processing schedule (working days, cut-off times, days off). Read-only, 50 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_calendar": {
+            "type": "boolean",
+            "description": "true adds calendarDayConfiguration."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/settings/shipping/shipnodes",
+        "queryParams": {
+          "includeCalendarDayConfiguration": "$include_calendar"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_list_carrier_methods",
+      "description": "List the carrier methods available for your shipping configuration: carrierMethodId, carrierMethodName, carrierMethodType and carrierMethodDescription. Read-only, 10 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/settings/shipping/carriers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_list_shipping_templates",
+      "description": "List your shipping templates: totalRecords and shippingTemplates[] with id, name, type (DEFAULT, CUSTOM, DELIVERR), status (ACTIVE, INACTIVE), rateModelType and createdDate and modifiedDate (epoch ms). Read-only, 300 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/settings/shipping/templates"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_lag_time",
+      "description": "Read the fulfillment lag time of one SKU: sku and fulfillmentLagTime (days between order and shipment; 2 days or more needs Walmart approval). Read-only, limited to 20 calls per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your seller SKU exactly as in Seller Center (sku from walmart_marketplace_list_items). Special characters are encoded for you.",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/lagtime",
+        "queryParams": {
+          "sku": "$sku"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

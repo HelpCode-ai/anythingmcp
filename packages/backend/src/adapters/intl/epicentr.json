@@ -1,0 +1,1533 @@
+{
+  "slug": "epicentr",
+  "name": "Epicentr K",
+  "description": "Epicentr Merchant API for sellers on the Ukrainian marketplace Epicentr K: orders with statuses, buyer and delivery data, order lines, comments and waybill numbers, batch price and availability updates, delivery directories, category and attribute tree, and order commission. API key from the seller cabinet.",
+  "instructions": "## Epicentr K\nThis connector works with the **Epicentr Merchant API** at `https://merchant-api.epicentrm.com.ua`, the seller API of the Epicentr K marketplace (epicentrk.ua) in Ukraine: orders and their statuses, buyer and delivery data, order lines, comments, waybill numbers, batch price and availability updates for offers, delivery directories (settlements, offices, pickup points), the category and attribute tree, and the commission statement of an order.\n\n**Setup (about 3 minutes)**\n1. Sign in to the Epicentr seller cabinet (кабінет продавця) and open **Company Settings** (Налаштування компанії), tab **API**. The tab is switched on by your supervising category manager; ask them if you do not see it. The API is a closed beta for a limited number of companies.\n2. Generate a key there. It starts with `mp_`.\n3. Paste it into `EPICENTR_API_KEY`. The connector sends it as `Authorization: Bearer mp_...`.\nTo revoke a key, generate a new one and delete the old one in the cabinet. Every API action is logged by Epicentr.\n\n**Where to start**: `epicentr_list_delivery_providers` confirms the key works. `epicentr_list_orders` with `status_codes` [\"new\"] lists the orders to process; `epicentr_get_order` reads one in full. `epicentr_count_orders` returns how many orders match the same filters.\n\n**Order flow**\n- Statuses: new, confirmed_by_merchant (you accepted), confirmed, sent (handed to the carrier), received, delivered (ready for pickup at the office), completed, closed; and canceled, canceled_by_merchant, returned, return_requested, completed_merchant_rejection, closed_merchant_rejection.\n- Before a cancellation, `epicentr_list_cancel_reasons` gives the reason codes the cancel tool takes.\n- Always call `epicentr_list_allowed_statuses` first: only the statuses it lists are accepted. Then `epicentr_change_order_status` (confirm, ship, ready for pickup, complete).\n- Enter the waybill (TTN) with `epicentr_set_shipment_number`; Epicentr then tracks the parcel and completes the order when the buyer collects it.\n- Change buyer data with `epicentr_update_client_data` (send all required fields), delivery with `epicentr_update_delivery_data` (ids from `epicentr_list_settlements` and `epicentr_list_offices`), lines with `epicentr_add_order_item` and `epicentr_update_order_item`. Read and write notes with `epicentr_list_order_comments` and `epicentr_add_order_comment`.\n- Every order tool takes the order **id** (a UUID), not the order number; find the id with `epicentr_list_orders` and the `number` filter.\n\n**Offers (price and availability)**: products are not created through the API; they come in through your XML feed in the cabinet. `epicentr_update_offers` changes price, old price and availability (in_stock, under_the_order, not_available) of up to 1000 offers by productId or sku. It is asynchronous: read `epicentr_get_offer_update_result` with the requestId. Items that fail validation come back `skipped` with error codes; unknown identifiers `forbidden`. The API has no stock quantity field, only availability. `epicentr_list_categories`, `epicentr_list_attribute_sets` and `epicentr_list_attribute_options` show the category and attribute tree your feed must follow.\n\n**Delivery directories**: `epicentr_list_delivery_providers`, `epicentr_list_settlements`, `epicentr_list_offices`, `epicentr_list_pickup_points` and `epicentr_get_delivery_invoice` (the waybill document as base64, Ukrposhta and Meest only). Providers: nova_poshta, ukrposhta, meest, pickup, cvz_epicentr (Meest-Epicentr pickup), parcel_box_epicentr (Meest-Epicentr lockers), courier_delivery.\n\n**Money**: `epicentr_get_order_invoice` reads the commission charged on an order (read-only). Payment links and payment settings are not included.\n\n**Switched off at install**: `epicentr_cancel_order` (cannot be undone; Epicentr may withhold commission for seller cancellations), `epicentr_delete_order_item`, `epicentr_delete_shipment_number`, and `epicentr_create_shipment`, which registers a paid shipment with the carrier (charged to you when the seller pays delivery). Switch them on only for a workspace that should do this.\n\n**Formats and pitfalls**\n- All dates and times are UTC. Prices are in UAH with at most two decimals.\n- Lists page differently: orders by cursor (pass `next` back as cursor), comments and delivery directories by offset and limit, the category tree by page (answers carry page and pages).\n- Settlement and office names come in Ukrainian by default; set `language` to ru for Russian.\n- Epicentr's API description shows one example on `mp-api.epicentrm.com.ua`; the published Swagger and the official samples use `merchant-api.epicentrm.com.ua`, which this connector calls.\n- Feedback on the beta API goes to merchant@epicentrk.ua.",
+  "aliases": [
+    "Epicentrk",
+    "Epicentr K Marketplace",
+    "Епіцентр",
+    "Епіцентр К"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "epicentr",
+  "docsUrl": "https://merchant-api.epicentrm.com.ua/swagger/index.html",
+  "requiredEnvVars": [
+    "EPICENTR_API_KEY"
+  ],
+  "envVarMeta": {
+    "EPICENTR_API_KEY": {
+      "label": "Merchant API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Seller cabinet, Company Settings, tab API: generate a key (it starts with mp_). The tab is switched on by your category manager.",
+      "link": "https://merchant-api.epicentrm.com.ua/swagger/",
+      "pattern": "^mp_[A-Za-z0-9]{16,512}$",
+      "patternMessage": "Paste the key only, starting with mp_, without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Epicentr did not accept this API key. Generate a new key in the seller cabinet under Company Settings, tab API, and paste it (it starts with mp_).",
+    "403": "Epicentr refused the call. Invalid token means the key is wrong or was deleted: generate a new one in the seller cabinet under Company Settings, tab API. Otherwise the key lacks the permission for this action (e.g. updating offers or reading invoices).",
+    "404": "Epicentr found no order, offer request or delivery object with that id. Order tools need the order UUID, not the order number.",
+    "rate_limited": "Epicentr is limiting calls from this key. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "epicentr_list_delivery_providers",
+    "params": {}
+  },
+  "prerequisites": "An Epicentr K seller account with the API tab enabled by your category manager (closed beta), to generate an API key under Company Settings. About 3 minutes.",
+  "connector": {
+    "name": "Epicentr Merchant API",
+    "type": "REST",
+    "baseUrl": "https://merchant-api.epicentrm.com.ua",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{EPICENTR_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "epicentr_list_orders",
+      "description": "List orders (v4, cursor paging), newest first by default: id (UUID used by every order tool), number, statusCode, createdAt, updatedAt, subtotal (UAH), payed, items (offerId, productId, sku, title, price, quantity, subtotal), address (buyer name, phone, email, recipient, shipment provider, settlementId, officeId, shipment number, paymentProvider, paymentStatus, deliveryPrice), cancel (reason, initiator), commentsCount. Read-only. Pass next as cursor for the following page; the answer also carries current, prev, last and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_codes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "new",
+                "confirmed_by_merchant",
+                "confirmed",
+                "sent",
+                "received",
+                "delivered",
+                "completed",
+                "closed",
+                "canceled",
+                "returned",
+                "return_requested",
+                "canceled_by_merchant",
+                "completed_merchant_rejection",
+                "closed_merchant_rejection"
+              ]
+            },
+            "description": "Only orders in these statuses, e.g. [\"new\"]. Statuses: new (new), confirmed_by_merchant (confirmed by you), confirmed (confirmed), sent (shipped), received (received), delivered (ready for pickup at the office), completed, closed, canceled, returned, return_requested, canceled_by_merchant (cancelled by you), completed_merchant_rejection and closed_merchant_rejection (completed or closed after a seller refusal)."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created at or after, UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created at or before, UTC."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Changed at or after, UTC. Use it to poll for changes."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Changed at or before, UTC."
+          },
+          "number": {
+            "type": "string",
+            "description": "Order number as shown in the seller cabinet."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Buyer phone."
+          },
+          "full_name": {
+            "type": "string",
+            "description": "Buyer name; \"John Doe\" and \"Doe John\" both match."
+          },
+          "search": {
+            "type": "string",
+            "description": "Part of a product title, product id or your product external id."
+          },
+          "shipment_provider": {
+            "type": "string",
+            "enum": [
+              "nova_poshta",
+              "ukrposhta",
+              "meest",
+              "pickup",
+              "cvz_epicentr",
+              "parcel_box_epicentr",
+              "courier_delivery"
+            ],
+            "description": "Delivery provider: nova_poshta (Nova Poshta), ukrposhta (Ukrposhta), meest (Meest), pickup (pickup from your point), cvz_epicentr (Meest-Epicentr pickup), parcel_box_epicentr (Meest-Epicentr parcel lockers), courier_delivery (courier)."
+          },
+          "payment_provider": {
+            "type": "string",
+            "enum": [
+              "pay_on_pickup",
+              "pay_on_delivery",
+              "easypay",
+              "monobank",
+              "invoice",
+              "prepayment",
+              "credit_pravexbank",
+              "installment_abank",
+              "installment_monobank",
+              "installment_privatbank"
+            ],
+            "description": "Payment method: pay_on_pickup, pay_on_delivery (cash on delivery), easypay, monobank, invoice, prepayment, credit_pravexbank, or an installment provider."
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "payment_waiting",
+              "payment_canceled",
+              "hold_set",
+              "hold_unset",
+              "hold_canceled"
+            ],
+            "description": "Payment status: none, payment_waiting, payment_canceled, hold_set (amount held on the card), hold_unset, hold_canceled."
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "-createdAt",
+                "createdAt",
+                "-updatedAt",
+                "updatedAt",
+                "-number",
+                "number",
+                "-subtotal",
+                "subtotal",
+                "-statusCode",
+                "statusCode",
+                "-fullName",
+                "fullName"
+              ]
+            },
+            "default": [
+              "-createdAt"
+            ],
+            "description": "Sort fields; a leading - sorts descending. Default [\"-createdAt\"]."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Orders per page (default 25)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Page cursor: next from the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/oms/orders",
+        "queryParams": {
+          "filter[statusCode][]": "$status_codes",
+          "filter[createdAt][from]": "$created_from",
+          "filter[createdAt][to]": "$created_to",
+          "filter[updatedAt][from]": "$updated_from",
+          "filter[updatedAt][to]": "$updated_to",
+          "filter[number]": "$number",
+          "filter[phone]": "$phone",
+          "filter[fullName]": "$full_name",
+          "filter[search]": "$search",
+          "filter[shipmentProvider]": "$shipment_provider",
+          "filter[paymentProvider]": "$payment_provider",
+          "filter[paymentStatus]": "$payment_status",
+          "sort[]": "$sort",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_count_orders",
+      "description": "Count orders that match the same filters as epicentr_list_orders, e.g. how many are new or waiting to ship. Returns total. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_codes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "new",
+                "confirmed_by_merchant",
+                "confirmed",
+                "sent",
+                "received",
+                "delivered",
+                "completed",
+                "closed",
+                "canceled",
+                "returned",
+                "return_requested",
+                "canceled_by_merchant",
+                "completed_merchant_rejection",
+                "closed_merchant_rejection"
+              ]
+            },
+            "description": "Only orders in these statuses, e.g. [\"new\"]. Statuses: new (new), confirmed_by_merchant (confirmed by you), confirmed (confirmed), sent (shipped), received (received), delivered (ready for pickup at the office), completed, closed, canceled, returned, return_requested, canceled_by_merchant (cancelled by you), completed_merchant_rejection and closed_merchant_rejection (completed or closed after a seller refusal)."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created at or after, UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created at or before, UTC."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Changed at or after, UTC. Use it to poll for changes."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Changed at or before, UTC."
+          },
+          "number": {
+            "type": "string",
+            "description": "Order number as shown in the seller cabinet."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Buyer phone."
+          },
+          "full_name": {
+            "type": "string",
+            "description": "Buyer name; \"John Doe\" and \"Doe John\" both match."
+          },
+          "search": {
+            "type": "string",
+            "description": "Part of a product title, product id or your product external id."
+          },
+          "shipment_provider": {
+            "type": "string",
+            "enum": [
+              "nova_poshta",
+              "ukrposhta",
+              "meest",
+              "pickup",
+              "cvz_epicentr",
+              "parcel_box_epicentr",
+              "courier_delivery"
+            ],
+            "description": "Delivery provider: nova_poshta (Nova Poshta), ukrposhta (Ukrposhta), meest (Meest), pickup (pickup from your point), cvz_epicentr (Meest-Epicentr pickup), parcel_box_epicentr (Meest-Epicentr parcel lockers), courier_delivery (courier)."
+          },
+          "payment_provider": {
+            "type": "string",
+            "enum": [
+              "pay_on_pickup",
+              "pay_on_delivery",
+              "easypay",
+              "monobank",
+              "invoice",
+              "prepayment",
+              "credit_pravexbank",
+              "installment_abank",
+              "installment_monobank",
+              "installment_privatbank"
+            ],
+            "description": "Payment method: pay_on_pickup, pay_on_delivery (cash on delivery), easypay, monobank, invoice, prepayment, credit_pravexbank, or an installment provider."
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "payment_waiting",
+              "payment_canceled",
+              "hold_set",
+              "hold_unset",
+              "hold_canceled"
+            ],
+            "description": "Payment status: none, payment_waiting, payment_canceled, hold_set (amount held on the card), hold_unset, hold_canceled."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v4/oms/orders/total",
+        "queryParams": {
+          "filter[statusCode][]": "$status_codes",
+          "filter[createdAt][from]": "$created_from",
+          "filter[createdAt][to]": "$created_to",
+          "filter[updatedAt][from]": "$updated_from",
+          "filter[updatedAt][to]": "$updated_to",
+          "filter[number]": "$number",
+          "filter[phone]": "$phone",
+          "filter[fullName]": "$full_name",
+          "filter[search]": "$search",
+          "filter[shipmentProvider]": "$shipment_provider",
+          "filter[paymentProvider]": "$payment_provider",
+          "filter[paymentStatus]": "$payment_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_get_order",
+      "description": "Read one order (v6) in full: number, statusCode, subtotal, payed, items with product details, buyer and recipient, delivery (provider, settlement, office with type and size limits, shipment number, delivery price, payment provider and status, installment status), cancel details, comment, and the company's delivery and payment settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v6/oms/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_allowed_statuses",
+      "description": "List the statuses an order can move to from its current status (code per item). Call it before epicentr_change_order_status or epicentr_cancel_order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/oms/orders/{order_id}/allowed-statuses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_change_order_status",
+      "description": "Move an order to the next status of the normal flow: confirmed_by_merchant (you accept the order), confirmed, sent (handed to the carrier), delivered (ready for pickup at the office), completed or closed. Only statuses listed by epicentr_list_allowed_statuses are accepted. Cancellations and returns go through epicentr_cancel_order. Answers 202 with no body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed_by_merchant",
+              "confirmed",
+              "sent",
+              "delivered",
+              "completed",
+              "closed"
+            ],
+            "description": "Target status: confirmed_by_merchant, confirmed, sent, delivered (ready for pickup), completed or closed."
+          }
+        },
+        "required": [
+          "order_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/oms/orders/{order_id}/change-status/to/{status}"
+      }
+    },
+    {
+      "name": "epicentr_cancel_order",
+      "description": "Cancel an order or close it as refused or returned, with a reason: canceled_by_merchant (default, you cancel), canceled, completed_merchant_rejection, closed_merchant_rejection or returned. Take reason_code and translation_key from epicentr_list_cancel_reasons. It cannot be undone, Epicentr may withhold commission for orders cancelled by the seller, and a held card payment is released. Installed switched off. Answers 202.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "canceled_by_merchant",
+              "canceled",
+              "completed_merchant_rejection",
+              "closed_merchant_rejection",
+              "returned"
+            ],
+            "default": "canceled_by_merchant",
+            "description": "Target status, default canceled_by_merchant. Check epicentr_list_allowed_statuses first."
+          },
+          "reason_code": {
+            "type": "string",
+            "description": "code of the reason from epicentr_list_cancel_reasons."
+          },
+          "translation_key": {
+            "type": "string",
+            "enum": [
+              "order.merchant_cancel_reason.merchant_product_is_not_available",
+              "order.merchant_cancel_reason.merchant_price_obsoleted",
+              "order.merchant_cancel_reason.merchant_product_is_defective",
+              "order.cancel_reason.order_not_actual",
+              "order.cancel_reason.product_not_available",
+              "order.cancel_reason.price_differs",
+              "order.cancel_reason.delivery_not_available",
+              "order.cancel_reason.customer_refused_at_office",
+              "order.cancel_reason.product_not_available_from_seller",
+              "order.customer_cancel_reason.customer_failed_to_contact",
+              "order.customer_cancel_reason.customer_failed_to_contact_merchant",
+              "order.customer_cancel_reason.customer_price_obsoleted",
+              "order.customer_cancel_reason.customer_found_cheaper",
+              "order.customer_cancel_reason.customer_shop_pickup_preferred_delivery_price_too_high",
+              "order.customer_cancel_reason.customer_delivery_speed_too_slow",
+              "order.customer_cancel_reason.customer_delivery_type_is_not_suitable",
+              "order.customer_cancel_reason.customer_product_characteristics_are_not_suitable",
+              "order.customer_cancel_reason.customer_several_packages_delivery_payment_is_not_suitable",
+              "order.customer_cancel_reason.customer_credit_card_payment_is_preferred",
+              "order.customer_cancel_reason.customer_get_loan_is_preferred_payment_type",
+              "order.customer_cancel_reason.customer_account_payment_with_vat_is_preferred",
+              "order.customer_cancel_reason.customer_account_payment_without_vat_is_preferred",
+              "order.customer_cancel_reason.customer_order_duplicate",
+              "order.customer_cancel_reason.customer_epic_warranty_is_preferred",
+              "order.customer_cancel_reason.customer_changed_mind",
+              "order.customer_cancel_reason.customer_canceled_at_delivery_office",
+              "order.customer_cancel_reason.customer_no_payment",
+              "order.customer_cancel_reason.customer_prepayment_required",
+              "order.customer_cancel_reason.customer_long_cc_confirmation",
+              "order.customer_cancel_reason.customer_long_merchant_confirmation",
+              "order.customer_cancel_reason.customer_dissatisfied_with_the_shipping_cost",
+              "order.customer_cancel_reason.customer_test",
+              "order.customer_cancel_reason.customer_bought_elsewhere_as_a_gift",
+              "order.customer_cancel_reason.customer_not_timely_confirmation_of_the_availability_of_goods",
+              "order.customer_cancel_reason.customer_requires_advance_payment_which_is_not_indicated_on_the_website",
+              "order.customer_cancel_reason.customer_wanted_to_check_product",
+              "order.customer_cancel_reason.customer_shop_pickup_preferred_delivery_speed_too_slow",
+              "order.customer_cancel_reason.customer_other_reason",
+              "order.customer_cancel_reason.customer_not_completed_within_the_specified_time",
+              "order.customer_cancel_reason.customer_too_late_contact"
+            ],
+            "description": "translationKey of the same reason, e.g. order.merchant_cancel_reason.merchant_product_is_not_available."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional comment on the cancellation."
+          }
+        },
+        "required": [
+          "order_id",
+          "reason_code",
+          "translation_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/oms/orders/{order_id}/change-status/to/{status}",
+        "bodyMapping": {
+          "reason_code": "$reason_code",
+          "translationKey": "$translation_key",
+          "comment": "$comment"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "epicentr_list_cancel_reasons",
+      "description": "List the order cancellation reasons Epicentr accepts: code, title and translationKey. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/oms/order-cancel-reasons/customer"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_order_comments",
+      "description": "Read the comments on an order: content, author (firstName, lastName, userId) and createdAt, with total. Read-only, offset paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip, for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page (default 25)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/oms/orders/{order_id}/comments",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_add_order_comment",
+      "description": "Add a comment to an order in the seller cabinet (visible to Epicentr staff working on the order). Returns the stored comment with author and createdAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Comment text."
+          }
+        },
+        "required": [
+          "order_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/orders/{order_id}/comments",
+        "bodyMapping": {
+          "content": "$content"
+        }
+      }
+    },
+    {
+      "name": "epicentr_set_shipment_number",
+      "description": "Set or change the shipment number (TTN, waybill number of the carrier) of an order. Epicentr tracks the parcel by it and completes the order when the buyer picks it up. Answers 202.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "number": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Waybill number, e.g. 20451234567891 for Nova Poshta."
+          }
+        },
+        "required": [
+          "order_id",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v1/oms/orders/{order_id}/shipment-number",
+        "bodyMapping": {
+          "number": "$number"
+        }
+      }
+    },
+    {
+      "name": "epicentr_delete_shipment_number",
+      "description": "Remove the shipment number from an order (for a waybill entered by mistake). Tracking stops until a new number is set. Installed switched off. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/oms/orders/{order_id}/shipment-number"
+      },
+      "enabled": false
+    },
+    {
+      "name": "epicentr_update_client_data",
+      "description": "Replace the buyer and recipient contact data of an order: first and last name, patronymic, email, phone, and the recipient (name and phone). All required fields must be sent, not only the changed ones. Returns the stored contact and shipment data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "Buyer first name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Buyer last name."
+          },
+          "patronymic": {
+            "type": "string",
+            "description": "Buyer patronymic (по батькові)."
+          },
+          "email": {
+            "type": "string",
+            "description": "Buyer email."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Buyer phone, e.g. +380501234567."
+          },
+          "recipient": {
+            "type": "object",
+            "properties": {
+              "firstName": {
+                "type": "string",
+                "description": "Recipient first name."
+              },
+              "lastName": {
+                "type": "string",
+                "description": "Recipient last name."
+              },
+              "patronymic": {
+                "type": "string",
+                "description": "Recipient patronymic."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Recipient phone."
+              }
+            },
+            "required": [
+              "firstName",
+              "lastName",
+              "phone"
+            ],
+            "description": "Who receives the parcel: {\"firstName\": \"...\", \"lastName\": \"...\", \"phone\": \"+380...\"}; the buyer's own data when they collect it themselves."
+          }
+        },
+        "required": [
+          "order_id",
+          "first_name",
+          "last_name",
+          "email",
+          "phone",
+          "recipient"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/oms/orders/{order_id}/client-data",
+        "bodyMapping": {
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "patronymic": "$patronymic",
+          "email": "$email",
+          "phone": "$phone",
+          "recipient": "$recipient"
+        }
+      }
+    },
+    {
+      "name": "epicentr_update_delivery_data",
+      "description": "Change the delivery of an order: provider, settlement, office (branch, locker or pickup point), payment method and, for courier delivery, house and apartment. Find settlement_id and office_id with epicentr_list_settlements and epicentr_list_offices of the same provider. Answers 202.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "delivery_provider": {
+            "type": "string",
+            "enum": [
+              "nova_poshta",
+              "ukrposhta",
+              "meest",
+              "pickup",
+              "cvz_epicentr",
+              "parcel_box_epicentr",
+              "courier_delivery"
+            ],
+            "description": "Delivery provider: nova_poshta (Nova Poshta), ukrposhta (Ukrposhta), meest (Meest), pickup (pickup from your point), cvz_epicentr (Meest-Epicentr pickup), parcel_box_epicentr (Meest-Epicentr parcel lockers), courier_delivery (courier)."
+          },
+          "settlement_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Settlement id from epicentr_list_settlements."
+          },
+          "office_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Office id from epicentr_list_offices."
+          },
+          "payment_provider": {
+            "type": "string",
+            "enum": [
+              "pay_on_pickup",
+              "pay_on_delivery",
+              "easypay",
+              "monobank",
+              "invoice",
+              "prepayment",
+              "credit_pravexbank"
+            ],
+            "description": "Payment method: pay_on_pickup, pay_on_delivery (cash on delivery), easypay, monobank, invoice, prepayment or credit_pravexbank."
+          },
+          "house": {
+            "type": "string",
+            "description": "House number, e.g. 12, 12A or 12/1 (courier delivery)."
+          },
+          "apartment": {
+            "type": "string",
+            "description": "Apartment number (courier delivery)."
+          }
+        },
+        "required": [
+          "order_id",
+          "delivery_provider",
+          "settlement_id",
+          "office_id",
+          "payment_provider"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v4/oms/orders/{order_id}/delivery-data/{delivery_provider}",
+        "bodyMapping": {
+          "settlementId": "$settlement_id",
+          "officeId": "$office_id",
+          "paymentProvider": "$payment_provider",
+          "house": "$house",
+          "apartment": "$apartment"
+        }
+      }
+    },
+    {
+      "name": "epicentr_add_order_item",
+      "description": "Add one of your products to an order, e.g. when the buyer asks for a further item by phone. Returns the new line: offerId, productId, sku, title, price, quantity and subtotal. The order total changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Epicentr product id of the item to add."
+          },
+          "site_url": {
+            "type": "string",
+            "description": "Product page URL on epicentrk.ua."
+          }
+        },
+        "required": [
+          "order_id",
+          "product_id",
+          "site_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/oms/orders/{order_id}/items",
+        "bodyMapping": {
+          "productId": "$product_id",
+          "siteUrl": "$site_url"
+        }
+      }
+    },
+    {
+      "name": "epicentr_update_order_item",
+      "description": "Change the quantity of one line of an order (offerId from the order items). Returns the updated line with price, quantity and subtotal. The order total changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "offer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "offerId of the order line (items[].offerId of epicentr_get_order)."
+          },
+          "quantity": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "New quantity."
+          }
+        },
+        "required": [
+          "order_id",
+          "offer_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/oms/orders/{order_id}/items/{offer_id}",
+        "bodyMapping": {
+          "quantity": "$quantity"
+        }
+      }
+    },
+    {
+      "name": "epicentr_delete_order_item",
+      "description": "Remove one line from an order. The buyer receives less than ordered and the line cannot be restored except by adding it again, so this is installed switched off. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "offer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "offerId of the order line."
+          }
+        },
+        "required": [
+          "order_id",
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/oms/orders/{order_id}/items/{offer_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "epicentr_create_shipment",
+      "description": "Create the carrier shipment (waybill) for an order through Epicentr: sender, parcels with dimensions and weight, who pays the delivery and whether the buyer pays on pickup (cash on delivery amount). It registers a paid shipment with the carrier, charged to you when delivery_payer is merchant, so it is installed switched off. Answers 201.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          },
+          "delivery_provider": {
+            "type": "string",
+            "enum": [
+              "nova_poshta",
+              "ukrposhta",
+              "meest",
+              "pickup",
+              "cvz_epicentr",
+              "parcel_box_epicentr",
+              "courier_delivery"
+            ],
+            "description": "Delivery provider: nova_poshta (Nova Poshta), ukrposhta (Ukrposhta), meest (Meest), pickup (pickup from your point), cvz_epicentr (Meest-Epicentr pickup), parcel_box_epicentr (Meest-Epicentr parcel lockers), courier_delivery (courier)."
+          },
+          "sender": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Sender first name."
+              },
+              "lastName": {
+                "type": "string",
+                "description": "Sender last name."
+              },
+              "middleName": {
+                "type": "string",
+                "description": "Sender patronymic."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Sender phone."
+              },
+              "settlementId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Sender settlement id (epicentr_list_settlements)."
+              },
+              "officeId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Sender office id (epicentr_list_offices)."
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "nova_poshta",
+                  "ukrposhta",
+                  "meest",
+                  "pickup",
+                  "cvz_epicentr",
+                  "parcel_box_epicentr"
+                ],
+                "description": "Carrier of the sender office."
+              }
+            },
+            "required": [
+              "name",
+              "lastName",
+              "settlementId",
+              "officeId",
+              "phone",
+              "provider"
+            ],
+            "description": "Sender: name, lastName, phone, settlementId, officeId and provider."
+          },
+          "parcels": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "width": {
+                  "type": "number",
+                  "description": "Width."
+                },
+                "height": {
+                  "type": "number",
+                  "description": "Height."
+                },
+                "length": {
+                  "type": "number",
+                  "description": "Length."
+                },
+                "weight": {
+                  "type": "number",
+                  "description": "Weight."
+                },
+                "insuredValue": {
+                  "type": "number",
+                  "description": "Declared value in UAH."
+                }
+              },
+              "required": [
+                "width",
+                "height",
+                "length",
+                "weight"
+              ]
+            },
+            "description": "Parcels: [{\"width\": 30, \"height\": 20, \"length\": 40, \"weight\": 2}]. Units as the carrier expects them."
+          },
+          "delivery_payer": {
+            "type": "string",
+            "enum": [
+              "merchant",
+              "client"
+            ],
+            "description": "Who pays the delivery: merchant (you) or client (the buyer)."
+          },
+          "is_post_payment": {
+            "type": "boolean",
+            "description": "true: the buyer pays for the goods on pickup (cash on delivery)."
+          },
+          "cod_amount": {
+            "type": "number",
+            "description": "Cash-on-delivery amount in UAH, only with is_post_payment true."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the contents."
+          }
+        },
+        "required": [
+          "order_id",
+          "delivery_provider",
+          "sender",
+          "parcels",
+          "delivery_payer",
+          "is_post_payment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/oms/orders/{order_id}/shipping/{delivery_provider}",
+        "bodyMapping": {
+          "sender": "$sender",
+          "items": "$parcels",
+          "deliveryPayer": "$delivery_payer",
+          "isPostPayment": "$is_post_payment",
+          "codAmount": "$cod_amount",
+          "description": "$description"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "epicentr_update_offers",
+      "description": "Update the price, old price and availability of up to 1000 of your offers in one batch, by productId or your sku. Per item: availability in_stock, under_the_order (made to order) or not_available, and/or prices.price (UAH, two decimals) with optional prices.oldPrice (must be higher). Returns requestId and per item id, idType, sku, status (enqueued, skipped with errors, forbidden for an unknown identifier) and errors. Processing is asynchronous: check with epicentr_get_offer_update_result. An identical request within 30 minutes returns the first answer. Stock quantities and new products are not set here (products come from your XML feed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Epicentr product id (or give sku)."
+                },
+                "sku": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Your merchant SKU (or give productId)."
+                },
+                "availability": {
+                  "type": "string",
+                  "enum": [
+                    "in_stock",
+                    "under_the_order",
+                    "not_available"
+                  ],
+                  "description": "in_stock, under_the_order (to order) or not_available."
+                },
+                "prices": {
+                  "type": "object",
+                  "properties": {
+                    "price": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Current price in UAH, at most two decimals."
+                    },
+                    "oldPrice": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Previous (crossed-out) price in UAH; must be higher than price and needs price."
+                    }
+                  },
+                  "description": "{\"price\": 1299.99, \"oldPrice\": 1499.99}. Never send an empty object."
+                }
+              }
+            },
+            "description": "Offers: [{\"sku\": \"sku-1\", \"availability\": \"in_stock\", \"prices\": {\"price\": 1299.99}}]. Each item needs productId or sku, and availability or prices.price. If several items hit the same product, only the last counts."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/offers",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "epicentr_get_offer_update_result",
+      "description": "Read the result of a batch offer update: total and per item id, idType, sku, status (enqueued, processed, skipped, forbidden) and errors. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "requestId returned by epicentr_update_offers."
+          }
+        },
+        "required": [
+          "request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/offers/update-results/{request_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_delivery_providers",
+      "description": "List the delivery providers of your company and whether each is enabled (provider: nova_poshta, ukrposhta, pickup, meest). Read-only; a quick check that the API key works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deliveries/shipment-providers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_settlements",
+      "description": "Search the settlements (cities, towns, villages) a delivery provider serves: id, type (city, urban_village, village, settlement), title, district, region, isActive. Use the id as settlement_id. Read-only, offset paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_provider": {
+            "type": "string",
+            "enum": [
+              "nova_poshta",
+              "ukrposhta",
+              "meest",
+              "pickup",
+              "cvz_epicentr",
+              "parcel_box_epicentr",
+              "courier_delivery"
+            ],
+            "description": "Delivery provider: nova_poshta (Nova Poshta), ukrposhta (Ukrposhta), meest (Meest), pickup (pickup from your point), cvz_epicentr (Meest-Epicentr pickup), parcel_box_epicentr (Meest-Epicentr parcel lockers), courier_delivery (courier)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Part of the settlement name, in the language chosen, e.g. Київ."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "uk",
+              "ru"
+            ],
+            "default": "uk",
+            "description": "Language of names: uk (default) or ru."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip, for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page (default 25)."
+          }
+        },
+        "required": [
+          "delivery_provider"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/deliveries/providers/{delivery_provider}/settlements",
+        "queryParams": {
+          "filter[title]": "$title",
+          "offset": "$offset",
+          "limit": "$limit"
+        },
+        "headers": {
+          "accept-language": "$language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_offices",
+      "description": "List the offices of a delivery provider in one settlement: id, number, title, type (0 branch, 1 or 4 parcel locker, 5 mobile branch, 98 order pickup centre, 99 Epicentr parcel locker), isActive and size and weight limits. Use the id as office_id. Read-only, offset paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_provider": {
+            "type": "string",
+            "enum": [
+              "nova_poshta",
+              "ukrposhta",
+              "meest",
+              "pickup",
+              "cvz_epicentr",
+              "parcel_box_epicentr",
+              "courier_delivery"
+            ],
+            "description": "Delivery provider: nova_poshta (Nova Poshta), ukrposhta (Ukrposhta), meest (Meest), pickup (pickup from your point), cvz_epicentr (Meest-Epicentr pickup), parcel_box_epicentr (Meest-Epicentr parcel lockers), courier_delivery (courier)."
+          },
+          "settlement_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Settlement id from epicentr_list_settlements."
+          },
+          "title": {
+            "type": "string",
+            "description": "Part of the office name or number."
+          },
+          "is_active": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1,
+            "description": "1 (default) active offices, 0 inactive ones."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "uk",
+              "ru"
+            ],
+            "default": "uk",
+            "description": "Language of names: uk (default) or ru."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip, for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page (default 25)."
+          }
+        },
+        "required": [
+          "delivery_provider",
+          "settlement_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/deliveries/providers/{delivery_provider}/settlements/{settlement_id}/offices",
+        "queryParams": {
+          "filter[title]": "$title",
+          "filter[isActive]": "$is_active",
+          "offset": "$offset",
+          "limit": "$limit"
+        },
+        "headers": {
+          "accept-language": "$language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_pickup_points",
+      "description": "List your company's enabled pickup points (самовивіз): id, title, address, settlement, phone, map_url and opening schedule per weekday. Read-only, offset paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip, for paging."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page (default 25)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/deliveries/pickup-points/enabled",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_get_delivery_invoice",
+      "description": "Download the delivery document (waybill) of an existing shipment by provider and shipment number, as base64 in file. Ukrposhta, Meest and Meest-Epicentr only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "ukrposhta",
+              "meest",
+              "cvz_epicentr",
+              "parcel_box_epicentr"
+            ],
+            "description": "ukrposhta, meest, cvz_epicentr (Meest-Epicentr pickup) or parcel_box_epicentr (Meest-Epicentr lockers)."
+          },
+          "number": {
+            "type": "string",
+            "description": "Shipment (waybill) number."
+          }
+        },
+        "required": [
+          "provider",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/deliveries/{provider}/invoices/{number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_categories",
+      "description": "List Epicentr marketplace categories: code, parentCode, hasChild, translations (title per language), attributeSets (codes of the attribute sets used in the category) and deleted. Use it to place products in your XML feed. Read-only, paged by page (answer has page and pages).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, from 1."
+          },
+          "has_child": {
+            "type": "boolean",
+            "description": "true only categories with subcategories, false only leaf categories."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/pim/categories",
+        "queryParams": {
+          "page": "$page",
+          "filter[hasChild]": "$has_child"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_attribute_sets",
+      "description": "List attribute sets with their attributes: per set code and translations, per attribute code, type, isRequired, isModel, isFilter, isSystem and translations (title, prefix, suffix). Read-only, paged by page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these attribute set codes (from epicentr_list_categories)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/pim/attribute-sets",
+        "queryParams": {
+          "filter[codes][]": "$codes",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_list_attribute_options",
+      "description": "List the allowed values of a select attribute in an attribute set: code and translations. Read-only, paged by page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_set_code": {
+            "type": "string",
+            "description": "Attribute set code."
+          },
+          "attribute_code": {
+            "type": "string",
+            "description": "Attribute code from epicentr_list_attribute_sets."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, from 1."
+          }
+        },
+        "required": [
+          "attribute_set_code",
+          "attribute_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/pim/attribute-sets/{attribute_set_code}/attributes/{attribute_code}/options",
+        "queryParams": {
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "epicentr_get_order_invoice",
+      "description": "Read the commission statement of an order: orderNumber, orderTotal, orderCommissionTotal, accountType and per item productId, title, price, quantity, subtotal, commissionRate, commissionSubtotal and category. Read-only; needs the processing.my.invoice.read permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (the UUID id from epicentr_list_orders, not the order number)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/billing/orders/{order_id}/invoice"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

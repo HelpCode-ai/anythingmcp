@@ -1,0 +1,1762 @@
+{
+  "slug": "kasta",
+  "name": "Kasta",
+  "description": "Kasta Hub API for suppliers on the Ukrainian marketplace kasta.ua: category tree and product upload, prices, stock and visibility, customer orders with statuses and TTN, Nova Poshta and Ukrposhta labels, return forms, supplier orders and contracts. API token from Kasta Hub.",
+  "instructions": "## Kasta\nThis connector works with the **Kasta Hub API** at `https://hub.kasta.ua`, the supplier API of Kasta (kasta.ua), a Ukrainian marketplace for fashion, footwear, kids and home goods: the category tree and characteristics, product upload with photos, prices, stock and visibility, customer orders and their statuses, Nova Poshta and Ukrposhta labels, return forms, supplier orders (замовлення постачальнику) and contracts.\n\n**Setup (about 3 minutes)**\n1. Sign in to Kasta Hub, the supplier cabinet (кабінет постачальника), at https://hub.kasta.ua with a user that manages products and orders.\n2. Open the API section of the Hub settings (Налаштування, tab API: https://hub.kasta.ua/settings/common?tab=api) and copy the API token. If no token is offered there, ask your Kasta manager to enable API access for your account.\n3. Paste the token into `KASTA_TOKEN`. The connector sends it as `Authorization: <token>`, without the word Bearer.\n\nThe token works only for the methods of Kasta's public API documentation (https://hub.kasta.ua/api-docs/index.html); any other Hub method answers 403 with the code `not-allow-this-handler`.\n\n**Where to start**: `kasta_list_products` shows your SKUs with status, prices and stock. `kasta_list_orders` reads customer orders. `kasta_list_categories` opens the category tree for new products.\n\n**Adding products** (Імпорт новинок)\n1. `kasta_list_categories`: pick the kind_id and affiliation_id of the category.\n2. `kasta_get_category_details`: the characteristics of that category with key_name, allowed value ids and which are required (including kasta_size, the Kasta size grid).\n3. `kasta_upload_image` for every photo (a public URL); it returns the Hub path to use in images.\n4. `kasta_submit_products` with the SKUs. After photo post-processing new SKUs go to the Kasta buyer (байєр) for approval: status Draft or ContentPending, then OnSale, or Rejected with a reason to fix.\nA SKU is identified by code + brand + color + size, and these cannot be changed later. The brand must already exist at Kasta (new brands through moderator@kasta.ua or your manager). Name, description and composition are shared by all sizes and colours of one code + brand. Setting your own `unique_sku_id` makes later price and stock updates simpler; `kasta_update_unique_ids` adds it to existing SKUs.\n\n**Work model and prices**: which price fields are required depends on your work model at Kasta, Marketplace or supply (поставка). On Marketplace you send the selling price `new_price`; on supply you send the cost price `supplier_price` and the crossed-out `old_price`; with the \"three prices\" setting all of them. Kasta's own API documentation changes with the model, so when Kasta answers 400 naming a price field, add that field. The selling price must already include Kasta's royalty. Prices are in UAH.\n\n**Prices, stock and visibility**: `kasta_update_prices_by_id` / `kasta_update_prices_by_barcode`, `kasta_update_stock_by_id` / `kasta_update_stock_by_barcode`, `kasta_set_product_visibility_by_id` / `kasta_set_product_visibility_by_barcode` (hide or show on the site, the product stays in the Hub), `kasta_update_nomenclature` (the product wording of your tax invoices). Send batches of up to 1000 SKUs and only values that changed. Until you confirm an order (ConfirmedBySupplier), its quantity is subtracted from the stock you send. Answers list `updated` and `not-found` SKUs.\n\n**Customer orders**\n- `kasta_list_orders` is a stream of changes: up to 100 orders per call with `cursor` and `remains`. Keep the cursor and pass it back; while remains is above 0 read again at once, otherwise wait for the next poll (every 2 minutes is enough). An empty list with the same cursor means nothing new. Read all changes and react to statuses yourself; filtering by status is for one-off reads. Orders created before 2023-01-01 are not available. Limits: 30 calls per minute, 120 per 15 minutes, 3 identical calls per minute (429 above that).\n- An order can hold several statuses at once (e.g. Created and CancellationRequested). The normal flow is Created, then `kasta_send_order_status` with ConfirmedBySupplier, `kasta_pack_order` (Packed, with line_id quantities and amount), `kasta_send_tracking_number` (AnnouncedForDelivery with the TTN), SentToDelivery, AtLocation, Delivered. AnnouncedForDelivery, SentToDelivery, AtLocation, Delivered and ReturnArrived need Packed first; a correction is only possible before Packed.\n- Customer requests: CancellationRequested is answered with Cancelled or CancellationDenied, CorrectionRequested with Corrected or CorrectionDenied.\n- With carrier auto-tracking (автоматичне відстеження) switched on, send the TTN with AnnouncedForDelivery only; the Hub then sets SentToDelivery and later statuses from the carrier, and refuses them from you (`auto-tracking-enable`).\n- Every status call needs a new random `uuid`; a reused one is refused (`repeat-uuid`). Status limits: 300 calls per minute, 10 per order per 10 minutes, 5 of one type per order per minute.\n- Black orders (`kasta_pays_for_shipping` true): Kasta pays the delivery when you pass your own TTN before the parcel is sent, or with `kasta_create_ukrposhta_label` for Ukrposhta.\n\n**Labels and returns**: `kasta_download_novaposhta_label` and `kasta_download_ukrposhta_label` return PDF labels of existing waybills; `kasta_create_ukrposhta_label` issues a Ukrposhta waybill under Kasta's contract for Black orders (paid by Kasta, one per order, repeat calls return the same number). `kasta_download_return_forms` returns a ZIP of return forms. Customer returns appear in `client_returns` of the order (ReturnCreated, ReturnSent, ReturnDelivered).\n\n**Supplier orders** (supply model): `kasta_list_supplier_orders`, `kasta_get_supplier_order`, `kasta_get_future_supplier_order`, `kasta_approve_supplier_order` (confirm the quantities you will deliver), `kasta_add_supplier_order_delivery` (carrier, date and waybills) and `kasta_get_supplier_order_cover_letter`. `kasta_list_contracts` lists your organisations and contract ids.\n\n**Switched off at install**: `kasta_cancel_order` (cannot be undone; a prepaid amount is refunded automatically), `kasta_correct_order` (the customer receives less), `kasta_accept_return` (ReturnArrived makes the Hub refund the customer) and `kasta_create_supplier_order`. Switch them on only for a workspace that should do this.\n\n**Not included**: installment (BNPL) overrides, fiscal receipts (РРО) and account transaction exports. No tool pays out, refunds or charges money directly.\n\n**Errors and formats**: errors come as HTTP 400 with `code` and `message`, e.g. `impossible-status` (status order broken), `item-invalid-quantity`, `ttn-invalid`, `carrier-ttn-exists`, `not-existing-order`, `invalid-reason`. Order ids are Kasta ids such as `S5LFR5Z`, not your own numbers. Times in filters are UTC. Product texts are in Ukrainian and Russian.",
+  "aliases": [
+    "Kasta Hub",
+    "Kasta.ua",
+    "Каста",
+    "Modna Kasta"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "kasta",
+  "docsUrl": "https://hub.kasta.ua/api-docs/index.html",
+  "requiredEnvVars": [
+    "KASTA_TOKEN"
+  ],
+  "envVarMeta": {
+    "KASTA_TOKEN": {
+      "label": "Kasta Hub API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Kasta Hub (кабінет постачальника) open Налаштування, tab API, and copy the API token. Paste the token alone, without Bearer.",
+      "link": "https://hub.kasta.ua/settings/common?tab=api",
+      "pattern": "^\\S{16,512}$",
+      "patternMessage": "Paste the token only, without the word Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "No token reached Kasta Hub (unauthenticated). Paste the API token from Kasta Hub, Налаштування, tab API, into KASTA_TOKEN.",
+    "403": "Kasta Hub refused the call. invalid-token-forbidden means the token is wrong or expired: copy it again from Kasta Hub, Налаштування, tab API, without Bearer. not-allow-this-handler means the method is not part of the public supplier API.",
+    "404": "Kasta found no order, product or supplier order with that id.",
+    "rate_limited": "Kasta limits the order list to 30 calls per minute (3 identical calls per minute) and status updates per order. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "kasta_list_products",
+    "params": {}
+  },
+  "prerequisites": "A supplier account on Kasta Hub (hub.kasta.ua) with API access, to copy the API token from the Hub settings. About 3 minutes.",
+  "connector": {
+    "name": "Kasta Hub API",
+    "type": "REST",
+    "baseUrl": "https://hub.kasta.ua",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{KASTA_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "kasta_list_categories",
+      "description": "Read the Kasta category tree: affiliations (affiliation_id, name, e.g. women, men, home) and below each the kinds (kind_id, name, name_alias in the other language). A product is filed under one kind_id + affiliation_id pair. Read-only, no paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/supplier-content/category/all"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_get_category_details",
+      "description": "List the characteristics a product of one category needs: per characteristic key_name (use it in kasta_submit_products), human_name, type, requirements (required?, multi?, translate?, input-length), allowed value_ids (id + value) and an example of the data shape (ids, i18n uk/ru pairs, free value or kasta_size sizes). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kind_id": {
+            "type": "integer",
+            "description": "kind_id from kasta_list_categories."
+          },
+          "affiliation_id": {
+            "type": "integer",
+            "description": "affiliation_id of the same branch from kasta_list_categories."
+          }
+        },
+        "required": [
+          "kind_id",
+          "affiliation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/supplier-content/category/details",
+        "queryParams": {
+          "kind_id": "$kind_id",
+          "affiliation_id": "$affiliation_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_upload_image",
+      "description": "Upload one product photo to Kasta Hub from a public URL. Returns path, the Hub link to put in images of kasta_submit_products. Kasta converts photos to JPEG; recommended 1035x1440 px or larger, at least 300x300, at most 10 MB.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the photo (JPEG, PNG and other common formats)."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/supplier-content/submit/image",
+        "bodyMapping": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "kasta_submit_products",
+      "description": "Upload new products or update the content of existing ones for one category (kind_id + affiliation_id). Each SKU is identified by code + brand + color + size, which cannot be changed later. New SKUs go to the Kasta buyer for approval after photo post-processing. With update true, existing SKUs are overwritten: name, description, composition, model and characteristics describe the full state (a field left out is removed), while unique_sku_id, barcode, nomenclature, uktzed, vat and similar keep their value when left out. Prices and stock of existing SKUs change only through the price and stock tools. Returns upload_id and update_stats (new-sku, update-sku, skip-not-new, update-forbidden with reason).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kind_id": {
+            "type": "integer",
+            "description": "kind_id from kasta_list_categories."
+          },
+          "affiliation_id": {
+            "type": "integer",
+            "description": "affiliation_id from kasta_list_categories."
+          },
+          "update": {
+            "type": "boolean",
+            "default": false,
+            "description": "true updates SKUs that already exist in the Hub; false (default) only adds new ones and leaves existing SKUs alone."
+          },
+          "products": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "description": "Supplier article (артикул), preferably the manufacturer's."
+                },
+                "brand": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "description": "Original brand name, no abbreviations or transliteration. It must already exist at Kasta."
+                },
+                "color": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Your colour name (for your own records; the colour buyers see is the Kasta colour characteristic)."
+                },
+                "size": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Size from the label, or - for items without a size."
+                },
+                "name_uk": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "description": "Product name in Ukrainian, starting with a capital letter."
+                },
+                "name_ru": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "description": "Product name in Russian."
+                },
+                "description_uk": {
+                  "type": "string",
+                  "maxLength": 5000,
+                  "description": "Description in Ukrainian."
+                },
+                "description_ru": {
+                  "type": "string",
+                  "maxLength": 5000,
+                  "description": "Description in Russian."
+                },
+                "composition_uk": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "description": "Composition in Ukrainian, e.g. 80% вовна, 20% поліестер."
+                },
+                "composition_ru": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "description": "Composition in Russian."
+                },
+                "model": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Known model name, without brand or product name."
+                },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Photo links returned by kasta_upload_image (path)."
+                },
+                "characteristics": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key_name": {
+                        "type": "string",
+                        "description": "key_name from kasta_get_category_details, e.g. 1, 16 or kasta_size."
+                      },
+                      "data": {
+                        "type": "object",
+                        "description": "Value in the shape the category details show: {\"ids\": [750]}, {\"i18n\": [{\"uk\": \"...\", \"ru\": \"...\"}]}, {\"value\": [\"...\"]} or {\"sizes\": {\"kasta_size\": 114909122}}."
+                      }
+                    },
+                    "required": [
+                      "key_name",
+                      "data"
+                    ]
+                  },
+                  "description": "All required characteristics of the category, including kasta_size."
+                },
+                "stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Stock reserved for sale on Kasta."
+                },
+                "supplier_price": {
+                  "type": "number",
+                  "description": "Cost price in UAH (supply model and three-prices setting)."
+                },
+                "old_price": {
+                  "type": "number",
+                  "description": "Recommended retail price in UAH, shown crossed out."
+                },
+                "new_price": {
+                  "type": "number",
+                  "description": "Selling price in UAH (Marketplace model)."
+                },
+                "promo_supplier_price": {
+                  "type": "number",
+                  "description": "Promotional cost price in UAH."
+                },
+                "promo_new_price": {
+                  "type": "number",
+                  "description": "Promotional selling price in UAH."
+                },
+                "unique_sku_id": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "description": "Your unique SKU id, used later for price and stock updates by id."
+                },
+                "barcode": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Barcodes of the SKU."
+                },
+                "nomenclature": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "description": "Seller nomenclature as on the tax invoice (required for VAT payers on the v3 model)."
+                },
+                "uktzed": {
+                  "type": "string",
+                  "description": "UKTZED (УКТЗЕД) customs code, 10 or the first 4 digits (required on the v3 model)."
+                },
+                "vat": {
+                  "type": "number",
+                  "description": "VAT rate (ПДВ)."
+                },
+                "docflow_code": {
+                  "type": "string",
+                  "description": "Optional document-flow article of the LLC."
+                },
+                "acceptance_date": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "Acceptance date, YYYY-MM-DD."
+                },
+                "remove_from_sale": {
+                  "type": "number",
+                  "description": "Days until the SKU is taken off sale."
+                }
+              },
+              "required": [
+                "code",
+                "brand",
+                "color",
+                "size",
+                "name_uk",
+                "images",
+                "characteristics",
+                "stock"
+              ]
+            },
+            "description": "SKUs to upload. One entry per size and colour; name, description and composition are shared by all sizes of the same code + brand."
+          }
+        },
+        "required": [
+          "kind_id",
+          "affiliation_id",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/supplier-content/submit/products",
+        "bodyMapping": {
+          "kind_id": "$kind_id",
+          "affiliation_id": "$affiliation_id",
+          "update": "$update",
+          "data": "$products"
+        }
+      }
+    },
+    {
+      "name": "kasta_list_products",
+      "description": "List your products, a page at a time: per SKU hub_sku, unique_sku_id, code, brand, color, size, barcode, name_uk, kind, status (OnSale, ZeroStock, Draft, ContentPending, PricePending, BuyerDeclinedPrice, Rejected, InProduction, ContractChangeRequest, ContractChangePending), prices (new_price, old_price, supplier_price), total_stock, supplier_stock, depot_stock, hidden_time, site_url and images. Read-only. Call again with cursor = the cursor of the answer until it is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "description": "cursor from the previous answer; leave out for the first page."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Only the SKU with this barcode."
+          },
+          "include_extended_characteristics": {
+            "type": "boolean",
+            "description": "true adds the characteristic ids you uploaded (extended_characteristics)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/products/list",
+        "queryParams": {
+          "cursor": "$cursor",
+          "barcode": "$barcode",
+          "include_extended_characteristics": "$include_extended_characteristics"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_set_product_visibility_by_id",
+      "description": "Show or hide SKUs on kasta.ua by your unique SKU id. Hiding keeps the product and its stock in the Hub; show it again with available true. Returns updated and not_found lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "unique_sku_id": {
+                  "type": "string",
+                  "description": "Your unique SKU id (unique_sku_id), as set on the product; may be the barcode when that is unique."
+                }
+              },
+              "required": [
+                "unique_sku_id"
+              ]
+            },
+            "description": "SKUs: [{\"unique_sku_id\": \"SKU-1\"}]."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "true shows the SKUs on the site, false hides them."
+          }
+        },
+        "required": [
+          "items",
+          "available"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/products/set-available/id",
+        "bodyMapping": {
+          "items": "$items",
+          "available": "$available"
+        }
+      }
+    },
+    {
+      "name": "kasta_set_product_visibility_by_barcode",
+      "description": "Show or hide SKUs on kasta.ua by barcode. Hiding keeps the product and its stock in the Hub; show it again with available true. Returns updated and not_found lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode (штрих-код) of the SKU, e.g. 1234567890123."
+                }
+              },
+              "required": [
+                "barcode"
+              ]
+            },
+            "description": "SKUs: [{\"barcode\": \"1234567890123\"}]."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "true shows the SKUs on the site, false hides them."
+          }
+        },
+        "required": [
+          "items",
+          "available"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/products/set-available/barcode",
+        "bodyMapping": {
+          "items": "$items",
+          "available": "$available"
+        }
+      }
+    },
+    {
+      "name": "kasta_update_prices_by_id",
+      "description": "Update prices of SKUs by your unique SKU id. Which price fields are required depends on your Kasta work model: Marketplace sends new_price, supply (поставка) sends supplier_price and old_price, the three-prices setting all of them. A 400 naming a field means your model needs it. Batches of up to 1000 SKUs are recommended; send only prices that changed. Price changes can wait for manager approval (status PricePending). Returns updated and not-found lists (SKUs Kasta did not find), plus upload_id and task_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "unique_sku_id": {
+                  "type": "string",
+                  "description": "Your unique SKU id (unique_sku_id), as set on the product; may be the barcode when that is unique."
+                },
+                "supplier_price": {
+                  "type": "number",
+                  "description": "Cost price (собівартість) in UAH. Required on the supply model and with the three-prices setting."
+                },
+                "old_price": {
+                  "type": "number",
+                  "description": "Recommended retail price in UAH, shown crossed out. Must not be lower than the selling price."
+                },
+                "new_price": {
+                  "type": "number",
+                  "description": "Selling price in UAH shown to buyers, royalty included. Required on the Marketplace model."
+                },
+                "promo_supplier_price": {
+                  "type": "number",
+                  "description": "Promotional cost price in UAH, only for a promotion agreed with your Kasta manager."
+                },
+                "promo_new_price": {
+                  "type": "number",
+                  "description": "Promotional selling price in UAH, only for a promotion agreed with your Kasta manager."
+                }
+              },
+              "required": [
+                "unique_sku_id"
+              ]
+            },
+            "description": "Prices: [{\"unique_sku_id\": \"SKU-1\", \"supplier_price\": 200, \"old_price\": 1000}]. Amounts in UAH."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/products/update-price/id",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "kasta_update_prices_by_barcode",
+      "description": "Update prices of SKUs by barcode. Which price fields are required depends on your Kasta work model: Marketplace sends new_price, supply (поставка) sends supplier_price and old_price, the three-prices setting all of them. A 400 naming a field means your model needs it. Batches of up to 1000 SKUs are recommended; send only prices that changed. Price changes can wait for manager approval (status PricePending). Returns updated and not-found lists (SKUs Kasta did not find), plus upload_id and task_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode (штрих-код) of the SKU, e.g. 1234567890123."
+                },
+                "supplier_price": {
+                  "type": "number",
+                  "description": "Cost price (собівартість) in UAH. Required on the supply model and with the three-prices setting."
+                },
+                "old_price": {
+                  "type": "number",
+                  "description": "Recommended retail price in UAH, shown crossed out. Must not be lower than the selling price."
+                },
+                "new_price": {
+                  "type": "number",
+                  "description": "Selling price in UAH shown to buyers, royalty included. Required on the Marketplace model."
+                },
+                "promo_supplier_price": {
+                  "type": "number",
+                  "description": "Promotional cost price in UAH, only for a promotion agreed with your Kasta manager."
+                },
+                "promo_new_price": {
+                  "type": "number",
+                  "description": "Promotional selling price in UAH, only for a promotion agreed with your Kasta manager."
+                }
+              },
+              "required": [
+                "barcode"
+              ]
+            },
+            "description": "Prices: [{\"barcode\": \"1234567890123\", \"supplier_price\": 200, \"old_price\": 1000}]. Amounts in UAH."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/products/update-price",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "kasta_update_stock_by_id",
+      "description": "Set the stock available for sale of SKUs by your unique SKU id. Until you confirm customer orders (ConfirmedBySupplier), the ordered quantity is subtracted from the stock you send, so confirm orders before pushing stock. Batches of up to 1000 SKUs are recommended; send only changed values. Returns updated and not-found lists (SKUs Kasta did not find), plus upload_id and task_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "unique_sku_id": {
+                  "type": "string",
+                  "description": "Your unique SKU id (unique_sku_id), as set on the product; may be the barcode when that is unique."
+                },
+                "stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units available for sale."
+                }
+              },
+              "required": [
+                "unique_sku_id",
+                "stock"
+              ]
+            },
+            "description": "Stock: [{\"unique_sku_id\": \"SKU-1\", \"stock\": 5}]."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/products/update-stock/id",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "kasta_update_stock_by_barcode",
+      "description": "Set the stock available for sale of SKUs by barcode. Until you confirm customer orders (ConfirmedBySupplier), the ordered quantity is subtracted from the stock you send, so confirm orders before pushing stock. Batches of up to 1000 SKUs are recommended; send only changed values. Returns updated and not-found lists (SKUs Kasta did not find), plus upload_id and task_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode (штрих-код) of the SKU, e.g. 1234567890123."
+                },
+                "stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units available for sale."
+                }
+              },
+              "required": [
+                "barcode",
+                "stock"
+              ]
+            },
+            "description": "Stock: [{\"barcode\": \"1234567890123\", \"stock\": 5}]."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/products/update-stock",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "kasta_update_nomenclature",
+      "description": "Set the seller nomenclature (номенклатура, the product wording of your tax invoices) of SKUs, matched by barcode, unique SKU id or code + brand + color + size. Returns updated and not_found lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "match_by": {
+            "type": "string",
+            "enum": [
+              "barcode",
+              "unique_sku_id",
+              "hub_sku"
+            ],
+            "description": "How the items are matched: barcode, unique_sku_id, or hub_sku (code + brand + color + size)."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode (штрих-код) of the SKU, e.g. 1234567890123."
+                },
+                "unique_sku_id": {
+                  "type": "string",
+                  "description": "Your unique SKU id (unique_sku_id), as set on the product; may be the barcode when that is unique."
+                },
+                "code": {
+                  "type": "string",
+                  "description": "Supplier article (with match_by hub_sku)."
+                },
+                "brand": {
+                  "type": "string",
+                  "description": "Brand (with match_by hub_sku)."
+                },
+                "color": {
+                  "type": "string",
+                  "description": "Colour, - when none (with match_by hub_sku)."
+                },
+                "size": {
+                  "type": "string",
+                  "description": "Size, - when none (with match_by hub_sku)."
+                },
+                "nomenclature": {
+                  "type": "string",
+                  "description": "Nomenclature text as on your tax invoices."
+                }
+              },
+              "required": [
+                "nomenclature"
+              ]
+            },
+            "description": "Items with the identifier fields of match_by and nomenclature, e.g. [{\"barcode\": \"1234567890123\", \"nomenclature\": \"Сукня жіноча\"}]."
+          }
+        },
+        "required": [
+          "match_by",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/products/update-nomenclature",
+        "bodyMapping": {
+          "type": "$match_by",
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "kasta_update_unique_ids",
+      "description": "Set or change your unique SKU id (unique_sku_id) of existing SKUs, matched by barcode or by code + brand + color + size. Use it before working with the by-id price and stock tools. Returns updated and not-found lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "unique_sku_id": {
+                  "type": "string",
+                  "description": "New unique SKU id."
+                },
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode (штрих-код) of the SKU, e.g. 1234567890123."
+                },
+                "code": {
+                  "type": "string",
+                  "description": "Supplier article (instead of barcode)."
+                },
+                "brand": {
+                  "type": "string",
+                  "description": "Brand (instead of barcode)."
+                },
+                "color": {
+                  "type": "string",
+                  "description": "Colour, - when none (instead of barcode)."
+                },
+                "size": {
+                  "type": "string",
+                  "description": "Size, - when none (instead of barcode)."
+                }
+              },
+              "required": [
+                "unique_sku_id"
+              ]
+            },
+            "description": "Either [{\"barcode\": \"1234567890123\", \"unique_sku_id\": \"SKU-1\"}] or [{\"code\": \"KKND/123\", \"brand\": \"Adidas\", \"color\": \"Синий\", \"size\": \"XL\", \"unique_sku_id\": \"SKU-1\"}]."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/products/update",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "kasta_list_orders",
+      "description": "Read customer orders (клієнтські замовлення) as a stream of changes, up to 100 per call: id, statuses (with type, time and data), ordered_items, cancelled_items and returned_items (line_id, barcode, unique_sku_id, supplier_code, size, quantity, new_price, paid_price, supplier_price), client (name, phone), shipping_address, courier_type, delivery_properties (declaration_number = TTN, branch_type, cost), requested_payment_method, card_payment_state, kasta_pays_for_shipping (Black), client_returns, comments. Read-only. Answer: items, cursor and remains. Save cursor and pass it next time; while remains > 0 call again at once, otherwise wait for the next poll. Only orders created since 2023-01-01. Limits: 30 calls per minute, 120 per 15 minutes, 3 identical calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor from the previous answer: returns only orders changed since. Do not decode or compare it."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only orders changed after this time, UTC, e.g. 2026-11-01T00:00:00. Use for a one-off sync of a period."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Created",
+                "ConfirmedBySupplier",
+                "Packed",
+                "AnnouncedForDelivery",
+                "SentToDelivery",
+                "SentToSelfDelivery",
+                "DeliveryAddressChanged",
+                "AtLocation",
+                "ReceivedAtSelfDelivery",
+                "Delivered",
+                "PaymentReceived",
+                "Cancelled",
+                "CancellationRequested",
+                "CancellationDenied",
+                "Corrected",
+                "CorrectionRequested",
+                "CorrectionDenied",
+                "ReturnCreated",
+                "ReturnCancelled",
+                "ReturnSent",
+                "ReturnAtLocation",
+                "ReturnDelivered",
+                "ReturnArrived",
+                "MoneyRefund",
+                "MoneyRefundSuccess",
+                "MoneyRefundDeclined",
+                "Refunded",
+                "MoneySettleSuccess",
+                "MoneySettleDeclined",
+                "MoneyHoldDeclined"
+              ]
+            },
+            "description": "Only orders that carry one of these statuses, e.g. [\"Created\"] for new orders. For one-off reads; do not poll by status, transitions are not linear."
+          },
+          "order_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these Kasta order ids, e.g. [\"S5LFR5Z\"]."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Orders per answer, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders/list",
+        "queryParams": {
+          "cursor": "$cursor",
+          "from": "$from",
+          "status": "$status",
+          "order_id": "$order_id",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_send_order_status",
+      "description": "Send a simple order status to Kasta: ConfirmedBySupplier (order taken into your system, the first answer to Created), AtLocation or ReceivedAtSelfDelivery (parcel at the pickup point), Delivered, PaymentReceived (cash on delivery received; needs amount and payment_type), CancellationDenied or CorrectionDenied (answer to a customer request you cannot honour, e.g. already shipped). Statuses must follow Kasta's order: AtLocation and Delivered need Packed first, ConfirmedBySupplier is refused after Packed. With carrier auto-tracking on, delivery statuses come from the carrier (error auto-tracking-enable). Returns uuid and order_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random UUID v4 for this status request. Kasta refuses a UUID it has seen before (repeat-uuid), so generate a fresh one per call; reuse it only to retry a call whose outcome you do not know."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "Kasta order id, e.g. S5LFR5Z (id from kasta_list_orders). Not the number of your own system."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ConfirmedBySupplier",
+              "AtLocation",
+              "ReceivedAtSelfDelivery",
+              "Delivered",
+              "PaymentReceived",
+              "CancellationDenied",
+              "CorrectionDenied"
+            ],
+            "description": "Status to set."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount received in UAH (PaymentReceived only)."
+          },
+          "payment_type": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "terminal",
+              "card",
+              "bnpl"
+            ],
+            "description": "How the customer paid (PaymentReceived only)."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "line_id": {
+                  "type": "integer",
+                  "description": "line_id of the order position (ordered_items[].line_id in kasta_list_orders)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Quantity delivered."
+                }
+              },
+              "required": [
+                "line_id",
+                "quantity"
+              ]
+            },
+            "description": "Optional with Delivered: positions actually delivered, [{\"line_id\": 43935, \"quantity\": 1}]."
+          },
+          "simplify": {
+            "type": "boolean",
+            "description": "true lets the Hub add the earlier statuses this one needs (e.g. Packed before AnnouncedForDelivery). Leave out when you send every status yourself."
+          }
+        },
+        "required": [
+          "uuid",
+          "order_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/send-status",
+        "bodyMapping": {
+          "uuid": "$uuid",
+          "order_id": "$order_id",
+          "status": "$status",
+          "amount": "$amount",
+          "payment_type": "$payment_type",
+          "items": "$items",
+          "simplify": "$simplify"
+        }
+      }
+    },
+    {
+      "name": "kasta_pack_order",
+      "description": "Mark an order as packed (Packed, Упаковано) with the positions and quantities really packed and the order amount. Packed is required before a TTN can be registered. All corrections must be sent before Packed, and quantities must match the current order (error item-invalid-quantity). Returns uuid and order_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random UUID v4 for this status request. Kasta refuses a UUID it has seen before (repeat-uuid), so generate a fresh one per call; reuse it only to retry a call whose outcome you do not know."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "Kasta order id, e.g. S5LFR5Z (id from kasta_list_orders). Not the number of your own system."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Order amount in UAH for the packed positions."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "line_id": {
+                  "type": "integer",
+                  "description": "line_id of the order position (ordered_items[].line_id in kasta_list_orders)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Quantity packed; must equal the current quantity of the position."
+                }
+              },
+              "required": [
+                "line_id",
+                "quantity"
+              ]
+            },
+            "description": "Order positions: [{\"line_id\": 43935, \"quantity\": 1}]. line_id must be unique in the list."
+          },
+          "delivery_cost": {
+            "type": "number",
+            "description": "Delivery cost in UAH, when your tariff passes it (refused for Black or free delivery: delivery-cost-is-final)."
+          },
+          "partner": {
+            "type": "string",
+            "description": "Kastapay merchant id, e.g. kastaua_1234567890 (partner of the order positions); leave out normally."
+          },
+          "simplify": {
+            "type": "boolean",
+            "description": "true lets the Hub add the earlier statuses this one needs (e.g. Packed before AnnouncedForDelivery). Leave out when you send every status yourself."
+          }
+        },
+        "required": [
+          "uuid",
+          "order_id",
+          "amount",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/send-status",
+        "bodyMapping": {
+          "uuid": "$uuid",
+          "order_id": "$order_id",
+          "status": "Packed",
+          "amount": "$amount",
+          "items": "$items",
+          "delivery_cost": "$delivery_cost",
+          "partner": "$partner",
+          "simplify": "$simplify"
+        }
+      }
+    },
+    {
+      "name": "kasta_send_tracking_number",
+      "description": "Pass the waybill (TTN, ТТН) of a packed order to Kasta. AnnouncedForDelivery (default) registers the TTN with the carrier named; SentToDelivery says the parcel was handed over (send it only when carrier auto-tracking is off); DeliveryAddressChanged replaces the TTN after an address change. Kasta validates the format: Nova Poshta 14 or 11 digits, Ukrposhta 13 digits, Meest 713-1234567 or M24 + 8 digits, Justin 9 digits starting with 4 or 13 starting with 2500, KastaPost at least 6 characters (the code, not the id). Returns uuid and order_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random UUID v4 for this status request. Kasta refuses a UUID it has seen before (repeat-uuid), so generate a fresh one per call; reuse it only to retry a call whose outcome you do not know."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "Kasta order id, e.g. S5LFR5Z (id from kasta_list_orders). Not the number of your own system."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "AnnouncedForDelivery",
+              "SentToDelivery",
+              "DeliveryAddressChanged"
+            ],
+            "default": "AnnouncedForDelivery",
+            "description": "AnnouncedForDelivery (default, TTN registered at the carrier), SentToDelivery (handed to the carrier) or DeliveryAddressChanged (new TTN after an address change)."
+          },
+          "number": {
+            "type": "string",
+            "description": "TTN (waybill number) of the carrier, e.g. 20451234567891 for Nova Poshta."
+          },
+          "courier_service": {
+            "type": "string",
+            "enum": [
+              "novaposhta",
+              "ukrposhta",
+              "warehouse",
+              "meest",
+              "justin",
+              "novaposhta-pl",
+              "carrier-pl"
+            ],
+            "description": "Carrier: novaposhta (Nova Poshta), ukrposhta (Ukrposhta), warehouse (KastaPost), meest (Meest Express), justin (Justin), novaposhta-pl and carrier-pl (shipments to Poland). When the order says delivery_properties.type carrier, name the actual carrier."
+          },
+          "delivery_cost": {
+            "type": "number",
+            "description": "Delivery cost in UAH, only when your tariff passes it."
+          },
+          "simplify": {
+            "type": "boolean",
+            "description": "true lets the Hub add the earlier statuses this one needs (e.g. Packed before AnnouncedForDelivery). Leave out when you send every status yourself."
+          }
+        },
+        "required": [
+          "uuid",
+          "order_id",
+          "number",
+          "courier_service"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/send-status",
+        "bodyMapping": {
+          "uuid": "$uuid",
+          "order_id": "$order_id",
+          "status": "$status",
+          "number": "$number",
+          "courier_service": "$courier_service",
+          "delivery_cost": "$delivery_cost",
+          "simplify": "$simplify"
+        }
+      }
+    },
+    {
+      "name": "kasta_correct_order",
+      "description": "Correct an order before packing (Corrected): reduce the quantities of positions you cannot supply in full or the customer partly declined, also as the answer to CorrectionRequested. Refused once the order is Packed or shipped. The customer gets less than ordered, so this is installed switched off. Returns uuid and order_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random UUID v4 for this status request. Kasta refuses a UUID it has seen before (repeat-uuid), so generate a fresh one per call; reuse it only to retry a call whose outcome you do not know."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "Kasta order id, e.g. S5LFR5Z (id from kasta_list_orders). Not the number of your own system."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "line_id": {
+                  "type": "integer",
+                  "description": "line_id of the order position (ordered_items[].line_id in kasta_list_orders)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New quantity of the position."
+                }
+              },
+              "required": [
+                "line_id",
+                "quantity"
+              ]
+            },
+            "description": "Order positions: [{\"line_id\": 43935, \"quantity\": 1}]. line_id must be unique in the list."
+          },
+          "simplify": {
+            "type": "boolean",
+            "description": "true lets the Hub add the earlier statuses this one needs (e.g. Packed before AnnouncedForDelivery). Leave out when you send every status yourself."
+          }
+        },
+        "required": [
+          "uuid",
+          "order_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/send-status",
+        "bodyMapping": {
+          "uuid": "$uuid",
+          "order_id": "$order_id",
+          "status": "Corrected",
+          "items": "$items",
+          "simplify": "$simplify"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "kasta_cancel_order",
+      "description": "Cancel a whole order (Cancelled) with a reason, also as the answer to CancellationRequested. It cannot be undone, a prepaid amount is refunded to the customer automatically (MoneyRefund), and supplier cancellations count against you. Installed switched off. Returns uuid and order_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random UUID v4 for this status request. Kasta refuses a UUID it has seen before (repeat-uuid), so generate a fresh one per call; reuse it only to retry a call whose outcome you do not know."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "Kasta order id, e.g. S5LFR5Z (id from kasta_list_orders). Not the number of your own system."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "MissingFromTheSupplier",
+              "SupplierBuyerRequestedCancellation",
+              "SupplierNotProcessedInTime",
+              "SupplierWrongWarehouseOrInTransit",
+              "SupplierTechnicalIssuePriceOrLogic",
+              "SupplierDuplicateOrder",
+              "SupplierPaymentFailed",
+              "SupplierFinancialOrLegalRestriction",
+              "SupplierPersonalDecision",
+              "SupplierInvalidContactOrAddress",
+              "SupplierWantedToEditOrder",
+              "SupplierSuspectedFraud",
+              "SupplierAutoCancelledDueToInactivity",
+              "DoubtAboutSize",
+              "UnsatisfiedWithDeliveryTerm",
+              "UnconfirmedPhone",
+              "LostByCourierService",
+              "ByUserRequest",
+              "RefusedByUser",
+              "Other"
+            ],
+            "description": "Reason: MissingFromTheSupplier (out of stock), SupplierBuyerRequestedCancellation (customer asked), UnconfirmedPhone (could not reach the customer), Other (customer changed their mind), and the other Kasta reason codes."
+          },
+          "simplify": {
+            "type": "boolean",
+            "description": "true lets the Hub add the earlier statuses this one needs (e.g. Packed before AnnouncedForDelivery). Leave out when you send every status yourself."
+          }
+        },
+        "required": [
+          "uuid",
+          "order_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/send-status",
+        "bodyMapping": {
+          "uuid": "$uuid",
+          "order_id": "$order_id",
+          "status": "Cancelled",
+          "reason": "$reason",
+          "simplify": "$simplify"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "kasta_accept_return",
+      "description": "Confirm that a customer return arrived (ReturnArrived, Прийнято повернення) with the positions and quantities received (0 for an empty parcel). The Hub then refunds the customer automatically for those positions (MoneyRefund), so this moves money and is installed switched off. Needs Packed first. Returns uuid and order_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random UUID v4 for this status request. Kasta refuses a UUID it has seen before (repeat-uuid), so generate a fresh one per call; reuse it only to retry a call whose outcome you do not know."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "Kasta order id, e.g. S5LFR5Z (id from kasta_list_orders). Not the number of your own system."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "line_id": {
+                  "type": "integer",
+                  "description": "line_id of the order position (ordered_items[].line_id in kasta_list_orders)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Quantity returned (0 for an empty parcel)."
+                }
+              },
+              "required": [
+                "line_id",
+                "quantity"
+              ]
+            },
+            "description": "Order positions: [{\"line_id\": 43935, \"quantity\": 1}]. line_id must be unique in the list."
+          },
+          "courier_service": {
+            "type": "string",
+            "enum": [
+              "novaposhta",
+              "ukrposhta",
+              "warehouse",
+              "meest",
+              "justin",
+              "novaposhta-pl",
+              "carrier-pl"
+            ],
+            "description": "Carrier that brought the return."
+          },
+          "payment_type": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "terminal",
+              "card",
+              "bnpl"
+            ],
+            "description": "How the customer had paid."
+          },
+          "partner": {
+            "type": "string",
+            "description": "Kastapay merchant id of the positions; leave out normally."
+          }
+        },
+        "required": [
+          "uuid",
+          "order_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/send-status",
+        "bodyMapping": {
+          "uuid": "$uuid",
+          "order_id": "$order_id",
+          "status": "ReturnArrived",
+          "items": "$items",
+          "courier_service": "$courier_service",
+          "payment_type": "$payment_type",
+          "partner": "$partner"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "kasta_download_return_forms",
+      "description": "Download the return forms (бланки повернення) of orders or customer returns as one ZIP file. Pass order_id or return_id, up to 100 each. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "Kasta order ids, e.g. [\"S5LFR5Z\"]."
+          },
+          "return_id": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "integer"
+            },
+            "description": "Customer return ids (client_returns in kasta_list_orders)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders/return-form",
+        "queryParams": {
+          "order_id": "$order_id",
+          "return_id": "$return_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_download_novaposhta_label",
+      "description": "Download the Nova Poshta label (маркування) of one or more waybills as a PDF. Read-only; it does not create a waybill.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ttn": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Nova Poshta TTN numbers or Refs, e.g. [\"20451234567891\"]."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "delivery-note",
+              "85x85",
+              "100x100"
+            ],
+            "description": "Format: delivery-note (A4 waybill), 85x85 or 100x100 (thermal sticker)."
+          }
+        },
+        "required": [
+          "ttn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/carriers/np/shipping-label/download",
+        "queryParams": {
+          "ttn": "$ttn",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_download_ukrposhta_label",
+      "description": "Download the Ukrposhta label of up to 20 waybills, by TTN or by Kasta order id (not both), merged into one PDF. All or nothing: when one label fails, the error labels-not-received lists which and why. Read-only and repeatable.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ttn": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string"
+            },
+            "description": "Ukrposhta TTN numbers (13 digits)."
+          },
+          "order_id": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string"
+            },
+            "description": "Kasta order ids instead of TTNs."
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "100x100",
+              "a5",
+              "a4"
+            ],
+            "description": "100x100 (default, thermal printer), a5 or a4 (the same sticker on a sheet)."
+          },
+          "hide_delivery_price": {
+            "type": "boolean",
+            "description": "Hide the delivery price on the label."
+          },
+          "hide_weight": {
+            "type": "boolean",
+            "description": "Hide the parcel weight."
+          },
+          "hide_postpay_delivery_price": {
+            "type": "boolean",
+            "description": "Hide the cash-on-delivery transfer fee."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/carriers/up/shipping-label/download",
+        "queryParams": {
+          "ttn": "$ttn",
+          "order_id": "$order_id",
+          "size": "$size",
+          "hide_delivery_price": "$hide_delivery_price",
+          "hide_weight": "$hide_weight",
+          "hide_postpay_delivery_price": "$hide_postpay_delivery_price"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_create_ukrposhta_label",
+      "description": "Get a Ukrposhta waybill under Kasta's contract for a Black order with Kasta's Ukrposhta tariff: Kasta pays the delivery, no Ukrposhta keys of your own are needed. Only for such orders (order-not-black, order-not-ukrposhta otherwise); sender details and parcel size must be set in the Hub's Ukrposhta settings. One waybill per order: calling again returns the same tracking_number with already_issued true. By default the order moves to Packed and then AnnouncedForDelivery. Limits: one call per order per 10 seconds, 60 per minute. Returns tracking_number, delivery_cost and already_issued.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "Kasta order id, e.g. S5LFR5Z (id from kasta_list_orders). Not the number of your own system."
+          },
+          "update_order_status": {
+            "type": "boolean",
+            "description": "true (default) sets Packed and AnnouncedForDelivery; false only issues the number and you send the statuses yourself."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/carriers/up/shipping-label-kasta",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "update_order_status": "$update_order_status"
+        }
+      }
+    },
+    {
+      "name": "kasta_list_supplier_orders",
+      "description": "List supplier orders (замовлення постачальнику: Kasta's purchase orders to you on the supply model): number, uuid, type (status), suporder_type, contract, created_at, approved_at, arrived_at, received_at, closed_date, quantity, approved_quantity, total_accepted, total_rejected, total_unsupplied, unsupplied_percent, surpluses, penalty and total_sales. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "description": "Only orders created on or after this time, e.g. 2026-11-01T00:00:00."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "Draft",
+              "Cancelled",
+              "Approved",
+              "Received"
+            ],
+            "description": "One status."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NewOrders",
+                "Draft",
+                "Approved",
+                "Received",
+                "Closed",
+                "Cancelled"
+              ]
+            },
+            "description": "Several statuses, e.g. [\"NewOrders\", \"Approved\"]."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/supplier-order/list",
+        "queryParams": {
+          "created_at": "$created_at",
+          "type": "$type",
+          "types": "$types"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_get_supplier_order",
+      "description": "Read one supplier order by number or uuid: supplier_order (number, uuid, status, created_at, approved_at), items (id = line id, barcode, unique_sku_id, supplier_code, brand, size, color, quantity, approved_quantity, accepted, rejected, supplier_price, new_price, images) and total. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Supplier order number."
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Supplier order uuid from kasta_list_supplier_orders."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/supplier-order",
+        "queryParams": {
+          "number": "$number",
+          "uuid": "$uuid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_get_future_supplier_order",
+      "description": "List what is collected for your next supplier order (майбутнє замовлення постачальнику): per SKU brand, kind, supplier_code, size, color, barcode, approved_quantity, supplier_price, new_price, images, and totals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/supplier-order/future-supplier-order"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_approve_supplier_order",
+      "description": "Approve a supplier order, confirming per line the quantity you will deliver (approved_quantity) and optionally the cost price. Approving commits you to deliver that quantity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Supplier order uuid."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Line id (items[].id of kasta_get_supplier_order)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Ordered quantity of the line."
+                },
+                "approved_quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Quantity you confirm."
+                },
+                "supplier_price": {
+                  "type": "number",
+                  "description": "Cost price in UAH."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Lines: [{\"id\": 123, \"approved_quantity\": 4}]."
+          }
+        },
+        "required": [
+          "uuid",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/supplier-order/approve",
+        "bodyMapping": {
+          "uuid": "$uuid",
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "kasta_add_supplier_order_delivery",
+      "description": "Add delivery information to a supplier order: carrier, delivery date and, for Nova Poshta or Meest, the waybills with the number of places (cargo_size).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Supplier order uuid."
+          },
+          "delivery_service": {
+            "type": "string",
+            "enum": [
+              "novaposhta",
+              "meestexpress",
+              "other",
+              "self_delivery"
+            ],
+            "description": "novaposhta, meestexpress, other, or self_delivery (you bring it)."
+          },
+          "delivery_date": {
+            "type": "string",
+            "description": "Delivery date and time, e.g. 2026-11-20T10:00:00."
+          },
+          "delivery_info": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tracking_number": {
+                  "type": "string",
+                  "description": "Waybill number."
+                },
+                "cargo_size": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of places (boxes) under this waybill."
+                }
+              },
+              "required": [
+                "tracking_number",
+                "cargo_size"
+              ]
+            },
+            "description": "Required for novaposhta and meestexpress: [{\"tracking_number\": \"20451234567891\", \"cargo_size\": 2}]."
+          }
+        },
+        "required": [
+          "uuid",
+          "delivery_service",
+          "delivery_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/supplier-order/delivery",
+        "bodyMapping": {
+          "uuid": "$uuid",
+          "data": {
+            "delivery_service": "$delivery_service",
+            "delivery_date": "$delivery_date",
+            "delivery_info": "$delivery_info"
+          }
+        }
+      }
+    },
+    {
+      "name": "kasta_get_supplier_order_cover_letter",
+      "description": "Download the cover letter (супровідний лист) generated for a supplier order, as a file. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Supplier order uuid."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/supplier-order/cover-letter",
+        "queryParams": {
+          "uuid": "$uuid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kasta_create_supplier_order",
+      "description": "Create supplier orders from what is collected for the next supplier order (see kasta_get_future_supplier_order). Returns the new orders' number and uuid. A new purchase order cannot be taken back through the API, so this is installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/supplier-order/create"
+      },
+      "enabled": false
+    },
+    {
+      "name": "kasta_list_contracts",
+      "description": "List your organisations and their contracts with Kasta, as in the Hub section Рахунки: name and contract_uuid per organisation. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/organization-account/contracts"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
