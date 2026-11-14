@@ -227,6 +227,7 @@ import * as egnyte from './intl/egnyte.json';
 import * as elasticsearch from './intl/elasticsearch.json';
 import * as elevenlabs from './intl/elevenlabs.json';
 import * as emagMarketplace from './intl/emag-marketplace.json';
+import * as epicentr from './intl/epicentr.json';
 import * as erpnext from './intl/erpnext.json';
 import * as espn from './intl/espn.json';
 import * as espocrm from './intl/espocrm.json';
@@ -352,6 +353,7 @@ import * as jobber from './intl/jobber.json';
 import * as jotform from './intl/jotform.json';
 import * as judgeMe from './intl/judge-me.json';
 import * as kashflow from './intl/kashflow.json';
+import * as kasta from './intl/kasta.json';
 import * as keycrm from './intl/keycrm.json';
 import * as kieAi from './intl/kie-ai.json';
 import * as kittl from './intl/kittl.json';
@@ -610,6 +612,7 @@ import * as tableau from './intl/tableau.json';
 import * as tailscale from './intl/tailscale.json';
 import * as tally from './intl/tally.json';
 import * as tamara from './intl/tamara.json';
+import * as targetPlus from './intl/target-plus.json';
 import * as tavily from './intl/tavily.json';
 import * as tbank from './intl/tbank.json';
 import * as teamworkProjects from './intl/teamwork-projects.json';
@@ -647,6 +650,7 @@ import * as vimeo from './intl/vimeo.json';
 import * as vinted from './intl/vinted.json';
 import * as virustotal from './intl/virustotal.json';
 import * as vk from './intl/vk.json';
+import * as walmartMarketplace from './intl/walmart-marketplace.json';
 import * as wanotifier from './intl/wanotifier.json';
 import * as wassenger from './intl/wassenger.json';
 import * as wati from './intl/wati.json';
@@ -1275,6 +1279,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   elasticsearch as unknown as AdapterDefinition,
   elevenlabs as unknown as AdapterDefinition,
   emagMarketplace as unknown as AdapterDefinition,
+  epicentr as unknown as AdapterDefinition,
   erpnext as unknown as AdapterDefinition,
   espn as unknown as AdapterDefinition,
   espocrm as unknown as AdapterDefinition,
@@ -1400,6 +1405,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   jotform as unknown as AdapterDefinition,
   judgeMe as unknown as AdapterDefinition,
   kashflow as unknown as AdapterDefinition,
+  kasta as unknown as AdapterDefinition,
   keycrm as unknown as AdapterDefinition,
   kieAi as unknown as AdapterDefinition,
   kittl as unknown as AdapterDefinition,
@@ -1658,6 +1664,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   tailscale as unknown as AdapterDefinition,
   tally as unknown as AdapterDefinition,
   tamara as unknown as AdapterDefinition,
+  targetPlus as unknown as AdapterDefinition,
   tavily as unknown as AdapterDefinition,
   tbank as unknown as AdapterDefinition,
   teamworkProjects as unknown as AdapterDefinition,
@@ -1695,6 +1702,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   vinted as unknown as AdapterDefinition,
   virustotal as unknown as AdapterDefinition,
   vk as unknown as AdapterDefinition,
+  walmartMarketplace as unknown as AdapterDefinition,
   wanotifier as unknown as AdapterDefinition,
   wassenger as unknown as AdapterDefinition,
   wati as unknown as AdapterDefinition,

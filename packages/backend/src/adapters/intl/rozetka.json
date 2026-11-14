@@ -1,8 +1,8 @@
 {
   "slug": "rozetka",
   "name": "Rozetka Marketplace",
-  "description": "Rozetka Marketplace seller API for Ukraine's largest marketplace: search and read orders with items, delivery and buyer, order statuses, and the seller's goods. Signs in with the seller cabinet login. Read-only.",
-  "instructions": "Rozetka is Ukraine's largest online marketplace. This adapter reads a seller's orders, order statuses and goods through the Rozetka Marketplace seller API (`https://api-seller.rozetka.com.ua`).\n\n**Getting credentials**\nThe API signs in with the login and password of the Rozetka seller cabinet (seller.rozetka.com.ua); there is no separate API key.\n1. Put the cabinet login in `ROZETKA_USERNAME`.\n2. Rozetka expects the password Base64-encoded, so `ROZETKA_PASSWORD_BASE64` takes the encoded form, not the plain password. Encode it on your own computer, e.g. in a terminal `printf '%s' 'your-password' | base64`, and paste the result. Do not use an online encoder for a real password.\nAnythingMCP logs in with `POST /sites` and sends the session token as a Bearer token. Rozetka keeps a token alive while it is used and lets it expire after 24 hours without use; the adapter signs in again every four hours. A wrong login or password is reported as `incorrect_username_password`.\n\n**Workflow**\n1. `rozetka_list_order_statuses` maps the numeric `status` of an order to its name (`name_ua`, `name_en`).\n2. `rozetka_list_orders` with `types` (2 in processing, 4 new, 5 being delivered, 3 completed, 6 failed, 1 all) or date filters, then `rozetka_get_order` for one order. Add `expand=purchases,delivery,user` to see the items, the delivery and the buyer.\n3. `rozetka_list_goods` searches the seller's goods by name, article or id; `rozetka_get_goods` returns one item by `item_id` or `rz_item_id`.\n\n**Formats and gotchas**\n- Rozetka answers HTTP 200 even when a call fails: read `success`. When it is false, `errors.message` and `errors.code` say why, e.g. `incorrect_access_token` (1020).\n- Prices of goods are in UAH. Dates in filters are YYYY-MM-DD.\n- Texts come in the cabinet's language (Ukrainian or Russian).\n\n**Pagination and limits**: results sit under `content` with `_meta` (`totalCount`, `pageCount`, `currentPage`, `perPage`). Call again with `page` + 1 until `currentPage` equals `pageCount`. Orders come 20 per page; goods accept `pageSize`. No rate limit is published; avoid tight loops.\n\n**Cloud reachability**: api-seller.rozetka.com.ua is public over HTTPS, reachable from AnythingMCP Cloud and from self-hosted installs. This adapter is read-only.",
+  "description": "Rozetka Marketplace seller API for Ukraine's largest marketplace: orders with status and waybill (TTN) updates, payment status, goods with mass price and stock updates and new listings, shop reviews and product questions with replies, buyer chats, and return requests. Signs in with the seller cabinet login.",
+  "instructions": "## Rozetka Marketplace\nRozetka is Ukraine's largest online marketplace. This connector works with the Rozetka Marketplace seller API (`https://api-seller.rozetka.com.ua`): orders and their status, goods, prices and stock, new listings, shop reviews, product reviews and questions, buyer chats and return requests.\n\n**Setup**\nThe API signs in with the login and password of the Rozetka seller cabinet (seller.rozetka.com.ua); there is no separate API key.\n1. Put the cabinet login in `ROZETKA_USERNAME`.\n2. Rozetka expects the password Base64-encoded, so `ROZETKA_PASSWORD_BASE64` takes the encoded form, not the plain password. Encode it on your own computer, e.g. in a terminal `printf '%s' 'your-password' | base64`, and paste the result. Do not use an online encoder for a real password.\nAnythingMCP logs in with `POST /sites` and sends the session token as a Bearer token. Rozetka keeps a token alive while it is used and lets it expire after 24 hours without use; the connector signs in again every four hours. A wrong login or password is reported as `incorrect_username_password`.\n\n**Where to start**: `rozetka_get_order_counts` and `rozetka_get_message_counts` show what is waiting (new orders, unread chats, open return requests). Then `rozetka_list_orders` with `types=4` (new) or `types=2` (in processing).\n\n**Orders**\n- `rozetka_list_order_statuses` maps the numeric `status` of an order to its name. `rozetka_list_orders` filters by `types` (1 all, 2 in processing, 3 completed, 4 new, 5 being delivered, 6 failed), status or dates; `rozetka_get_order` reads one order. Add `expand=purchases,delivery,user` for items, delivery and buyer, and `status_available` for the statuses the order may move to next.\n- `rozetka_update_order` changes the status, adds the waybill (TTN) and a seller comment. Usual flow: new order (1) -> confirm with 2 (being packed) -> add the TTN with status 3 (handed to the carrier) or 61 (handover planned); a TTN sent with status 2 moves the order to 61. After a TTN is added Rozetka tracks the parcel and moves the status itself. Statuses 7 and above are mostly cancellations or delivery states (e.g. 16/42 out of stock, 18 buyer unreachable, 40 buyer changed their mind, 45 cancelled by the buyer): set a cancellation only when the seller asks, it cannot be undone. Check `status_available` first.\n- `rozetka_get_order_payment_status` tells whether an online payment is paid, unpaid, being checked or cancelled (cached 5 minutes).\n\n**Goods and prices**\n- `rozetka_list_goods` and `rozetka_get_goods` read the seller's goods; `rozetka_get_goods_counts` counts them per cabinet tab (errors, moderation, waiting for confirmation).\n- `rozetka_update_goods_price_stock` changes price and stock for one or many goods by `item_rz_id` (the Rozetka id, `id`/`rz_item_id` in the goods list, not the internal `item_id`). Prices are in UAH. Rozetka holds a price raised more than 1.5 times or cut by more than half for a manager to confirm.\n- Goods status ids: 0 locked, 1 active, 2 new, 3 queued for moderation, 4 being moderated, 5 rejected by moderation, 6 needs moderator confirmation, 7 archived, 8 waiting for moderation. Sell status: 0 unavailable, 1 supply expected, 2 call, 3 running out, 4 available, 5 archive, 6 strictly unavailable, 7 out of stock, 8 hidden.\n- New listing: `rozetka_list_goods_categories` (find the category; `is_vendor_required` 1 means a producer is mandatory) -> `rozetka_list_category_attributes` (its characteristics; raise `pageSize`, the API returns 5 by default) -> `rozetka_list_attribute_values` (allowed values for list-type characteristics) -> `rozetka_list_producers` -> `rozetka_create_goods` with Russian and Ukrainian name, price, stock and picture URLs. New goods go through Rozetka moderation before they are shown.\n\n**Reviews, questions and chats**\n- Shop reviews: `rozetka_list_store_reviews` (e.g. `reply_search=0` for reviews without an answer, `vote=dislike` for negative ones), then `rozetka_reply_store_review` with the review `id` and its `order_id`.\n- Product reviews and questions: `rozetka_list_goods_comments` with `isAnswered=0` lists threads waiting for the seller; answer with `rozetka_reply_goods_comment` (`parent_id` = comment id, `item_id` = `item.id`).\n- Chats: `rozetka_list_chats` (`msgType=orders` for order chats, `items` for product questions, `has_response_to_user=0` for unanswered ones), `rozetka_get_chat` to read the messages (this marks them read), `rozetka_get_order_chat` to find the chat of an order, and `rozetka_send_message` with `chat_id` and the buyer's `user_id` as `receiver_id`.\n- Replies, answers and messages are public or reach the buyer: draft the text, show it to the seller and send only after they agree. Write in the buyer's language, usually Ukrainian. Replies and product answers are moderated by Rozetka before they appear.\n\n**Returns**: `rozetka_list_refund_requests` (status codes from `rozetka_list_refund_statuses`), `rozetka_get_refund_request` for the reason, the decision the buyer wants and the chat, and `rozetka_save_refund_ttn` to store the return waybill. `rozetka_update_refund_status` (accept or reject a request) is installed switched off, because accepting can refund the buyer; an admin turns it on deliberately. Return request ids contain letters (e.g. AM1234567).\n\n**Not included**: balances, invoices, payments, fiscal receipts (PRRO), paid waybill creation with carriers, manager accounts and deletions. The connector never moves money.\n\n**Formats and gotchas**\n- Rozetka answers HTTP 200 even when a call fails, with `success: false`; the connector turns that into an error carrying `errors.message` and `errors.code`, e.g. `incorrect_access_token` (1020) or `access_denied` (1010, the account's role lacks the right).\n- Prices are in UAH. Dates in filters are YYYY-MM-DD; timestamps come as `YYYY-MM-DD HH:MM:SS` without a time zone.\n- Texts come in the cabinet's language (Ukrainian or Russian); return requests answer in Ukrainian.\n\n**Pagination and limits**: lists sit under `content` with `_meta` (`totalCount`, `pageCount`, `currentPage`, `perPage`). Call again with `page` + 1 until `currentPage` equals `pageCount`. Orders, reviews and chats come 20 per page; goods, categories and directories accept `pageSize`. No rate limit is published; avoid tight loops and prefer one mass update over many single ones.\n\n**Cloud reachability**: api-seller.rozetka.com.ua is public over HTTPS, reachable from AnythingMCP Cloud and from self-hosted installs.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "rozetka",
@@ -48,6 +48,39 @@
       "refreshOn401": true,
       "headerName": "Authorization",
       "headerTemplate": "Bearer ${token}"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "errors.message",
+            "errors.description"
+          ],
+          "messageMatches": "incorrect_access_token|incorrect_username_password",
+          "status": 401
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "errors.message",
+            "errors.description"
+          ],
+          "messageMatches": "access_denied",
+          "status": 403
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "errors.message",
+            "errors.description"
+          ],
+          "status": 400
+        }
+      ]
     }
   },
   "probe": {
@@ -310,6 +343,1271 @@
           "rz_item_id": "$rz_item_id"
         }
       }
+    },
+    {
+      "name": "rozetka_update_order",
+      "description": "Change the status of a Rozetka order, add the waybill number (TTN) and/or a seller comment. Returns the updated order. A TTN is required when moving to status 3 (handed to the carrier) or 61 (handover to the carrier planned); a TTN sent with status 2 moves the order to 61 automatically, and from then on Rozetka tracks the parcel and moves the status itself. Cancellation statuses cannot be undone: set one only when the seller asked for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Order id from rozetka_list_orders."
+          },
+          "status": {
+            "type": "integer",
+            "description": "New status id. Common ones: 2 being packed (data confirmed), 3 handed to the carrier, 61 handover to the carrier planned, 26 being handled by the manager, 47 call back planned. Read the allowed next statuses with rozetka_get_order and expand=status_available, and names with rozetka_list_order_statuses."
+          },
+          "ttn": {
+            "type": "string",
+            "description": "Waybill (TTN) number of the parcel, e.g. 20450012345678. Required for statuses 3 and 61."
+          },
+          "seller_comment": {
+            "type": "string",
+            "description": "Internal seller comment saved on the order."
+          },
+          "duplicate_order_id": {
+            "type": "integer",
+            "description": "Id of the duplicate order; required only when cancelling an order as a duplicate."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields in the answer, comma-separated, e.g. purchases,delivery,status_available."
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{id}",
+        "queryParams": {
+          "expand": "$expand"
+        },
+        "bodyMapping": {
+          "status": "$status",
+          "ttn": "$ttn",
+          "seller_comment": "$seller_comment",
+          "duplicate_order_id": "$duplicate_order_id"
+        }
+      }
+    },
+    {
+      "name": "rozetka_get_order_counts",
+      "description": "Count the seller's Rozetka orders by group: inProgress (in processing), new, delivering, inDone (completed), inNotDone (failed), unwatched and all. A cheap first call to see how much work is waiting.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/counts-new"
+      }
+    },
+    {
+      "name": "rozetka_get_order_payment_status",
+      "description": "Get the current payment status of an order paid online: status_payment_id, name (paid, unpaid, cancelled, unapproved, part-paid ...), localized title and created_at. Rozetka caches the answer for 5 minutes. Read-only; it does not move money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/status-payment/{id}"
+      }
+    },
+    {
+      "name": "rozetka_update_goods_price_stock",
+      "description": "Update price and stock of one or more of the seller's goods in one call (mass update). Each entry needs item_rz_id (the Rozetka id, `id` in rozetka_list_goods) plus price and/or stock_quantity; old price, promo price and cart limits are optional (-1 removes them). Prices are in UAH. A price raised more than 1.5 times or cut by more than half is not applied at once: it waits for confirmation by a Rozetka manager. Answers success with no content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Goods to update, e.g. [{\"item_rz_id\": 102069758, \"price\": 450, \"stock_quantity\": 11}].",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_rz_id": {
+                  "type": "integer",
+                  "description": "Rozetka id of the goods."
+                },
+                "price": {
+                  "type": "integer",
+                  "description": "New price in UAH. Optional when stock_quantity is given."
+                },
+                "stock_quantity": {
+                  "type": "integer",
+                  "description": "Units in stock. Optional when price is given."
+                },
+                "price_old": {
+                  "type": "integer",
+                  "description": "Crossed-out old price in UAH; -1 removes it."
+                },
+                "price_promo": {
+                  "type": "integer",
+                  "description": "Promo price in UAH; -1 removes it."
+                },
+                "min_cart_quantity": {
+                  "type": "integer",
+                  "description": "Minimum units per order; -1 removes the limit."
+                },
+                "max_cart_quantity": {
+                  "type": "integer",
+                  "description": "Maximum units per order; -1 removes the limit."
+                }
+              },
+              "required": [
+                "item_rz_id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/items/mass-update",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "rozetka_get_goods_counts",
+      "description": "Count the seller's goods per cabinet section: active, inactive, new, on moderation, waiting for confirmation, waiting for approval, rejected updates, queued for update and all. Use it to spot goods with errors or waiting for moderation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tab_name": {
+            "type": "string",
+            "description": "Only these tabs, comma-separated: items_all_tab, items_on_sale_tab, items_not_on_sale_tab, items_errors, not_valid, not_available, items_hidden, items_archive, items_new, items_changes, items_quarantine, items_prices, items_on_moderation."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/goods/counts",
+        "queryParams": {
+          "tab_name": "$tab_name"
+        }
+      }
+    },
+    {
+      "name": "rozetka_create_goods",
+      "description": "Create a new product listing in the seller's Rozetka cabinet. Needs Russian and Ukrainian name, a category from rozetka_list_goods_categories, price in UAH, stock and at least one picture URL. Characteristics (params) come from rozetka_list_category_attributes and rozetka_list_attribute_values, the producer from rozetka_list_producers. Returns the new item_id. The goods go to Rozetka moderation before they are shown; is_approve=true sends them to moderation right away.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Product name in Russian."
+          },
+          "name_ua": {
+            "type": "string",
+            "description": "Product name in Ukrainian."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Category id from rozetka_list_goods_categories."
+          },
+          "price": {
+            "type": "integer",
+            "description": "Price in UAH."
+          },
+          "stock_quantity": {
+            "type": "integer",
+            "description": "Units in stock."
+          },
+          "pictures": {
+            "type": "array",
+            "description": "Pictures as public URLs (jpeg, jpg, png, gif, webp), e.g. [{\"link\": \"https://example.com/img1.jpg\"}].",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "link": {
+                  "type": "string",
+                  "description": "Public URL of the image."
+                }
+              },
+              "required": [
+                "link"
+              ]
+            }
+          },
+          "params": {
+            "type": "array",
+            "description": "Characteristics: [{id, title, type, value}]. value is an array of {id, value} from rozetka_list_attribute_values for List, ListValues, ComboBox, CheckBoxGroup and CheckBoxGroupValues; an integer for Integer, a number for Decimal, text for Text, TextArea and TextInput (add value_ua when need_translation is true), true or false for CheckBox.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "producer": {
+            "type": "object",
+            "description": "Producer {id, title} from rozetka_list_producers; id 0 with the title when it is not in the list.",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "description": "Producer id, or 0."
+              },
+              "title": {
+                "type": "string",
+                "description": "Producer name."
+              }
+            }
+          },
+          "series": {
+            "type": "object",
+            "description": "Product series {id, title}; id 0 with the title for a new series.",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "description": "Series id, or 0."
+              },
+              "title": {
+                "type": "string",
+                "description": "Series name."
+              }
+            }
+          },
+          "state": {
+            "type": "integer",
+            "description": "Condition: 1 new (default), 0 used, 2 refurbished, 3 discounted (needs docket and docket_ua).",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "docket": {
+            "type": "string",
+            "description": "Short description in Russian; required for state 3."
+          },
+          "docket_ua": {
+            "type": "string",
+            "description": "Short description in Ukrainian; required for state 3."
+          },
+          "article": {
+            "type": "string",
+            "description": "Article (SKU)."
+          },
+          "price_offer_id": {
+            "type": "string",
+            "description": "Id of the goods in the seller's own price list."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description in Russian (HTML allowed)."
+          },
+          "description_ua": {
+            "type": "string",
+            "description": "Full description in Ukrainian (HTML allowed)."
+          },
+          "price_old": {
+            "type": "integer",
+            "description": "Crossed-out old price in UAH."
+          },
+          "price_promo": {
+            "type": "integer",
+            "description": "Promo price in UAH."
+          },
+          "min_cart_quantity": {
+            "type": "integer",
+            "description": "Minimum units per order."
+          },
+          "max_cart_quantity": {
+            "type": "integer",
+            "description": "Maximum units per order."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Whether the goods are available for sale."
+          },
+          "is_approve": {
+            "type": "boolean",
+            "description": "true sends the new goods to moderation right after creation."
+          }
+        },
+        "required": [
+          "name",
+          "name_ua",
+          "category_id",
+          "price",
+          "stock_quantity",
+          "pictures"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/items-create/create",
+        "bodyMapping": {
+          "name": "$name",
+          "name_ua": "$name_ua",
+          "category_id": "$category_id",
+          "price": "$price",
+          "stock_quantity": "$stock_quantity",
+          "pictures": "$pictures",
+          "params": "$params",
+          "producer": "$producer",
+          "series": "$series",
+          "state": "$state",
+          "docket": "$docket",
+          "docket_ua": "$docket_ua",
+          "article": "$article",
+          "price_offer_id": "$price_offer_id",
+          "description": "$description",
+          "description_ua": "$description_ua",
+          "price_old": "$price_old",
+          "price_promo": "$price_promo",
+          "min_cart_quantity": "$min_cart_quantity",
+          "max_cart_quantity": "$max_cart_quantity",
+          "available": "$available",
+          "is_approve": "$is_approve"
+        },
+        "headers": {
+          "Content-Language": "uk"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_goods_categories",
+      "description": "Search the Rozetka categories in which the seller can create goods, by title or ids. Returns id, Ukrainian, Russian and English title, parent_id, level, path (mpath) and is_vendor_required (1 = a producer is mandatory). 100 per page by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Category title or part of it, e.g. фото."
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "Category ids, comma-separated, e.g. 80001,80178."
+          },
+          "is_vendor_required": {
+            "type": "integer",
+            "description": "1 only categories where a producer is mandatory, 0 only those where it is not.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Categories per page (default 100).",
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items-create/categories",
+        "queryParams": {
+          "title": "$title",
+          "category_ids": "$category_ids",
+          "is_vendor_required": "$is_vendor_required",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_category_attributes",
+      "description": "List the characteristics (attributes) of a Rozetka category, needed for params in rozetka_create_goods. Returns id, titles, unit, type (ComboBox, List, TextInput, Integer, Decimal, CheckBox ...), need_translation, is_filter and validation limits. Only 5 per page by default: raise pageSize.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id."
+          },
+          "attribute_id": {
+            "type": "string",
+            "description": "Only these attribute ids, comma-separated."
+          },
+          "title": {
+            "type": "string",
+            "description": "Attribute title or part of it, e.g. Колір."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only these types, comma-separated, e.g. ComboBox,TextInput."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Attributes per page (API default 5).",
+            "default": 50
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items-create/attributes",
+        "queryParams": {
+          "category_id": "$category_id",
+          "attribute_id": "$attribute_id",
+          "title": "$title",
+          "type": "$type",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_attribute_values",
+      "description": "List the allowed values of one or more characteristics in a category (id, Ukrainian, Russian and English title), for list-type params in rozetka_create_goods. 100 per page by default (100, 200, 500 or 1000).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id."
+          },
+          "attribute_id": {
+            "type": "string",
+            "description": "Attribute id, or several comma-separated."
+          },
+          "title": {
+            "type": "string",
+            "description": "Value title or part of it."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Values per page: 100, 200, 500 or 1000.",
+            "enum": [
+              100,
+              200,
+              500,
+              1000
+            ],
+            "default": 100
+          }
+        },
+        "required": [
+          "category_id",
+          "attribute_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items-create/values",
+        "queryParams": {
+          "category_id": "$category_id",
+          "attribute_id": "$attribute_id",
+          "title": "$title",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_producers",
+      "description": "Search the Rozetka producer (brand) directory by name or id, for the producer of rozetka_create_goods. Returns id, title and status, 100 per page by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Producer name or part of it."
+          },
+          "producer_id": {
+            "type": "string",
+            "description": "Producer id, or several comma-separated."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Producers per page (default 100).",
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/items-create/producers",
+        "queryParams": {
+          "title": "$title",
+          "producer_id": "$producer_id",
+          "page": "$page",
+          "pageSize": "$pageSize"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_store_reviews",
+      "description": "Search buyers' reviews of the shop (not of a product): id, order_id, buyer name, comment, overall vote (like, middle, dislike), votes for convenience, manager and delivery, status, read and reply flags, created_at, and the order. 20 per page, newest first by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Review id."
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "search": {
+            "type": "string",
+            "description": "Order number or buyer name."
+          },
+          "vote": {
+            "type": "string",
+            "description": "Overall vote.",
+            "enum": [
+              "like",
+              "middle",
+              "dislike"
+            ]
+          },
+          "status_review": {
+            "type": "string",
+            "description": "Review status.",
+            "enum": [
+              "new",
+              "active",
+              "locked",
+              "waits_for_approve",
+              "locked_by_badwords"
+            ]
+          },
+          "read_search": {
+            "type": "integer",
+            "description": "1 read, 0 unread.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "reply_search": {
+            "type": "integer",
+            "description": "1 with a seller reply, 0 without.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "comment_search": {
+            "type": "integer",
+            "description": "1 only reviews with a text comment.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "important_search": {
+            "type": "integer",
+            "description": "1 only reviews marked important.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "order_status": {
+            "type": "integer",
+            "description": "Status id of the reviewed order."
+          },
+          "expand": {
+            "type": "string",
+            "description": "purchases adds the items of the order.",
+            "enum": [
+              "purchases"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort column, prefix - for descending.",
+            "enum": [
+              "id",
+              "-id",
+              "status",
+              "-status",
+              "order_id",
+              "-order_id",
+              "order_status",
+              "-order_status",
+              "created_at",
+              "-created_at",
+              "vote",
+              "-vote"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/market-reviews/search",
+        "queryParams": {
+          "id": "$id",
+          "order_id": "$order_id",
+          "search": "$search",
+          "vote": "$vote",
+          "status_review": "$status_review",
+          "read_search": "$read_search",
+          "reply_search": "$reply_search",
+          "comment_search": "$comment_search",
+          "important_search": "$important_search",
+          "order_status": "$order_status",
+          "expand": "$expand",
+          "sort": "$sort",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "rozetka_reply_store_review",
+      "description": "Publish the seller's public reply to a shop review. Needs the review id and its order_id from rozetka_list_store_reviews. Returns the reply with its id and status (1 new, 2 on moderation, 4 published); Rozetka moderates replies before they appear. The text is public: show it to the seller first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "market_review_id": {
+            "type": "integer",
+            "description": "Review id."
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "Order id of the review."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Reply text, in the buyer's language (usually Ukrainian)."
+          }
+        },
+        "required": [
+          "market_review_id",
+          "order_id",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/market-review-replies/reply",
+        "bodyMapping": {
+          "market_review_id": "$market_review_id",
+          "order_id": "$order_id",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_goods_comments",
+      "description": "Search buyers' reviews and questions on the seller's goods: id, type (comment or question), text, mark (rating 1-5), pros and cons, author, status, read and important flags, the item (id, name, price, url) and the order. Use isAnswered=0 to find threads still waiting for a seller answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "comment (review) or question.",
+            "enum": [
+              "comment",
+              "question"
+            ]
+          },
+          "isAnswered": {
+            "type": "integer",
+            "description": "0 only threads with a buyer message the seller has not answered, 1 answered.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "isRead": {
+            "type": "integer",
+            "description": "1 read, 0 unread.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "isImportant": {
+            "type": "integer",
+            "description": "1 only marked important.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "goodsId": {
+            "type": "integer",
+            "description": "Only comments on this item id."
+          },
+          "commentId": {
+            "type": "integer",
+            "description": "One comment by id."
+          },
+          "mark": {
+            "type": "string",
+            "description": "Ratings, comma-separated, e.g. 1,2."
+          },
+          "status": {
+            "type": "string",
+            "description": "Comment status, e.g. auto_activated, unapproved."
+          },
+          "createdFrom": {
+            "type": "string",
+            "description": "Created on or after. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "createdTo": {
+            "type": "string",
+            "description": "Created on or before. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort column, prefix - for descending.",
+            "enum": [
+              "created",
+              "-created",
+              "mark",
+              "-mark",
+              "positive_vote_count",
+              "-positive_vote_count",
+              "negative_vote_count",
+              "-negative_vote_count",
+              "is_reade"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item-comments/search",
+        "queryParams": {
+          "type": "$type",
+          "isAnswered": "$isAnswered",
+          "isRead": "$isRead",
+          "isImportant": "$isImportant",
+          "goodsId": "$goodsId",
+          "commentId": "$commentId",
+          "mark": "$mark",
+          "status": "$status",
+          "createdFrom": "$createdFrom",
+          "createdTo": "$createdTo",
+          "sort": "$sort",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "rozetka_reply_goods_comment",
+      "description": "Post the seller's public answer to a product review or question. parent_id is the comment id and item_id the item.id from rozetka_list_goods_comments. The answer is created with status unapproved and appears on Rozetka after moderation. The text is public: show it to the seller first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_id": {
+            "type": "integer",
+            "description": "Id of the review or question being answered."
+          },
+          "item_id": {
+            "type": "integer",
+            "description": "Id of the item (item.id in rozetka_list_goods_comments)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Answer text, in the buyer's language (usually Ukrainian)."
+          },
+          "is_reade": {
+            "type": "integer",
+            "description": "1 also marks the parent comment as read (default).",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
+          }
+        },
+        "required": [
+          "parent_id",
+          "item_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/item-comments/create-comment",
+        "bodyMapping": {
+          "parent_id": "$parent_id",
+          "item_id": "$item_id",
+          "text": "$text",
+          "is_reade": "$is_reade"
+        }
+      }
+    },
+    {
+      "name": "rozetka_get_message_counts",
+      "description": "Count unread and total buyer chats and requests: totalUnread, ordersChatUnread, itemsChatUnread, sellerChatUnread, customerRequestsUnread, orderRefundUnread, unread Rozetka feedback and more. A cheap first call for the inbox.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/counts"
+      }
+    },
+    {
+      "name": "rozetka_list_chats",
+      "description": "Search the seller's chats with buyers: order chats, product questions or deleted chats. Returns chat id, subject, buyer (user_id, name), order_id, item_id, read and starred flags and, with expand, the messages. System messages are not available through the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "msgType": {
+            "type": "string",
+            "description": "Chat type: orders (about an order), items (product questions, the API default) or deleted.",
+            "enum": [
+              "orders",
+              "items",
+              "deleted"
+            ],
+            "default": "orders"
+          },
+          "read": {
+            "type": "integer",
+            "description": "1 read, 0 unread.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "has_response_to_user": {
+            "type": "integer",
+            "description": "0 only chats without a seller answer, 1 answered.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "star_market": {
+            "type": "integer",
+            "description": "1 only starred chats.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "description": "One chat by id."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to search for."
+          },
+          "searchType": {
+            "type": "integer",
+            "description": "Where to search: 0 everywhere, 1 sender, 2 subject, 3 message text.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Chat created on or after. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Chat created on or before. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Last change on or after. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Last change on or before. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: messages, item, order_data, user_fio, order_status, market_title, unread_messages_count, has_auto_message.",
+            "default": "user_fio,order_data,item,unread_messages_count"
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, prefix - for descending: read_market, user_fio, updated.",
+            "default": "-read_market"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          }
+        },
+        "required": [
+          "msgType"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/search",
+        "queryParams": {
+          "msgType": "$msgType",
+          "read": "$read",
+          "has_response_to_user": "$has_response_to_user",
+          "star_market": "$star_market",
+          "id": "$id",
+          "search": "$search",
+          "searchType": "$searchType",
+          "created_from": "$created_from",
+          "created_to": "$created_to",
+          "updated_from": "$updated_from",
+          "updated_to": "$updated_to",
+          "expand": "$expand",
+          "sort": "$sort",
+          "page": "$page"
+        }
+      }
+    },
+    {
+      "name": "rozetka_get_chat",
+      "description": "Open one chat with a buyer, with its messages by default. Returns subject, buyer user_id (the receiver_id for rozetka_send_message), order_id, item_id and messages. Opening a chat marks it and the buyer's messages as read in the cabinet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Chat id from rozetka_list_chats."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: messages, item, order_data, user_fio, order_status, unread_messages_count.",
+            "default": "messages,item,order_data,user_fio"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/{id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rozetka_get_order_chat",
+      "description": "Get the chat that belongs to an order, by order id: chat id, subject, buyer user_id and, with expand, the messages. Use it to write to the buyer of a given order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Extra fields, comma-separated: messages, item, order, user_fio, order_status.",
+            "default": "messages,user_fio"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/{id}/order-chat",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      }
+    },
+    {
+      "name": "rozetka_send_message",
+      "description": "Send a message to a buyer in an existing chat. Needs chat_id and receiver_id (the buyer's user_id from rozetka_get_chat or rozetka_list_chats). Returns the sent message with chat_id, body and created. Text only; attachments are not supported here. Show the text to the seller before sending.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "integer",
+            "description": "Chat id."
+          },
+          "receiver_id": {
+            "type": "integer",
+            "description": "Buyer's user id (user_id of the chat)."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text."
+          },
+          "sendEmailUser": {
+            "type": "integer",
+            "description": "1 also e-mails the message to the buyer, 0 not (default).",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          }
+        },
+        "required": [
+          "chat_id",
+          "receiver_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages/create",
+        "bodyMapping": {
+          "chat_id": "$chat_id",
+          "receiver_id": "$receiver_id",
+          "body": "$body",
+          "sendEmailUser": "$sendEmailUser"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_refund_requests",
+      "description": "Search buyers' return and refund requests: request id (letters and digits, e.g. AM1234567), status_title, reason_title, order_id, item name and id, date, buyer name and phone, read flag and return method (delivery_id). 20 per page by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Request id."
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "Order id."
+          },
+          "code_status": {
+            "type": "integer",
+            "description": "Status code from rozetka_list_refund_statuses."
+          },
+          "reason_title": {
+            "type": "string",
+            "description": "Request type, e.g. Повернення."
+          },
+          "item_id": {
+            "type": "integer",
+            "description": "Item id."
+          },
+          "item_name": {
+            "type": "string",
+            "description": "Item name."
+          },
+          "buyer_phone": {
+            "type": "string",
+            "description": "Phone of the buyer who opened the request."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Created on or after. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Created on or before. Date YYYY-MM-DD, e.g. 2026-10-01."
+          },
+          "read": {
+            "type": "integer",
+            "description": "1 read, 0 unread.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort, prefix - for descending.",
+            "enum": [
+              "id",
+              "-id",
+              "date",
+              "-date"
+            ]
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "Requests per page (default 20).",
+            "default": 20
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order-refund/search",
+        "queryParams": {
+          "id": "$id",
+          "order_id": "$order_id",
+          "code_status": "$code_status",
+          "reason_title": "$reason_title",
+          "item_id": "$item_id",
+          "item_name": "$item_name",
+          "buyer_phone": "$buyer_phone",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "read": "$read",
+          "sort": "$sort",
+          "pageSize": "$pageSize",
+          "page": "$page"
+        },
+        "headers": {
+          "Content-Language": "uk"
+        }
+      }
+    },
+    {
+      "name": "rozetka_get_refund_request",
+      "description": "Get one return or refund request: status, reason and sub-reason with the buyer's comment, decision wanted (decision_title), order and item, chat_id, return waybill (ttn), buyer and card owner names and phones, last card digits.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Request id, e.g. AM1234567."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order-refund/detail/{id}",
+        "headers": {
+          "Content-Language": "uk"
+        }
+      }
+    },
+    {
+      "name": "rozetka_list_refund_statuses",
+      "description": "List the status codes of return and refund requests (status_code with its Ukrainian title), for filtering rozetka_list_refund_requests and for rozetka_update_refund_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order-refund/search-data",
+        "headers": {
+          "Content-Language": "uk"
+        }
+      }
+    },
+    {
+      "name": "rozetka_save_refund_ttn",
+      "description": "Save the waybill (TTN) of the return parcel on a return request, e.g. when the seller sends a replacement or the buyer's return shipment number is known. Returns the request id and ttn.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Request id, e.g. AM1234567."
+          },
+          "ttn": {
+            "type": "string",
+            "description": "Waybill number."
+          }
+        },
+        "required": [
+          "id",
+          "ttn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order-refund/save-ttn",
+        "bodyMapping": {
+          "id": "$id",
+          "ttn": "$ttn"
+        },
+        "headers": {
+          "Content-Language": "uk"
+        }
+      }
+    },
+    {
+      "name": "rozetka_update_refund_status",
+      "description": "Move a return or refund request to another status (accept, reject with a reason, goods received ...). Accepting a request can lead to the buyer's money being refunded, so this tool is installed switched off; a workspace admin turns it on deliberately. Status codes come from rozetka_list_refund_statuses; a rejection needs status_description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Request id, e.g. AM1234567."
+          },
+          "status_code": {
+            "type": "integer",
+            "description": "New status code from rozetka_list_refund_statuses."
+          },
+          "status_description": {
+            "type": "string",
+            "description": "Comment, e.g. the reason for a rejection."
+          }
+        },
+        "required": [
+          "id",
+          "status_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order-refund/update-status",
+        "bodyMapping": {
+          "id": "$id",
+          "status_code": "$status_code",
+          "status_description": "$status_description"
+        },
+        "headers": {
+          "Content-Language": "uk"
+        }
+      },
+      "enabled": false
     }
   ]
 }
