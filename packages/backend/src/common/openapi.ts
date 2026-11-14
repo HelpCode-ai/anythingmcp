@@ -146,6 +146,10 @@ export const OPENAPI_TAGS: ReadonlyArray<{ name: string; description: string }> 
     description: 'Shop authorization and TikTok Shop App Store installs for TikTok Shop connectors.',
   },
   {
+    name: 'IOP seller authorization',
+    description: 'Seller authorization at the Alibaba IOP gateways for Lazada, Miravia and AliExpress seller connectors.',
+  },
+  {
     name: 'Meta',
     description: 'Sign-in of the Instagram connectors with Meta (Unified Login, Facebook Login or Instagram Login).',
   },
@@ -221,7 +225,7 @@ A key acts as its owner, with the owner's role in the key's workspace. The scope
 
 Create a key with \`POST /api/mcp-keys\` (\`{"name": "ci", "scope": "MANAGEMENT_READ"}\`), in the dashboard, or with \`amcp login --browser --url <instance-url> [--scope admin]\`. The full key is returned only once.
 
-An API key works on the routes that list the \`api-key\` scheme. The routes of the **Auth**, **SSO**, **MCP OAuth**, **Shopee**, **TikTok Shop**, **WooCommerce** and **Support** tags, and a few others, accept only a dashboard session. Routes without a lock need no credential, except a few browser redirect routes of the MCP OAuth, Shopee and TikTok Shop tags.
+An API key works on the routes that list the \`api-key\` scheme. The routes of the **Auth**, **SSO**, **MCP OAuth**, **Shopee**, **TikTok Shop**, **IOP seller authorization**, **WooCommerce** and **Support** tags, and a few others, accept only a dashboard session. Routes without a lock need no credential, except a few browser redirect routes of the MCP OAuth, Shopee, TikTok Shop and IOP seller authorization tags.
 
 ## Quick start
 
