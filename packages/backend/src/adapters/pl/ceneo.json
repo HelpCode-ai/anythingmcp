@@ -1,0 +1,329 @@
+{
+  "slug": "ceneo",
+  "name": "Ceneo",
+  "description": "Ceneo API for shops on Poland's largest price comparison site: price analysis of your products against competing offers, position bids per product and category, quick offer updates and call limits. API key from Panel Ceneo.",
+  "instructions": "## Ceneo\nThis connector works with the **Ceneo API** at `https://developers.ceneo.pl`, for shops listed on Ceneo.pl, Poland's largest price comparison site: price analysis of your products against the other shops, position bids, quick offer updates and the call limits of your key.\n\n**Setup (about 3 minutes)**\n1. Sign in to **Panel Ceneo** with your shop account and copy the shop's **API key** (a code of the form `F7869662-F334-427C-94B9-2D876BFCD589`). Only shops integrated with Ceneo have one. The key does not expire and can be changed in Panel Ceneo.\n2. Paste it into `CENEO_API_KEY`.\n\nThe connector sends the key as the `apiKey` parameter of every call and asks for JSON answers.\n\n**Where to start**: `ceneo_get_execution_limits` proves the key works and shows how many calls each function has left. `ceneo_get_product_top10_offers` with a few of your shop product ids shows where your prices stand.\n\n**Price analysis**: `ceneo_get_product_offers` (every offer shown for your products) and `ceneo_get_product_top10_offers` (the ten cheapest). Products are addressed by your own shop product ids, the ids of your offer feed, up to 300 per call. Prices are PLN as decimal strings; `Position` is the place in Ceneo's list.\n\n**Bids**: `ceneo_get_product_bids_by_ceneo_id`, `ceneo_get_product_bids_by_shop_id` and `ceneo_get_category_bid` read what is set. `ceneo_set_product_bids` and `ceneo_set_category_bids` change bids, which raises the cost of every click: both are installed switched off. Switch them on only if the assistant may spend the advertising budget.\n\n**Offers**: `ceneo_update_offers` changes price, availability and stock of single offers at once, without waiting for the next feed import. It takes a small XML document.\n\n**Writes are GET requests in this API.** `ceneo_update_offers` and the two bid tools change data although they use GET; they are marked as writes. Never call them to look something up.\n\n**Reading the answers**: every answer is wrapped as `Response` with `Status` (OK or FAILED), `Result` and, on failure, `Exceptions`. Messages are in Polish: \"Niewłaściwy klucz API\" means the key is wrong, \"Odmowa dostępu z adresu\" means Ceneo refuses the call, which it also answers for a key it does not know. Ceneo keeps results for 5 minutes, so a repeated identical call returns the same data; price analysis data itself is up to 20 minutes old.\n\n**Limits**: each function has its own number of calls per period (for example 700). Read them with `ceneo_get_execution_limits` before a long run; a function whose `period_executions_left` is 0 fails until `period_expires`.\n\n**Not included**: the \"Kup na Ceneo\" order calls, the category list and promotion texts need Ceneo's 15-minute bearer token instead of the API key and are not part of this connector yet.",
+  "aliases": [
+    "Ceneo.pl",
+    "Ceneo API",
+    "Panel Ceneo"
+  ],
+  "region": "pl",
+  "category": "e-commerce",
+  "icon": "ceneo",
+  "docsUrl": "https://developers.ceneo.pl/swagger/ui/index",
+  "requiredEnvVars": [
+    "CENEO_API_KEY"
+  ],
+  "envVarMeta": {
+    "CENEO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API key of your shop, shown in Panel Ceneo. Only shops integrated with Ceneo have one.",
+      "link": "https://www.ceneo.pl/lp/API-ceneo-opis",
+      "example": "F7869662-F334-427C-94B9-2D876BFCD589",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+      "patternMessage": "The API key has the form XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX (hexadecimal digits), without the word Basic."
+    }
+  },
+  "verifyHints": {
+    "400": "Ceneo did not accept the API key (Niewłaściwy klucz API) or a parameter. Copy the key again from Panel Ceneo, without spaces.",
+    "401": "Ceneo did not accept the API key. Copy it again from Panel Ceneo; a key changed there stops working at once.",
+    "403": "Ceneo refused the call (Odmowa dostępu z adresu). It answers this way for a key it does not know and for a key without access to this function. Copy the key again from Panel Ceneo; if it is right, ask Ceneo support whether API access of your shop is restricted.",
+    "404": "Ceneo has no such API function. The connector may be out of date.",
+    "rate_limited": "The call limit of this function is used up. ceneo_get_execution_limits shows period_expires, the time the limit resets."
+  },
+  "probe": {
+    "tool": "ceneo_get_execution_limits",
+    "params": {}
+  },
+  "prerequisites": "A shop integrated with Ceneo.pl and access to Panel Ceneo, where the shop's API key is shown. About 3 minutes.",
+  "connector": {
+    "name": "Ceneo API",
+    "type": "REST",
+    "baseUrl": "https://developers.ceneo.pl",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "apiKey": "{{CENEO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "Response.Status",
+          "equals": "FAILED",
+          "messagePath": "Response.Exceptions.Exception[0]",
+          "messageMatches": "klucz API",
+          "status": 401
+        },
+        {
+          "path": "Response.Status",
+          "equals": "FAILED",
+          "messagePath": "Response.Exceptions.Exception[0]",
+          "messageMatches": "Odmowa dost",
+          "status": 403
+        },
+        {
+          "path": "Response.Status",
+          "equals": "FAILED",
+          "messagePath": "Response.Exceptions.Exception[0]",
+          "messageMatches": "limit",
+          "status": 429
+        },
+        {
+          "path": "Response.Status",
+          "equals": "FAILED",
+          "messagePath": "Response.Exceptions.Exception[0]",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "ceneo_get_execution_limits",
+      "description": "Read the call limits of this API key per function: function name, execution_per_period (calls allowed in the period), period_executions_left, period_expires and last_execution (Polish local time). A cheap call that proves the key works. The data sits under `Response.Result`; `Response.Status` is OK or FAILED. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/webapi_meta.GetExecutionLimits/Call",
+        "queryParams": {
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_get_product_offers",
+      "description": "Price analysis, all offers: for each of your products the Ceneo product id, the number of offers, the minimum suggested bid, and every shop offer shown on Ceneo with CustName (shop), Price (PLN), OnStock, Position, ReviewsNumber and MinimalDeliveryCost. Up to 300 products per call; data is up to 20 minutes old. The data sits under `Response.Result`; `Response.Status` is OK or FAILED. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_product_ids": {
+            "type": "string",
+            "description": "Your shop product ids (the ids of your offer feed), comma-separated, at most 300, e.g. item100,item200."
+          }
+        },
+        "required": [
+          "shop_product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/webapi_data_critical.shop_getProductOffersBy_IDs/Call",
+        "queryParams": {
+          "shop_product_ids_comma_separated": "$shop_product_ids",
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_get_product_top10_offers",
+      "description": "Price analysis, top 10: for each of your products the ten cheapest offers on Ceneo with CustName (shop), Price (PLN), OnStock, Position and ReviewsNumber, plus the number of offers and the minimum suggested bid. Up to 300 products per call; data is up to 20 minutes old. The data sits under `Response.Result`; `Response.Status` is OK or FAILED. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_product_ids": {
+            "type": "string",
+            "description": "Your shop product ids (the ids of your offer feed), comma-separated, at most 300, e.g. item100,item200."
+          }
+        },
+        "required": [
+          "shop_product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/webapi_data_critical.shop_getProductTop10OffersBy_IDs/Call",
+        "queryParams": {
+          "shop_product_ids_comma_separated": "$shop_product_ids",
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_get_product_bids_by_ceneo_id",
+      "description": "Read the position bids set on products, looked up by Ceneo product id: ProductId, ProductName, ClickRate (base cost per click in PLN), MaxBid (your bid on top) and ClickRateWithMaxBid. The data sits under `Response.Result`; `Response.Status` is OK or FAILED. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "string",
+            "description": "JSON array as text with one object per product, e.g. `[{\"CeneoProductId\":\"93216917\"},{\"CeneoProductId\":\"73627581\"}]`."
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/bidding.GetProductsBidsByCeneoProductId/Call",
+        "queryParams": {
+          "products": "$products",
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_get_product_bids_by_shop_id",
+      "description": "Read the position bids set on products, looked up by your shop product id: ProductId, ProductName, ShopProductId, ClickRate (base cost per click in PLN), MaxBid (your bid on top) and ClickRateWithMaxBid. The data sits under `Response.Result`; `Response.Status` is OK or FAILED. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "string",
+            "description": "JSON array as text with one object per product, e.g. `[{\"ShopProductId\":\"item100\"},{\"ShopProductId\":\"item200\"}]`."
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/bidding.GetProductsBidsByShopProductId/Call",
+        "queryParams": {
+          "products": "$products",
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_get_category_bid",
+      "description": "Read the position bid set for a Ceneo category: CategoryId, CategoryName, ParentId, MaxBid (PLN per click) and Inherit (whether the bid comes from the parent category). The data sits under `Response.Result`; `Response.Status` is OK or FAILED. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Ceneo category id, e.g. 2111."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/bidding.GetCategoryBidByCategoryId/Call",
+        "queryParams": {
+          "categoryId": "$category_id",
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_set_product_bids",
+      "description": "Set the maximum position bid on products. A bid raises what every click on those offers costs, in PLN, so it spends money for as long as it stays set. Ceneo runs this change as a GET request; it is a write. Returns `execution_result.success`. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bids": {
+            "type": "string",
+            "description": "JSON array as text with one object per product, e.g. `[{\"CeneoProductId\":1,\"MaxBid\":0.25},{\"CeneoProductId\":2,\"MaxBid\":0.3}]`. MaxBid is PLN per click."
+          }
+        },
+        "required": [
+          "bids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/bidding.SetProductsBids/Call",
+        "queryParams": {
+          "bids": "$bids",
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "ceneo_set_category_bids",
+      "description": "Set the maximum position bid for every product of whole categories. A bid raises what every click on those offers costs, in PLN, across the category. Ceneo runs this change as a GET request; it is a write. Returns `execution_result.success`. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bids": {
+            "type": "string",
+            "description": "JSON array as text with one object per category, e.g. `[{\"CategoryId\":1,\"MaxBid\":1.00},{\"CategoryId\":2,\"MaxBid\":2.20}]`. MaxBid is PLN per click."
+          }
+        },
+        "required": [
+          "bids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/bidding.SetCategoryBids/Call",
+        "queryParams": {
+          "bids": "$bids",
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "ceneo_update_offers",
+      "description": "Quick update of your offers on Ceneo between two feed imports: price, availability, stock and name per offer id. Ceneo runs this change as a GET request; it is a write and replaces the values shown to shoppers. Keep the XML short (a few dozen offers), because it travels in the address. Returns `execution_result.success`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "xml": {
+            "type": "string",
+            "description": "Offers as XML text: an `<offers>` element with one `<o>` per offer, with the attributes id (your shop product id), url, price (PLN, dot as decimal separator), avail, set, stock and weight, and a `<name>` child. Example: `<offers><o id=\"37\" url=\"https://shop.example/p/37\" price=\"899.00\" avail=\"1\" set=\"0\" stock=\"2\" weight=\"43\"><name><![CDATA[Product XYZ]]></name></o></offers>`."
+          }
+        },
+        "required": [
+          "xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/function/offer_processor.process_offers/Call",
+        "queryParams": {
+          "xml": "$xml",
+          "resultFormatter": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

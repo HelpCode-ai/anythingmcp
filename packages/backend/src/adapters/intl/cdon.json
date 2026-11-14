@@ -1,0 +1,1435 @@
+{
+  "slug": "cdon",
+  "name": "CDON",
+  "description": "CDON Merchants API for Nordic marketplace sellers: orders with fulfilment and tracking, receipts, articles with price and stock per market, processing statuses, categories, shipping configurations and payment reports. Merchant ID and token.",
+  "instructions": "## CDON\nThis connector works with the **CDON Group Merchants API** at `https://merchants-api.cdon.com/api`, the API CDON and its sister marketplace Fyndiq share, for merchants selling on CDON in the Nordics: orders with fulfilment and tracking, receipts, articles with price and stock, processing statuses, categories, shipping configurations and payment reports.\n\n**Setup (about 3 minutes)**\n1. Sign in to the CDON Merchant Center (`https://merchantcenter.cdon.se`).\n2. Open the profile menu in the upper right corner and click **Profile**.\n3. Under **CDON Platform Integration** copy the **ID** into `CDON_MERCHANT_ID` and the **Token** into `CDON_TOKEN`.\n\nIf the section is missing, ask CDON merchant support (seller@cdon.com) for your Merchants API credentials. The connector sends both as HTTP Basic auth (merchant id as user name, token as password). Credentials are per marketplace: a CDON token does not work on Fyndiq, which has its own connector.\n\n**Where to start**: `cdon_list_orders` returns the new orders (state CREATED). `cdon_list_articles` shows your catalogue with stock and prices; `cdon_get_article_by_sku` finds one article by your SKU.\n\n**Orders**: each order holds exactly one SKU, with a quantity that can be above one; `price` and `total_price` are for the whole quantity. States: CREATED (new), ACCEPTED (not available to every merchant), FULFILLED (shipped, final) and NOT_FULFILLED (cancelled and refunded, final). Read with `cdon_list_orders` and `cdon_get_order`, ship with `cdon_fulfill_order` and the tracking numbers, and fetch the receipt link with `cdon_get_order_receipt`. `cdon_accept_order` is only for merchants with the accepted step. `cdon_cancel_order` is installed switched off: cancelling refunds the customer and cannot be undone. There is no messaging and no returns call in this API.\n\n**Articles**: an article is one sellable unit with its own SKU (a colour and size), grouped into a product by `parent_sku`. Reads (`cdon_list_articles`, `cdon_get_article`, `cdon_get_article_by_sku`) return prices as `price[].value.amount` (decimal string). Writes go through the bulk endpoint and take prices as `amount_including_vat` (number) with `currency` and an optional `vat_rate`: `cdon_create_article`, `cdon_update_article` (always send status, main_image, markets, shipping_time, title and description), `cdon_update_article_price` and `cdon_update_article_quantity`. `cdon_delete_article` and `cdon_bulk_update_articles` (up to 100 actions in one call) are installed switched off.\n\n**Asynchronous writes**: article writes answer 202 with a `batch_id` and are processed in the background, market by market. Check the outcome with `cdon_get_batch_statuses` or `cdon_get_sku_statuses`: status ok, failed or pending, with an error code such as invalid_category or sku_already_exists.\n\n**Markets, currencies, languages**: SE (SEK, sv-SE), DK (DKK, da-DK), FI (EUR, fi-FI) and NO (NOK, nb-NO); en-US is accepted for texts. Which markets are open to you depends on your merchant agreement. `cdon_list_categories` returns the category tree per market and language.\n\n**Shipping configurations (CDON only)**: `cdon_list_carrier_services` is the catalogue of carrier services; `cdon_list_shipping_configurations` lists the delivery options you offer per market. The `delivery` block of an order shows what the customer chose.\n\n**Payments (CDON only, read only)**: `cdon_list_payment_files` and `cdon_get_payment_file` give the payment files with every order row, commission and fee; `cdon_list_settlement_notes` lists the payouts and which files each one paid. Amounts are decimal strings with two decimals. The connector never moves money.\n\n**Paging**: orders and articles take `limit` (up to 1000) and `page` from 1; a page with fewer rows than limit is the last one.\n\n**Rate limits**: 9,000 calls per minute and 270,000 per hour. A 429 carries `X-RateLimit-Policy-Violated` (burst or quota) and the reset time as a UNIX timestamp in `X-RateLimit-Burst-Reset` or `X-RateLimit-Quota-Reset`; rejected calls count too, so wait instead of retrying at once.\n\n**Dates and ids**: times are ISO 8601; order and article ids are strings. Fields that have no value must be left out, not sent empty.",
+  "aliases": [
+    "CDON Marketplace",
+    "CDON Merchants API",
+    "CDON Group",
+    "cdon.se"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "cdon",
+  "docsUrl": "https://docs.cdon.com/",
+  "requiredEnvVars": [
+    "CDON_MERCHANT_ID",
+    "CDON_TOKEN"
+  ],
+  "envVarMeta": {
+    "CDON_MERCHANT_ID": {
+      "label": "Merchant ID",
+      "kind": "credential",
+      "help": "CDON Merchant Center, profile menu, Profile: the ID under CDON Platform Integration.",
+      "link": "https://cdon-api-documentation.readme.io/docs/introduction",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$",
+      "patternMessage": "Paste the merchant ID only (letters, digits and dashes), without spaces."
+    },
+    "CDON_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "CDON Merchant Center, profile menu, Profile: the Token under CDON Platform Integration. A Fyndiq token does not work here.",
+      "link": "https://cdon-api-documentation.readme.io/docs/introduction",
+      "pattern": "^\\S{8,400}$",
+      "patternMessage": "Paste the token only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "CDON refused the request; the answer names the field that is wrong.",
+    "401": "CDON did not accept this merchant ID and token. Copy both again; credentials are issued per marketplace, so Fyndiq credentials do not work on CDON.",
+    "403": "CDON refused the call: these credentials have no permission for this resource.",
+    "404": "CDON found no order or article with that id.",
+    "422": "CDON could not process the body; the answer lists the fields that failed.",
+    "rate_limited": "CDON allows 9,000 calls per minute and 270,000 per hour. Wait until the time in X-RateLimit-Burst-Reset or X-RateLimit-Quota-Reset."
+  },
+  "probe": {
+    "tool": "cdon_list_orders",
+    "params": {
+      "limit": 1
+    }
+  },
+  "prerequisites": "A CDON merchant account with access to the Merchant Center, where the merchant ID and token of the Merchants API are shown on the profile page. About 3 minutes.",
+  "connector": {
+    "name": "CDON Merchants API",
+    "type": "REST",
+    "baseUrl": "https://merchants-api.cdon.com/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{CDON_MERCHANT_ID}}",
+      "password": "{{CDON_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "cdon_list_orders",
+      "description": "List CDON orders, new ones (state CREATED) by default: id, customer_order_id, article_id, article_sku, title, quantity, price and total_price (amount for the whole quantity with vat_amount, vat_rate and currency), market, state, shipping_address (name, street, postal code, city, country, phone), created_at, updated_at, fulfillment_deadline, tracking_information and receipt_available, plus the delivery option the customer chose. Each order holds one SKU; `price` is for the whole quantity, not per unit. 100 rows per page (max 1000); a page with fewer rows than limit is the last. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "CREATED",
+              "ACCEPTED",
+              "FULFILLED",
+              "NOT_FULFILLED"
+            ],
+            "description": "CREATED (new, default), ACCEPTED, FULFILLED (shipped) or NOT_FULFILLED (cancelled and refunded)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Orders per page, 1 to 1000 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orders",
+        "queryParams": {
+          "state": "$state",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_get_order",
+      "description": "Read one CDON order: id, customer_order_id, article_id, article_sku, title, quantity, price and total_price (amount for the whole quantity with vat_amount, vat_rate and currency), market, state, shipping_address (name, street, postal code, city, country, phone), created_at, updated_at, fulfillment_deadline, tracking_information and receipt_available, plus the delivery option the customer chose. Amounts are in the customer's local currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CDON order id (id of cdon_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_accept_order",
+      "description": "Accept one new order (state CREATED to ACCEPTED), which commits you to deliver within the agreed time. The accepted step is not available to every merchant; where it is not, go straight to cdon_fulfill_order. An accepted order can no longer be cancelled through the API. Answers 202 with a short description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CDON order id (id of cdon_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/orders/{order_id}/accept"
+      }
+    },
+    {
+      "name": "cdon_fulfill_order",
+      "description": "Mark one order as shipped (state FULFILLED, final), with the tracking numbers of the parcels when you have them. Do this as soon as the item has left; a cancelled order cannot be fulfilled. Answers 202 with a short description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CDON order id (id of cdon_list_orders)."
+          },
+          "tracking_information": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tracking_number": {
+                  "type": "string",
+                  "description": "Tracking number of the parcel."
+                },
+                "carrier_name": {
+                  "type": "string",
+                  "description": "Carrier name, e.g. Postnord, DHL, Budbee. Optional."
+                }
+              },
+              "required": [
+                "tracking_number"
+              ],
+              "description": "One parcel."
+            },
+            "description": "Parcels, e.g. `[{\"carrier_name\": \"Postnord\", \"tracking_number\": \"abc123\"}]`. Leave out when there is no tracking."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/orders/{order_id}/fulfill",
+        "bodyMapping": {
+          "tracking_information": "$tracking_information"
+        }
+      }
+    },
+    {
+      "name": "cdon_cancel_order",
+      "description": "Cancel one order you cannot ship (state NOT_FULFILLED, final). CDON refunds the customer and the cancellation cannot be undone. Only new orders can be cancelled, not accepted or fulfilled ones. Installed switched off. Answers 202 with a short description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CDON order id (id of cdon_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/orders/{order_id}/cancel"
+      },
+      "enabled": false
+    },
+    {
+      "name": "cdon_get_order_receipt",
+      "description": "Get a download link (`download_url`) to the receipt PDF of one order. The link expires about 10 minutes after it is issued, so fetch it only when it is needed. Works only when the order has receipt_available true; older orders and orders fulfilled moments ago have none. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CDON order id (id of cdon_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orders/{order_id}/receipt"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_list_articles",
+      "description": "List the articles (one per SKU) of your CDON account: id, sku, parent_sku, status (for sale or paused), quantity, title and description per language, brand, gtin, categories, main_image, images, markets, price and original_price per market (amount as a decimal string and currency), shipping_time, delivery_type and properties. 100 rows per page (max 1000); a page with fewer rows than limit is the last. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "for_sale": {
+            "type": "boolean",
+            "description": "true: only articles with status `for sale`. Default false (all)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Articles per page, 1 to 1000 (default 100)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/articles",
+        "queryParams": {
+          "for_sale": "$for_sale",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_get_article",
+      "description": "Read one article by its CDON article id: id, sku, parent_sku, status (for sale or paused), quantity, title and description per language, brand, gtin, categories, main_image, images, markets, price and original_price per market (amount as a decimal string and currency), shipping_time, delivery_type and properties. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "description": "CDON article id (id of cdon_list_articles, or the id returned when the article was created)."
+          }
+        },
+        "required": [
+          "article_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/articles/{article_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_get_article_by_sku",
+      "description": "Read one article by your own SKU. The article sits under `content.article` in the answer: id, sku, parent_sku, status (for sale or paused), quantity, title and description per language, brand, gtin, categories, main_image, images, markets, price and original_price per market (amount as a decimal string and currency), shipping_time, delivery_type and properties. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Your SKU of the article, 1 to 64 characters."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/articles/sku/{sku}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_create_article",
+      "description": "Create one article (one sellable unit with its own SKU) on CDON. Required: sku, status, quantity, main_image, markets, price, shipping_time, title and description. Processed in the background: the answer has `batch_id`, `success` (id and sku) and `failed` (errors per field); check how it landed per market with cdon_get_sku_statuses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article": {
+            "type": "object",
+            "properties": {
+              "sku": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "Your SKU of the article, 1 to 64 characters."
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 500000,
+                "description": "Stock quantity, 0 to 500000."
+              },
+              "price": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "market": {
+                      "type": "string",
+                      "enum": [
+                        "SE",
+                        "DK",
+                        "FI",
+                        "NO"
+                      ],
+                      "description": "Market code: SE (Sweden), DK (Denmark), FI (Finland) or NO (Norway)."
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "amount_including_vat": {
+                          "type": "number",
+                          "description": "Price including VAT as a decimal number, e.g. 349 or 349.50."
+                        },
+                        "currency": {
+                          "type": "string",
+                          "enum": [
+                            "SEK",
+                            "DKK",
+                            "EUR",
+                            "NOK"
+                          ],
+                          "description": "Currency of the market: SEK for SE, DKK for DK, EUR for FI, NOK for NO."
+                        },
+                        "vat_rate": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "VAT rate in percent, e.g. 25. Left out, the standard rate of the market applies."
+                        }
+                      },
+                      "required": [
+                        "amount_including_vat",
+                        "currency"
+                      ],
+                      "description": "The amount."
+                    }
+                  },
+                  "required": [
+                    "market",
+                    "value"
+                  ],
+                  "description": "Price in one market."
+                },
+                "minItems": 1,
+                "description": "One price per market the article is sold in."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "for sale",
+                  "paused"
+                ],
+                "description": "`for sale` or `paused` (hidden from customers, kept in the account)."
+              },
+              "main_image": {
+                "type": "string",
+                "maxLength": 1500,
+                "description": "Public URL of the main image."
+              },
+              "markets": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "SE",
+                    "DK",
+                    "FI",
+                    "NO"
+                  ]
+                },
+                "minItems": 1,
+                "description": "Markets to sell in, e.g. `[\"SE\", \"DK\"]`."
+              },
+              "shipping_time": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "market": {
+                      "type": "string",
+                      "enum": [
+                        "SE",
+                        "DK",
+                        "FI",
+                        "NO"
+                      ],
+                      "description": "Market code: SE (Sweden), DK (Denmark), FI (Finland) or NO (Norway)."
+                    },
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 21,
+                      "description": "Fastest delivery in days, 0 to 21."
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 21,
+                      "description": "Slowest delivery in days, 1 to 21."
+                    }
+                  },
+                  "required": [
+                    "market",
+                    "min",
+                    "max"
+                  ],
+                  "description": "Delivery time in one market."
+                },
+                "minItems": 1,
+                "description": "Delivery time per market, e.g. `[{\"market\": \"SE\", \"min\": 1, \"max\": 3}]`."
+              },
+              "title": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "language": {
+                      "type": "string",
+                      "enum": [
+                        "sv-SE",
+                        "en-US",
+                        "da-DK",
+                        "fi-FI",
+                        "nb-NO"
+                      ],
+                      "description": "Language code: sv-SE, en-US, da-DK, fi-FI or nb-NO."
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 150,
+                      "description": "Title, 5 to 150 characters."
+                    }
+                  },
+                  "required": [
+                    "language",
+                    "value"
+                  ],
+                  "description": "Title in one language."
+                },
+                "minItems": 1,
+                "description": "Title per language, e.g. `[{\"language\": \"sv-SE\", \"value\": \"Röd t-shirt, storlek M\"}]`. Missing local languages are translated by the marketplace."
+              },
+              "description": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "language": {
+                      "type": "string",
+                      "enum": [
+                        "sv-SE",
+                        "en-US",
+                        "da-DK",
+                        "fi-FI",
+                        "nb-NO"
+                      ],
+                      "description": "Language code: sv-SE, en-US, da-DK, fi-FI or nb-NO."
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 10,
+                      "maxLength": 4096,
+                      "description": "Description without HTML, 10 to 4096 characters."
+                    }
+                  },
+                  "required": [
+                    "language",
+                    "value"
+                  ],
+                  "description": "Description in one language."
+                },
+                "minItems": 1,
+                "description": "Description per language, same shape as title."
+              },
+              "parent_sku": {
+                "type": "string",
+                "maxLength": 64,
+                "description": "Group id that ties the variants (sizes, colours) of one product together; the main article uses its own SKU."
+              },
+              "category": {
+                "type": "string",
+                "maxLength": 10,
+                "description": "Category id as text, e.g. `1124` (id of cdon_list_categories)."
+              },
+              "brand": {
+                "type": "string",
+                "maxLength": 50,
+                "description": "Brand or manufacturer name, up to 50 characters."
+              },
+              "gtin": {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 14,
+                "description": "GTIN (EAN or UPC), 8 to 14 digits."
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "description": "Up to 10 more image URLs."
+              },
+              "properties": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Properties as name and value, e.g. `[{\"name\": \"color\", \"value\": \"Deep Green\", \"language\": \"en-US\"}, {\"name\": \"preset-size_SML\", \"value\": \"xxl\"}]`. Free-text properties (color, material, size and others) need a language; preset- properties take a fixed value."
+              },
+              "variational_properties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Names of the properties that tell the variants of a group apart, e.g. `[\"color\", \"size\"]`."
+              },
+              "classifications": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Classifications, e.g. `[{\"name\": \"CONDITION\", \"value\": \"NEW\"}]` (NEW or REFURB)."
+              },
+              "delivery_type": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Delivery method per market: mailbox, service_point or home_delivery, e.g. `[{\"market\": \"SE\", \"value\": \"mailbox\"}]`."
+              },
+              "kn_number": {
+                "type": "string",
+                "maxLength": 48,
+                "description": "Combined nomenclature (customs) code."
+              },
+              "shipped_from": {
+                "type": "string",
+                "enum": [
+                  "EU",
+                  "NON_EU"
+                ],
+                "description": "Where the goods ship from: EU or NON_EU."
+              },
+              "mpn": {
+                "type": "string",
+                "maxLength": 250,
+                "description": "Manufacturer part number."
+              },
+              "internal_note": {
+                "type": "string",
+                "maxLength": 60,
+                "description": "Your own note, up to 60 characters; not shown to customers."
+              },
+              "manufacturer": {
+                "type": "object",
+                "description": "Manufacturer and EU responsible person (GPSR), e.g. `{\"name\": \"Acme AB\", \"address\": {\"street_address\": \"Storgatan 1\", \"city\": \"Malmö\", \"postal_code\": \"21122\", \"country\": \"SE\"}, \"website\": \"https://acme.example\", \"email\": \"info@acme.example\", \"responsible_person\": {\"name\": \"...\", \"phone\": \"...\", \"email\": \"...\"}}`."
+              },
+              "shipping_configurations": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Shipping configurations per market that override your defaults, e.g. `[{\"market\": \"SE\", \"configuration_ids\": [\"...\"]}]` (ids of cdon_list_shipping_configurations)."
+              }
+            },
+            "required": [
+              "sku",
+              "status",
+              "quantity",
+              "main_image",
+              "markets",
+              "price",
+              "shipping_time",
+              "title",
+              "description"
+            ],
+            "description": "The article to create."
+          }
+        },
+        "required": [
+          "article"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/articles/bulk",
+        "bodyMapping": {
+          "articles": [
+            "$article"
+          ]
+        }
+      }
+    },
+    {
+      "name": "cdon_update_article",
+      "description": "Replace the content of one article by SKU (titles, descriptions, images, markets, delivery times, status and the optional fields). Status, main_image, markets, shipping_time, title and description must always be sent, also when unchanged. Price and stock have their own tools. Processed in the background; check the outcome with cdon_get_batch_statuses or cdon_get_sku_statuses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Your SKU of the article, 1 to 64 characters."
+          },
+          "article": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "for sale",
+                  "paused"
+                ],
+                "description": "`for sale` or `paused` (hidden from customers, kept in the account)."
+              },
+              "main_image": {
+                "type": "string",
+                "maxLength": 1500,
+                "description": "Public URL of the main image."
+              },
+              "markets": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "SE",
+                    "DK",
+                    "FI",
+                    "NO"
+                  ]
+                },
+                "minItems": 1,
+                "description": "Markets to sell in, e.g. `[\"SE\", \"DK\"]`."
+              },
+              "shipping_time": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "market": {
+                      "type": "string",
+                      "enum": [
+                        "SE",
+                        "DK",
+                        "FI",
+                        "NO"
+                      ],
+                      "description": "Market code: SE (Sweden), DK (Denmark), FI (Finland) or NO (Norway)."
+                    },
+                    "min": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 21,
+                      "description": "Fastest delivery in days, 0 to 21."
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 21,
+                      "description": "Slowest delivery in days, 1 to 21."
+                    }
+                  },
+                  "required": [
+                    "market",
+                    "min",
+                    "max"
+                  ],
+                  "description": "Delivery time in one market."
+                },
+                "minItems": 1,
+                "description": "Delivery time per market, e.g. `[{\"market\": \"SE\", \"min\": 1, \"max\": 3}]`."
+              },
+              "title": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "language": {
+                      "type": "string",
+                      "enum": [
+                        "sv-SE",
+                        "en-US",
+                        "da-DK",
+                        "fi-FI",
+                        "nb-NO"
+                      ],
+                      "description": "Language code: sv-SE, en-US, da-DK, fi-FI or nb-NO."
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 150,
+                      "description": "Title, 5 to 150 characters."
+                    }
+                  },
+                  "required": [
+                    "language",
+                    "value"
+                  ],
+                  "description": "Title in one language."
+                },
+                "minItems": 1,
+                "description": "Title per language, e.g. `[{\"language\": \"sv-SE\", \"value\": \"Röd t-shirt, storlek M\"}]`. Missing local languages are translated by the marketplace."
+              },
+              "description": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "language": {
+                      "type": "string",
+                      "enum": [
+                        "sv-SE",
+                        "en-US",
+                        "da-DK",
+                        "fi-FI",
+                        "nb-NO"
+                      ],
+                      "description": "Language code: sv-SE, en-US, da-DK, fi-FI or nb-NO."
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 10,
+                      "maxLength": 4096,
+                      "description": "Description without HTML, 10 to 4096 characters."
+                    }
+                  },
+                  "required": [
+                    "language",
+                    "value"
+                  ],
+                  "description": "Description in one language."
+                },
+                "minItems": 1,
+                "description": "Description per language, same shape as title."
+              },
+              "parent_sku": {
+                "type": "string",
+                "maxLength": 64,
+                "description": "Group id that ties the variants (sizes, colours) of one product together; the main article uses its own SKU."
+              },
+              "category": {
+                "type": "string",
+                "maxLength": 10,
+                "description": "Category id as text, e.g. `1124` (id of cdon_list_categories)."
+              },
+              "brand": {
+                "type": "string",
+                "maxLength": 50,
+                "description": "Brand or manufacturer name, up to 50 characters."
+              },
+              "gtin": {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 14,
+                "description": "GTIN (EAN or UPC), 8 to 14 digits."
+              },
+              "images": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "description": "Up to 10 more image URLs."
+              },
+              "properties": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Properties as name and value, e.g. `[{\"name\": \"color\", \"value\": \"Deep Green\", \"language\": \"en-US\"}, {\"name\": \"preset-size_SML\", \"value\": \"xxl\"}]`. Free-text properties (color, material, size and others) need a language; preset- properties take a fixed value."
+              },
+              "variational_properties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Names of the properties that tell the variants of a group apart, e.g. `[\"color\", \"size\"]`."
+              },
+              "classifications": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Classifications, e.g. `[{\"name\": \"CONDITION\", \"value\": \"NEW\"}]` (NEW or REFURB)."
+              },
+              "delivery_type": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Delivery method per market: mailbox, service_point or home_delivery, e.g. `[{\"market\": \"SE\", \"value\": \"mailbox\"}]`."
+              },
+              "kn_number": {
+                "type": "string",
+                "maxLength": 48,
+                "description": "Combined nomenclature (customs) code."
+              },
+              "shipped_from": {
+                "type": "string",
+                "enum": [
+                  "EU",
+                  "NON_EU"
+                ],
+                "description": "Where the goods ship from: EU or NON_EU."
+              },
+              "mpn": {
+                "type": "string",
+                "maxLength": 250,
+                "description": "Manufacturer part number."
+              },
+              "internal_note": {
+                "type": "string",
+                "maxLength": 60,
+                "description": "Your own note, up to 60 characters; not shown to customers."
+              },
+              "manufacturer": {
+                "type": "object",
+                "description": "Manufacturer and EU responsible person (GPSR), e.g. `{\"name\": \"Acme AB\", \"address\": {\"street_address\": \"Storgatan 1\", \"city\": \"Malmö\", \"postal_code\": \"21122\", \"country\": \"SE\"}, \"website\": \"https://acme.example\", \"email\": \"info@acme.example\", \"responsible_person\": {\"name\": \"...\", \"phone\": \"...\", \"email\": \"...\"}}`."
+              },
+              "shipping_configurations": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Shipping configurations per market that override your defaults, e.g. `[{\"market\": \"SE\", \"configuration_ids\": [\"...\"]}]` (ids of cdon_list_shipping_configurations)."
+              }
+            },
+            "required": [
+              "status",
+              "main_image",
+              "markets",
+              "shipping_time",
+              "title",
+              "description"
+            ],
+            "description": "The new content of the article."
+          }
+        },
+        "required": [
+          "sku",
+          "article"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/articles/bulk",
+        "bodyMapping": {
+          "actions": [
+            {
+              "sku": "$sku",
+              "action": "update_article",
+              "body": "$article"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cdon_update_article_price",
+      "description": "Set the price of one article by SKU, per market, including VAT, in the currency of the market (SEK, DKK, EUR for Finland, NOK). Markets left out keep their price. Processed in the background; the answer has `batch_id`, `success` and `failed`, and cdon_get_sku_statuses shows the result per market.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Your SKU of the article, 1 to 64 characters."
+          },
+          "price": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "market": {
+                  "type": "string",
+                  "enum": [
+                    "SE",
+                    "DK",
+                    "FI",
+                    "NO"
+                  ],
+                  "description": "Market code: SE (Sweden), DK (Denmark), FI (Finland) or NO (Norway)."
+                },
+                "value": {
+                  "type": "object",
+                  "properties": {
+                    "amount_including_vat": {
+                      "type": "number",
+                      "description": "Price including VAT as a decimal number, e.g. 349 or 349.50."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "enum": [
+                        "SEK",
+                        "DKK",
+                        "EUR",
+                        "NOK"
+                      ],
+                      "description": "Currency of the market: SEK for SE, DKK for DK, EUR for FI, NOK for NO."
+                    },
+                    "vat_rate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "VAT rate in percent, e.g. 25. Left out, the standard rate of the market applies."
+                    }
+                  },
+                  "required": [
+                    "amount_including_vat",
+                    "currency"
+                  ],
+                  "description": "The amount."
+                }
+              },
+              "required": [
+                "market",
+                "value"
+              ],
+              "description": "Price in one market."
+            },
+            "minItems": 1,
+            "description": "Prices, e.g. `[{\"market\": \"SE\", \"value\": {\"amount_including_vat\": 349, \"currency\": \"SEK\", \"vat_rate\": 25}}]`."
+          }
+        },
+        "required": [
+          "sku",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/articles/bulk",
+        "bodyMapping": {
+          "actions": [
+            {
+              "sku": "$sku",
+              "action": "update_article_price",
+              "body": {
+                "price": "$price"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cdon_update_article_quantity",
+      "description": "Set the stock quantity of one article by SKU (0 to 500000; 0 means sold out). Processed in the background; the answer has `batch_id`, `success` and `failed`, and cdon_get_sku_statuses shows the result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Your SKU of the article, 1 to 64 characters."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 500000,
+            "description": "New stock quantity."
+          }
+        },
+        "required": [
+          "sku",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/articles/bulk",
+        "bodyMapping": {
+          "actions": [
+            {
+              "sku": "$sku",
+              "action": "update_article_quantity",
+              "body": {
+                "quantity": "$quantity"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cdon_delete_article",
+      "description": "Delete one article by SKU: it is removed from CDON and customers no longer see it. To stop selling for a while, set its status to paused with cdon_update_article instead. Installed switched off. Processed in the background; the answer has `batch_id`, `success` and `failed`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Your SKU of the article, 1 to 64 characters."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/articles/bulk",
+        "bodyMapping": {
+          "actions": [
+            {
+              "sku": "$sku",
+              "action": "delete_article"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "cdon_bulk_update_articles",
+      "description": "Send up to 100 article actions in one call: update_article, update_article_price, update_article_quantity or delete_article, each with a sku and its body. One wrong row changes or deletes the wrong article, so it is installed switched off; the single-article tools cover everyday changes. Answers `batch_id`, `success` and `failed`; follow up with cdon_get_batch_statuses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "description": "Your SKU of the article, 1 to 64 characters."
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "update_article",
+                    "update_article_price",
+                    "update_article_quantity",
+                    "delete_article"
+                  ],
+                  "description": "What to do with the article."
+                },
+                "body": {
+                  "type": "object",
+                  "description": "Fields for the action: the article content for update_article, `price` for update_article_price, `quantity` for update_article_quantity; none for delete_article."
+                }
+              },
+              "required": [
+                "sku",
+                "action"
+              ],
+              "description": "One action on one article."
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Actions, e.g. `[{\"sku\": \"A-1\", \"action\": \"update_article_quantity\", \"body\": {\"quantity\": 25}}, {\"sku\": \"A-2\", \"action\": \"update_article_price\", \"body\": {\"price\": [{\"market\": \"SE\", \"value\": {\"amount_including_vat\": 349, \"currency\": \"SEK\"}}]}}]`."
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/articles/bulk",
+        "bodyMapping": {
+          "actions": "$actions"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "cdon_get_batch_statuses",
+      "description": "Read how the article changes of one or more batches were processed: per batch the statuses[] with sku, article_id, action and, per market, status (ok, failed, pending) and error_code (for example invalid_category, invalid_vat_rate, sku_already_exists, update_not_allowed). Read-only (a POST that only reads).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Batch ids (`batch_id` of a create or update answer)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failed",
+              "pending"
+            ],
+            "description": "Only rows in this status."
+          }
+        },
+        "required": [
+          "batch_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/statuses/batch",
+        "queryParams": {
+          "status": "$status"
+        },
+        "bodyMapping": {
+          "batch_ids": "$batch_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_get_sku_statuses",
+      "description": "Read the latest processing status of articles by SKU: per SKU and market status (ok, failed, pending) and error_code. It shows the last change that was processed; a change sent a moment ago may still be on its way. Read-only (a POST that only reads).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Your SKUs to check."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failed",
+              "pending"
+            ],
+            "description": "Only rows in this status."
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/statuses/sku",
+        "queryParams": {
+          "status": "$status"
+        },
+        "bodyMapping": {
+          "skus": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_list_categories",
+      "description": "Read the CDON category tree for one market, with names in one language: id (the category value of an article), name, path (ancestor ids joined by dots) and search_friendly_name. A long list. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "enum": [
+              "SE",
+              "DK",
+              "FI",
+              "NO"
+            ],
+            "description": "Market code: SE (Sweden), DK (Denmark), FI (Finland) or NO (Norway)."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "sv-SE",
+              "en-US",
+              "da-DK",
+              "fi-FI",
+              "nb-NO"
+            ],
+            "default": "en-US",
+            "description": "Language of the names: sv-SE, en-US, da-DK, fi-FI or nb-NO."
+          }
+        },
+        "required": [
+          "market"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/categories/{market}/{language}/"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_list_carrier_services",
+      "description": "List the carrier services CDON supports for shipping configurations: code (carrier and delivery method in one, e.g. postnord_mypack_collect), carrier, delivery_method and name. CDON only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/carrier-codes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_list_shipping_configurations",
+      "description": "List your shipping configurations (the delivery options customers can choose): id, market, carrier_service_code, shipping_config_name and show_by_default (used for articles without their own mapping). CDON only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "enum": [
+              "SE",
+              "DK",
+              "FI",
+              "NO"
+            ],
+            "description": "Only configurations of this market: SE, DK, FI or NO."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shipping-configurations",
+        "queryParams": {
+          "market": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_list_payment_files",
+      "description": "List CDON's payment files, newest first: report_id, generated_at, payment_date (null until paid out), currencies and total_by_currency (decimal strings with two decimals). Files are created every weekday at about 09:30 Stockholm time; history goes back 84 months. CDON only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "First creation day, inclusive (YYYY-MM-DD)."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last creation day, inclusive (YYYY-MM-DD)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 365,
+            "description": "Rows to return, 1 to 500 (default 365)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip, for paging (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment-reports",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_get_payment_file",
+      "description": "Read one or more payment files merged into one document with three sections: PaymentFiles, Rows (one line per order event with 22 columns: amounts, commission, VAT) and ServiceFees. JSON by default; Excel comes back as an attached file. A selection over 20,000 rows answers 202 with an export instead. CDON only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_ids": {
+            "type": "string",
+            "pattern": "^\\d+(,\\d+){0,199}$",
+            "description": "Payment file ids, comma-separated, up to 200 (report_id of cdon_list_payment_files), e.g. `1244000,1244018`."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "excel",
+              "xml"
+            ],
+            "default": "json",
+            "description": "json (default), excel or xml."
+          }
+        },
+        "required": [
+          "report_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment-reports/payment-file",
+        "queryParams": {
+          "report_ids": "$report_ids",
+          "format": "$format"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cdon_list_settlement_notes",
+      "description": "List CDON's payouts (settlement notes), newest first: note_id, payout_date, period_start, period_end, currencies, report_ids (the payment files this payout paid) and total_by_currency. One payout can pay several payment files. CDON only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "First payout day, inclusive (YYYY-MM-DD)."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last payout day, inclusive (YYYY-MM-DD)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 365,
+            "description": "Rows to return, 1 to 500 (default 365)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip, for paging (default 0)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment-reports/settlement-notes",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

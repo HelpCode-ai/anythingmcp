@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="InPost connector">
+  <rect width="128" height="128" rx="24" fill="#FFCD00"/>
+  <path d="M26 28h14v72H26Z" fill="#1D1D1B"/>
+  <path d="M52 100V28h28c15 0 25 9 25 23S95 74 80 74H66v26Zm14-39h13c7 0 11.500-4 11.500-10S86 41 79 41H66Z" fill="#1D1D1B" fill-rule="evenodd"/>
+</svg>

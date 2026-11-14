@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="FedEx connector">
+  <rect width="128" height="128" rx="24" fill="#4D148C"/>
+  <path d="M30 28h46v14H46v16h26v14H46v28H30Z" fill="#fff"/>
+  <path d="M76 58h14l6 9.500L102 58h14L103 79l13 21h-14l-6-9.500L90 100H76l13-21Z" fill="#FF6600"/>
+</svg>

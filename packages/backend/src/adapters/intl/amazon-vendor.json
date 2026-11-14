@@ -1,0 +1,1409 @@
+{
+  "slug": "amazon-vendor",
+  "name": "Amazon Vendor Central (SP-API)",
+  "description": "Amazon Vendor Central through the Selling Partner API: retail purchase orders, acknowledgements, shipment confirmations, invoices, Direct Fulfillment orders with labels, packing slips and inventory, transaction status and vendor reports. Login with Amazon refresh token of a private vendor app.",
+  "instructions": "## Amazon Vendor Central\nThis connector works with the vendor side of Amazon's **Selling Partner API (SP-API)**, for companies that sell to Amazon as a vendor (Vendor Central): retail purchase orders, acknowledgements, shipment confirmations and invoices, Direct Fulfillment orders, labels, packing slips and inventory, transaction status and vendor reports. It signs in with Login with Amazon (a refresh token); no AWS keys are needed. Sellers on Seller Central use the Amazon Seller Central connector instead.\n\n**Setup (about 20 minutes, plus Amazon's review of the developer profile)**\n1. In **Vendor Central** open **Integration**, then **API Integration**, and complete the **Developer Profile**. Under **Data Access** choose **Private Developer: I build application(s) that integrate my own company with Amazon Services APIs**, pick the roles you need and choose **Register**. Amazon reviews the profile and opens a case with the next steps.\n2. On the same page choose **Add new app client**, complete the form, tick **Vendors** where Amazon offers the choice, and select the roles. Then choose **View** under **LWA credentials** and copy the client identifier into `SPAPI_CLIENT_ID` and the client secret into `SPAPI_CLIENT_SECRET`.\n3. Choose **Authorize app** for your vendor account. Amazon shows a **refresh token** (it starts with `Atzr|`): paste it into `SPAPI_REFRESH_TOKEN`.\n4. Pick your region in `SPAPI_ENDPOINT` (North America, Europe or Far East) and enter the marketplace id of your Amazon store in `SPAPI_MARKETPLACE_ID`, for example `ATVPDKIKX0DER` (US), `A1PA6795UKMFR9` (Germany), `A1F83G8C2ARO7P` (UK), `APJ6JRA9NG5V4` (Italy), `A13V1IB3VIYZZH` (France), `A1RKKUPIHCS9HS` (Spain), `A1VC38T7YXB528` (Japan).\n\n**Roles**: the retail tools need the role **Amazon Fulfillment**. The Direct Fulfillment tools need **Direct-to-Consumer Shipping (Restricted)**, a restricted role because the orders carry customer addresses; Amazon asks for more information about data protection before granting it. The vendor reports need **Brand Analytics**. A call without its role answers 403.\n\n**Where to start**: `amazon_vendor_list_purchase_orders` with `purchase_order_state` New shows what Amazon ordered; `amazon_vendor_get_purchase_order` gives one order in full.\n\n**Retail procurement**: `amazon_vendor_list_purchase_orders`, `amazon_vendor_get_purchase_order`, `amazon_vendor_list_purchase_order_statuses` (accepted and received quantities). Answer an order with `amazon_vendor_submit_acknowledgements`, announce the shipment with `amazon_vendor_submit_shipment_confirmations`, and follow it with `amazon_vendor_list_shipments` and `amazon_vendor_list_transport_labels`. Acknowledgements and shipment confirmations are binding answers to Amazon, so `amazon_vendor_submit_acknowledgements` and `amazon_vendor_submit_shipment_confirmations` are installed switched off, as is `amazon_vendor_submit_invoices`: switch them on on the connector page when the AI should send them; it asks you to confirm every one.\n\n**Direct Fulfillment** (you ship to Amazon's customer): `amazon_vendor_list_df_orders`, `amazon_vendor_get_df_order`, `amazon_vendor_acknowledge_df_orders`, `amazon_vendor_list_df_packing_slips`, `amazon_vendor_get_df_packing_slip`, `amazon_vendor_list_df_customer_invoices`, `amazon_vendor_list_df_shipping_labels`, `amazon_vendor_get_df_shipping_label`, `amazon_vendor_submit_df_shipment_confirmations` and `amazon_vendor_update_df_inventory`. Creating labels books transport: `amazon_vendor_request_df_shipping_labels` and `amazon_vendor_create_df_shipping_labels` are installed switched off, as are `amazon_vendor_acknowledge_df_orders`, `amazon_vendor_submit_df_shipment_confirmations` and `amazon_vendor_submit_df_invoices`.\n\n**Submissions are asynchronous**: every submit tool answers with a `transactionId` and nothing else. Read the outcome with `amazon_vendor_get_transaction_status` (retail) or `amazon_vendor_get_df_transaction_status` (Direct Fulfillment): Processing, Success or Failure with the errors. Do not report a submission as done before it says Success.\n\n**Reports** (3 steps): `amazon_vendor_create_report`, then `amazon_vendor_get_report` until DONE, then `amazon_vendor_download_report_document`.\n\n**Field notes**: list calls cover at most 7 days per call; Direct Fulfillment lists need both `created_after` and `created_before`. Times are ISO 8601. Quantities come with a unit (Cases or Eaches for retail, Each for Direct Fulfillment); money is a decimal string with a currency code. `partyId` is your vendor code for the selling party and a warehouse code for ship-from and ship-to parties. Lists page with `pagination.nextToken`.\n\n**Rate limits**: 10 calls per second per operation with a burst of 10 (transaction status: burst 20). On a 429 wait a moment and call again.",
+  "aliases": [
+    "Amazon Vendor",
+    "Vendor Central",
+    "Amazon 1P",
+    "Amazon Retail",
+    "Amazon Direct Fulfillment"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "amazon-vendor",
+  "docsUrl": "https://developer-docs.amazon.com/sp-api/docs/sp-api-vendor-use-cases",
+  "requiredEnvVars": [
+    "SPAPI_CLIENT_ID",
+    "SPAPI_CLIENT_SECRET",
+    "SPAPI_REFRESH_TOKEN",
+    "SPAPI_ENDPOINT",
+    "SPAPI_MARKETPLACE_ID"
+  ],
+  "appRegistrationUrl": "https://vendorcentral.amazon.com/sellingpartner/developerconsole",
+  "envVarMeta": {
+    "SPAPI_CLIENT_ID": {
+      "label": "LWA client identifier",
+      "kind": "credential",
+      "help": "Vendor Central, Integration, API Integration: View under LWA credentials of your app. It starts with amzn1.application-oa2-client.",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/viewing-your-application-information-and-credentials",
+      "pattern": "^amzn1\\.application-oa2-client\\.[A-Za-z0-9]+$",
+      "patternMessage": "The client identifier starts with amzn1.application-oa2-client. and has no spaces."
+    },
+    "SPAPI_CLIENT_SECRET": {
+      "label": "LWA client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the client identifier under LWA credentials.",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/viewing-your-application-information-and-credentials",
+      "pattern": "^\\S{20,200}$",
+      "patternMessage": "Paste the client secret without spaces."
+    },
+    "SPAPI_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown after you choose Authorize app for your vendor account. It starts with Atzr|.",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/self-authorization",
+      "pattern": "^Atzr\\|\\S+$",
+      "patternMessage": "The refresh token starts with Atzr| and has no spaces. An access token (Atza|) does not work here."
+    },
+    "SPAPI_ENDPOINT": {
+      "label": "Region",
+      "kind": "address",
+      "help": "The SP-API region of your Amazon store: North America (US, Canada, Mexico, Brazil), Europe (EU stores, UK, Turkey, UAE, Saudi Arabia, Egypt, South Africa, India) or Far East (Japan, Australia, Singapore).",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/sp-api-endpoints",
+      "example": "https://sellingpartnerapi-eu.amazon.com",
+      "pattern": "^https://sellingpartnerapi-(na|eu|fe)\\.amazon\\.com$",
+      "patternMessage": "Pick one of the three regional addresses, without a slash at the end.",
+      "options": [
+        {
+          "value": "https://sellingpartnerapi-na.amazon.com",
+          "label": "North America"
+        },
+        {
+          "value": "https://sellingpartnerapi-eu.amazon.com",
+          "label": "Europe"
+        },
+        {
+          "value": "https://sellingpartnerapi-fe.amazon.com",
+          "label": "Far East"
+        }
+      ]
+    },
+    "SPAPI_MARKETPLACE_ID": {
+      "label": "Marketplace ID",
+      "kind": "setting",
+      "help": "The id of your Amazon store, used for reports: ATVPDKIKX0DER (US), A1PA6795UKMFR9 (Germany), A1F83G8C2ARO7P (UK), APJ6JRA9NG5V4 (Italy), A13V1IB3VIYZZH (France), A1RKKUPIHCS9HS (Spain), A1VC38T7YXB528 (Japan).",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/marketplace-ids",
+      "example": "A1PA6795UKMFR9",
+      "pattern": "^[A-Z0-9]{10,14}$",
+      "patternMessage": "A marketplace id is 10 to 14 capital letters and digits, e.g. A1PA6795UKMFR9."
+    }
+  },
+  "verifyHints": {
+    "400": "Amazon refused the request. The errors name the field; list calls accept a time window of at most 7 days.",
+    "401": "Amazon did not accept the sign-in. Check that the client identifier, the client secret and the refresh token belong to the same app, and authorize the app again in Vendor Central if the refresh token was revoked.",
+    "403": "Amazon denied access. Either the region does not match your Vendor Central account, or the app lacks the role for this call: Amazon Fulfillment for retail purchase orders, Direct-to-Consumer Shipping (Restricted) for Direct Fulfillment, Brand Analytics for reports. A draft app also needs your vendor account authorized (Authorize app).",
+    "404": "Amazon found no purchase order, transaction or report with that id in this region.",
+    "rate_limited": "Amazon allows 10 calls per second per operation. Wait a moment and call again."
+  },
+  "probe": {
+    "tool": "amazon_vendor_list_purchase_orders",
+    "params": {
+      "limit": 1,
+      "include_details": "false"
+    }
+  },
+  "prerequisites": "An Amazon Vendor Central account with permission to manage API integrations, an approved Developer Profile as a private developer, and a private app with the vendor roles you need. Amazon reviews the Developer Profile before the app can be used.",
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 20,
+    "examples": [
+      "Which new purchase orders did Amazon send this week?",
+      "Show the items and quantities of purchase order 4Z32PABC",
+      "Which Direct Fulfillment orders still have to ship?",
+      "Was my last acknowledgement accepted?"
+    ],
+    "needs": [
+      "Your Amazon Vendor Central account, with permission to manage API integrations",
+      "About 20 minutes, plus Amazon's review of your Developer Profile",
+      "The Amazon store you sell in, to pick the region"
+    ],
+    "why": "Amazon lets other tools reach a vendor account only through an app registered in Vendor Central by the vendor itself. A private app is free and only your company can use it: you authorize it yourself and Amazon gives you a refresh token.\n\nAnythingMCP uses the app's keys and that token to ask Amazon for short-lived access. Deleting the connector removes them from AnythingMCP; you can also remove the authorization in Vendor Central at any time.",
+    "steps": [
+      {
+        "id": "developer-profile",
+        "title": "Register as a private developer",
+        "body": "Sign in to **Vendor Central** for your Amazon store. From the **Integration** menu choose **API Integration**, then **Proceed to Developer Profile** (or **View profile** if you already have one).\n\nFill in the form as below, enter your use cases and security controls, accept the agreements and choose **Register**. Amazon reviews the profile and opens a case with the next steps; answer its questions within five days.",
+        "action": {
+          "label": "Open API Integration in Vendor Central",
+          "url": "https://vendorcentral.amazon.com/sellingpartner/developerconsole"
+        },
+        "values": [
+          {
+            "label": "Data Access",
+            "value": "Private Developer: I build application(s) that integrate my own company with Amazon Services APIs",
+            "pick": true
+          },
+          {
+            "label": "Roles",
+            "value": "Amazon Fulfillment",
+            "pick": true,
+            "note": "For retail purchase orders, shipments and invoices. Add Direct-to-Consumer Shipping (Restricted) for Direct Fulfillment and Brand Analytics for reports."
+          }
+        ],
+        "confirm": "Amazon approved my Developer Profile",
+        "problems": [
+          {
+            "q": "My Vendor Central is not on amazon.com",
+            "a": "Open Vendor Central for your own store (for example vendorcentral.amazon.de or vendorcentral.amazon.co.uk) and go to **Integration**, then **API Integration**. Amazon lists the addresses under [Vendor Central URLs](https://developer-docs.amazon.com/sp-api/docs/vendor-central-urls)."
+          },
+          {
+            "q": "I do not see the Integration menu",
+            "a": "Your Vendor Central user needs permission to manage API integrations. Ask the administrator of the vendor account."
+          },
+          {
+            "q": "What is the restricted role for?",
+            "a": "Direct Fulfillment orders carry the customer's address. Amazon grants **Direct-to-Consumer Shipping (Restricted)** only after more questions about how the data is protected. Leave it out if you do not use Direct Fulfillment."
+          }
+        ]
+      },
+      {
+        "id": "create-app",
+        "title": "Create the app and copy its keys",
+        "body": "Back on **API Integration**, choose **Add new app client** and complete the form as below. When the app is listed, choose **View** under **LWA credentials** and copy the client identifier and the client secret into the fields below.",
+        "action": {
+          "label": "Open API Integration in Vendor Central",
+          "url": "https://vendorcentral.amazon.com/sellingpartner/developerconsole"
+        },
+        "values": [
+          {
+            "label": "App name",
+            "value": "AnythingMCP",
+            "note": "Any name works."
+          },
+          {
+            "label": "Selling partner type",
+            "value": "Vendors",
+            "pick": true,
+            "note": "A check box shown after you choose the API type, when both Sellers and Vendors are offered."
+          },
+          {
+            "label": "Roles",
+            "value": "The roles approved in your Developer Profile",
+            "pick": true
+          }
+        ],
+        "fields": [
+          "SPAPI_CLIENT_ID",
+          "SPAPI_CLIENT_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "Add new app client is not offered",
+            "a": "Amazon has not approved the Developer Profile yet. Check the case Amazon opened and answer its questions."
+          },
+          {
+            "q": "Does the app have to be published?",
+            "a": "No. A private app works in draft status: you authorize it yourself in the next step."
+          }
+        ]
+      },
+      {
+        "id": "authorize",
+        "title": "Authorize the app and copy the refresh token",
+        "body": "On the page of your app, choose **Authorize app** for your vendor account. Amazon shows a **refresh token**: copy it into the field below. Each click on **Authorize app** creates a new token; earlier ones keep working.",
+        "action": {
+          "label": "Open API Integration in Vendor Central",
+          "url": "https://vendorcentral.amazon.com/sellingpartner/developerconsole"
+        },
+        "fields": [
+          "SPAPI_REFRESH_TOKEN"
+        ],
+        "problems": [
+          {
+            "q": "The token I copied starts with Atza|",
+            "a": "That is a short-lived access token. The refresh token starts with **Atzr|**: choose **Authorize app** again and copy the token Amazon shows."
+          },
+          {
+            "q": "We have several vendor groups",
+            "a": "Authorize the vendor group this connector should work with. For another group, authorize it too and set up a second connector with its refresh token."
+          }
+        ]
+      },
+      {
+        "id": "region",
+        "title": "Pick your region",
+        "body": "Choose the region of your Amazon store and enter its marketplace id. AnythingMCP then checks the keys with Amazon by reading your purchase orders.",
+        "fields": [
+          "SPAPI_ENDPOINT",
+          "SPAPI_MARKETPLACE_ID"
+        ],
+        "problems": [
+          {
+            "q": "Which region is my store in?",
+            "a": "**North America**: US, Canada, Mexico, Brazil. **Europe**: all European stores, UK, Turkey, UAE, Saudi Arabia, Egypt, South Africa and India. **Far East**: Japan, Australia, Singapore."
+          },
+          {
+            "q": "The check answers 403",
+            "a": "The region does not match the Vendor Central account, or the app has no **Amazon Fulfillment** role yet. If you only use Direct Fulfillment, the purchase order check cannot pass: save anyway and use the Direct Fulfillment tools."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Amazon Vendor Central (SP-API)",
+    "type": "REST",
+    "baseUrl": "{{SPAPI_ENDPOINT}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "refresh_token",
+      "tokenUrl": "https://api.amazon.com/auth/o2/token",
+      "clientId": "{{SPAPI_CLIENT_ID}}",
+      "clientSecret": "{{SPAPI_CLIENT_SECRET}}",
+      "refreshToken": "{{SPAPI_REFRESH_TOKEN}}",
+      "headerName": "x-amz-access-token"
+    }
+  },
+  "tools": [
+    {
+      "name": "amazon_vendor_list_purchase_orders",
+      "description": "List retail purchase orders Amazon placed with you, created or changed in a time window of at most 7 days: purchaseOrderNumber, purchaseOrderState (New, Acknowledged, Closed) and, with details, order date, delivery window, ship-to warehouse, buying and selling party, and the items with ASIN, vendor SKU, ordered quantity, net cost and list price. The window may reach 6 months back. When the answer has `pagination.nextToken`, call again with it as next_token. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Orders that became available at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Orders that became available at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "changed_after": {
+            "type": "string",
+            "description": "Orders changed at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "changed_before": {
+            "type": "string",
+            "description": "Orders changed at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "purchase_order_state": {
+            "type": "string",
+            "description": "Only orders in this state.",
+            "enum": [
+              "New",
+              "Acknowledged",
+              "Closed"
+            ]
+          },
+          "is_po_changed": {
+            "type": "string",
+            "description": "true: only orders Amazon changed after placing them; fulfil the changed order, not the original.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "po_item_state": {
+            "type": "string",
+            "description": "Cancelled: only orders with one or more items Amazon cancelled.",
+            "enum": [
+              "Cancelled"
+            ]
+          },
+          "ordering_vendor_code": {
+            "type": "string",
+            "description": "Only orders for this vendor code. Leave out for all vendor codes of the account."
+          },
+          "include_details": {
+            "type": "string",
+            "description": "true (default) returns full orders, false only the order numbers.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort by creation date, ascending or descending.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "next_token": {
+            "type": "string",
+            "description": "Paging token: `pagination.nextToken` of the previous answer. Pass it with the same other filters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/orders/v1/purchaseOrders",
+        "queryParams": {
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "changedAfter": "$changed_after",
+          "changedBefore": "$changed_before",
+          "purchaseOrderState": "$purchase_order_state",
+          "isPOChanged": "$is_po_changed",
+          "poItemState": "$po_item_state",
+          "orderingVendorCode": "$ordering_vendor_code",
+          "includeDetails": "$include_details",
+          "limit": "$limit",
+          "sortOrder": "$sort_order",
+          "nextToken": "$next_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_get_purchase_order",
+      "description": "Read one retail purchase order: state, order date, purchase order type, delivery window, payment method, buying, selling, ship-to and bill-to party, and every item with sequence number, ASIN, vendor SKU, ordered quantity (units or cases), net cost and list price. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Amazon purchase order number, e.g. 4Z32PABC (retail order numbers are 8 letters and digits)."
+          }
+        },
+        "required": [
+          "purchase_order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/orders/v1/purchaseOrders/{purchase_order_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_list_purchase_order_statuses",
+      "description": "List the fulfilment status of retail purchase orders in a window of at most 7 days: purchaseOrderStatus (OPEN, CLOSED) and per item the ordered, acknowledged (accepted, rejected) and received quantities. Filter by order number, confirmation or receive status. When the answer has `pagination.nextToken`, call again with it as next_token. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Only this purchase order."
+          },
+          "purchase_order_status": {
+            "type": "string",
+            "description": "Only orders in this status.",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          },
+          "item_confirmation_status": {
+            "type": "string",
+            "description": "Only orders whose items have this confirmation status.",
+            "enum": [
+              "ACCEPTED",
+              "PARTIALLY_ACCEPTED",
+              "REJECTED",
+              "UNCONFIRMED"
+            ]
+          },
+          "item_receive_status": {
+            "type": "string",
+            "description": "Only orders whose items have this receive status at Amazon.",
+            "enum": [
+              "NOT_RECEIVED",
+              "PARTIALLY_RECEIVED",
+              "RECEIVED"
+            ]
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Orders created at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Orders created at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Orders updated at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Orders updated at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "ordering_vendor_code": {
+            "type": "string",
+            "description": "Only orders for this vendor code."
+          },
+          "ship_to_party_id": {
+            "type": "string",
+            "description": "Only orders shipped to this Amazon warehouse code."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort by creation date, ascending or descending.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "next_token": {
+            "type": "string",
+            "description": "Paging token: `pagination.nextToken` of the previous answer. Pass it with the same other filters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/orders/v1/purchaseOrdersStatus",
+        "queryParams": {
+          "purchaseOrderNumber": "$purchase_order_number",
+          "purchaseOrderStatus": "$purchase_order_status",
+          "itemConfirmationStatus": "$item_confirmation_status",
+          "itemReceiveStatus": "$item_receive_status",
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "updatedAfter": "$updated_after",
+          "updatedBefore": "$updated_before",
+          "orderingVendorCode": "$ordering_vendor_code",
+          "shipToPartyId": "$ship_to_party_id",
+          "limit": "$limit",
+          "sortOrder": "$sort_order",
+          "nextToken": "$next_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_submit_acknowledgements",
+      "description": "Acknowledge retail purchase orders: accept, backorder or reject each item with the quantity and the dates you commit to. An acknowledgement is a binding answer to Amazon. Amazon processes it asynchronously: the answer carries a `transactionId`, and amazon_vendor_get_transaction_status tells whether it was accepted (Success) or refused (Failure, with the errors). Limit: 10 calls per second. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "acknowledgements": {
+            "type": "array",
+            "description": "One object per purchase order: purchaseOrderNumber, sellingParty with partyId (your vendor code), acknowledgementDate (ISO 8601) and items. Each item: itemSequenceNumber, amazonProductIdentifier (ASIN) or vendorProductIdentifier, orderedQuantity (amount, unitOfMeasure Cases or Eaches), optionally netCost and listPrice (currencyCode, amount), and itemAcknowledgements, a list with acknowledgementCode (Accepted, Backordered, Rejected), acknowledgedQuantity (amount, unitOfMeasure), and scheduledShipDate, scheduledDeliveryDate or rejectionReason.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "acknowledgements"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/orders/v1/acknowledgements",
+        "bodyMapping": {
+          "acknowledgements": "$acknowledgements"
+        }
+      }
+    },
+    {
+      "name": "amazon_vendor_submit_shipment_confirmations",
+      "description": "Send shipment confirmations (advance ship notices) for retail purchase orders: what was shipped, from where, with which carrier and in which cartons or pallets. Amazon processes it asynchronously: the answer carries a `transactionId`, and amazon_vendor_get_transaction_status tells whether it was accepted (Success) or refused (Failure, with the errors). Limit: 10 calls per second. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_confirmations": {
+            "type": "array",
+            "description": "One object per shipment: shipmentIdentifier (your unique id), shipmentConfirmationType (Original or Replace), shipmentConfirmationDate (ISO 8601), sellingParty with partyId (your vendor code), shipFromParty and shipToParty (each with partyId), and shippedItems, a list with itemSequenceNumber, amazonProductIdentifier or vendorProductIdentifier, shippedQuantity (amount, unitOfMeasure) and itemDetails with purchaseOrderNumber. Optional: shipmentType, shippedDate, estimatedDeliveryDate, transportationDetails (carrierScac, carrierShipmentReferenceNumber, billOfLadingNumber), shipmentMeasurements, cartons and pallets.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "shipment_confirmations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/shipping/v1/shipmentConfirmations",
+        "bodyMapping": {
+          "shipmentConfirmations": "$shipment_confirmations"
+        }
+      }
+    },
+    {
+      "name": "amazon_vendor_list_shipments",
+      "description": "List retail shipments Amazon knows about, with carrier details, current status, containers and the purchase orders in them. Filter by your shipment identifier, the buyer reference number (BOL or ARN), warehouse codes, status or one of the date windows. At most 50 rows per page. When the answer has `pagination.nextToken`, call again with it as next_token. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_shipment_identifier": {
+            "type": "string",
+            "description": "Your shipment identifier (the shipmentIdentifier you sent)."
+          },
+          "buyer_reference_number": {
+            "type": "string",
+            "description": "Amazon reference number of the shipment."
+          },
+          "current_shipment_status": {
+            "type": "string",
+            "description": "Only shipments in this status, as written in the currentShipmentStatus of a shipment."
+          },
+          "buyer_warehouse_code": {
+            "type": "string",
+            "description": "Amazon warehouse code the shipment goes to."
+          },
+          "seller_warehouse_code": {
+            "type": "string",
+            "description": "Your warehouse code the shipment leaves from."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Shipments created at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Shipments created at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "shipped_after": {
+            "type": "string",
+            "description": "Shipments shipped at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "shipped_before": {
+            "type": "string",
+            "description": "Shipments shipped at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort by creation date, ascending or descending.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "next_token": {
+            "type": "string",
+            "description": "Paging token: `pagination.nextToken` of the previous answer. Pass it with the same other filters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/shipping/v1/shipments",
+        "queryParams": {
+          "vendorShipmentIdentifier": "$vendor_shipment_identifier",
+          "buyerReferenceNumber": "$buyer_reference_number",
+          "currentShipmentStatus": "$current_shipment_status",
+          "buyerWarehouseCode": "$buyer_warehouse_code",
+          "sellerWarehouseCode": "$seller_warehouse_code",
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "shippedAfter": "$shipped_after",
+          "shippedBefore": "$shipped_before",
+          "limit": "$limit",
+          "sortOrder": "$sort_order",
+          "nextToken": "$next_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_list_transport_labels",
+      "description": "List the small-parcel transport labels Amazon already created for retail shipments: label data per package with tracking number, plus the shipment and warehouse it belongs to. It only reads existing labels and buys nothing. At most 50 rows per page. When the answer has `pagination.nextToken`, call again with it as next_token. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_shipment_identifier": {
+            "type": "string",
+            "description": "Your shipment identifier."
+          },
+          "buyer_reference_number": {
+            "type": "string",
+            "description": "Amazon reference number of the shipment."
+          },
+          "seller_warehouse_code": {
+            "type": "string",
+            "description": "Your warehouse code."
+          },
+          "label_created_after": {
+            "type": "string",
+            "description": "Labels created at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "label_created_before": {
+            "type": "string",
+            "description": "Labels created at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort by creation date, ascending or descending.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "next_token": {
+            "type": "string",
+            "description": "Paging token: `pagination.nextToken` of the previous answer. Pass it with the same other filters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/shipping/v1/transportLabels",
+        "queryParams": {
+          "vendorShipmentIdentifier": "$vendor_shipment_identifier",
+          "buyerReferenceNumber": "$buyer_reference_number",
+          "sellerWarehouseCode": "$seller_warehouse_code",
+          "labelCreatedAfter": "$label_created_after",
+          "labelCreatedBefore": "$label_created_before",
+          "limit": "$limit",
+          "sortOrder": "$sort_order",
+          "nextToken": "$next_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_submit_invoices",
+      "description": "Submit invoices or credit notes for retail purchase orders to Amazon. An invoice is a legal and financial document: Amazon pays by it and a wrong one has to be corrected with a credit note. Amazon processes it asynchronously: the answer carries a `transactionId`, and amazon_vendor_get_transaction_status tells whether it was accepted (Success) or refused (Failure, with the errors). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoices": {
+            "type": "array",
+            "description": "One object per document: invoiceType (Invoice or CreditNote), id (your invoice number), date (ISO 8601), remitToParty (partyId and address), invoiceTotal (currencyCode, amount as decimal string), and items with itemSequenceNumber, amazonProductIdentifier or vendorProductIdentifier, invoicedQuantity, netCost and purchaseOrderNumber. Optional: shipToParty, billToParty, paymentTerms, taxDetails, chargeDetails, allowanceDetails.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "invoices"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/payments/v1/invoices",
+        "bodyMapping": {
+          "invoices": "$invoices"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_vendor_get_transaction_status",
+      "description": "Read the result of a retail submission (acknowledgement, shipment confirmation or invoice) by its transactionId: status Processing, Success or Failure, and on failure the errors Amazon found. Results appear after a short delay. Limit: 10 calls per second, burst 20. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "The transactionId returned by the submit call."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/transactions/v1/transactions/{transaction_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_list_df_orders",
+      "description": "List Direct Fulfillment purchase orders (orders you ship straight to Amazon customers) created in a time window of at most 7 days: purchaseOrderNumber and, with details, status, order date, ship-to address of the customer, ship method, promised delivery date and the items with ASIN, vendor SKU, quantity and net price. Contains personal data of customers. When the answer has `pagination.nextToken`, call again with it as next_token. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Orders created at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Required; the range may span at most 7 days."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Orders created at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Required."
+          },
+          "ship_from_party_id": {
+            "type": "string",
+            "description": "Only this vendor warehouse (warehouse code). Leave out for all warehouses."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort by creation date, ascending or descending.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "next_token": {
+            "type": "string",
+            "description": "Paging token: `pagination.nextToken` of the previous answer. Pass it with the same other filters."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only orders in this status.",
+            "enum": [
+              "NEW",
+              "SHIPPED",
+              "ACCEPTED",
+              "CANCELLED"
+            ]
+          },
+          "include_details": {
+            "type": "string",
+            "description": "true returns full orders, false only the order numbers.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
+        "required": [
+          "created_after",
+          "created_before"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/directFulfillment/orders/2021-12-28/purchaseOrders",
+        "queryParams": {
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "shipFromPartyId": "$ship_from_party_id",
+          "limit": "$limit",
+          "sortOrder": "$sort_order",
+          "nextToken": "$next_token",
+          "status": "$status",
+          "includeDetails": "$include_details"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_get_df_order",
+      "description": "Read one Direct Fulfillment purchase order: status, order date, customer ship-to address, shipment details (ship method, priority, promised delivery date, gift and packing slip messages), tax and the items with ASIN, vendor SKU, quantity and net price. Contains personal data of the customer. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Amazon purchase order number, e.g. 4Z32PABC (retail order numbers are 8 letters and digits)."
+          }
+        },
+        "required": [
+          "purchase_order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/directFulfillment/orders/2021-12-28/purchaseOrders/{purchase_order_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_acknowledge_df_orders",
+      "description": "Acknowledge Direct Fulfillment purchase orders: confirm or reject them with the quantity per item. Rejecting cancels the customer order on your side. Amazon processes it asynchronously: the answer carries a `transactionId`, and amazon_vendor_get_df_transaction_status tells whether it was accepted (Success) or refused (Failure, with the errors). Limit: 10 calls per second. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_acknowledgements": {
+            "type": "array",
+            "description": "One object per order: purchaseOrderNumber, vendorOrderNumber (your own number), acknowledgementDate (ISO 8601), acknowledgementStatus (a two-digit code and a description; Amazon lists the codes in its Vendor Direct Fulfillment use case guide), sellingParty with partyId (your vendor code), shipFromParty with partyId (your warehouse code) and itemAcknowledgements, a list with itemSequenceNumber, buyerProductIdentifier (ASIN) or vendorProductIdentifier and acknowledgedQuantity (amount, unitOfMeasure Each).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "order_acknowledgements"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/directFulfillment/orders/2021-12-28/acknowledgements",
+        "bodyMapping": {
+          "orderAcknowledgements": "$order_acknowledgements"
+        }
+      }
+    },
+    {
+      "name": "amazon_vendor_list_df_shipping_labels",
+      "description": "List the shipping labels that already exist for Direct Fulfillment orders created in a window of at most 7 days: purchaseOrderNumber, label format, and per package the tracking number, carrier, ship method and the label content (Base64). It only reads existing labels. When the answer has `pagination.nextToken`, call again with it as next_token. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Labels created at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Required; the range may span at most 7 days."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Labels created at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Required."
+          },
+          "ship_from_party_id": {
+            "type": "string",
+            "description": "Only this vendor warehouse (warehouse code). Leave out for all warehouses."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort by creation date, ascending or descending.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "next_token": {
+            "type": "string",
+            "description": "Paging token: `pagination.nextToken` of the previous answer. Pass it with the same other filters."
+          }
+        },
+        "required": [
+          "created_after",
+          "created_before"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/directFulfillment/shipping/2021-12-28/shippingLabels",
+        "queryParams": {
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "shipFromPartyId": "$ship_from_party_id",
+          "limit": "$limit",
+          "sortOrder": "$sort_order",
+          "nextToken": "$next_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_get_df_shipping_label",
+      "description": "Read the shipping label that exists for one Direct Fulfillment order: label format and per package tracking number, carrier, ship method and the label content (Base64). It only reads an existing label. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Amazon purchase order number, e.g. 4Z32PABC (retail order numbers are 8 letters and digits)."
+          }
+        },
+        "required": [
+          "purchase_order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/directFulfillment/shipping/2021-12-28/shippingLabels/{purchase_order_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_request_df_shipping_labels",
+      "description": "Ask Amazon to create shipping labels for Direct Fulfillment orders with Amazon-paid carriers. This books transport for the parcels. Amazon processes it asynchronously: the answer carries a `transactionId`, and amazon_vendor_get_df_transaction_status tells whether it was accepted (Success) or refused (Failure, with the errors). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipping_label_requests": {
+            "type": "array",
+            "description": "One object per order: purchaseOrderNumber, sellingParty with partyId (your vendor code), shipFromParty with partyId (your warehouse code) and optionally containers (containerType, containerIdentifier, weight, dimensions, packedItems).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "shipping_label_requests"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/directFulfillment/shipping/2021-12-28/shippingLabels",
+        "bodyMapping": {
+          "shippingLabelRequests": "$shipping_label_requests"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_vendor_create_df_shipping_labels",
+      "description": "Create the shipping labels for one Direct Fulfillment order and get them back at once (label content as Base64 with tracking numbers). This books transport for the parcels. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Amazon purchase order number, e.g. 4Z32PABC (retail order numbers are 8 letters and digits)."
+          },
+          "selling_party": {
+            "type": "object",
+            "description": "Object with partyId (your vendor code)."
+          },
+          "ship_from_party": {
+            "type": "object",
+            "description": "Object with partyId (your warehouse code)."
+          },
+          "containers": {
+            "type": "array",
+            "description": "Packages to label. Each object: containerType (Carton or Pallet), containerIdentifier, weight (unitOfMeasure KG or LB, value) and packedItems (itemSequenceNumber, buyerProductIdentifier or vendorProductIdentifier, packedQuantity); optional dimensions.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "purchase_order_number",
+          "selling_party",
+          "ship_from_party"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/directFulfillment/shipping/2021-12-28/shippingLabels/{purchase_order_number}",
+        "bodyMapping": {
+          "sellingParty": "$selling_party",
+          "shipFromParty": "$ship_from_party",
+          "containers": "$containers"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_vendor_submit_df_shipment_confirmations",
+      "description": "Confirm that Direct Fulfillment orders were shipped (or could not be: FLOOR_DENIAL), with the shipped quantity per item and the packages. Amazon then informs the customer. Amazon processes it asynchronously: the answer carries a `transactionId`, and amazon_vendor_get_df_transaction_status tells whether it was accepted (Success) or refused (Failure, with the errors). Limit: 10 calls per second. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_confirmations": {
+            "type": "array",
+            "description": "One object per order: purchaseOrderNumber, shipmentDetails (shippedDate as ISO 8601, shipmentStatus SHIPPED or FLOOR_DENIAL, optionally vendorOrderNumber, estimatedDeliveryDate, isPriorityShipment), sellingParty with partyId (your vendor code), shipFromParty with partyId (your warehouse code), items (itemSequenceNumber, buyerProductIdentifier or vendorProductIdentifier, shippedQuantity with amount and unitOfMeasure) and optionally containers (containerType, containerIdentifier, trackingNumber, carrier, shipMethod, weight, packedItems).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "shipment_confirmations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/directFulfillment/shipping/2021-12-28/shipmentConfirmations",
+        "bodyMapping": {
+          "shipmentConfirmations": "$shipment_confirmations"
+        }
+      }
+    },
+    {
+      "name": "amazon_vendor_list_df_packing_slips",
+      "description": "List the packing slips Amazon prepared for Direct Fulfillment orders created in a window of at most 7 days: purchaseOrderNumber, content type and the slip content (Base64). When the answer has `pagination.nextToken`, call again with it as next_token. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Packing slips created at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Required; the range may span at most 7 days."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Packing slips created at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Required."
+          },
+          "ship_from_party_id": {
+            "type": "string",
+            "description": "Only this vendor warehouse (warehouse code). Leave out for all warehouses."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort by creation date, ascending or descending.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "next_token": {
+            "type": "string",
+            "description": "Paging token: `pagination.nextToken` of the previous answer. Pass it with the same other filters."
+          }
+        },
+        "required": [
+          "created_after",
+          "created_before"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/directFulfillment/shipping/2021-12-28/packingSlips",
+        "queryParams": {
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "shipFromPartyId": "$ship_from_party_id",
+          "limit": "$limit",
+          "sortOrder": "$sort_order",
+          "nextToken": "$next_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_get_df_packing_slip",
+      "description": "Read the packing slip of one Direct Fulfillment order: content type and the slip content (Base64 of a PDF) to put in the parcel. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_number": {
+            "type": "string",
+            "description": "Amazon purchase order number, e.g. 4Z32PABC (retail order numbers are 8 letters and digits)."
+          }
+        },
+        "required": [
+          "purchase_order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/directFulfillment/shipping/2021-12-28/packingSlips/{purchase_order_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_list_df_customer_invoices",
+      "description": "List the customer invoices Amazon prepared for Direct Fulfillment orders created in a window of at most 7 days (stores where the invoice travels in the parcel): purchaseOrderNumber and the invoice content (Base64). When the answer has `pagination.nextToken`, call again with it as next_token. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Invoices created at or after this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Required; the range may span at most 7 days."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Invoices created at or before this time. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Required."
+          },
+          "ship_from_party_id": {
+            "type": "string",
+            "description": "Only this vendor warehouse (warehouse code). Leave out for all warehouses."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Sort by creation date, ascending or descending.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "next_token": {
+            "type": "string",
+            "description": "Paging token: `pagination.nextToken` of the previous answer. Pass it with the same other filters."
+          }
+        },
+        "required": [
+          "created_after",
+          "created_before"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/directFulfillment/shipping/2021-12-28/customerInvoices",
+        "queryParams": {
+          "createdAfter": "$created_after",
+          "createdBefore": "$created_before",
+          "shipFromPartyId": "$ship_from_party_id",
+          "limit": "$limit",
+          "sortOrder": "$sort_order",
+          "nextToken": "$next_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_update_df_inventory",
+      "description": "Send the stock you have available for Direct Fulfillment in one of your warehouses. With is_full_update false only the listed items change; with true the list replaces the whole stock of the warehouse and every item left out is set to zero. Amazon processes it asynchronously: the answer carries a `transactionId`, and amazon_vendor_get_df_transaction_status tells whether it was accepted (Success) or refused (Failure, with the errors). Limit: 10 calls per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "description": "Your Direct Fulfillment warehouse code."
+          },
+          "selling_party_id": {
+            "type": "string",
+            "description": "Your vendor code."
+          },
+          "is_full_update": {
+            "type": "boolean",
+            "description": "false (default): change only the listed items. true: replace the whole stock of the warehouse.",
+            "default": false
+          },
+          "items": {
+            "type": "array",
+            "description": "Items to set. Each object: buyerProductIdentifier (ASIN) or vendorProductIdentifier, availableQuantity (amount, unitOfMeasure Each) and optionally isObsolete (true when the item will never be available again).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "warehouse_id",
+          "selling_party_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/directFulfillment/inventory/v1/warehouses/{warehouse_id}/items",
+        "bodyMapping": {
+          "inventory": {
+            "sellingParty": {
+              "partyId": "$selling_party_id"
+            },
+            "isFullUpdate": "$is_full_update",
+            "items": "$items"
+          }
+        }
+      }
+    },
+    {
+      "name": "amazon_vendor_submit_df_invoices",
+      "description": "Submit invoices for Direct Fulfillment orders to Amazon. An invoice is a legal and financial document: Amazon pays by it. Amazon processes it asynchronously: the answer carries a `transactionId`, and amazon_vendor_get_df_transaction_status tells whether it was accepted (Success) or refused (Failure, with the errors). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoices": {
+            "type": "array",
+            "description": "One object per invoice: invoiceNumber, invoiceDate (ISO 8601), remitToParty and shipFromParty (each with partyId; address and taxRegistrationDetails where required), invoiceTotal (currencyCode, amount as decimal string) and items with itemSequenceNumber, buyerProductIdentifier or vendorProductIdentifier, invoicedQuantity, netCost and purchaseOrderNumber. Optional: taxTotals, chargeDetails, shipToCountryCode, paymentTermsCode.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "invoices"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/vendor/directFulfillment/payments/v1/invoices",
+        "bodyMapping": {
+          "invoices": "$invoices"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_vendor_get_df_transaction_status",
+      "description": "Read the result of a Direct Fulfillment submission (acknowledgement, shipment confirmation, inventory update, label request or invoice) by its transactionId: status Processing, Success or Failure, and on failure the errors Amazon found. Limit: 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "The transactionId returned by the submit call."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vendor/directFulfillment/transactions/2021-12-28/transactions/{transaction_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_create_report",
+      "description": "Request a vendor report through the Reports API (step 1 of 3), for the marketplace of this connector. Vendor report types: GET_VENDOR_SALES_REPORT, GET_VENDOR_INVENTORY_REPORT, GET_VENDOR_TRAFFIC_REPORT, GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT, GET_VENDOR_FORECASTING_REPORT, and the hourly GET_VENDOR_REAL_TIME_SALES_REPORT, GET_VENDOR_REAL_TIME_TRAFFIC_REPORT and GET_VENDOR_REAL_TIME_INVENTORY_REPORT. They need the Brand Analytics role. Returns a reportId; poll it with amazon_vendor_get_report. Creates a report job only, nothing in the account changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_type": {
+            "type": "string",
+            "description": "Report type, e.g. GET_VENDOR_SALES_REPORT."
+          },
+          "data_start_time": {
+            "type": "string",
+            "description": "Start of the data window. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Must be the first day of the period for period reports (a Sunday for WEEK)."
+          },
+          "data_end_time": {
+            "type": "string",
+            "description": "End of the data window. ISO 8601 date and time, e.g. 2026-11-01T00:00:00Z. Must be the last day of the period (a Saturday for WEEK)."
+          },
+          "report_options": {
+            "type": "object",
+            "description": "Options of the report type as an object of strings, e.g. reportPeriod (DAY, WEEK, MONTH, QUARTER, YEAR), sellingProgram (RETAIL, FRESH) and distributorView (MANUFACTURING, SOURCING) for the sales, inventory and margin reports."
+          }
+        },
+        "required": [
+          "report_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reports/2021-06-30/reports",
+        "bodyMapping": {
+          "reportType": "$report_type",
+          "marketplaceIds": [
+            "{{SPAPI_MARKETPLACE_ID}}"
+          ],
+          "dataStartTime": "$data_start_time",
+          "dataEndTime": "$data_end_time",
+          "reportOptions": "$report_options"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "amazon_vendor_get_report",
+      "description": "Check a report (step 2 of 3): processingStatus is IN_QUEUE, IN_PROGRESS, DONE, CANCELLED or FATAL. Poll until DONE, then pass reportDocumentId to amazon_vendor_download_report_document. CANCELLED usually means there was no data for the window. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "description": "The reportId returned by amazon_vendor_create_report."
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/2021-06-30/reports/{report_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_vendor_download_report_document",
+      "description": "Read the content of a finished report (step 3 of 3). The server fetches the file, decompresses it and returns it: vendor analytics reports are JSON and come back whole under `data`; tab- or comma-separated reports come back as rows keyed by the column header, 50 per page (at most 500), with `columns`, `totalRows`, `matchedRows` and `nextOffset`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_document_id": {
+            "type": "string",
+            "description": "The reportDocumentId of a DONE report (amazon_vendor_get_report)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, after filtering. Default 0.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, 1 to 500. Default 50.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "columns": {
+            "type": "string",
+            "description": "Comma-separated column names to keep. Default all."
+          },
+          "filter_column": {
+            "type": "string",
+            "description": "Column to filter on. Check `columns` of a first call for the names."
+          },
+          "filter_value": {
+            "type": "string",
+            "description": "Value the filter column must equal; several values comma-separated."
+          }
+        },
+        "required": [
+          "report_document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/2021-06-30/documents/{report_document_id}",
+        "download": {
+          "urlField": "url",
+          "compressionField": "compressionAlgorithm",
+          "format": "auto",
+          "allowedHosts": [
+            "amazonaws.com"
+          ],
+          "offset": "$offset",
+          "limit": "$limit",
+          "columns": "$columns",
+          "filterColumn": "$filter_column",
+          "filterValue": "$filter_value"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

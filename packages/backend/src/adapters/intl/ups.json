@@ -1,0 +1,2311 @@
+{
+  "slug": "ups",
+  "name": "UPS",
+  "description": "UPS APIs for shippers: track packages by tracking number or reference, validate US addresses, compare rates and transit times, find drop-off and Access Point locations, estimate landed cost, recover labels and quote pickups. Shipment creation, voids and pickups are included but switched off. OAuth client ID and secret from the UPS Developer Portal.",
+  "instructions": "## UPS\nThis connector works with the **UPS APIs** at `https://onlinetools.ups.com/api` for a shipper with a UPS account: tracking, US address validation, rates, time in transit, drop-off locations, landed cost estimates, label recovery and pickups. Shipment creation and everything else that costs money is included but installed switched off.\n\n**Setup (about 10 minutes)**\n1. Sign in at https://developer.ups.com with the ups.com profile that owns your shipper account (register one first if needed) and open the page for creating an application.\n2. Say that you want to integrate UPS technology into your own business, pick the UPS account number the app should bill to, and name the app.\n3. Add the products the connector uses: **Tracking**, **Address Validation**, **Rating**, **Time in Transit**, **Locator**, and, for the switched-off tools, **Shipping**, **Pickup** and **Landed Cost Quote**. A product that is missing answers 401 or 403 for its tools only.\n4. Copy the **Client ID** into `UPS_CLIENT_ID` and the **Client Secret** into `UPS_CLIENT_SECRET`.\n5. Put your 6-character UPS account number (shipper number) into `UPS_ACCOUNT_NUMBER`.\n\nThe connector exchanges the client ID and secret at `https://onlinetools.ups.com/security/v1/oauth/token` (client credentials, HTTP Basic) for a short-lived bearer token and renews it by itself. These are production credentials; the UPS test system (`wwwcie.ups.com`) is not used.\n\n**Where to start**: `ups_track_package` with a tracking number. For a price, `ups_shop_rates` compares all services between two addresses and `ups_get_rate` prices one service; `ups_get_time_in_transit` gives delivery dates without prices.\n\n**Tracking**: `ups_track_package` (any tracking number), `ups_track_by_reference` (your own reference, e.g. an order number, within your account) and `ups_track_shipment_packages` (all packages of a multi-package shipment). Dates are `YYYYMMDD` and times `HHMMSS` in the local time of the scan; `gmtDate`, `gmtTime` and `gmtOffset` give the same moment in UTC. Read the state from `currentStatus.description` and the scans from `activity`, newest first.\n\n**Addresses and locations**: `ups_validate_address` covers street addresses in the United States and Puerto Rico only. `ups_find_locations` finds drop-off places and UPS Access Point locations near an address in any country UPS serves.\n\n**Rates**: `ups_shop_rates` and `ups_get_rate` send your account number as the shipper number. Published rates come back by default; pass rating_options with `NegotiatedRatesIndicator` to see the contract rates of your account in `NegotiatedRateCharges`. Amounts are strings in the currency named next to them. Weights are LBS or KGS and dimensions IN or CM: use the units of the origin country. `ups_quote_landed_cost` estimates duties and taxes for a cross-border shipment and works best with an HS code per item.\n\n**Labels and shipments**: `ups_recover_label` returns the label of an existing shipment again and costs nothing. `ups_create_shipment` creates a shipment that UPS bills to the account, and `ups_void_shipment` cancels one before pickup; both are installed switched off. Switch them on in the connector only if the assistant should create real shipments. UPS field names differ between calls: the rate tools call the packaging `PackagingType`, the ship tool `Packaging`.\n\n**Pickups**: `ups_get_pickup_rate` quotes an on-call pickup and `ups_get_pending_pickups` lists booked ones. `ups_create_pickup` books a driver for a fee and `ups_cancel_pickup` cancels by PRN; both are installed switched off.\n\n**Errors**: UPS answers with `response.errors`, a list of `code` and `message`. 401 means the credentials or the token were refused, 403 that the app has no access to that product or that UPS blocked the account, 404 on tracking that UPS has no data for the number yet (labels show up after the first scan or some hours after creation), 429 that the quota of the app is used up.\n\n**Limits**: UPS sets a quota per app and product and does not publish the numbers in its API files; a 429 means wait and retry later. Tracking one number per call is the documented use: do not loop over long lists quickly.",
+  "aliases": [
+    "United Parcel Service",
+    "UPS Tracking",
+    "UPS Shipping"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "ups",
+  "docsUrl": "https://developer.ups.com/api/reference",
+  "requiredEnvVars": [
+    "UPS_CLIENT_ID",
+    "UPS_CLIENT_SECRET",
+    "UPS_ACCOUNT_NUMBER"
+  ],
+  "envVarMeta": {
+    "UPS_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "UPS Developer Portal, your app: the Client ID shown on the app page.",
+      "link": "https://developer.ups.com/get-started?loc=en_US",
+      "pattern": "^[A-Za-z0-9]{16,128}$",
+      "patternMessage": "Paste the Client ID only: letters and digits, no spaces."
+    },
+    "UPS_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "UPS Developer Portal, your app: the Client Secret shown next to the Client ID.",
+      "link": "https://developer.ups.com/get-started?loc=en_US",
+      "pattern": "^\\S{16,256}$",
+      "patternMessage": "Paste the Client Secret without spaces."
+    },
+    "UPS_ACCOUNT_NUMBER": {
+      "label": "UPS account number",
+      "kind": "setting",
+      "help": "Your 6-character UPS shipper number, as printed on UPS invoices and listed with the payment accounts of your ups.com profile.",
+      "example": "A1B2C3",
+      "pattern": "^[A-Za-z0-9]{6}$",
+      "patternMessage": "The UPS account number has exactly 6 letters or digits, e.g. A1B2C3."
+    }
+  },
+  "instructionFacts": [
+    "The UPS account number (shipper number) of this connector is {{UPS_ACCOUNT_NUMBER}}: use it as Shipper.ShipperNumber and as BillShipper.AccountNumber when a tool asks for a whole UPS Shipment."
+  ],
+  "verifyHints": {
+    "401": "UPS did not accept the Client ID and Client Secret. Copy both again from your app in the UPS Developer Portal and make sure they are the production credentials of an app that is active.",
+    "403": "UPS refused the call: the app has no access to this API. Open the app in the UPS Developer Portal and add the product (Tracking, Address Validation, Rating, Time in Transit, Locator, Shipping or Pickup).",
+    "404": "UPS found nothing for that number. A tracking number appears only after the label was created and first scanned; check the number for typos.",
+    "rate_limited": "The quota of your UPS app for this API is used up. Wait and try again later, and avoid tracking long lists in a quick loop."
+  },
+  "probe": {
+    "tool": "ups_validate_address",
+    "params": {
+      "request_option": "1",
+      "address_lines": [
+        "55 Glenlake Parkway NE"
+      ],
+      "city": "Atlanta",
+      "state": "GA",
+      "postal_code": "30328",
+      "country_code": "US"
+    }
+  },
+  "prerequisites": "A UPS shipper account (account number) and a ups.com profile linked to it, to create an app in the UPS Developer Portal. About 10 minutes.",
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 10,
+    "examples": [
+      "Where is my UPS package 1Z12345E0205271688?",
+      "What does it cost to send a 2 kg parcel from Berlin to New York with UPS?",
+      "When would a parcel shipped today from Chicago arrive in Miami?",
+      "Find the UPS Access Point locations near 10115 Berlin"
+    ],
+    "needs": [
+      "Your UPS account number (shipper number)",
+      "The ups.com login linked to that account",
+      "About 10 minutes"
+    ],
+    "why": "UPS gives API access to a shipper through an app the shipper creates in the UPS Developer Portal. The app is free and belongs to your UPS account: AnythingMCP uses its Client ID and Client Secret to ask UPS for a short-lived token.\n\nAnythingMCP never sees your ups.com password. Tools that create shipments or book pickups are installed switched off, so nothing is billed unless you switch them on.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Create your UPS app",
+        "body": "Sign in to the **UPS Developer Portal** with the ups.com profile that owns your shipper account and start a new application. When UPS asks why you need credentials, choose the option for integrating UPS technology into **your own business**, then pick the **account number** the app belongs to.",
+        "action": {
+          "label": "Open the UPS Developer Portal",
+          "url": "https://developer.ups.com/get-started?loc=en_US"
+        },
+        "values": [
+          {
+            "label": "App name",
+            "value": "AnythingMCP",
+            "note": "Any name works."
+          }
+        ],
+        "confirm": "I created the app",
+        "problems": [
+          {
+            "q": "I have no UPS account number",
+            "a": "Open a shipping account on ups.com first. The app must be linked to an account number, also for tracking only."
+          },
+          {
+            "q": "UPS asks for a callback URL",
+            "a": "Leave it empty. A callback URL is only used for apps that act for other shippers, which this connector does not do."
+          }
+        ]
+      },
+      {
+        "id": "add-products",
+        "title": "Add the UPS products",
+        "body": "On the app, add the products below and save. Each product unlocks the matching tools; you can add more later.",
+        "action": {
+          "label": "Open the UPS Developer Portal",
+          "url": "https://developer.ups.com/get-started?loc=en_US"
+        },
+        "values": [
+          {
+            "label": "Product",
+            "value": "Tracking",
+            "pick": true
+          },
+          {
+            "label": "Product",
+            "value": "Address Validation",
+            "pick": true
+          },
+          {
+            "label": "Product",
+            "value": "Rating",
+            "pick": true
+          },
+          {
+            "label": "Product",
+            "value": "Time in Transit",
+            "pick": true
+          },
+          {
+            "label": "Product",
+            "value": "Locator",
+            "pick": true
+          },
+          {
+            "label": "Product",
+            "value": "Shipping",
+            "pick": true,
+            "note": "Only for the switched-off shipment and label tools."
+          },
+          {
+            "label": "Product",
+            "value": "Pickup",
+            "pick": true,
+            "note": "Only for the pickup tools."
+          }
+        ],
+        "confirm": "I added the products and saved"
+      },
+      {
+        "id": "keys",
+        "title": "Paste your keys",
+        "body": "Copy the **Client ID** and the **Client Secret** from the app page, and enter your 6-character **UPS account number**. AnythingMCP then checks them with one address validation call.",
+        "action": {
+          "label": "Open the UPS Developer Portal",
+          "url": "https://developer.ups.com/get-started?loc=en_US"
+        },
+        "fields": [
+          "UPS_CLIENT_ID",
+          "UPS_CLIENT_SECRET",
+          "UPS_ACCOUNT_NUMBER"
+        ],
+        "problems": [
+          {
+            "q": "The check answers 401",
+            "a": "Copy the Client ID and Client Secret again. Credentials of the UPS test environment do not work: use the ones of your production app."
+          },
+          {
+            "q": "The check answers 403",
+            "a": "The app has no **Address Validation** product yet. Add it in step 2 and try again."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "UPS API",
+    "type": "REST",
+    "baseUrl": "https://onlinetools.ups.com/api",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{UPS_CLIENT_ID}}",
+      "clientSecret": "{{UPS_CLIENT_SECRET}}",
+      "tokenUrl": "https://onlinetools.ups.com/security/v1/oauth/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "transId": "anythingmcp",
+      "transactionSrc": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "ups_track_package",
+      "description": "Track one UPS package by tracking number: current status with code and description, every scan (date as YYYYMMDD, local time as HHMMSS, city and country, status), delivery date and time window, service, weight, reference numbers and, on request, milestones, the delivery signature and the proof of delivery. Works for any UPS tracking number, not only your own shipments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_number": {
+            "type": "string",
+            "description": "UPS tracking number, 7 to 34 characters, e.g. 1Z12345E0205271688.",
+            "pattern": "^[A-Za-z0-9]{7,34}$"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language and country of the texts, e.g. en_US, de_DE, it_IT.",
+            "default": "en_US"
+          },
+          "return_milestones": {
+            "type": "boolean",
+            "description": "true adds the milestone list (label created, on the way, out for delivery, delivered)."
+          },
+          "return_signature": {
+            "type": "boolean",
+            "description": "true adds the delivery signature image as base64. Large; ask only when needed."
+          },
+          "return_pod": {
+            "type": "boolean",
+            "description": "true adds the proof of delivery document as base64 HTML. Large; ask only when needed."
+          }
+        },
+        "required": [
+          "inquiry_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/track/v1/details/{inquiry_number}",
+        "queryParams": {
+          "locale": "$locale",
+          "returnMilestones": "$return_milestones",
+          "returnSignature": "$return_signature",
+          "returnPOD": "$return_pod"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_track_by_reference",
+      "description": "Find and track shipments of your UPS account by a reference number you put on the shipment (order number, invoice number). Returns the same tracking data as ups_track_package for each match. UPS searches the last 14 days of pickups unless you give a date range. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference_number": {
+            "type": "string",
+            "description": "The reference number given when the shipment was created, e.g. your order number."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language and country of the texts, e.g. en_US.",
+            "default": "en_US"
+          },
+          "from_pickup_date": {
+            "type": "string",
+            "description": "Start of the pickup date range as YYYYMMDD. Default: 14 days ago.",
+            "pattern": "^\\d{8}$"
+          },
+          "to_pickup_date": {
+            "type": "string",
+            "description": "End of the pickup date range as YYYYMMDD. Default: today.",
+            "pattern": "^\\d{8}$"
+          },
+          "dest_country": {
+            "type": "string",
+            "description": "Optional destination country code (2 letters) to narrow the search."
+          },
+          "dest_zip": {
+            "type": "string",
+            "description": "Optional destination postal code to narrow the search."
+          },
+          "ref_num_type": {
+            "type": "string",
+            "description": "SmallPackage (default) for parcels, fgv for freight.",
+            "enum": [
+              "SmallPackage",
+              "fgv"
+            ],
+            "default": "SmallPackage"
+          }
+        },
+        "required": [
+          "reference_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/track/v1/reference/details/{reference_number}",
+        "queryParams": {
+          "locale": "$locale",
+          "fromPickUpDate": "$from_pickup_date",
+          "toPickUpDate": "$to_pickup_date",
+          "destCountry": "$dest_country",
+          "destZip": "$dest_zip",
+          "shipperNum": "{{UPS_ACCOUNT_NUMBER}}",
+          "refNumType": "$ref_num_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_track_shipment_packages",
+      "description": "Track every package of a multi-package UPS shipment from one of its tracking numbers: per package the tracking number, current status, last activity and delivery date. Paged with offset and count (50 packages per call by default). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_number": {
+            "type": "string",
+            "description": "Tracking number of any package of the shipment, 7 to 34 characters.",
+            "pattern": "^[A-Za-z0-9]{7,34}$"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language and country of the texts, e.g. en_US.",
+            "default": "en_US"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based index of the first package to return.",
+            "minimum": 0,
+            "default": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "How many packages to return from the offset.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        },
+        "required": [
+          "inquiry_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/track/v1/shipment/details/{inquiry_number}",
+        "queryParams": {
+          "locale": "$locale",
+          "offset": "$offset",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_validate_address",
+      "description": "Check a street address in the United States or Puerto Rico against UPS data. Returns `ValidAddressIndicator`, `AmbiguousAddressIndicator` or `NoCandidatesIndicator`, the corrected candidates (street lines, city, state, ZIP and ZIP+4) and, with request_option 2 or 3, the classification: 1 commercial, 2 residential, 0 unknown. Other countries are not covered by this UPS API. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_option": {
+            "type": "string",
+            "description": "1 validate the address, 2 classify it as commercial or residential, 3 both (default).",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ],
+            "default": "3"
+          },
+          "address_lines": {
+            "type": "array",
+            "description": "Street lines: number, street and unit, e.g. \"26601 ALISO CREEK ROAD\", \"STE D\".",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 3
+          },
+          "city": {
+            "type": "string",
+            "description": "City or town."
+          },
+          "state": {
+            "type": "string",
+            "description": "Two-letter state code, e.g. CA."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "5-digit ZIP code."
+          },
+          "postal_code_extension": {
+            "type": "string",
+            "description": "Optional 4-digit ZIP+4 extension."
+          },
+          "urbanization": {
+            "type": "string",
+            "description": "Puerto Rico only: the urbanization name."
+          },
+          "consignee_name": {
+            "type": "string",
+            "description": "Optional name of the business or person at the address."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "US or PR.",
+            "enum": [
+              "US",
+              "PR"
+            ],
+            "default": "US"
+          },
+          "max_candidates": {
+            "type": "integer",
+            "description": "Maximum number of candidates to return, 0 to 50. UPS returns 15 when it is left out.",
+            "minimum": 0,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "address_lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addressvalidation/v2/{request_option}",
+        "queryParams": {
+          "maximumcandidatelistsize": "$max_candidates"
+        },
+        "bodyMapping": {
+          "XAVRequest": {
+            "AddressKeyFormat": {
+              "ConsigneeName": "$consignee_name",
+              "AddressLine": "$address_lines",
+              "PoliticalDivision2": "$city",
+              "PoliticalDivision1": "$state",
+              "PostcodePrimaryLow": "$postal_code",
+              "PostcodeExtendedLow": "$postal_code_extension",
+              "Urbanization": "$urbanization",
+              "CountryCode": "$country_code"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_get_rate",
+      "description": "Price one UPS service for a shipment. Returns `RateResponse.RatedShipment` with the service code, billing weight, transportation, service option and total charges (currency and amount as strings), the negotiated total when rating_options asks for it, and the guaranteed days to delivery. Your UPS account number is sent as the shipper number. Nothing is booked. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_code": {
+            "type": "string",
+            "description": "UPS service code: 01 Next Day Air, 02 2nd Day Air, 03 Ground, 07 Worldwide Express, 08 Worldwide Expedited, 11 Standard, 12 3 Day Select, 13 Next Day Air Saver, 14 Next Day Air Early, 54 Worldwide Express Plus, 59 2nd Day Air A.M., 65 Worldwide Saver, 70 Access Point Economy.",
+            "pattern": "^[A-Za-z0-9]{2,3}$"
+          },
+          "shipper_address": {
+            "type": "object",
+            "description": "The shipper's (account holder's) address in UPS's own field names.",
+            "properties": {
+              "AddressLine": {
+                "type": "array",
+                "description": "Street lines, up to 3, each up to 35 characters.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "City": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "StateProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. NY or ON. Needed for US and Canada."
+              },
+              "PostalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 10001. Needed in countries that use postal codes."
+              },
+              "CountryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              }
+            },
+            "required": [
+              "CountryCode"
+            ]
+          },
+          "shipper_name": {
+            "type": "string",
+            "description": "Optional shipper name or company, up to 35 characters."
+          },
+          "ship_to_address": {
+            "type": "object",
+            "description": "The destination address in UPS's own field names.",
+            "properties": {
+              "AddressLine": {
+                "type": "array",
+                "description": "Street lines, up to 3, each up to 35 characters.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "City": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "StateProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. NY or ON. Needed for US and Canada."
+              },
+              "PostalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 10001. Needed in countries that use postal codes."
+              },
+              "CountryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "ResidentialAddressIndicator": {
+                "type": "string",
+                "description": "Send any value, e.g. \"Y\", to rate the destination as a residence; leave it out for a business address."
+              }
+            },
+            "required": [
+              "CountryCode"
+            ]
+          },
+          "ship_to_name": {
+            "type": "string",
+            "description": "Optional recipient name or company, up to 35 characters."
+          },
+          "ship_from": {
+            "type": "object",
+            "description": "Only when the parcel leaves from an address other than the shipper address: a UPS ShipFrom container with `Name` and `Address` (same fields as shipper_address).",
+            "properties": {
+              "Name": {
+                "type": "string",
+                "description": "Origin name or company."
+              },
+              "Address": {
+                "type": "object",
+                "description": "The origin address in UPS's own field names.",
+                "properties": {
+                  "AddressLine": {
+                    "type": "array",
+                    "description": "Street lines, up to 3, each up to 35 characters.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "City": {
+                    "type": "string",
+                    "description": "City or town."
+                  },
+                  "StateProvinceCode": {
+                    "type": "string",
+                    "description": "State or province code, e.g. NY or ON. Needed for US and Canada."
+                  },
+                  "PostalCode": {
+                    "type": "string",
+                    "description": "Postal code, e.g. 10001. Needed in countries that use postal codes."
+                  },
+                  "CountryCode": {
+                    "type": "string",
+                    "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+                  }
+                },
+                "required": [
+                  "CountryCode"
+                ]
+              }
+            },
+            "required": [
+              "Address"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages to rate, one entry per parcel, in UPS field names. Note that the rate call names the packaging `PackagingType`, the ship call `Packaging`.",
+            "items": {
+              "type": "object",
+              "description": "One package.",
+              "properties": {
+                "PackagingType": {
+                  "type": "object",
+                  "description": "Packaging type.",
+                  "properties": {
+                    "Code": {
+                      "type": "string",
+                      "description": "00 unknown, 01 UPS Letter, 02 customer package (the usual choice), 03 Tube, 04 Pak, 21 Express Box."
+                    }
+                  },
+                  "required": [
+                    "Code"
+                  ]
+                },
+                "PackageWeight": {
+                  "type": "object",
+                  "description": "Actual weight.",
+                  "properties": {
+                    "UnitOfMeasurement": {
+                      "type": "object",
+                      "description": "Weight unit.",
+                      "properties": {
+                        "Code": {
+                          "type": "string",
+                          "description": "LBS or KGS. Use the unit of the origin country (LBS in the US, KGS in most others).",
+                          "enum": [
+                            "LBS",
+                            "KGS"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "Code"
+                      ]
+                    },
+                    "Weight": {
+                      "type": "string",
+                      "description": "Weight as a string, e.g. \"2.5\"."
+                    }
+                  },
+                  "required": [
+                    "UnitOfMeasurement",
+                    "Weight"
+                  ]
+                },
+                "Dimensions": {
+                  "type": "object",
+                  "description": "Optional outer dimensions; they drive dimensional weight.",
+                  "properties": {
+                    "UnitOfMeasurement": {
+                      "type": "object",
+                      "description": "Length unit.",
+                      "properties": {
+                        "Code": {
+                          "type": "string",
+                          "description": "IN or CM.",
+                          "enum": [
+                            "IN",
+                            "CM"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "Code"
+                      ]
+                    },
+                    "Length": {
+                      "type": "string",
+                      "description": "Length as a string."
+                    },
+                    "Width": {
+                      "type": "string",
+                      "description": "Width as a string."
+                    },
+                    "Height": {
+                      "type": "string",
+                      "description": "Height as a string."
+                    }
+                  },
+                  "required": [
+                    "UnitOfMeasurement",
+                    "Length",
+                    "Width",
+                    "Height"
+                  ]
+                },
+                "PackageServiceOptions": {
+                  "type": "object",
+                  "description": "Optional per-package options such as `DeclaredValue` with `CurrencyCode` and `MonetaryValue`, or `DeliveryConfirmation`."
+                }
+              },
+              "required": [
+                "PackagingType",
+                "PackageWeight"
+              ]
+            },
+            "minItems": 1
+          },
+          "rating_options": {
+            "type": "object",
+            "description": "Optional UPS ShipmentRatingOptions. Set `NegotiatedRatesIndicator` to \"Y\" to get the contract rates of your account next to the published ones.",
+            "properties": {
+              "NegotiatedRatesIndicator": {
+                "type": "string",
+                "description": "\"Y\" asks for negotiated (account) rates."
+              },
+              "UserLevelDiscountIndicator": {
+                "type": "string",
+                "description": "\"Y\" asks for user level promotional discounts."
+              }
+            }
+          },
+          "customer_classification": {
+            "type": "object",
+            "description": "Optional rate type for shipments from the US: Code 00 rates of the shipper number, 01 daily rates, 04 retail rates, 05 regional rates, 06 general list rates, 53 standard list rates.",
+            "properties": {
+              "Code": {
+                "type": "string",
+                "description": "Customer classification code."
+              }
+            },
+            "required": [
+              "Code"
+            ]
+          },
+          "pickup_type": {
+            "type": "object",
+            "description": "Optional UPS PickupType: Code 01 daily pickup (default), 03 customer counter, 06 one time pickup, 19 letter center, 20 air service center.",
+            "properties": {
+              "Code": {
+                "type": "string",
+                "description": "Pickup type code."
+              }
+            },
+            "required": [
+              "Code"
+            ]
+          },
+          "delivery_time_information": {
+            "type": "object",
+            "description": "Needed when transit_time is set: UPS DeliveryTimeInformation with `PackageBillType` (02 document, 03 non-document, 04 pallet, 07 domestic pallet) and optionally `Pickup` with `Date` as YYYYMMDD.",
+            "properties": {
+              "PackageBillType": {
+                "type": "string",
+                "description": "02 document, 03 non-document, 04 pallet, 07 domestic pallet."
+              },
+              "Pickup": {
+                "type": "object",
+                "description": "Pickup day.",
+                "properties": {
+                  "Date": {
+                    "type": "string",
+                    "description": "YYYYMMDD."
+                  },
+                  "Time": {
+                    "type": "string",
+                    "description": "HHMMSS, optional."
+                  }
+                }
+              }
+            }
+          },
+          "shipment_total_weight": {
+            "type": "object",
+            "description": "Total weight of the shipment, needed for international requests with transit_time: `UnitOfMeasurement.Code` LBS or KGS and `Weight` as a string.",
+            "properties": {
+              "UnitOfMeasurement": {
+                "type": "object",
+                "description": "Weight unit.",
+                "properties": {
+                  "Code": {
+                    "type": "string",
+                    "description": "LBS or KGS."
+                  }
+                },
+                "required": [
+                  "Code"
+                ]
+              },
+              "Weight": {
+                "type": "string",
+                "description": "Total weight as a string."
+              }
+            }
+          },
+          "invoice_line_total": {
+            "type": "object",
+            "description": "Value of the goods for international shipments: `CurrencyCode` (of the origin country) and `MonetaryValue` as a string.",
+            "properties": {
+              "CurrencyCode": {
+                "type": "string",
+                "description": "ISO 4217 currency code."
+              },
+              "MonetaryValue": {
+                "type": "string",
+                "description": "Amount as a string, 1 to 99999999."
+              }
+            }
+          },
+          "transit_time": {
+            "type": "string",
+            "description": "Set to timeintransit to add the days in transit and the delivery date to each rate. Then delivery_time_information is required.",
+            "enum": [
+              "timeintransit"
+            ]
+          }
+        },
+        "required": [
+          "service_code",
+          "shipper_address",
+          "ship_to_address",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rating/v2409/Rate",
+        "queryParams": {
+          "additionalinfo": "$transit_time"
+        },
+        "bodyMapping": {
+          "RateRequest": {
+            "Request": {
+              "TransactionReference": {
+                "CustomerContext": "AnythingMCP"
+              }
+            },
+            "PickupType": "$pickup_type",
+            "CustomerClassification": "$customer_classification",
+            "Shipment": {
+              "Shipper": {
+                "Name": "$shipper_name",
+                "ShipperNumber": "{{UPS_ACCOUNT_NUMBER}}",
+                "Address": "$shipper_address"
+              },
+              "ShipTo": {
+                "Name": "$ship_to_name",
+                "Address": "$ship_to_address"
+              },
+              "ShipFrom": "$ship_from",
+              "Service": {
+                "Code": "$service_code"
+              },
+              "Package": "$packages",
+              "ShipmentRatingOptions": "$rating_options",
+              "DeliveryTimeInformation": "$delivery_time_information",
+              "ShipmentTotalWeight": "$shipment_total_weight",
+              "InvoiceLineTotal": "$invoice_line_total"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_shop_rates",
+      "description": "Compare every UPS service available between two addresses for a shipment. Returns one `RatedShipment` per service with its code, billing weight, total charges (currency and amount as strings), the negotiated total when rating_options asks for it, and the guaranteed days to delivery. Use ups_get_rate once the service is known. Nothing is booked. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipper_address": {
+            "type": "object",
+            "description": "The shipper's (account holder's) address in UPS's own field names.",
+            "properties": {
+              "AddressLine": {
+                "type": "array",
+                "description": "Street lines, up to 3, each up to 35 characters.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "City": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "StateProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. NY or ON. Needed for US and Canada."
+              },
+              "PostalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 10001. Needed in countries that use postal codes."
+              },
+              "CountryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              }
+            },
+            "required": [
+              "CountryCode"
+            ]
+          },
+          "shipper_name": {
+            "type": "string",
+            "description": "Optional shipper name or company, up to 35 characters."
+          },
+          "ship_to_address": {
+            "type": "object",
+            "description": "The destination address in UPS's own field names.",
+            "properties": {
+              "AddressLine": {
+                "type": "array",
+                "description": "Street lines, up to 3, each up to 35 characters.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "City": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "StateProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. NY or ON. Needed for US and Canada."
+              },
+              "PostalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 10001. Needed in countries that use postal codes."
+              },
+              "CountryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "ResidentialAddressIndicator": {
+                "type": "string",
+                "description": "Send any value, e.g. \"Y\", to rate the destination as a residence; leave it out for a business address."
+              }
+            },
+            "required": [
+              "CountryCode"
+            ]
+          },
+          "ship_to_name": {
+            "type": "string",
+            "description": "Optional recipient name or company, up to 35 characters."
+          },
+          "ship_from": {
+            "type": "object",
+            "description": "Only when the parcel leaves from an address other than the shipper address: a UPS ShipFrom container with `Name` and `Address` (same fields as shipper_address).",
+            "properties": {
+              "Name": {
+                "type": "string",
+                "description": "Origin name or company."
+              },
+              "Address": {
+                "type": "object",
+                "description": "The origin address in UPS's own field names.",
+                "properties": {
+                  "AddressLine": {
+                    "type": "array",
+                    "description": "Street lines, up to 3, each up to 35 characters.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "City": {
+                    "type": "string",
+                    "description": "City or town."
+                  },
+                  "StateProvinceCode": {
+                    "type": "string",
+                    "description": "State or province code, e.g. NY or ON. Needed for US and Canada."
+                  },
+                  "PostalCode": {
+                    "type": "string",
+                    "description": "Postal code, e.g. 10001. Needed in countries that use postal codes."
+                  },
+                  "CountryCode": {
+                    "type": "string",
+                    "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+                  }
+                },
+                "required": [
+                  "CountryCode"
+                ]
+              }
+            },
+            "required": [
+              "Address"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages to rate, one entry per parcel, in UPS field names. Note that the rate call names the packaging `PackagingType`, the ship call `Packaging`.",
+            "items": {
+              "type": "object",
+              "description": "One package.",
+              "properties": {
+                "PackagingType": {
+                  "type": "object",
+                  "description": "Packaging type.",
+                  "properties": {
+                    "Code": {
+                      "type": "string",
+                      "description": "00 unknown, 01 UPS Letter, 02 customer package (the usual choice), 03 Tube, 04 Pak, 21 Express Box."
+                    }
+                  },
+                  "required": [
+                    "Code"
+                  ]
+                },
+                "PackageWeight": {
+                  "type": "object",
+                  "description": "Actual weight.",
+                  "properties": {
+                    "UnitOfMeasurement": {
+                      "type": "object",
+                      "description": "Weight unit.",
+                      "properties": {
+                        "Code": {
+                          "type": "string",
+                          "description": "LBS or KGS. Use the unit of the origin country (LBS in the US, KGS in most others).",
+                          "enum": [
+                            "LBS",
+                            "KGS"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "Code"
+                      ]
+                    },
+                    "Weight": {
+                      "type": "string",
+                      "description": "Weight as a string, e.g. \"2.5\"."
+                    }
+                  },
+                  "required": [
+                    "UnitOfMeasurement",
+                    "Weight"
+                  ]
+                },
+                "Dimensions": {
+                  "type": "object",
+                  "description": "Optional outer dimensions; they drive dimensional weight.",
+                  "properties": {
+                    "UnitOfMeasurement": {
+                      "type": "object",
+                      "description": "Length unit.",
+                      "properties": {
+                        "Code": {
+                          "type": "string",
+                          "description": "IN or CM.",
+                          "enum": [
+                            "IN",
+                            "CM"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "Code"
+                      ]
+                    },
+                    "Length": {
+                      "type": "string",
+                      "description": "Length as a string."
+                    },
+                    "Width": {
+                      "type": "string",
+                      "description": "Width as a string."
+                    },
+                    "Height": {
+                      "type": "string",
+                      "description": "Height as a string."
+                    }
+                  },
+                  "required": [
+                    "UnitOfMeasurement",
+                    "Length",
+                    "Width",
+                    "Height"
+                  ]
+                },
+                "PackageServiceOptions": {
+                  "type": "object",
+                  "description": "Optional per-package options such as `DeclaredValue` with `CurrencyCode` and `MonetaryValue`, or `DeliveryConfirmation`."
+                }
+              },
+              "required": [
+                "PackagingType",
+                "PackageWeight"
+              ]
+            },
+            "minItems": 1
+          },
+          "rating_options": {
+            "type": "object",
+            "description": "Optional UPS ShipmentRatingOptions. Set `NegotiatedRatesIndicator` to \"Y\" to get the contract rates of your account next to the published ones.",
+            "properties": {
+              "NegotiatedRatesIndicator": {
+                "type": "string",
+                "description": "\"Y\" asks for negotiated (account) rates."
+              },
+              "UserLevelDiscountIndicator": {
+                "type": "string",
+                "description": "\"Y\" asks for user level promotional discounts."
+              }
+            }
+          },
+          "customer_classification": {
+            "type": "object",
+            "description": "Optional rate type for shipments from the US: Code 00 rates of the shipper number, 01 daily rates, 04 retail rates, 05 regional rates, 06 general list rates, 53 standard list rates.",
+            "properties": {
+              "Code": {
+                "type": "string",
+                "description": "Customer classification code."
+              }
+            },
+            "required": [
+              "Code"
+            ]
+          },
+          "pickup_type": {
+            "type": "object",
+            "description": "Optional UPS PickupType: Code 01 daily pickup (default), 03 customer counter, 06 one time pickup, 19 letter center, 20 air service center.",
+            "properties": {
+              "Code": {
+                "type": "string",
+                "description": "Pickup type code."
+              }
+            },
+            "required": [
+              "Code"
+            ]
+          },
+          "delivery_time_information": {
+            "type": "object",
+            "description": "Needed when transit_time is set: UPS DeliveryTimeInformation with `PackageBillType` (02 document, 03 non-document, 04 pallet, 07 domestic pallet) and optionally `Pickup` with `Date` as YYYYMMDD.",
+            "properties": {
+              "PackageBillType": {
+                "type": "string",
+                "description": "02 document, 03 non-document, 04 pallet, 07 domestic pallet."
+              },
+              "Pickup": {
+                "type": "object",
+                "description": "Pickup day.",
+                "properties": {
+                  "Date": {
+                    "type": "string",
+                    "description": "YYYYMMDD."
+                  },
+                  "Time": {
+                    "type": "string",
+                    "description": "HHMMSS, optional."
+                  }
+                }
+              }
+            }
+          },
+          "shipment_total_weight": {
+            "type": "object",
+            "description": "Total weight of the shipment, needed for international requests with transit_time: `UnitOfMeasurement.Code` LBS or KGS and `Weight` as a string.",
+            "properties": {
+              "UnitOfMeasurement": {
+                "type": "object",
+                "description": "Weight unit.",
+                "properties": {
+                  "Code": {
+                    "type": "string",
+                    "description": "LBS or KGS."
+                  }
+                },
+                "required": [
+                  "Code"
+                ]
+              },
+              "Weight": {
+                "type": "string",
+                "description": "Total weight as a string."
+              }
+            }
+          },
+          "invoice_line_total": {
+            "type": "object",
+            "description": "Value of the goods for international shipments: `CurrencyCode` (of the origin country) and `MonetaryValue` as a string.",
+            "properties": {
+              "CurrencyCode": {
+                "type": "string",
+                "description": "ISO 4217 currency code."
+              },
+              "MonetaryValue": {
+                "type": "string",
+                "description": "Amount as a string, 1 to 99999999."
+              }
+            }
+          },
+          "transit_time": {
+            "type": "string",
+            "description": "Set to timeintransit to add the days in transit and the delivery date to each rate. Then delivery_time_information is required.",
+            "enum": [
+              "timeintransit"
+            ]
+          }
+        },
+        "required": [
+          "shipper_address",
+          "ship_to_address",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rating/v2409/Shop",
+        "queryParams": {
+          "additionalinfo": "$transit_time"
+        },
+        "bodyMapping": {
+          "RateRequest": {
+            "Request": {
+              "TransactionReference": {
+                "CustomerContext": "AnythingMCP"
+              }
+            },
+            "PickupType": "$pickup_type",
+            "CustomerClassification": "$customer_classification",
+            "Shipment": {
+              "Shipper": {
+                "Name": "$shipper_name",
+                "ShipperNumber": "{{UPS_ACCOUNT_NUMBER}}",
+                "Address": "$shipper_address"
+              },
+              "ShipTo": {
+                "Name": "$ship_to_name",
+                "Address": "$ship_to_address"
+              },
+              "ShipFrom": "$ship_from",
+              "Package": "$packages",
+              "ShipmentRatingOptions": "$rating_options",
+              "DeliveryTimeInformation": "$delivery_time_information",
+              "ShipmentTotalWeight": "$shipment_total_weight",
+              "InvoiceLineTotal": "$invoice_line_total"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_get_time_in_transit",
+      "description": "List the UPS services available between two places under `emsResponse.services`: `serviceLevel` and `serviceLevelDescription`, `deliveryDate` (YYYY-MM-DD), `deliveryTime`, `businessTransitDays`, `pickupDate`, `pickupTime` and `guaranteeIndicator` (1 guaranteed). No prices: use ups_shop_rates for those. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_country_code": {
+            "type": "string",
+            "description": "Origin country, ISO 3166-1 alpha-2, e.g. US."
+          },
+          "origin_postal_code": {
+            "type": "string",
+            "description": "Origin postal code. Required for domestic requests and wherever the country uses postal codes."
+          },
+          "origin_city": {
+            "type": "string",
+            "description": "Origin city; required for countries without postal codes."
+          },
+          "origin_state": {
+            "type": "string",
+            "description": "Origin state or province (2 letters in the US, the full name elsewhere)."
+          },
+          "destination_country_code": {
+            "type": "string",
+            "description": "Destination country, ISO 3166-1 alpha-2."
+          },
+          "destination_postal_code": {
+            "type": "string",
+            "description": "Destination postal code."
+          },
+          "destination_city": {
+            "type": "string",
+            "description": "Destination city; required for countries without postal codes."
+          },
+          "destination_state": {
+            "type": "string",
+            "description": "Destination state or province."
+          },
+          "residential_indicator": {
+            "type": "string",
+            "description": "01 residential destination, 02 commercial. Required for domestic requests.",
+            "enum": [
+              "01",
+              "02"
+            ],
+            "default": "02"
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Day the shipment is handed to UPS, YYYY-MM-DD; up to 60 days ahead. Default: today.",
+            "format": "date"
+          },
+          "ship_time": {
+            "type": "string",
+            "description": "Local time the shipment is handed over, HH:MM:SS. Default: now."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Shipment weight, at most 150 LBS or 70 KGS. Required for international requests."
+          },
+          "weight_unit": {
+            "type": "string",
+            "description": "LBS or KGS. Required with weight.",
+            "enum": [
+              "LBS",
+              "KGS"
+            ]
+          },
+          "shipment_contents_value": {
+            "type": "number",
+            "description": "Value of the goods; required for international non-document shipments."
+          },
+          "shipment_contents_currency": {
+            "type": "string",
+            "description": "ISO 4217 currency of the value, e.g. USD."
+          },
+          "bill_type": {
+            "type": "string",
+            "description": "International requests: 02 document, 03 non-document, 04 pallet.",
+            "enum": [
+              "02",
+              "03",
+              "04"
+            ]
+          },
+          "number_of_packages": {
+            "type": "integer",
+            "description": "Number of packages in the shipment.",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "required": [
+          "origin_country_code",
+          "destination_country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/v1/transittimes",
+        "bodyMapping": {
+          "originCountryCode": "$origin_country_code",
+          "originStateProvince": "$origin_state",
+          "originCityName": "$origin_city",
+          "originPostalCode": "$origin_postal_code",
+          "destinationCountryCode": "$destination_country_code",
+          "destinationStateProvince": "$destination_state",
+          "destinationCityName": "$destination_city",
+          "destinationPostalCode": "$destination_postal_code",
+          "residentialIndicator": "$residential_indicator",
+          "shipDate": "$ship_date",
+          "shipTime": "$ship_time",
+          "weight": "$weight",
+          "weightUnitOfMeasure": "$weight_unit",
+          "shipmentContentsValue": "$shipment_contents_value",
+          "shipmentContentsCurrencyCode": "$shipment_contents_currency",
+          "billType": "$bill_type",
+          "numberOfPackages": "$number_of_packages"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_find_locations",
+      "description": "Find UPS drop-off places near an address: UPS Access Point locations, The UPS Store, customer centers and drop boxes. Returns `LocatorResponse.SearchResults.DropLocation` with the location id, name, address, phone, distance, opening hours, latest drop-off times for ground and air, and services. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_option": {
+            "type": "string",
+            "description": "1 drop locations and will call locations (default), 64 UPS Access Point locations, 32 retail locations, 8 additional services, 16 program types.",
+            "enum": [
+              "1",
+              "8",
+              "16",
+              "24",
+              "32",
+              "40",
+              "48",
+              "56",
+              "64"
+            ],
+            "default": "1"
+          },
+          "address_line": {
+            "type": "string",
+            "description": "Street address or intersection to search around. UPS lists the street line, city, state and postal code as expected fields: pass as much of the address as you have."
+          },
+          "city": {
+            "type": "string",
+            "description": "City or town. Give the city and state, or the postal code."
+          },
+          "state": {
+            "type": "string",
+            "description": "State or province."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country code, e.g. US, DE, GB."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language and country of the answer, e.g. en_US or de_DE.",
+            "default": "en_US"
+          },
+          "distance_unit": {
+            "type": "string",
+            "description": "MI for miles or KM for kilometres.",
+            "enum": [
+              "MI",
+              "KM"
+            ],
+            "default": "KM"
+          },
+          "search_criteria": {
+            "type": "object",
+            "description": "Optional UPS LocationSearchCriteria: `MaximumListSize` (1 to 50, default 10) and `SearchRadius` (whole number in the chosen unit, default 100 miles) as strings; `AccessPointSearch` with `AccessPointStatus` 01 for request_option 64.",
+            "properties": {
+              "MaximumListSize": {
+                "type": "string",
+                "description": "Number of locations, 1 to 50, as a string."
+              },
+              "SearchRadius": {
+                "type": "string",
+                "description": "Radius as a whole number string."
+              }
+            }
+          }
+        },
+        "required": [
+          "country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/locations/v3/search/availabilities/{request_option}",
+        "queryParams": {
+          "Locale": "$locale"
+        },
+        "bodyMapping": {
+          "LocatorRequest": {
+            "Request": {
+              "RequestAction": "Locator"
+            },
+            "OriginAddress": {
+              "AddressKeyFormat": {
+                "AddressLine": "$address_line",
+                "PoliticalDivision2": "$city",
+                "PoliticalDivision1": "$state",
+                "PostcodePrimaryLow": "$postal_code",
+                "CountryCode": "$country_code"
+              }
+            },
+            "Translate": {
+              "Locale": "$locale"
+            },
+            "UnitOfMeasurement": {
+              "Code": "$distance_unit"
+            },
+            "LocationSearchCriteria": "$search_criteria"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_quote_landed_cost",
+      "description": "Estimate duties, taxes and brokerage fees for an international shipment before it ships (UPS Landed Cost Quote). Returns per commodity the duties, VAT or GST and other fees, plus `totalBrokerageFees`, `totalDuties`, `totalVAT`, `totalDutyAndTax` and `grandTotal` under `shipment`, in the given currency. An estimate, not a binding customs decision. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency_code": {
+            "type": "string",
+            "description": "ISO 4217 currency of the prices and of the answer, e.g. USD or EUR.",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "Your own id for this quote, up to 50 characters; echoed in the answer.",
+            "default": "anythingmcp"
+          },
+          "allow_partial_result": {
+            "type": "boolean",
+            "description": "true returns the items UPS could calculate even when others fail. Default false: all or nothing."
+          },
+          "shipment": {
+            "type": "object",
+            "description": "The shipment to quote.",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Any id of yours for the shipment, e.g. the order number."
+              },
+              "importCountryCode": {
+                "type": "string",
+                "description": "Destination country, ISO 3166-1 alpha-2."
+              },
+              "importProvince": {
+                "type": "string",
+                "description": "Destination province or state, for countries such as Canada or Mexico."
+              },
+              "exportCountryCode": {
+                "type": "string",
+                "description": "Origin country, ISO 3166-1 alpha-2."
+              },
+              "shipDate": {
+                "type": "string",
+                "description": "Ship date, YYYY-MM-DD. Default: today."
+              },
+              "incoterms": {
+                "type": "string",
+                "description": "Optional Incoterm, e.g. DAP, DDP, CIF, FOB."
+              },
+              "transModes": {
+                "type": "string",
+                "description": "Optional mode of transport, e.g. INT_AIR, INT_TRUCK, INT_OCEAN."
+              },
+              "transportCost": {
+                "type": "number",
+                "description": "Optional freight cost, which enters the tariff calculation."
+              },
+              "shipmentType": {
+                "type": "string",
+                "description": "Optional type: GIFT, COMMERCIAL, SALE, SAMPLE, REPAIR, RETURN, OTHER."
+              },
+              "shipmentItems": {
+                "type": "array",
+                "description": "The goods, one entry per commodity.",
+                "items": {
+                  "type": "object",
+                  "description": "One commodity.",
+                  "properties": {
+                    "commodityId": {
+                      "type": "string",
+                      "description": "Your id of the item, unique within the request."
+                    },
+                    "priceEach": {
+                      "type": "number",
+                      "description": "Price per unit in commodityCurrencyCode."
+                    },
+                    "commodityCurrencyCode": {
+                      "type": "string",
+                      "description": "ISO 4217 currency of the price; the same for every item."
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "description": "Number of units."
+                    },
+                    "UOM": {
+                      "type": "string",
+                      "description": "Unit of measure, e.g. EA for each."
+                    },
+                    "hsCode": {
+                      "type": "string",
+                      "description": "HS or HTS code valid in the destination country. Strongly recommended: without it UPS guesses from the description."
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Plain description of the goods."
+                    },
+                    "originCountryCode": {
+                      "type": "string",
+                      "description": "Country of manufacture, ISO 3166-1 alpha-2."
+                    },
+                    "grossWeight": {
+                      "type": "number",
+                      "description": "Optional gross weight."
+                    },
+                    "grossWeightUnit": {
+                      "type": "string",
+                      "description": "LB or KG; required with grossWeight."
+                    }
+                  },
+                  "required": [
+                    "commodityId",
+                    "priceEach",
+                    "commodityCurrencyCode",
+                    "quantity",
+                    "UOM",
+                    "originCountryCode"
+                  ]
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "id",
+              "importCountryCode",
+              "exportCountryCode",
+              "shipmentItems"
+            ]
+          }
+        },
+        "required": [
+          "currency_code",
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/landedcost/v1/quotes",
+        "headers": {
+          "AccountNumber": "{{UPS_ACCOUNT_NUMBER}}"
+        },
+        "bodyMapping": {
+          "currencyCode": "$currency_code",
+          "transID": "$transaction_id",
+          "allowPartialLandedCostResult": "$allow_partial_result",
+          "alversion": 1,
+          "shipment": "$shipment"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_recover_label",
+      "description": "Get the label of a shipment that already exists again, by tracking number. Returns `LabelRecoveryResponse.LabelResults` with the label as a base64 string (`LabelImage.GraphicImage`) in the requested format, and for GIF also an HTML page. Creates nothing and costs nothing; UPS keeps labels for a limited time after the shipment was created. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the package, 18 characters starting with 1Z.",
+            "pattern": "^[A-Za-z0-9]{7,34}$"
+          },
+          "label_format": {
+            "type": "string",
+            "description": "GIF (an image inside an HTML page), PDF, or the thermal printer formats ZPL, EPL and SPL.",
+            "enum": [
+              "GIF",
+              "PDF",
+              "ZPL",
+              "EPL",
+              "SPL"
+            ],
+            "default": "PDF"
+          },
+          "label_stock_size": {
+            "type": "object",
+            "description": "Thermal formats only: `Height` 6 or 8 and `Width` 4, as strings (inches).",
+            "properties": {
+              "Height": {
+                "type": "string",
+                "description": "6 or 8."
+              },
+              "Width": {
+                "type": "string",
+                "description": "4."
+              }
+            },
+            "required": [
+              "Height",
+              "Width"
+            ]
+          }
+        },
+        "required": [
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/labels/v1/recovery",
+        "bodyMapping": {
+          "LabelRecoveryRequest": {
+            "Request": {
+              "TransactionReference": {
+                "CustomerContext": "AnythingMCP"
+              }
+            },
+            "LabelSpecification": {
+              "LabelImageFormat": {
+                "Code": "$label_format"
+              },
+              "LabelStockSize": "$label_stock_size"
+            },
+            "TrackingNumber": "$tracking_number"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_get_pickup_rate",
+      "description": "Quote what an on-call UPS pickup at an address would cost, without booking it. Returns `PickupRateResponse.RateResult` with the rate type, currency, `GrandTotalOfAllCharge` and the charge details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_type": {
+            "type": "string",
+            "description": "oncall (default), smart or both.",
+            "enum": [
+              "oncall",
+              "smart",
+              "both"
+            ],
+            "default": "oncall"
+          },
+          "pickup_address": {
+            "type": "object",
+            "description": "Where UPS should collect, in the pickup API field names.",
+            "properties": {
+              "AddressLine": {
+                "type": "string",
+                "description": "Street address, one line."
+              },
+              "City": {
+                "type": "string",
+                "description": "City."
+              },
+              "StateProvince": {
+                "type": "string",
+                "description": "State or province code; needed for US and Canada."
+              },
+              "PostalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "CountryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code in capitals."
+              },
+              "ResidentialIndicator": {
+                "type": "string",
+                "description": "Y for a residence, N for a business.",
+                "enum": [
+                  "Y",
+                  "N"
+                ]
+              }
+            },
+            "required": [
+              "City",
+              "PostalCode",
+              "CountryCode",
+              "ResidentialIndicator"
+            ]
+          },
+          "account_country_code": {
+            "type": "string",
+            "description": "Country of your UPS account, ISO 3166-1 alpha-2 in capitals, e.g. US or DE.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "alternate_address": {
+            "type": "string",
+            "description": "Y when the pickup address differs from the address of the UPS account (default), N for the account address.",
+            "enum": [
+              "Y",
+              "N"
+            ],
+            "default": "Y"
+          },
+          "service_date_option": {
+            "type": "string",
+            "description": "01 same-day pickup, 02 future-day pickup (default), 03 a specific day (then pickup_date_info is required).",
+            "enum": [
+              "01",
+              "02",
+              "03"
+            ],
+            "default": "02"
+          },
+          "pickup_date_info": {
+            "type": "object",
+            "description": "Required for service_date_option 03: local date and time window.",
+            "properties": {
+              "PickupDate": {
+                "type": "string",
+                "description": "Local pickup date as YYYYMMDD."
+              },
+              "ReadyTime": {
+                "type": "string",
+                "description": "Earliest time the parcels are ready, HHmm in 24-hour local time, e.g. 0900."
+              },
+              "CloseTime": {
+                "type": "string",
+                "description": "Latest time the driver can collect, HHmm, e.g. 1700."
+              }
+            },
+            "required": [
+              "PickupDate",
+              "ReadyTime",
+              "CloseTime"
+            ]
+          }
+        },
+        "required": [
+          "pickup_address",
+          "account_country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/v2409/pickup/{pickup_type}",
+        "bodyMapping": {
+          "PickupRateRequest": {
+            "Request": {
+              "TransactionReference": {
+                "CustomerContext": "AnythingMCP"
+              }
+            },
+            "ShipperAccount": {
+              "AccountNumber": "{{UPS_ACCOUNT_NUMBER}}",
+              "AccountCountryCode": "$account_country_code"
+            },
+            "PickupAddress": "$pickup_address",
+            "AlternateAddressIndicator": "$alternate_address",
+            "ServiceDateOption": "$service_date_option",
+            "PickupDateInfo": "$pickup_date_info"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_get_pending_pickups",
+      "description": "List the pickups booked on your UPS account that have not happened yet. Returns `PickupPendingStatusResponse.PendingStatus` with the pickup type, the service date as YYYYMMDD, the pickup request number (`PRN`), `PickupStatusMessage`, the contact name and your reference number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_type": {
+            "type": "string",
+            "description": "oncall (default), smart or both.",
+            "enum": [
+              "oncall",
+              "smart",
+              "both"
+            ],
+            "default": "oncall"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/v2409/pickup/{pickup_type}",
+        "headers": {
+          "AccountNumber": "{{UPS_ACCOUNT_NUMBER}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ups_create_shipment",
+      "description": "Create a UPS shipment and its label. UPS bills the shipment to your account as soon as this call succeeds, so the tool is installed switched off. Returns `ShipmentResponse.ShipmentResults` with the shipment identification number, the charges, and per package the tracking number and the label as base64. A shipment created by mistake can be voided with ups_void_shipment before it is picked up.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment": {
+            "type": "object",
+            "description": "The UPS Shipment container in UPS field names. Required parts: `Shipper` (`Name`, `ShipperNumber` = your 6-character UPS account number, `Address` with `AddressLine`, `City`, `StateProvinceCode`, `PostalCode`, `CountryCode`, and `Phone.Number`), `ShipTo` (same shape without ShipperNumber), `PaymentInformation.ShipmentCharge` (a list with `Type` 01 and `BillShipper.AccountNumber` = your account number), `Service.Code`, and `Package` (a list; each with `Packaging.Code`, usually 02, and `PackageWeight` with `UnitOfMeasurement.Code` and `Weight` as a string). Optional: `Description`, `ShipFrom`, `ReferenceNumber`, `ShipmentServiceOptions`, `ShipmentRatingOptions`.",
+            "properties": {
+              "Description": {
+                "type": "string",
+                "description": "Description of the goods; required for international shipments."
+              },
+              "Shipper": {
+                "type": "object",
+                "description": "The account holder: Name, ShipperNumber, Phone, Address."
+              },
+              "ShipTo": {
+                "type": "object",
+                "description": "The recipient: Name, AttentionName, Phone, Address."
+              },
+              "ShipFrom": {
+                "type": "object",
+                "description": "Only when the parcel leaves from another address: Name, Address."
+              },
+              "PaymentInformation": {
+                "type": "object",
+                "description": "Who pays: ShipmentCharge list with Type and BillShipper.AccountNumber."
+              },
+              "Service": {
+                "type": "object",
+                "description": "The UPS service: Code."
+              },
+              "Package": {
+                "type": "array",
+                "description": "The packages.",
+                "items": {
+                  "type": "object",
+                  "description": "One package: Packaging.Code, PackageWeight, optional Dimensions and Description."
+                }
+              }
+            },
+            "required": [
+              "Shipper",
+              "ShipTo",
+              "PaymentInformation",
+              "Service",
+              "Package"
+            ]
+          },
+          "request_option": {
+            "type": "string",
+            "description": "nonvalidate checks the postal code against the state (default); validate also checks the city.",
+            "enum": [
+              "nonvalidate",
+              "validate"
+            ],
+            "default": "nonvalidate"
+          },
+          "label_format": {
+            "type": "string",
+            "description": "GIF (an image), or the thermal printer formats ZPL, EPL and SPL. PDF is not offered by this UPS call.",
+            "enum": [
+              "GIF",
+              "ZPL",
+              "EPL",
+              "SPL"
+            ],
+            "default": "GIF"
+          },
+          "label_stock_size": {
+            "type": "object",
+            "description": "Thermal formats only: `Height` 6 or 8 and `Width` 4, as strings (inches).",
+            "properties": {
+              "Height": {
+                "type": "string",
+                "description": "6 or 8."
+              },
+              "Width": {
+                "type": "string",
+                "description": "4."
+              }
+            },
+            "required": [
+              "Height",
+              "Width"
+            ]
+          },
+          "additional_address_validation": {
+            "type": "string",
+            "description": "Set to city to have UPS also validate the city.",
+            "enum": [
+              "city"
+            ]
+          }
+        },
+        "required": [
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/v2409/ship",
+        "queryParams": {
+          "additionaladdressvalidation": "$additional_address_validation"
+        },
+        "bodyMapping": {
+          "ShipmentRequest": {
+            "Request": {
+              "RequestOption": "$request_option",
+              "TransactionReference": {
+                "CustomerContext": "AnythingMCP"
+              }
+            },
+            "Shipment": "$shipment",
+            "LabelSpecification": {
+              "LabelImageFormat": {
+                "Code": "$label_format"
+              },
+              "LabelStockSize": "$label_stock_size"
+            }
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ups_void_shipment",
+      "description": "Void (cancel) a UPS shipment that was created but not yet picked up, or single packages of it. It cannot be undone: the labels become invalid. Returns `VoidShipmentResponse.SummaryResult.Status` and a status per package. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_identification_number": {
+            "type": "string",
+            "description": "Shipment identification number: the tracking number of the lead package, 18 characters starting with 1Z, in capitals.",
+            "pattern": "^[A-Z0-9]{18}$"
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Only to void single packages of a multi-package shipment: one tracking number (UPS accepts up to 20). Leave out to void the whole shipment."
+          }
+        },
+        "required": [
+          "shipment_identification_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/shipments/v2409/void/cancel/{shipment_identification_number}",
+        "queryParams": {
+          "trackingnumber": "$tracking_number"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ups_create_pickup",
+      "description": "Book an on-call UPS pickup: a driver comes to the address on the given day. UPS charges a pickup fee to your account, so the tool is installed switched off; quote first with ups_get_pickup_rate. Returns `PickupCreationResponse.PRN` (the pickup request number, needed to cancel) and the rate when asked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_date_info": {
+            "type": "object",
+            "description": "When to collect: local date and time window.",
+            "properties": {
+              "PickupDate": {
+                "type": "string",
+                "description": "Local pickup date as YYYYMMDD."
+              },
+              "ReadyTime": {
+                "type": "string",
+                "description": "Earliest time the parcels are ready, HHmm in 24-hour local time, e.g. 0900."
+              },
+              "CloseTime": {
+                "type": "string",
+                "description": "Latest time the driver can collect, HHmm, e.g. 1700."
+              }
+            },
+            "required": [
+              "PickupDate",
+              "ReadyTime",
+              "CloseTime"
+            ]
+          },
+          "pickup_address": {
+            "type": "object",
+            "description": "Where to collect, in the pickup API field names.",
+            "properties": {
+              "CompanyName": {
+                "type": "string",
+                "description": "Company name, up to 27 characters."
+              },
+              "ContactName": {
+                "type": "string",
+                "description": "Contact person, up to 22 characters."
+              },
+              "AddressLine": {
+                "type": "array",
+                "description": "Street address; one line.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "Room": {
+                "type": "string",
+                "description": "Optional room number."
+              },
+              "Floor": {
+                "type": "string",
+                "description": "Optional floor."
+              },
+              "City": {
+                "type": "string",
+                "description": "City."
+              },
+              "StateProvince": {
+                "type": "string",
+                "description": "State or province code; needed for US and Canada."
+              },
+              "PostalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "CountryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code in capitals."
+              },
+              "ResidentialIndicator": {
+                "type": "string",
+                "description": "Y for a residence, N for a business.",
+                "enum": [
+                  "Y",
+                  "N"
+                ]
+              },
+              "PickupPoint": {
+                "type": "string",
+                "description": "Optional spot at the address, e.g. Front desk."
+              },
+              "Phone": {
+                "type": "object",
+                "description": "Contact phone.",
+                "properties": {
+                  "Number": {
+                    "type": "string",
+                    "description": "Phone number."
+                  },
+                  "Extension": {
+                    "type": "string",
+                    "description": "Optional extension."
+                  }
+                },
+                "required": [
+                  "Number"
+                ]
+              }
+            },
+            "required": [
+              "CompanyName",
+              "ContactName",
+              "AddressLine",
+              "City",
+              "CountryCode",
+              "ResidentialIndicator",
+              "Phone"
+            ]
+          },
+          "pickup_pieces": {
+            "type": "array",
+            "description": "What is collected, one entry per service and destination country.",
+            "items": {
+              "type": "object",
+              "description": "A group of pieces.",
+              "properties": {
+                "ServiceCode": {
+                  "type": "string",
+                  "description": "UPS pickup service code from the service code table of the UPS Pickup API, three digits, e.g. 001 Next Day Air, 003 Ground, 011 Standard, 007 Express, 065 Saver."
+                },
+                "Quantity": {
+                  "type": "string",
+                  "description": "Number of pieces as a string, up to 999."
+                },
+                "DestinationCountryCode": {
+                  "type": "string",
+                  "description": "Destination country, ISO 3166-1 alpha-2."
+                },
+                "ContainerCode": {
+                  "type": "string",
+                  "description": "01 package, 02 UPS Letter, 03 pallet.",
+                  "enum": [
+                    "01",
+                    "02",
+                    "03"
+                  ]
+                }
+              },
+              "required": [
+                "ServiceCode",
+                "Quantity",
+                "DestinationCountryCode",
+                "ContainerCode"
+              ]
+            },
+            "minItems": 1
+          },
+          "account_country_code": {
+            "type": "string",
+            "description": "Country of your UPS account, ISO 3166-1 alpha-2 in capitals.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "total_weight": {
+            "type": "object",
+            "description": "Total weight of all pieces: `Weight` as a string with one decimal and `UnitOfMeasurement` LBS or KGS.",
+            "properties": {
+              "Weight": {
+                "type": "string",
+                "description": "Weight, e.g. \"10.5\"."
+              },
+              "UnitOfMeasurement": {
+                "type": "string",
+                "description": "LBS or KGS.",
+                "enum": [
+                  "LBS",
+                  "KGS"
+                ]
+              }
+            },
+            "required": [
+              "Weight",
+              "UnitOfMeasurement"
+            ]
+          },
+          "overweight": {
+            "type": "string",
+            "description": "Y when any piece is over 70 lbs or 32 kg, otherwise N.",
+            "enum": [
+              "Y",
+              "N"
+            ],
+            "default": "N"
+          },
+          "alternate_address": {
+            "type": "string",
+            "description": "Y when the pickup address differs from the address of the UPS account (default), N for the account address.",
+            "enum": [
+              "Y",
+              "N"
+            ],
+            "default": "Y"
+          },
+          "payment_method": {
+            "type": "string",
+            "description": "01 pay by your UPS shipper account (default), 00 where pickups are free of charge. Card and cash payments are not supported by this tool.",
+            "enum": [
+              "00",
+              "01"
+            ],
+            "default": "01"
+          },
+          "rate_pickup": {
+            "type": "string",
+            "description": "Y returns the pickup charge in the answer (default), N does not.",
+            "enum": [
+              "Y",
+              "N"
+            ],
+            "default": "Y"
+          },
+          "special_instruction": {
+            "type": "string",
+            "description": "Optional note for the driver, up to 57 characters."
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Optional reference of yours, up to 35 characters."
+          },
+          "notification": {
+            "type": "object",
+            "description": "Optional: `ConfirmationEmailAddress` and `UndeliverableEmailAddress` for the pickup notification.",
+            "properties": {
+              "ConfirmationEmailAddress": {
+                "type": "string",
+                "description": "Where UPS sends the confirmation."
+              },
+              "UndeliverableEmailAddress": {
+                "type": "string",
+                "description": "Where UPS reports a failed notification."
+              }
+            }
+          }
+        },
+        "required": [
+          "pickup_date_info",
+          "pickup_address",
+          "pickup_pieces",
+          "account_country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pickupcreation/v2409/pickup",
+        "bodyMapping": {
+          "PickupCreationRequest": {
+            "Request": {
+              "TransactionReference": {
+                "CustomerContext": "AnythingMCP"
+              }
+            },
+            "RatePickupIndicator": "$rate_pickup",
+            "Shipper": {
+              "Account": {
+                "AccountNumber": "{{UPS_ACCOUNT_NUMBER}}",
+                "AccountCountryCode": "$account_country_code"
+              }
+            },
+            "PickupDateInfo": "$pickup_date_info",
+            "PickupAddress": "$pickup_address",
+            "AlternateAddressIndicator": "$alternate_address",
+            "PickupPiece": "$pickup_pieces",
+            "TotalWeight": "$total_weight",
+            "OverweightIndicator": "$overweight",
+            "PaymentMethod": "$payment_method",
+            "SpecialInstruction": "$special_instruction",
+            "ReferenceNumber": "$reference_number",
+            "Notification": "$notification"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ups_cancel_pickup",
+      "description": "Cancel a booked UPS pickup by its pickup request number (PRN). It cannot be undone; a new pickup has to be booked. Returns `PickupCancelResponse.Response.ResponseStatus`. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prn": {
+            "type": "string",
+            "description": "Pickup request number returned by ups_create_pickup or listed by ups_get_pending_pickups, up to 26 characters."
+          }
+        },
+        "required": [
+          "prn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/shipments/v2409/pickup/02",
+        "headers": {
+          "Prn": "$prn"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

@@ -1,0 +1,1281 @@
+{
+  "slug": "reverb",
+  "name": "Reverb",
+  "description": "Reverb API for sellers of music gear: own listings with draft, update and publish, orders and shipping with tracking, buyer messages, offers, refund requests, payouts and shop data. Personal access token.",
+  "instructions": "## Reverb\nThis connector works with the **Reverb API** (version 3.0) at `https://api.reverb.com/api`, for sellers on Reverb, the marketplace for music gear: your listings, orders and shipping, messages, offers, refund requests, payouts and shop data. It uses your own personal access token, so it only sees your account. Searching the public marketplace without a token is a separate connector.\n\n**Setup (about 3 minutes)**\n1. Sign in at reverb.com, open your user menu and go to **My Profile**.\n2. Click the **API & Integrations** tab, then **Generate New Token**.\n3. Enter a name and tick the scopes: `public`, `read_listings`, `write_listings`, `read_orders`, `write_orders`, `read_messages`, `write_messages`, `read_offers`, `write_offers`, `read_payouts` and `read_profile`. A tool whose scope is missing is refused.\n4. Copy the token into `REVERB_TOKEN`. Personal access tokens do not expire.\n\nReverb asks every seller to have billing set up and at least one listing made by hand on reverb.com before using the API.\n\n**Where to start**: `reverb_list_orders_awaiting_shipment` shows what has to be shipped. `reverb_list_my_listings` shows your live listings (state all adds drafts and ended ones); `reverb_get_shop` shows the shop and its shipping profiles.\n\n**Listings**: create a draft with `reverb_create_listing` (category uuid from `reverb_list_categories`, condition uuid from `reverb_list_listing_conditions`, shipping profile id from `reverb_get_shop`), change it with `reverb_update_listing`, and put it on sale with `reverb_publish_listing`. `reverb_list_my_drafts` lists unpublished drafts and `reverb_get_listing` reads one listing. Find a listing by your SKU with `reverb_list_my_listings` and sku. Only the conditions Brand New, B-Stock and Mint with inventory can hold more than one unit; a used item is a single piece and cannot be relisted once sold. Setting inventory to 0 ends the listing. `reverb_end_listing` is installed switched off.\n\n**Orders**: `reverb_list_orders` (all, filter by last change), `reverb_list_orders_awaiting_shipment`, `reverb_get_order`. Ship only when status is paid, with `reverb_ship_order` (provider from `reverb_list_shipping_providers` and the tracking number); local pickups are closed with `reverb_mark_order_picked_up`. Shipping labels are not bought through this connector.\n\n**Messages and offers**: `reverb_list_conversations`, `reverb_get_conversation` and `reverb_send_message` handle buyer messages. `reverb_list_offers` and `reverb_get_offer` read offers on your listings; `reverb_decline_offer` turns one down. `reverb_accept_offer` and `reverb_counter_offer` are installed switched off, because both commit you to a price.\n\n**Refunds and payouts**: `reverb_list_refund_requests` reads refund requests. `reverb_respond_to_refund_request` and `reverb_create_refund_request` are installed switched off: approving a refund credits the buyer and debits you at once. `reverb_list_payouts` and `reverb_list_payout_line_items` read what Reverb paid to your bank and the fees per order.\n\n**Formats**: money is an object with `amount` (decimal string such as `95.00`), `amount_cents`, `currency` and `display`; send amount and currency. Dates are ISO 8601 with an offset. Ids: orders use the order number, listings the numeric listing id, categories and conditions a uuid.\n\n**Paging and links**: Reverb answers in HAL JSON. Lists carry `_links.next` and `_links.prev`; when next is missing you are on the last page. Use page and per_page to move. Each object also lists the actions open to it under `_links`.\n\n**Errors**: 401 means the token is wrong or lacks the scope; 404 not found; 406 the action would break a rule of the current state; 412 a validation error with `message` and `errors` per field; 429 too many calls.\n\n**Rate limits**: reads 2,000 per minute or 10,000 per 10 minutes; writes 600 per minute or 3,000 per 10 minutes. Avoid syncing the whole shop at once.\n\n**Sandbox**: `sandbox.reverb.com` is a separate site with its own accounts and tokens; this connector calls the production API.",
+  "aliases": [
+    "Reverb.com",
+    "Reverb Marketplace",
+    "Reverb Seller"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "reverb",
+  "docsUrl": "https://www.reverb-api.com/docs/getting-started",
+  "requiredEnvVars": [
+    "REVERB_TOKEN"
+  ],
+  "envVarMeta": {
+    "REVERB_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "reverb.com, user menu, My Profile, API & Integrations tab, Generate New Token. Tick the listing, order, message, offer, payout and profile scopes.",
+      "link": "https://www.reverb-api.com/docs/authentication",
+      "pattern": "^[A-Za-z0-9_-]{32,200}$",
+      "patternMessage": "Paste the token only (letters and digits), without the word Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Reverb did not accept this token, or the token lacks the scope for this call. Generate a new one under My Profile, API & Integrations with the listing, order, message, offer, payout and profile scopes.",
+    "403": "Reverb refused the call: the token has no scope for it, or the feature is not enabled on this account.",
+    "404": "Reverb found no listing, order, conversation or offer with that id on this account.",
+    "406": "Reverb does not allow this action because it would break a rule of the current state (for example only drafts can be deleted).",
+    "412": "Reverb found the data invalid; the answer lists the fields under errors.",
+    "rate_limited": "Reverb allows 2,000 reads and 600 writes per minute. Wait a few minutes and try again."
+  },
+  "probe": {
+    "tool": "reverb_list_my_listings",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "prerequisites": "A Reverb seller account with billing set up and at least one listing, to generate a personal access token under My Profile, API & Integrations. About 3 minutes.",
+  "connector": {
+    "name": "Reverb API",
+    "type": "REST",
+    "baseUrl": "https://api.reverb.com/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{REVERB_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/hal+json",
+      "Content-Type": "application/hal+json",
+      "Accept-Version": "3.0",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "reverb_list_my_listings",
+      "description": "List your own listings with their id, title, make, model, sku, condition, price (amount and currency), inventory and `_links` (the listing itself, its web page). Only live listings by default; state `all` adds drafts and the other states. Filter by sku to find one item. Page with page and per_page while `_links.next` is present. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Only the listing with this SKU (exact match)."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "all"
+            ],
+            "description": "`all` returns listings in every state, drafts included. Left out, only live listings come back."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/listings",
+        "queryParams": {
+          "sku": "$sku",
+          "state": "$state",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_list_my_drafts",
+      "description": "List your draft listings (created but not yet published) with the same fields as reverb_list_my_listings: id, title, make, model, sku, condition and price. Only drafts can be deleted on Reverb; published listings stay in the account. Page with page and per_page while `_links.next` is present. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/listings/drafts",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_get_listing",
+      "description": "Read one listing by id with the fields a listing is created from: title, make, model, finish, year, description, condition, categories, price, inventory, sku, shipping and photos, plus its state and `_links` to the actions open on it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "string",
+            "description": "Reverb listing id (id of reverb_list_my_listings; the number at the start of the listing's web address)."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/{listing_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_create_listing",
+      "description": "Create a listing as a draft on your Reverb shop. It is not visible to buyers until reverb_publish_listing is called. Give at least a title, make, model, a category, a condition, a price and photos; set shipping through a shipping profile. Returns the created listing with its id. Validation errors answer 412 with a message per field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Listing title, e.g. `Fender Stratocaster 1964 Sunburst`."
+          },
+          "make": {
+            "type": "string",
+            "description": "Brand or maker, e.g. `Fender`. Send it: without make and model Reverb guesses them from the title, and a listing with make Unknown cannot be published."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model, e.g. `Stratocaster`."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the item (condition details, modifications, what is included)."
+          },
+          "finish": {
+            "type": "string",
+            "description": "Finish or colour, e.g. `Sunburst`."
+          },
+          "year": {
+            "type": "string",
+            "description": "Year or period in free form: `1964`, `1980s`, `1979-1981`, `mid 80s`."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your own SKU. Needed to find the listing again with reverb_list_my_listings."
+          },
+          "upc": {
+            "type": "string",
+            "description": "UPC or EAN barcode of the item."
+          },
+          "upc_does_not_apply": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "`true` when the item has no UPC (used or handmade gear)."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string",
+                  "description": "Category uuid."
+                }
+              },
+              "required": [
+                "uuid"
+              ],
+              "description": "One category."
+            },
+            "maxItems": 3,
+            "description": "One or two categories as `[{\"uuid\": \"...\"}]`, with the uuid from reverb_list_categories. Some middle categories cannot be used for listings and answer 400."
+          },
+          "condition": {
+            "type": "object",
+            "properties": {
+              "uuid": {
+                "type": "string",
+                "description": "Condition uuid."
+              }
+            },
+            "required": [
+              "uuid"
+            ],
+            "description": "Condition as `{\"uuid\": \"...\"}` with the uuid from reverb_list_listing_conditions (for example Excellent, Very Good, Brand New)."
+          },
+          "photos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Public image URLs, first one is the main photo."
+          },
+          "videos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "link": {
+                  "type": "string",
+                  "description": "YouTube link."
+                }
+              },
+              "required": [
+                "link"
+              ],
+              "description": "One video."
+            },
+            "description": "Videos as `[{\"link\": \"https://www.youtube.com/watch?v=...\"}]`."
+          },
+          "price": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,2})?$",
+                "description": "Amount as a decimal string, e.g. `50.00`."
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$",
+                "description": "ISO 4217 currency code, e.g. USD, EUR, GBP."
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ],
+            "description": "Asking price as `{\"amount\": \"50.00\", \"currency\": \"USD\"}`: amount is a decimal string, currency your shop currency."
+          },
+          "has_inventory": {
+            "type": "boolean",
+            "description": "true for retail items sold in quantity (conditions Brand New, B-Stock and Mint with inventory); false for a single used item."
+          },
+          "inventory": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units in stock, with has_inventory true. Careful: 0 ends a live listing."
+          },
+          "offers_enabled": {
+            "type": "boolean",
+            "description": "true lets buyers make offers on this listing; false turns offers off."
+          },
+          "handmade": {
+            "type": "boolean",
+            "description": "true when the item is handmade."
+          },
+          "shipping_profile_id": {
+            "type": "string",
+            "description": "Id of one of your shipping profiles (shipping_profiles[].id of reverb_get_shop). Preferred over single rates."
+          },
+          "shipping": {
+            "type": "object",
+            "description": "Shipping rates for this listing only, when no shipping profile is used: `{\"rates\": [{\"rate\": {\"amount\": \"10.00\", \"currency\": \"USD\"}, \"region_code\": \"US_CON\"}, {\"rate\": {\"amount\": \"20.00\", \"currency\": \"USD\"}, \"region_code\": \"XX\"}], \"local\": true}`. `XX` means everywhere else; local true allows pickup."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listings",
+        "bodyMapping": {
+          "title": "$title",
+          "make": "$make",
+          "model": "$model",
+          "description": "$description",
+          "finish": "$finish",
+          "year": "$year",
+          "sku": "$sku",
+          "upc": "$upc",
+          "upc_does_not_apply": "$upc_does_not_apply",
+          "categories": "$categories",
+          "condition": "$condition",
+          "photos": "$photos",
+          "videos": "$videos",
+          "price": "$price",
+          "has_inventory": "$has_inventory",
+          "inventory": "$inventory",
+          "offers_enabled": "$offers_enabled",
+          "handmade": "$handmade",
+          "shipping_profile_id": "$shipping_profile_id",
+          "shipping": "$shipping"
+        }
+      }
+    },
+    {
+      "name": "reverb_update_listing",
+      "description": "Update one of your listings (draft or live): only the fields given change. Typical uses: price, inventory, description, photos, shipping profile, offers on or off. Careful: setting inventory to 0 ends a live listing. Returns the updated listing; validation errors answer 412 with a message per field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "string",
+            "description": "Reverb listing id (id of reverb_list_my_listings; the number at the start of the listing's web address)."
+          },
+          "title": {
+            "type": "string",
+            "description": "Listing title, e.g. `Fender Stratocaster 1964 Sunburst`."
+          },
+          "make": {
+            "type": "string",
+            "description": "Brand or maker, e.g. `Fender`. Send it: without make and model Reverb guesses them from the title, and a listing with make Unknown cannot be published."
+          },
+          "model": {
+            "type": "string",
+            "description": "Model, e.g. `Stratocaster`."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the item (condition details, modifications, what is included)."
+          },
+          "finish": {
+            "type": "string",
+            "description": "Finish or colour, e.g. `Sunburst`."
+          },
+          "year": {
+            "type": "string",
+            "description": "Year or period in free form: `1964`, `1980s`, `1979-1981`, `mid 80s`."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your own SKU. Needed to find the listing again with reverb_list_my_listings."
+          },
+          "upc": {
+            "type": "string",
+            "description": "UPC or EAN barcode of the item."
+          },
+          "upc_does_not_apply": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "`true` when the item has no UPC (used or handmade gear)."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string",
+                  "description": "Category uuid."
+                }
+              },
+              "required": [
+                "uuid"
+              ],
+              "description": "One category."
+            },
+            "maxItems": 3,
+            "description": "One or two categories as `[{\"uuid\": \"...\"}]`, with the uuid from reverb_list_categories. Some middle categories cannot be used for listings and answer 400."
+          },
+          "condition": {
+            "type": "object",
+            "properties": {
+              "uuid": {
+                "type": "string",
+                "description": "Condition uuid."
+              }
+            },
+            "required": [
+              "uuid"
+            ],
+            "description": "Condition as `{\"uuid\": \"...\"}` with the uuid from reverb_list_listing_conditions (for example Excellent, Very Good, Brand New)."
+          },
+          "photos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Public image URLs, first one is the main photo."
+          },
+          "videos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "link": {
+                  "type": "string",
+                  "description": "YouTube link."
+                }
+              },
+              "required": [
+                "link"
+              ],
+              "description": "One video."
+            },
+            "description": "Videos as `[{\"link\": \"https://www.youtube.com/watch?v=...\"}]`."
+          },
+          "price": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,2})?$",
+                "description": "Amount as a decimal string, e.g. `50.00`."
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$",
+                "description": "ISO 4217 currency code, e.g. USD, EUR, GBP."
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ],
+            "description": "Asking price as `{\"amount\": \"50.00\", \"currency\": \"USD\"}`: amount is a decimal string, currency your shop currency."
+          },
+          "has_inventory": {
+            "type": "boolean",
+            "description": "true for retail items sold in quantity (conditions Brand New, B-Stock and Mint with inventory); false for a single used item."
+          },
+          "inventory": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units in stock, with has_inventory true. Careful: 0 ends a live listing."
+          },
+          "offers_enabled": {
+            "type": "boolean",
+            "description": "true lets buyers make offers on this listing; false turns offers off."
+          },
+          "handmade": {
+            "type": "boolean",
+            "description": "true when the item is handmade."
+          },
+          "shipping_profile_id": {
+            "type": "string",
+            "description": "Id of one of your shipping profiles (shipping_profiles[].id of reverb_get_shop). Preferred over single rates."
+          },
+          "shipping": {
+            "type": "object",
+            "description": "Shipping rates for this listing only, when no shipping profile is used: `{\"rates\": [{\"rate\": {\"amount\": \"10.00\", \"currency\": \"USD\"}, \"region_code\": \"US_CON\"}, {\"rate\": {\"amount\": \"20.00\", \"currency\": \"USD\"}, \"region_code\": \"XX\"}], \"local\": true}`. `XX` means everywhere else; local true allows pickup."
+          },
+          "photo_upload_method": {
+            "type": "string",
+            "enum": [
+              "override_position"
+            ],
+            "description": "`override_position` makes the photos list replace the order of the existing images (send the exact original URLs). Left out, new URLs are added."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/listings/{listing_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "make": "$make",
+          "model": "$model",
+          "description": "$description",
+          "finish": "$finish",
+          "year": "$year",
+          "sku": "$sku",
+          "upc": "$upc",
+          "upc_does_not_apply": "$upc_does_not_apply",
+          "categories": "$categories",
+          "condition": "$condition",
+          "photos": "$photos",
+          "videos": "$videos",
+          "price": "$price",
+          "has_inventory": "$has_inventory",
+          "inventory": "$inventory",
+          "offers_enabled": "$offers_enabled",
+          "handmade": "$handmade",
+          "shipping_profile_id": "$shipping_profile_id",
+          "shipping": "$shipping",
+          "photo_upload_method": "$photo_upload_method"
+        }
+      }
+    },
+    {
+      "name": "reverb_publish_listing",
+      "description": "Publish a draft listing so buyers can see and buy it. The draft must be complete (make and model known, category, condition, price, photos, shipping); otherwise Reverb answers with an error that names the problem. Returns the listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "string",
+            "description": "Reverb listing id (id of reverb_list_my_listings; the number at the start of the listing's web address)."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/listings/{listing_id}",
+        "bodyMapping": {
+          "publish": "true"
+        }
+      }
+    },
+    {
+      "name": "reverb_end_listing",
+      "description": "End a live listing so it can no longer be bought. Reason `not_sold` simply takes it down. Reason `reverb_sale` says you found the buyer on Reverb and were paid outside of it: Reverb then charges its selling fee on your monthly bill. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "string",
+            "description": "Reverb listing id (id of reverb_list_my_listings; the number at the start of the listing's web address)."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "not_sold",
+              "reverb_sale"
+            ],
+            "description": "`not_sold` (take the listing down) or `reverb_sale` (sold to a Reverb buyer outside checkout; the selling fee is billed)."
+          }
+        },
+        "required": [
+          "listing_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/my/listings/{listing_id}/state/end",
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "reverb_list_orders",
+      "description": "List the orders you sold, all statuses: order_number, status (unpaid, payment_pending, pending_review, blocked, paid, shipped, picked_up, received, refunded, cancelled), title, product_id (the listing), quantity, buyer_name, shipping_address, shipping_method (shipped, local, expedited_shipping), created_at, paid_at, shipped_at, shipping_provider, shipping_code (tracking), order_bundle_id, and the amounts amount_product, shipping, amount_tax, total, selling_fee, direct_checkout_fee and direct_checkout_payout (each with amount as a decimal string and currency). Filter by the time of the last change to sync; the answer also has total, current_page and total_pages. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_start_date": {
+            "type": "string",
+            "description": "Orders changed at or after this moment, ISO 8601 with offset (e.g. `2026-11-01T00:00:00-00:00`)."
+          },
+          "updated_end_date": {
+            "type": "string",
+            "description": "Orders changed at or before this moment, ISO 8601 with offset."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/orders/selling/all",
+        "queryParams": {
+          "updated_start_date": "$updated_start_date",
+          "updated_end_date": "$updated_end_date",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_list_orders_awaiting_shipment",
+      "description": "List paid orders that still have to be shipped, with the same fields as reverb_list_orders (order_number, title, quantity, buyer_name, shipping_address, shipping_method, total and fees). Ground shipping should be marked shipped with tracking within 72 hours, expedited within 24 hours. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/orders/selling/awaiting_shipment",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_get_order",
+      "description": "Read one sold order by its order number: order_number, status (unpaid, payment_pending, pending_review, blocked, paid, shipped, picked_up, received, refunded, cancelled), title, product_id (the listing), quantity, buyer_name, shipping_address, shipping_method (shipped, local, expedited_shipping), created_at, paid_at, shipped_at, shipping_provider, shipping_code (tracking), order_bundle_id, and the amounts amount_product, shipping, amount_tax, total, selling_fee, direct_checkout_fee and direct_checkout_payout (each with amount as a decimal string and currency). Orders bought in one checkout share order_bundle_id, so they can ship together. Do not ship while status is unpaid, payment_pending, pending_review or blocked. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Reverb order number (order_number of reverb_list_orders)."
+          }
+        },
+        "required": [
+          "order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/orders/selling/{order_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_ship_order",
+      "description": "Mark a paid order as shipped with the carrier and the tracking number. With send_notification true Reverb emails the buyer that the item is on its way. Use a provider name from reverb_list_shipping_providers. Returns the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Reverb order number (order_number of reverb_list_orders)."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Shipping provider as Reverb names it, e.g. `USPS`, `UPS`, `FedEx`, `DHL` (see reverb_list_shipping_providers)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the parcel."
+          },
+          "send_notification": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) emails the buyer that the order has shipped."
+          }
+        },
+        "required": [
+          "order_number",
+          "provider",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/my/orders/selling/{order_number}/ship",
+        "bodyMapping": {
+          "provider": "$provider",
+          "tracking_number": "$tracking_number",
+          "send_notification": "$send_notification"
+        }
+      }
+    },
+    {
+      "name": "reverb_mark_order_picked_up",
+      "description": "Mark a local pickup order as picked up by the buyer (orders with shipping_method local). The order status becomes picked_up. Use it only after the buyer has collected the item. Returns the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Reverb order number (order_number of reverb_list_orders)."
+          }
+        },
+        "required": [
+          "order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/my/orders/selling/{order_number}/mark_picked_up"
+      }
+    },
+    {
+      "name": "reverb_list_shipping_providers",
+      "description": "List the shipping providers (carriers) Reverb accepts when an order is marked shipped. Use the provider name exactly as listed in reverb_ship_order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/providers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_list_conversations",
+      "description": "List your message conversations on Reverb, each with its id (needed to read or answer it) and `_links`. With unread_only true only conversations holding unread messages come back. Page with page and per_page while `_links.next` is present. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unread_only": {
+            "type": "boolean",
+            "description": "true: only conversations with unread messages."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/conversations",
+        "queryParams": {
+          "unread_only": "$unread_only",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_get_conversation",
+      "description": "Read one conversation in detail, with its messages in chronological order (oldest first), so the whole exchange with the buyer can be followed before answering. Read-only; needs the read_messages scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from reverb_list_conversations."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/conversations/{conversation_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_send_message",
+      "description": "Reply in an existing conversation. The other party receives the message on Reverb at once and it cannot be taken back, so write it as the seller would. Needs the write_messages scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "description": "Conversation id from reverb_list_conversations."
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Message text."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/my/conversations/{conversation_id}/messages",
+        "bodyMapping": {
+          "body": "$body"
+        }
+      }
+    },
+    {
+      "name": "reverb_list_offers",
+      "description": "List the active offers (Reverb calls them negotiations) buyers made on your listings, each with its id for reverb_get_offer and the answer tools. Page with page and per_page while `_links.next` is present. Read-only; needs the read_offers scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/listings/negotiations",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_get_offer",
+      "description": "Read the details of one offer (negotiation) by id: the listing it is on, the prices offered so far and its current state, with `_links` to the answers open to you. Read-only; needs the read_offers scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer (negotiation) id from reverb_list_offers."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/negotiations/{offer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_decline_offer",
+      "description": "Decline a buyer's offer on one of your listings. The negotiation ends without a sale and the decline cannot be taken back; no price is agreed and no money moves. Needs the write_offers scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer (negotiation) id from reverb_list_offers."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/my/negotiations/{offer_id}/decline"
+      }
+    },
+    {
+      "name": "reverb_accept_offer",
+      "description": "Accept a buyer's offer. This is binding: you agree to sell the item at the offered price and shipping price, and the buyer can pay at once. Installed switched off, so that a person decides on price commitments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer (negotiation) id from reverb_list_offers."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/my/negotiations/{offer_id}/accept"
+      },
+      "enabled": false
+    },
+    {
+      "name": "reverb_counter_offer",
+      "description": "Answer a buyer's offer with a counter-offer: your price and, optionally, a shipping price. A counter-offer is binding if the buyer accepts it. Installed switched off, so that a person decides on price commitments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "string",
+            "description": "Offer (negotiation) id from reverb_list_offers."
+          },
+          "price": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,2})?$",
+                "description": "Amount as a decimal string, e.g. `50.00`."
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$",
+                "description": "ISO 4217 currency code, e.g. USD, EUR, GBP."
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ],
+            "description": "Your counter price for the item as `{\"amount\": \"50.00\", \"currency\": \"USD\"}`: amount is a decimal string, currency your shop currency."
+          },
+          "shipping_price": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,2})?$",
+                "description": "Amount as a decimal string, e.g. `50.00`."
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$",
+                "description": "ISO 4217 currency code, e.g. USD, EUR, GBP."
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ],
+            "description": "Shipping price that goes with the counter-offer as `{\"amount\": \"50.00\", \"currency\": \"USD\"}`: amount is a decimal string, currency your shop currency."
+          }
+        },
+        "required": [
+          "offer_id",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/my/negotiations/{offer_id}/counter",
+        "bodyMapping": {
+          "price": "$price",
+          "shipping_price": "$shipping_price"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "reverb_list_refund_requests",
+      "description": "List refund requests on your sales, by default the active ones (pending_seller_response and conditionally_approved): id, state, amount, refund_type (full or partial), reason, initiated_by, note_to_buyer, created_at, updated_at and the order (order_number, status, shipping data). A buyer's request waits for your answer in state pending_seller_response. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending_seller_response",
+              "conditionally_approved",
+              "approved",
+              "denied"
+            ],
+            "description": "Only requests in this state."
+          },
+          "order_number": {
+            "type": "string",
+            "description": "Only the requests of this order."
+          },
+          "created_start_date": {
+            "type": "string",
+            "description": "Requests created at or after this moment, ISO 8601 with offset."
+          },
+          "created_end_date": {
+            "type": "string",
+            "description": "Requests created at or before this moment, ISO 8601 with offset."
+          },
+          "updated_start_date": {
+            "type": "string",
+            "description": "Requests changed at or after this moment, ISO 8601 with offset."
+          },
+          "updated_end_date": {
+            "type": "string",
+            "description": "Requests changed at or before this moment, ISO 8601 with offset."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/refund_requests/selling",
+        "queryParams": {
+          "state": "$state",
+          "order_number": "$order_number",
+          "created_start_date": "$created_start_date",
+          "created_end_date": "$created_end_date",
+          "updated_start_date": "$updated_start_date",
+          "updated_end_date": "$updated_end_date",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_respond_to_refund_request",
+      "description": "Answer a refund request: `conditionally_approved` (you will refund once the item is back; the request stays open), `approved` (refund now: the buyer is credited and you are debited at once, final) or `denied` (final, no money moves). Installed switched off because approving moves money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_request_id": {
+            "type": "string",
+            "description": "Refund request id (id of reverb_list_refund_requests)."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "conditionally_approved",
+              "approved",
+              "denied"
+            ],
+            "description": "conditionally_approved, approved or denied."
+          },
+          "note_to_buyer": {
+            "type": "string",
+            "description": "Optional note the buyer sees with your answer."
+          }
+        },
+        "required": [
+          "refund_request_id",
+          "state"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/my/refund_requests/selling/{refund_request_id}",
+        "bodyMapping": {
+          "state": "$state",
+          "note_to_buyer": "$note_to_buyer"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "reverb_create_refund_request",
+      "description": "Start a refund on one of your sold orders as the seller, full or partial. It is created as conditionally approved; the money moves when the request is approved with reverb_respond_to_refund_request. The amount must be in your shop currency. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Reverb order number (order_number of reverb_list_orders)."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "buyer_return",
+              "lost_shipment",
+              "shipping_damage",
+              "sold_elsewhere",
+              "accidental_order",
+              "change_shipping_address",
+              "shipping_adjustments"
+            ],
+            "description": "Why the refund is given."
+          },
+          "refund_amount": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,2})?$",
+                "description": "Amount as a decimal string, e.g. `50.00`."
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$",
+                "description": "ISO 4217 currency code, e.g. USD, EUR, GBP."
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ],
+            "description": "Amount to refund as `{\"amount\": \"50.00\", \"currency\": \"USD\"}`: amount is a decimal string, currency your shop currency."
+          }
+        },
+        "required": [
+          "order_number",
+          "reason",
+          "refund_amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/my/orders/selling/{order_number}/refund_requests",
+        "bodyMapping": {
+          "state": "conditionally_approved",
+          "reason": "$reason",
+          "refund_amount": "$refund_amount"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "reverb_list_payouts",
+      "description": "List the payouts Reverb sent to your bank account: per payout total (amount and currency), created_at, updated_at and `_links.line_items` (its address ends in the payout id and line_items). One payout can hold several orders. Filter by creation date; the answer has total, current_page and total_pages. Read-only; needs the read_payouts scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_start_date": {
+            "type": "string",
+            "description": "Payouts created at or after this moment, ISO 8601 with offset (e.g. `2026-10-15T12:00-00:00`)."
+          },
+          "created_end_date": {
+            "type": "string",
+            "description": "Payouts created at or before this moment, ISO 8601 with offset."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/payouts",
+        "queryParams": {
+          "created_start_date": "$created_start_date",
+          "created_end_date": "$created_end_date",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_list_payout_line_items",
+      "description": "List the lines of one payout, one per order: order_id, sale_date, sale_price, payout_currency and the fees taken (selling_fee, processing_fee, bump_fee and others), each with amount as a decimal string and currency. Read-only; needs the read_payouts scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payout_id": {
+            "type": "string",
+            "description": "Payout id: the number before line_items in `_links.line_items.href` of a payout."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. The answer's `_links.next` is missing on the last page."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page. Left out, Reverb's default page size applies."
+          }
+        },
+        "required": [
+          "payout_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/my/payouts/{payout_id}/line_items",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_get_shop",
+      "description": "Read your shop: id, name, description and shipping_profiles[] (id and name), whose ids go into shipping_profile_id of a listing. Shipping profiles are created and changed on reverb.com, not through the API. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shop"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_list_categories",
+      "description": "List all Reverb categories as one flat list with their uuid and name. The uuid is what the categories of a listing take. A long list; some middle categories cannot hold listings and answer 400 when used. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/flat"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reverb_list_listing_conditions",
+      "description": "List the conditions your shop may use on listings (Non functioning, Poor, Fair, Good, Very Good, Excellent, Mint, B-Stock, Brand New): uuid and display name. B-Stock and Mint with inventory need to be enabled on the account. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listing_conditions"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

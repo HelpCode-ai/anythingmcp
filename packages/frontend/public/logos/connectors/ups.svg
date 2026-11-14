@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="UPS connector">
+  <rect width="128" height="128" rx="24" fill="#351C15"/>
+  <path d="M34 28h16v42c0 9.5 5 15 14 15s14-5.500 14-15V28h16v43c0 18-11.500 29-30 29S34 89 34 71Z" fill="#FFB500"/>
+</svg>

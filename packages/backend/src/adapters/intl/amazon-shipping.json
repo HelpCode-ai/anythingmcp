@@ -1,0 +1,2363 @@
+{
+  "slug": "amazon-shipping",
+  "name": "Amazon Shipping",
+  "description": "Amazon Shipping API v2 (SP-API) for businesses that ship with Amazon as the carrier: compare rates, track parcels, fetch labels and documents again, find lockers and pickup counters, and read collection forms. Buying, one-click purchase and cancellation are included but switched off. Private SP-API app with the Amazon Logistics role.",
+  "instructions": "## Amazon Shipping\nThis connector works with the **Amazon Shipping API v2** on the Selling Partner API, for a business that ships parcels with Amazon Shipping (Amazon as the carrier), also for orders that do not come from Amazon: rates, tracking, labels and documents of bought shipments, lockers and pickup counters, and collection forms. Buying and cancelling shipments are included but installed switched off.\n\n**Setup (about 20 minutes, plus Amazon reviews)**\n1. You need an Amazon Shipping account. Sellers on Amazon use their Seller Central account; other shippers create an account at https://solutionproviderportal.amazon.com (no seller account needed) and complete the developer identity verification.\n2. Complete the Developer Profile: for **Data Access** choose **Private Developer: I build application(s) that integrate my own company with Amazon Services APIs**, for **Roles** choose **Amazon Logistics**. Amazon answers within about 5 business days.\n3. Create an SP-API app client named `AmazonShipping_YourCompany`, with the **Shipping** business entity and the **Amazon Logistics** role, and answer **No** to delegating restricted (PII) data access.\n4. Under **LWA credentials** choose **View** and copy the client identifier (`amzn1.application-oa2-client.…`) into `SPAPI_CLIENT_ID` and the client secret into `SPAPI_CLIENT_SECRET`.\n5. Authorize the app for your own account (**Authorize app**) and copy the refresh token (`Atzr|…`) into `SPAPI_REFRESH_TOKEN`.\n6. Pick the region in `SPAPI_ENDPOINT` and your Amazon Shipping country in `AMAZON_SHIPPING_BUSINESS_ID`. United States: North America. United Kingdom, France, Italy, Spain, India, United Arab Emirates, Saudi Arabia, Egypt: Europe. Japan: Far East.\n\nThe connector exchanges the refresh token at `https://api.amazon.com/auth/o2/token` for one-hour access tokens and sends them in the `x-amz-access-token` header; the `x-amzn-shipping-business-id` header carries the country. The variables have the same names as in the Amazon Seller Central connector, but the app must have the Amazon Logistics role: the credentials of a selling app without it answer 403.\n\n**Before the first real label**: Amazon asks every new integration to produce a test label and have it signed off (Amazon Shipping Test Label Guide) and then confirms the first shipping date. Keep the purchase tools switched off until that is done.\n\n**Where to start**: `amazon_shipping_get_rates` with the ship-from address, the destination and one package returns the services and prices; `amazon_shipping_get_tracking` follows a parcel by tracking id and carrier id.\n\n**Rates**: `amazon_shipping_get_rates` needs for each package a `packageClientReferenceId` of your own, dimensions, weight, the insured value and at least one item. `channel_details.channelType` is EXTERNAL for orders from your own shop and AMAZON (with the Amazon order id) for Amazon orders. The answer carries a `requestToken` and one `rateId` per service; both are needed to buy and expire after 10 minutes. When a rate says `requiresAdditionalInputs`, read the schema with `amazon_shipping_get_additional_inputs`.\n\n**Tracking and documents**: `amazon_shipping_get_tracking` returns the summary status and the event history; `amazon_shipping_get_shipment_documents` returns the label of a bought package again (base64) and needs the shipment id and your `packageClientReferenceId`. `amazon_shipping_get_access_points` finds lockers and counters near a postal code.\n\n**Collection forms**: `amazon_shipping_get_unmanifested_shipments` shows what still waits for a manifest, `amazon_shipping_get_collection_form_history` and `amazon_shipping_get_collection_form` read earlier forms, and `amazon_shipping_get_carrier_accounts` lists linked carrier accounts. `amazon_shipping_generate_collection_form` closes out the open shipments of a carrier and is installed switched off.\n\n**Buying (switched off)**: `amazon_shipping_purchase_shipment` buys a rate, `amazon_shipping_one_click_shipment` buys by service id without a rate request, `amazon_shipping_direct_purchase_shipment` buys for an Amazon order with the service Amazon picks, and `amazon_shipping_cancel_shipment` cancels a bought shipment before handover. Each purchase is charged to the Amazon Shipping account. Pass an idempotency key and reuse it when retrying, so a timeout does not buy twice.\n\n**Formats**: amounts are objects with `value` and `unit` (the currency); weights use GRAM, KILOGRAM, OUNCE or POUND and dimensions INCH or CENTIMETER; times are ISO 8601. Answers are wrapped in `payload`; failures come as `errors`, a list of `code`, `message` and `details`.\n\n**Limits**: 80 calls per second with a burst of 100 on most operations; the response header `x-amzn-RateLimit-Limit` shows the limit applied. A 429 means wait and retry.",
+  "aliases": [
+    "Amazon Logistics",
+    "Amazon Shipping API",
+    "SP-API Shipping"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "amazon-shipping",
+  "docsUrl": "https://developer-docs.shipping.amazon.com/apis",
+  "requiredEnvVars": [
+    "SPAPI_CLIENT_ID",
+    "SPAPI_CLIENT_SECRET",
+    "SPAPI_REFRESH_TOKEN",
+    "SPAPI_ENDPOINT",
+    "AMAZON_SHIPPING_BUSINESS_ID"
+  ],
+  "envVarMeta": {
+    "SPAPI_CLIENT_ID": {
+      "label": "LWA client identifier",
+      "kind": "credential",
+      "help": "Your Amazon Shipping app, View under LWA credentials: the client identifier. It starts with amzn1.application-oa2-client.",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/viewing-your-application-information-and-credentials",
+      "pattern": "^amzn1\\.application-oa2-client\\.[A-Za-z0-9]+$",
+      "patternMessage": "The client identifier starts with amzn1.application-oa2-client. and has no spaces."
+    },
+    "SPAPI_CLIENT_SECRET": {
+      "label": "LWA client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the client identifier under LWA credentials.",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/viewing-your-application-information-and-credentials",
+      "pattern": "^\\S{20,200}$",
+      "patternMessage": "Paste the client secret without spaces."
+    },
+    "SPAPI_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown after you choose Authorize app for your own account. It starts with Atzr|.",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/self-authorization",
+      "pattern": "^Atzr\\|\\S+$",
+      "patternMessage": "The refresh token starts with Atzr| and has no spaces. An access token (Atza|) does not work here."
+    },
+    "SPAPI_ENDPOINT": {
+      "label": "Region",
+      "kind": "address",
+      "help": "The SP-API region of your Amazon Shipping country: North America (United States), Europe (United Kingdom, France, Italy, Spain, India, United Arab Emirates, Saudi Arabia, Egypt) or Far East (Japan).",
+      "link": "https://developer-docs.amazon.com/sp-api/docs/sp-api-endpoints",
+      "example": "https://sellingpartnerapi-eu.amazon.com",
+      "pattern": "^https://sellingpartnerapi-(na|eu|fe)\\.amazon\\.com$",
+      "patternMessage": "Pick one of the three regional addresses, without a slash at the end.",
+      "options": [
+        {
+          "value": "https://sellingpartnerapi-na.amazon.com",
+          "label": "North America"
+        },
+        {
+          "value": "https://sellingpartnerapi-eu.amazon.com",
+          "label": "Europe"
+        },
+        {
+          "value": "https://sellingpartnerapi-fe.amazon.com",
+          "label": "Far East"
+        }
+      ]
+    },
+    "AMAZON_SHIPPING_BUSINESS_ID": {
+      "label": "Amazon Shipping country",
+      "kind": "setting",
+      "help": "The country of your Amazon Shipping account. It is sent as the x-amzn-shipping-business-id header; Amazon assumes the United Kingdom when it is missing.",
+      "link": "https://developer-docs.shipping.amazon.com/apis/docs/shipping-api-v2-reference",
+      "example": "AmazonShipping_UK",
+      "pattern": "^AmazonShipping_(UK|US|FR|IT|ES|IN|JP|UAE|SA|EG)$",
+      "patternMessage": "Pick one of the Amazon Shipping countries, e.g. AmazonShipping_UK.",
+      "options": [
+        {
+          "value": "AmazonShipping_UK",
+          "label": "United Kingdom"
+        },
+        {
+          "value": "AmazonShipping_US",
+          "label": "United States"
+        },
+        {
+          "value": "AmazonShipping_FR",
+          "label": "France"
+        },
+        {
+          "value": "AmazonShipping_IT",
+          "label": "Italy"
+        },
+        {
+          "value": "AmazonShipping_ES",
+          "label": "Spain"
+        },
+        {
+          "value": "AmazonShipping_IN",
+          "label": "India"
+        },
+        {
+          "value": "AmazonShipping_JP",
+          "label": "Japan"
+        },
+        {
+          "value": "AmazonShipping_UAE",
+          "label": "United Arab Emirates"
+        },
+        {
+          "value": "AmazonShipping_SA",
+          "label": "Saudi Arabia"
+        },
+        {
+          "value": "AmazonShipping_EG",
+          "label": "Egypt"
+        }
+      ]
+    }
+  },
+  "verifyHints": {
+    "400": "Amazon accepted the sign-in but refused the test request for this account. Check that the Amazon Shipping country matches the region; if it does, the credentials are fine and the connector can be saved.",
+    "401": "Amazon did not accept the sign-in. Check that the client identifier, the client secret and the refresh token belong to the same app, and authorize the app again if the refresh token was revoked.",
+    "403": "Amazon denied access. Either the region does not match your Amazon Shipping country, or the app lacks the Amazon Logistics role: selling apps without that role cannot call the Shipping API.",
+    "404": "Amazon found no shipment, tracking id or collection form with that id for this Amazon Shipping country.",
+    "rate_limited": "Amazon allows about 80 calls per second per operation. Wait a moment and call again."
+  },
+  "probe": {
+    "tool": "amazon_shipping_get_unmanifested_shipments",
+    "params": {}
+  },
+  "prerequisites": "An Amazon Shipping account and a private SP-API app with the Amazon Logistics role (Developer Profile review: about 5 business days). Before real labels Amazon also signs off a test label. Setup itself takes about 20 minutes.",
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 20,
+    "examples": [
+      "What does Amazon Shipping charge for a 2 kg parcel from Manchester to London?",
+      "Where is parcel with tracking id 1234567890?",
+      "Which Amazon lockers are near EC1A 1BB?",
+      "Which shipments still need a collection form?"
+    ],
+    "needs": [
+      "An Amazon Shipping account for your business",
+      "A Seller Central or Solution Provider Portal login",
+      "About 20 minutes, plus Amazon reviews of the Developer Profile and of a test label"
+    ],
+    "why": "Amazon gives a shipper API access through a private app the shipper registers itself, with the Amazon Logistics role. The app is free and only your company can use it: you authorize it yourself and Amazon gives you a refresh token.\n\nAnythingMCP uses the app keys and that token to ask Amazon for short-lived access. Tools that buy or cancel shipments are installed switched off, so nothing is charged unless you switch them on.",
+    "steps": [
+      {
+        "id": "developer-profile",
+        "title": "Register as a private developer",
+        "body": "Sellers on Amazon sign in to **Seller Central**; other shippers create an account at the **Solution Provider Portal** (no seller account is needed), choose **New Partner Account** and complete the developer identity verification.\n\nThen fill in the Developer Profile as below, answer the security questions and choose **Register**. Amazon answers within about 5 business days; give the case number to your Amazon Shipping account manager if you have one.",
+        "action": {
+          "label": "Open the Solution Provider Portal",
+          "url": "https://solutionproviderportal.amazon.com/"
+        },
+        "values": [
+          {
+            "label": "Data Access",
+            "value": "Private Developer: I build application(s) that integrate my own company with Amazon Services APIs",
+            "pick": true
+          },
+          {
+            "label": "Roles",
+            "value": "Amazon Logistics",
+            "pick": true
+          }
+        ],
+        "confirm": "Amazon approved my Developer Profile with the Amazon Logistics role",
+        "problems": [
+          {
+            "q": "Amazon approved the profile without the Amazon Logistics role",
+            "a": "Write back on the support case Amazon opened for the profile and ask for the role. Amazon's guide says this can take longer than the first review."
+          },
+          {
+            "q": "I already have an SP-API app for selling",
+            "a": "Its keys only work here if the app has the Amazon Logistics role. Amazon asks for a separate app for shipping, named AmazonShipping_YourCompany."
+          }
+        ]
+      },
+      {
+        "id": "create-app",
+        "title": "Create the shipping app and copy its keys",
+        "body": "Add a new app client and complete the form as below. When Amazon asks about delegating access to restricted (PII) data, answer **No**. When the app is listed, choose **View** under **LWA credentials** and copy the client identifier and the client secret.",
+        "action": {
+          "label": "Open Amazon's integration guide",
+          "url": "https://developer-docs.shipping.amazon.com/apis/docs/off-amazon-guide"
+        },
+        "values": [
+          {
+            "label": "App name",
+            "value": "AmazonShipping_YourCompany",
+            "note": "Amazon asks for this naming: AmazonShipping_ followed by your company name."
+          },
+          {
+            "label": "API type",
+            "value": "SP API",
+            "pick": true
+          },
+          {
+            "label": "Business entity",
+            "value": "Shipping",
+            "pick": true
+          },
+          {
+            "label": "Role",
+            "value": "Amazon Logistics",
+            "pick": true
+          }
+        ],
+        "fields": [
+          "SPAPI_CLIENT_ID",
+          "SPAPI_CLIENT_SECRET"
+        ]
+      },
+      {
+        "id": "authorize",
+        "title": "Authorize the app and copy the refresh token",
+        "body": "On the row of your app choose **Authorize app** and confirm for your own account. Amazon shows a **refresh token** starting with `Atzr|`: copy it now, Amazon does not show it again. Authorizing again gives a new one.",
+        "action": {
+          "label": "Open Amazon's self-authorization steps",
+          "url": "https://developer-docs.amazon.com/sp-api/docs/self-authorization"
+        },
+        "fields": [
+          "SPAPI_REFRESH_TOKEN"
+        ],
+        "problems": [
+          {
+            "q": "I see an access token starting with Atza|",
+            "a": "That is a one-hour token. The connector needs the refresh token, which starts with Atzr|."
+          }
+        ]
+      },
+      {
+        "id": "region",
+        "title": "Pick your region and country",
+        "body": "Choose the SP-API region and the country of your Amazon Shipping account. United States is North America; United Kingdom, France, Italy, Spain, India, United Arab Emirates, Saudi Arabia and Egypt are Europe; Japan is Far East.\n\nAnythingMCP then checks the keys with one read call. Before buying real labels, Amazon asks you to produce a test label and have it signed off; keep the purchase tools switched off until then.",
+        "action": {
+          "label": "Open Amazon's test label guide",
+          "url": "https://developer-docs.shipping.amazon.com/apis/docs/amazon-shipping-test-label-guide"
+        },
+        "fields": [
+          "SPAPI_ENDPOINT",
+          "AMAZON_SHIPPING_BUSINESS_ID"
+        ],
+        "problems": [
+          {
+            "q": "The check answers 403",
+            "a": "The region does not match the country, or the app does not have the Amazon Logistics role yet."
+          },
+          {
+            "q": "The check answers 401",
+            "a": "The client identifier, client secret and refresh token must belong to the same app. Copy them again, and authorize the app again if needed."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Amazon Shipping (SP-API)",
+    "type": "REST",
+    "baseUrl": "{{SPAPI_ENDPOINT}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "refresh_token",
+      "tokenUrl": "https://api.amazon.com/auth/o2/token",
+      "clientId": "{{SPAPI_CLIENT_ID}}",
+      "clientSecret": "{{SPAPI_CLIENT_SECRET}}",
+      "refreshToken": "{{SPAPI_REFRESH_TOKEN}}",
+      "headerName": "x-amz-access-token"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "x-amzn-shipping-business-id": "{{AMAZON_SHIPPING_BUSINESS_ID}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "amazon_shipping_get_rates",
+      "description": "Get the Amazon Shipping service offerings and prices for a shipment. Returns `payload.requestToken` (needed to purchase, valid for 10 minutes), `payload.rates` with per rate the `rateId`, `carrierId` and `carrierName`, `serviceId` and `serviceName`, `totalCharge` (value and currency unit), `billedWeight`, `promise` (pickup and delivery windows, ISO 8601), `supportedDocumentSpecifications`, `availableValueAddedServiceGroups` and `requiresAdditionalInputs`, and `payload.ineligibleRates` with the reasons a service is not offered. Nothing is bought. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ship_from": {
+            "type": "object",
+            "description": "Where the parcel is collected in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            },
+            "required": [
+              "name",
+              "addressLine1",
+              "city",
+              "stateOrRegion",
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "ship_to": {
+            "type": "object",
+            "description": "The delivery address. Required unless channel_details says AMAZON in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            },
+            "required": [
+              "name",
+              "addressLine1",
+              "city",
+              "stateOrRegion",
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "return_to": {
+            "type": "object",
+            "description": "Optional return address when it differs from ship_from in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            },
+            "required": [
+              "name",
+              "addressLine1",
+              "city",
+              "stateOrRegion",
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages of the shipment, one entry each, in Amazon field names.",
+            "items": {
+              "type": "object",
+              "description": "One package.",
+              "properties": {
+                "packageClientReferenceId": {
+                  "type": "string",
+                  "description": "Your own unique id for the package. Keep it: amazon_shipping_get_shipment_documents needs it to fetch the label again."
+                },
+                "dimensions": {
+                  "type": "object",
+                  "description": "Outer dimensions.",
+                  "properties": {
+                    "length": {
+                      "type": "number",
+                      "description": "Length."
+                    },
+                    "width": {
+                      "type": "number",
+                      "description": "Width."
+                    },
+                    "height": {
+                      "type": "number",
+                      "description": "Height."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "INCH or CENTIMETER.",
+                      "enum": [
+                        "INCH",
+                        "CENTIMETER"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "length",
+                    "width",
+                    "height",
+                    "unit"
+                  ]
+                },
+                "weight": {
+                  "type": "object",
+                  "description": "Weight.",
+                  "properties": {
+                    "value": {
+                      "type": "number",
+                      "description": "Weight in the unit."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "GRAM, KILOGRAM, OUNCE or POUND.",
+                      "enum": [
+                        "GRAM",
+                        "KILOGRAM",
+                        "OUNCE",
+                        "POUND"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unit"
+                  ]
+                },
+                "insuredValue": {
+                  "type": "object",
+                  "description": "Declared value of the contents.",
+                  "properties": {
+                    "value": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "ISO 4217 currency code, e.g. GBP."
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unit"
+                  ]
+                },
+                "isHazmat": {
+                  "type": "boolean",
+                  "description": "true when the package contains hazardous materials. Default false."
+                },
+                "sellerDisplayName": {
+                  "type": "string",
+                  "description": "Optional seller name printed on the label."
+                },
+                "items": {
+                  "type": "array",
+                  "description": "What is in the package.",
+                  "items": {
+                    "type": "object",
+                    "description": "One item.",
+                    "properties": {
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Number of units."
+                      },
+                      "description": {
+                        "type": "string",
+                        "description": "Product description."
+                      },
+                      "itemIdentifier": {
+                        "type": "string",
+                        "description": "Your id of the item, e.g. the SKU."
+                      },
+                      "itemValue": {
+                        "type": "object",
+                        "description": "Value of one unit.",
+                        "properties": {
+                          "value": {
+                            "type": "number",
+                            "description": "Amount."
+                          },
+                          "unit": {
+                            "type": "string",
+                            "description": "ISO 4217 currency code, e.g. GBP."
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "unit"
+                        ]
+                      },
+                      "weight": {
+                        "type": "object",
+                        "description": "Optional weight of one unit.",
+                        "properties": {
+                          "value": {
+                            "type": "number",
+                            "description": "Weight."
+                          },
+                          "unit": {
+                            "type": "string",
+                            "description": "GRAM, KILOGRAM, OUNCE or POUND."
+                          }
+                        }
+                      },
+                      "isHazmat": {
+                        "type": "boolean",
+                        "description": "true when the item is hazardous. Default false."
+                      }
+                    },
+                    "required": [
+                      "quantity"
+                    ]
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "packageClientReferenceId",
+                "dimensions",
+                "weight",
+                "insuredValue",
+                "items"
+              ]
+            },
+            "minItems": 1
+          },
+          "channel_details": {
+            "type": "object",
+            "description": "Where the order comes from. `channelType` EXTERNAL for orders from your own shop or another marketplace; AMAZON for an Amazon order, then `amazonOrderDetails.orderId` is required and ship_to is ignored.",
+            "properties": {
+              "channelType": {
+                "type": "string",
+                "description": "EXTERNAL or AMAZON.",
+                "enum": [
+                  "EXTERNAL",
+                  "AMAZON"
+                ]
+              },
+              "amazonOrderDetails": {
+                "type": "object",
+                "description": "For channelType AMAZON.",
+                "properties": {
+                  "orderId": {
+                    "type": "string",
+                    "description": "Amazon order id, e.g. 113-3080243-4028244."
+                  }
+                },
+                "required": [
+                  "orderId"
+                ]
+              },
+              "amazonShipmentDetails": {
+                "type": "object",
+                "description": "Only for Direct Fulfillment shipments.",
+                "properties": {
+                  "shipmentId": {
+                    "type": "string",
+                    "description": "The encrypted shipment id."
+                  }
+                },
+                "required": [
+                  "shipmentId"
+                ]
+              }
+            },
+            "required": [
+              "channelType"
+            ]
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Requested pickup time, ISO 8601, e.g. 2026-04-02T09:00:00Z. Default: now."
+          },
+          "shipment_type": {
+            "type": "string",
+            "description": "FORWARD (default) or RETURNS.",
+            "enum": [
+              "FORWARD",
+              "RETURNS"
+            ]
+          },
+          "value_added_services": {
+            "type": "object",
+            "description": "Optional: `collectOnDelivery` with `amount` (value and unit) for cash on delivery.",
+            "properties": {
+              "collectOnDelivery": {
+                "type": "object",
+                "description": "Cash on delivery.",
+                "properties": {
+                  "amount": {
+                    "type": "object",
+                    "description": "Amount to collect.",
+                    "properties": {
+                      "value": {
+                        "type": "number",
+                        "description": "Amount."
+                      },
+                      "unit": {
+                        "type": "string",
+                        "description": "ISO 4217 currency code, e.g. GBP."
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ]
+                  }
+                },
+                "required": [
+                  "amount"
+                ]
+              }
+            }
+          },
+          "tax_details": {
+            "type": "array",
+            "description": "Optional tax registrations for customs, where a region asks for them.",
+            "items": {
+              "type": "object",
+              "description": "One registration.",
+              "properties": {
+                "taxType": {
+                  "type": "string",
+                  "description": "GST.",
+                  "enum": [
+                    "GST"
+                  ]
+                },
+                "taxRegistrationNumber": {
+                  "type": "string",
+                  "description": "Your tax registration number."
+                }
+              },
+              "required": [
+                "taxType",
+                "taxRegistrationNumber"
+              ]
+            }
+          },
+          "destination_access_point_details": {
+            "type": "object",
+            "description": "Optional: deliver to a locker or counter from amazon_shipping_get_access_points.",
+            "properties": {
+              "accessPointId": {
+                "type": "string",
+                "description": "Id of the access point."
+              }
+            },
+            "required": [
+              "accessPointId"
+            ]
+          }
+        },
+        "required": [
+          "ship_from",
+          "packages",
+          "channel_details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/v2/shipments/rates",
+        "bodyMapping": {
+          "shipTo": "$ship_to",
+          "shipFrom": "$ship_from",
+          "returnTo": "$return_to",
+          "shipDate": "$ship_date",
+          "packages": "$packages",
+          "valueAddedServices": "$value_added_services",
+          "taxDetails": "$tax_details",
+          "channelDetails": "$channel_details",
+          "shipmentType": "$shipment_type",
+          "destinationAccessPointDetails": "$destination_access_point_details"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_get_additional_inputs",
+      "description": "Read the JSON schema of the extra information a rate needs before it can be bought. Call it when a rate of amazon_shipping_get_rates has `requiresAdditionalInputs` true; the answer (`payload`) is a JSON schema describing the object to pass as additional_inputs to amazon_shipping_purchase_shipment. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_token": {
+            "type": "string",
+            "description": "`requestToken` returned by amazon_shipping_get_rates."
+          },
+          "rate_id": {
+            "type": "string",
+            "description": "`rateId` of the rate you want to buy."
+          }
+        },
+        "required": [
+          "request_token",
+          "rate_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/v2/shipments/additionalInputs/schema",
+        "queryParams": {
+          "requestToken": "$request_token",
+          "rateId": "$rate_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_get_tracking",
+      "description": "Track a parcel shipped with Amazon Shipping. Returns `payload.summary.status` (PreTransit, InTransit, OutForDelivery, Delivered, DeliveryAttempted, AwaitingCustomerPickup, Undeliverable, Rejected, Lost, PickupCancelled) with detail codes, `payload.promisedDeliveryDate`, and `payload.eventHistory` with per event the `eventCode`, `eventTime` (ISO 8601) and location (city, region, postal code, country). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "description": "Tracking id of the package, returned when the shipment was bought."
+          },
+          "carrier_id": {
+            "type": "string",
+            "description": "Carrier id of the rate that was bought, as returned by amazon_shipping_get_rates, e.g. AMZN_UK."
+          }
+        },
+        "required": [
+          "tracking_id",
+          "carrier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/v2/tracking",
+        "queryParams": {
+          "trackingId": "$tracking_id",
+          "carrierId": "$carrier_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_get_shipment_documents",
+      "description": "Fetch the label and other documents of a package of a bought shipment again. Returns `payload.shipmentId` and `payload.packageDocumentDetail` with the tracking id and `packageDocuments`, each with `type` (LABEL, PACKSLIP, RECEIPT, CUSTOM_FORM), `format` and `contents` (the file as base64). Buys nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "Shipment id returned when the shipment was bought."
+          },
+          "package_client_reference_id": {
+            "type": "string",
+            "description": "The packageClientReferenceId you gave the package in the rate request."
+          },
+          "format": {
+            "type": "string",
+            "description": "Optional file format: PDF, PNG or ZPL. It must be one the rate supported.",
+            "enum": [
+              "PDF",
+              "PNG",
+              "ZPL"
+            ]
+          },
+          "dpi": {
+            "type": "integer",
+            "description": "Optional resolution, e.g. 203 or 300. It must be one the rate supported."
+          }
+        },
+        "required": [
+          "shipment_id",
+          "package_client_reference_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/v2/shipments/{shipment_id}/documents",
+        "queryParams": {
+          "packageClientReferenceId": "$package_client_reference_id",
+          "format": "$format",
+          "dpi": "$dpi"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_get_access_points",
+      "description": "Find Amazon lockers and pickup counters near a postal code, to offer them as a delivery address. Returns `payload.accessPointsMap`, a map from access point type to a list of points with `accessPointId`, name, address, opening hours (`standardOperatingHours`, `exceptionOperatingHours`), accessibility attributes and `assistanceType`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "access_point_types": {
+            "type": "string",
+            "description": "Types to search, separated by commas: HELIX (staffed counter), CORE_LOCKER (locker with screen), CAMPUS_LOCKER, CAMPUS_ROOM, OMNI_LOCKER, ODIN_LOCKER, DOBBY_LOCKER (apartment lockers), 3P (carrier and post office pickup points).",
+            "pattern": "^(HELIX|CAMPUS_LOCKER|OMNI_LOCKER|ODIN_LOCKER|DOBBY_LOCKER|CORE_LOCKER|3P|CAMPUS_ROOM)(,(HELIX|CAMPUS_LOCKER|OMNI_LOCKER|ODIN_LOCKER|DOBBY_LOCKER|CORE_LOCKER|3P|CAMPUS_ROOM))*$"
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country code, e.g. GB.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code to search around, e.g. EC1A 1BB."
+          }
+        },
+        "required": [
+          "access_point_types",
+          "country_code",
+          "postal_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/v2/accessPoints",
+        "queryParams": {
+          "accessPointTypes": "$access_point_types",
+          "countryCode": "$country_code",
+          "postalCode": "$postal_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_get_unmanifested_shipments",
+      "description": "List the carriers and pickup locations that still have bought shipments without a collection form (manifest). Returns `unmanifestedCarrierInformationList` with `carrierId`, `carrierName` and, per ship-from `address`, the `lastManifestDate`. An empty list means nothing is waiting. Amazon models this read as a PUT; it changes nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shipping/v2/unmanifestedShipments",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_get_collection_form_history",
+      "description": "List the collection forms (manifests) generated earlier. Returns `collectionFormsHistoryRecordList` with per form the `collectionFormId`, `carrierName`, `creationDate`, `generationStatus` (Completed or InProgress) and the ship-from address, and `lastRefreshedDate`. Filter by carrier, ship-from address or date range. Amazon models this read as a PUT; it changes nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_id": {
+            "type": "string",
+            "description": "Optional carrier id, e.g. AMZN_UK."
+          },
+          "date_range": {
+            "type": "object",
+            "description": "Optional range of creation dates.",
+            "properties": {
+              "startDate": {
+                "type": "string",
+                "description": "Start, ISO 8601."
+              },
+              "endDate": {
+                "type": "string",
+                "description": "End, ISO 8601."
+              }
+            }
+          },
+          "ship_from_address": {
+            "type": "object",
+            "description": "Optional ship-from address to filter by in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            }
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "Maximum number of forms to return.",
+            "minimum": 1,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shipping/v2/collectionForms/history",
+        "bodyMapping": {
+          "maxResults": "$max_results",
+          "carrierId": "$carrier_id",
+          "shipFromAddress": "$ship_from_address",
+          "dateRange": "$date_range"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_get_collection_form",
+      "description": "Fetch a collection form (manifest) that was generated earlier, to print it again. Returns `collectionsFormDocument` with the file as `base64EncodedContent` and its `documentFormat`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collection_form_id": {
+            "type": "string",
+            "description": "`collectionFormId` from amazon_shipping_get_collection_form_history or from the generation call."
+          }
+        },
+        "required": [
+          "collection_form_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/v2/collectionForms/{collection_form_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_get_carrier_accounts",
+      "description": "List the carrier accounts linked to your Amazon Shipping account. Returns `activeAccounts` with `accountId` and `carrierId` per account. Amazon models this read as a PUT; it changes nothing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shipping/v2/carrierAccounts",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "amazon_shipping_purchase_shipment",
+      "description": "Buy a shipment from a rate of amazon_shipping_get_rates. Amazon charges the shipment to your account, so the tool is installed switched off. The purchase must happen within 10 minutes of the rate request, otherwise Amazon answers TOKEN_EXPIRED and the rates have to be fetched again. Returns `payload.shipmentId`, `packageDocumentDetails` (tracking id and the label as base64 per package) and the delivery `promise`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_token": {
+            "type": "string",
+            "description": "`requestToken` returned by amazon_shipping_get_rates."
+          },
+          "rate_id": {
+            "type": "string",
+            "description": "`rateId` of the rate to buy."
+          },
+          "requested_document_specification": {
+            "type": "object",
+            "description": "Format of the label and documents. Use a combination that amazon_shipping_get_rates lists under supportedDocumentSpecifications of the rate.",
+            "properties": {
+              "format": {
+                "type": "string",
+                "description": "PDF, PNG or ZPL.",
+                "enum": [
+                  "PDF",
+                  "PNG",
+                  "ZPL"
+                ]
+              },
+              "size": {
+                "type": "object",
+                "description": "Label size.",
+                "properties": {
+                  "width": {
+                    "type": "number",
+                    "description": "Width."
+                  },
+                  "length": {
+                    "type": "number",
+                    "description": "Length."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "description": "INCH or CENTIMETER.",
+                    "enum": [
+                      "INCH",
+                      "CENTIMETER"
+                    ]
+                  }
+                },
+                "required": [
+                  "width",
+                  "length",
+                  "unit"
+                ]
+              },
+              "dpi": {
+                "type": "integer",
+                "description": "Resolution in dots per inch, e.g. 203 or 300."
+              },
+              "pageLayout": {
+                "type": "string",
+                "description": "Position of the label on the page, as returned by the rate, e.g. DEFAULT."
+              },
+              "needFileJoining": {
+                "type": "boolean",
+                "description": "true joins the documents into one file; false returns them one by one."
+              },
+              "requestedDocumentTypes": {
+                "type": "array",
+                "description": "Documents wanted.",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "PACKSLIP",
+                    "LABEL",
+                    "RECEIPT",
+                    "CUSTOM_FORM"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "format",
+              "size",
+              "needFileJoining",
+              "requestedDocumentTypes"
+            ]
+          },
+          "requested_value_added_services": {
+            "type": "array",
+            "description": "Optional value-added services to add, from the groups the rate offers.",
+            "items": {
+              "type": "object",
+              "description": "One service.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Id of the value-added service."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "additional_inputs": {
+            "type": "object",
+            "description": "Only when the rate has requiresAdditionalInputs true: the object described by amazon_shipping_get_additional_inputs."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional unique key of yours for this purchase. Send the same key when you retry after a timeout, so Amazon does not buy twice."
+          }
+        },
+        "required": [
+          "request_token",
+          "rate_id",
+          "requested_document_specification"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/v2/shipments",
+        "headers": {
+          "x-amzn-IdempotencyKey": "$idempotency_key"
+        },
+        "bodyMapping": {
+          "requestToken": "$request_token",
+          "rateId": "$rate_id",
+          "requestedDocumentSpecification": "$requested_document_specification",
+          "requestedValueAddedServices": "$requested_value_added_services",
+          "additionalInputs": "$additional_inputs"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_shipping_direct_purchase_shipment",
+      "description": "Buy a shipment for an Amazon order in one call, letting Amazon pick the best fitting service (no rate request first). Amazon charges the shipment to your account, so the tool is installed switched off. Returns `payload.shipmentId` and `packageDocumentDetailList` with the tracking id and the label as base64 per package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_details": {
+            "type": "object",
+            "description": "Where the order comes from. `channelType` EXTERNAL for orders from your own shop or another marketplace; AMAZON for an Amazon order, then `amazonOrderDetails.orderId` is required and ship_to is ignored.",
+            "properties": {
+              "channelType": {
+                "type": "string",
+                "description": "EXTERNAL or AMAZON.",
+                "enum": [
+                  "EXTERNAL",
+                  "AMAZON"
+                ]
+              },
+              "amazonOrderDetails": {
+                "type": "object",
+                "description": "For channelType AMAZON.",
+                "properties": {
+                  "orderId": {
+                    "type": "string",
+                    "description": "Amazon order id, e.g. 113-3080243-4028244."
+                  }
+                },
+                "required": [
+                  "orderId"
+                ]
+              },
+              "amazonShipmentDetails": {
+                "type": "object",
+                "description": "Only for Direct Fulfillment shipments.",
+                "properties": {
+                  "shipmentId": {
+                    "type": "string",
+                    "description": "The encrypted shipment id."
+                  }
+                },
+                "required": [
+                  "shipmentId"
+                ]
+              }
+            },
+            "required": [
+              "channelType"
+            ]
+          },
+          "ship_from": {
+            "type": "object",
+            "description": "Where the parcel is collected in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            }
+          },
+          "ship_to": {
+            "type": "object",
+            "description": "The delivery address; ignored for channelType AMAZON in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            }
+          },
+          "return_to": {
+            "type": "object",
+            "description": "Optional return address in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            }
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages of the shipment, one entry each, in Amazon field names.",
+            "items": {
+              "type": "object",
+              "description": "One package.",
+              "properties": {
+                "packageClientReferenceId": {
+                  "type": "string",
+                  "description": "Your own unique id for the package. Keep it: amazon_shipping_get_shipment_documents needs it to fetch the label again."
+                },
+                "dimensions": {
+                  "type": "object",
+                  "description": "Outer dimensions.",
+                  "properties": {
+                    "length": {
+                      "type": "number",
+                      "description": "Length."
+                    },
+                    "width": {
+                      "type": "number",
+                      "description": "Width."
+                    },
+                    "height": {
+                      "type": "number",
+                      "description": "Height."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "INCH or CENTIMETER.",
+                      "enum": [
+                        "INCH",
+                        "CENTIMETER"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "length",
+                    "width",
+                    "height",
+                    "unit"
+                  ]
+                },
+                "weight": {
+                  "type": "object",
+                  "description": "Weight.",
+                  "properties": {
+                    "value": {
+                      "type": "number",
+                      "description": "Weight in the unit."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "GRAM, KILOGRAM, OUNCE or POUND.",
+                      "enum": [
+                        "GRAM",
+                        "KILOGRAM",
+                        "OUNCE",
+                        "POUND"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unit"
+                  ]
+                },
+                "insuredValue": {
+                  "type": "object",
+                  "description": "Declared value of the contents.",
+                  "properties": {
+                    "value": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "ISO 4217 currency code, e.g. GBP."
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unit"
+                  ]
+                },
+                "isHazmat": {
+                  "type": "boolean",
+                  "description": "true when the package contains hazardous materials. Default false."
+                },
+                "sellerDisplayName": {
+                  "type": "string",
+                  "description": "Optional seller name printed on the label."
+                },
+                "items": {
+                  "type": "array",
+                  "description": "What is in the package.",
+                  "items": {
+                    "type": "object",
+                    "description": "One item.",
+                    "properties": {
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Number of units."
+                      },
+                      "description": {
+                        "type": "string",
+                        "description": "Product description."
+                      },
+                      "itemIdentifier": {
+                        "type": "string",
+                        "description": "Your id of the item, e.g. the SKU."
+                      },
+                      "itemValue": {
+                        "type": "object",
+                        "description": "Value of one unit.",
+                        "properties": {
+                          "value": {
+                            "type": "number",
+                            "description": "Amount."
+                          },
+                          "unit": {
+                            "type": "string",
+                            "description": "ISO 4217 currency code, e.g. GBP."
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "unit"
+                        ]
+                      },
+                      "weight": {
+                        "type": "object",
+                        "description": "Optional weight of one unit.",
+                        "properties": {
+                          "value": {
+                            "type": "number",
+                            "description": "Weight."
+                          },
+                          "unit": {
+                            "type": "string",
+                            "description": "GRAM, KILOGRAM, OUNCE or POUND."
+                          }
+                        }
+                      },
+                      "isHazmat": {
+                        "type": "boolean",
+                        "description": "true when the item is hazardous. Default false."
+                      }
+                    },
+                    "required": [
+                      "quantity"
+                    ]
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "packageClientReferenceId",
+                "dimensions",
+                "weight",
+                "insuredValue",
+                "items"
+              ]
+            },
+            "minItems": 1
+          },
+          "label_specifications": {
+            "type": "object",
+            "description": "Format of the label. Use a combination that amazon_shipping_get_rates lists under supportedDocumentSpecifications of the rate.",
+            "properties": {
+              "format": {
+                "type": "string",
+                "description": "PDF, PNG or ZPL.",
+                "enum": [
+                  "PDF",
+                  "PNG",
+                  "ZPL"
+                ]
+              },
+              "size": {
+                "type": "object",
+                "description": "Label size.",
+                "properties": {
+                  "width": {
+                    "type": "number",
+                    "description": "Width."
+                  },
+                  "length": {
+                    "type": "number",
+                    "description": "Length."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "description": "INCH or CENTIMETER.",
+                    "enum": [
+                      "INCH",
+                      "CENTIMETER"
+                    ]
+                  }
+                },
+                "required": [
+                  "width",
+                  "length",
+                  "unit"
+                ]
+              },
+              "dpi": {
+                "type": "integer",
+                "description": "Resolution in dots per inch, e.g. 203 or 300."
+              },
+              "pageLayout": {
+                "type": "string",
+                "description": "Position of the label on the page, as returned by the rate, e.g. DEFAULT."
+              },
+              "needFileJoining": {
+                "type": "boolean",
+                "description": "true joins the documents into one file; false returns them one by one."
+              },
+              "requestedDocumentTypes": {
+                "type": "array",
+                "description": "Documents wanted.",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "PACKSLIP",
+                    "LABEL",
+                    "RECEIPT",
+                    "CUSTOM_FORM"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "format",
+              "size",
+              "needFileJoining",
+              "requestedDocumentTypes"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional unique key of yours for this purchase. Send the same key when you retry after a timeout, so Amazon does not buy twice."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Optional language tag for texts in the answer, e.g. en-US or fr-CA."
+          }
+        },
+        "required": [
+          "channel_details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/v2/shipments/directPurchase",
+        "headers": {
+          "x-amzn-IdempotencyKey": "$idempotency_key",
+          "locale": "$locale"
+        },
+        "bodyMapping": {
+          "shipTo": "$ship_to",
+          "shipFrom": "$ship_from",
+          "returnTo": "$return_to",
+          "packages": "$packages",
+          "channelDetails": "$channel_details",
+          "labelSpecifications": "$label_specifications"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_shipping_one_click_shipment",
+      "description": "Buy a shipment in one call by naming the service ids to choose from, without a rate request first. Amazon charges the shipment to your account, so the tool is installed switched off. Returns `payload.shipmentId`, `packageDocumentDetails` (tracking id and label as base64), the `promise`, the `carrier` and `service` chosen and the `totalCharge`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ship_from": {
+            "type": "object",
+            "description": "Where the parcel is collected in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            },
+            "required": [
+              "name",
+              "addressLine1",
+              "city",
+              "stateOrRegion",
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "ship_to": {
+            "type": "object",
+            "description": "The delivery address. Required unless channel_details says AMAZON in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            },
+            "required": [
+              "name",
+              "addressLine1",
+              "city",
+              "stateOrRegion",
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "return_to": {
+            "type": "object",
+            "description": "Optional return address in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            },
+            "required": [
+              "name",
+              "addressLine1",
+              "city",
+              "stateOrRegion",
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages of the shipment, one entry each, in Amazon field names.",
+            "items": {
+              "type": "object",
+              "description": "One package.",
+              "properties": {
+                "packageClientReferenceId": {
+                  "type": "string",
+                  "description": "Your own unique id for the package. Keep it: amazon_shipping_get_shipment_documents needs it to fetch the label again."
+                },
+                "dimensions": {
+                  "type": "object",
+                  "description": "Outer dimensions.",
+                  "properties": {
+                    "length": {
+                      "type": "number",
+                      "description": "Length."
+                    },
+                    "width": {
+                      "type": "number",
+                      "description": "Width."
+                    },
+                    "height": {
+                      "type": "number",
+                      "description": "Height."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "INCH or CENTIMETER.",
+                      "enum": [
+                        "INCH",
+                        "CENTIMETER"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "length",
+                    "width",
+                    "height",
+                    "unit"
+                  ]
+                },
+                "weight": {
+                  "type": "object",
+                  "description": "Weight.",
+                  "properties": {
+                    "value": {
+                      "type": "number",
+                      "description": "Weight in the unit."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "GRAM, KILOGRAM, OUNCE or POUND.",
+                      "enum": [
+                        "GRAM",
+                        "KILOGRAM",
+                        "OUNCE",
+                        "POUND"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unit"
+                  ]
+                },
+                "insuredValue": {
+                  "type": "object",
+                  "description": "Declared value of the contents.",
+                  "properties": {
+                    "value": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "ISO 4217 currency code, e.g. GBP."
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unit"
+                  ]
+                },
+                "isHazmat": {
+                  "type": "boolean",
+                  "description": "true when the package contains hazardous materials. Default false."
+                },
+                "sellerDisplayName": {
+                  "type": "string",
+                  "description": "Optional seller name printed on the label."
+                },
+                "items": {
+                  "type": "array",
+                  "description": "What is in the package.",
+                  "items": {
+                    "type": "object",
+                    "description": "One item.",
+                    "properties": {
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Number of units."
+                      },
+                      "description": {
+                        "type": "string",
+                        "description": "Product description."
+                      },
+                      "itemIdentifier": {
+                        "type": "string",
+                        "description": "Your id of the item, e.g. the SKU."
+                      },
+                      "itemValue": {
+                        "type": "object",
+                        "description": "Value of one unit.",
+                        "properties": {
+                          "value": {
+                            "type": "number",
+                            "description": "Amount."
+                          },
+                          "unit": {
+                            "type": "string",
+                            "description": "ISO 4217 currency code, e.g. GBP."
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "unit"
+                        ]
+                      },
+                      "weight": {
+                        "type": "object",
+                        "description": "Optional weight of one unit.",
+                        "properties": {
+                          "value": {
+                            "type": "number",
+                            "description": "Weight."
+                          },
+                          "unit": {
+                            "type": "string",
+                            "description": "GRAM, KILOGRAM, OUNCE or POUND."
+                          }
+                        }
+                      },
+                      "isHazmat": {
+                        "type": "boolean",
+                        "description": "true when the item is hazardous. Default false."
+                      }
+                    },
+                    "required": [
+                      "quantity"
+                    ]
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "packageClientReferenceId",
+                "dimensions",
+                "weight",
+                "insuredValue",
+                "items"
+              ]
+            },
+            "minItems": 1
+          },
+          "channel_details": {
+            "type": "object",
+            "description": "Where the order comes from. `channelType` EXTERNAL for orders from your own shop or another marketplace; AMAZON for an Amazon order, then `amazonOrderDetails.orderId` is required and ship_to is ignored.",
+            "properties": {
+              "channelType": {
+                "type": "string",
+                "description": "EXTERNAL or AMAZON.",
+                "enum": [
+                  "EXTERNAL",
+                  "AMAZON"
+                ]
+              },
+              "amazonOrderDetails": {
+                "type": "object",
+                "description": "For channelType AMAZON.",
+                "properties": {
+                  "orderId": {
+                    "type": "string",
+                    "description": "Amazon order id, e.g. 113-3080243-4028244."
+                  }
+                },
+                "required": [
+                  "orderId"
+                ]
+              },
+              "amazonShipmentDetails": {
+                "type": "object",
+                "description": "Only for Direct Fulfillment shipments.",
+                "properties": {
+                  "shipmentId": {
+                    "type": "string",
+                    "description": "The encrypted shipment id."
+                  }
+                },
+                "required": [
+                  "shipmentId"
+                ]
+              }
+            },
+            "required": [
+              "channelType"
+            ]
+          },
+          "label_specifications": {
+            "type": "object",
+            "description": "Format of the label. Use a combination that amazon_shipping_get_rates lists under supportedDocumentSpecifications of the rate.",
+            "properties": {
+              "format": {
+                "type": "string",
+                "description": "PDF, PNG or ZPL.",
+                "enum": [
+                  "PDF",
+                  "PNG",
+                  "ZPL"
+                ]
+              },
+              "size": {
+                "type": "object",
+                "description": "Label size.",
+                "properties": {
+                  "width": {
+                    "type": "number",
+                    "description": "Width."
+                  },
+                  "length": {
+                    "type": "number",
+                    "description": "Length."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "description": "INCH or CENTIMETER.",
+                    "enum": [
+                      "INCH",
+                      "CENTIMETER"
+                    ]
+                  }
+                },
+                "required": [
+                  "width",
+                  "length",
+                  "unit"
+                ]
+              },
+              "dpi": {
+                "type": "integer",
+                "description": "Resolution in dots per inch, e.g. 203 or 300."
+              },
+              "pageLayout": {
+                "type": "string",
+                "description": "Position of the label on the page, as returned by the rate, e.g. DEFAULT."
+              },
+              "needFileJoining": {
+                "type": "boolean",
+                "description": "true joins the documents into one file; false returns them one by one."
+              },
+              "requestedDocumentTypes": {
+                "type": "array",
+                "description": "Documents wanted.",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "PACKSLIP",
+                    "LABEL",
+                    "RECEIPT",
+                    "CUSTOM_FORM"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "format",
+              "size",
+              "needFileJoining",
+              "requestedDocumentTypes"
+            ]
+          },
+          "service_ids": {
+            "type": "array",
+            "description": "Service ids Amazon may choose from, as seen in `serviceId` of earlier rates, e.g. SWA-UK-PREM.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Requested pickup time, ISO 8601. Default: now."
+          },
+          "value_added_services_details": {
+            "type": "array",
+            "description": "Optional value-added services.",
+            "items": {
+              "type": "object",
+              "description": "One service.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Id of the service."
+                },
+                "amount": {
+                  "type": "object",
+                  "description": "Amount, e.g. to collect on delivery.",
+                  "properties": {
+                    "value": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "ISO 4217 currency code, e.g. GBP."
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "unit"
+                  ]
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          },
+          "tax_details": {
+            "type": "array",
+            "description": "Optional tax registrations.",
+            "items": {
+              "type": "object",
+              "description": "One registration.",
+              "properties": {
+                "taxType": {
+                  "type": "string",
+                  "description": "GST."
+                },
+                "taxRegistrationNumber": {
+                  "type": "string",
+                  "description": "Your tax registration number."
+                }
+              },
+              "required": [
+                "taxType",
+                "taxRegistrationNumber"
+              ]
+            }
+          },
+          "destination_access_point_details": {
+            "type": "object",
+            "description": "Optional: deliver to a locker or counter.",
+            "properties": {
+              "accessPointId": {
+                "type": "string",
+                "description": "Id of the access point."
+              }
+            },
+            "required": [
+              "accessPointId"
+            ]
+          }
+        },
+        "required": [
+          "ship_from",
+          "packages",
+          "channel_details",
+          "label_specifications",
+          "service_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/v2/oneClickShipment",
+        "bodyMapping": {
+          "shipTo": "$ship_to",
+          "shipFrom": "$ship_from",
+          "returnTo": "$return_to",
+          "shipDate": "$ship_date",
+          "packages": "$packages",
+          "valueAddedServicesDetails": "$value_added_services_details",
+          "taxDetails": "$tax_details",
+          "channelDetails": "$channel_details",
+          "labelSpecifications": "$label_specifications",
+          "serviceSelection": {
+            "serviceId": "$service_ids"
+          },
+          "destinationAccessPointDetails": "$destination_access_point_details"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_shipping_cancel_shipment",
+      "description": "Cancel a shipment that was bought but not yet handed to the carrier. It cannot be undone: the label becomes invalid. Returns an empty `payload` on success. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "Shipment id returned when the shipment was bought."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shipping/v2/shipments/{shipment_id}/cancel"
+      },
+      "enabled": false
+    },
+    {
+      "name": "amazon_shipping_generate_collection_form",
+      "description": "Generate the collection form (manifest) for all bought shipments of a carrier at a ship-from address that have none yet. The shipments are closed out for handover and cannot be manifested again, so the tool is installed switched off. Returns `collectionsFormDocument` with the file as `base64EncodedContent`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "carrier_id": {
+            "type": "string",
+            "description": "Carrier id from amazon_shipping_get_unmanifested_shipments, e.g. AMZN_UK."
+          },
+          "ship_from_address": {
+            "type": "object",
+            "description": "The pickup address the form is for in Amazon field names.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the person, business or institution."
+              },
+              "companyName": {
+                "type": "string",
+                "description": "Optional company name."
+              },
+              "addressLine1": {
+                "type": "string",
+                "description": "First address line."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Optional second address line."
+              },
+              "addressLine3": {
+                "type": "string",
+                "description": "Optional third address line."
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrRegion": {
+                "type": "string",
+                "description": "State, county or region."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. GB or US."
+              },
+              "email": {
+                "type": "string",
+                "description": "Optional contact e-mail."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Optional phone number with the country calling code."
+              }
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional unique key of yours for this purchase. Send the same key when you retry after a timeout, so Amazon does not buy twice."
+          }
+        },
+        "required": [
+          "carrier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/v2/collectionForms",
+        "headers": {
+          "x-amzn-IdempotencyKey": "$idempotency_key"
+        },
+        "bodyMapping": {
+          "carrierId": "$carrier_id",
+          "shipFromAddress": "$ship_from_address"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}
