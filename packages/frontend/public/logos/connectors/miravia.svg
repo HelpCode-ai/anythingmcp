@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Miravia connector">
+  <rect width="128" height="128" rx="24" fill="#F0257A"/>
+  <path d="M30 98V30h14l20 34 20-34h14v68H84V55L66 86h-4L44 55v43Z" fill="#fff"/>
+</svg>
