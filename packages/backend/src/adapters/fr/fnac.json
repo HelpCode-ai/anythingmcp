@@ -1,0 +1,2191 @@
+{
+  "slug": "fnac",
+  "name": "Fnac Darty Marketplace",
+  "description": "Fnac Darty Marketplace seller API (France, Belgium, Spain, Portugal): offers with price and stock updates, orders with acceptance and shipping with tracking, carriers, customer ratings and messages with replies, incidents, competitor prices by EAN, shop invoices and sales periods. Partner ID, shop ID and key from Fnac.",
+  "aliases": [
+    "Darty",
+    "Fnac Marketplace",
+    "Darty Marketplace",
+    "Fnac Darty",
+    "Fnac vendeur"
+  ],
+  "region": "fr",
+  "category": "e-commerce",
+  "icon": "fnac",
+  "docsUrl": "https://partners-test.mp.fnacdarty.com/docs/api/2.6/services/index.html",
+  "instructions": "## Fnac Darty Marketplace\nThis connector works with the **Fnac Darty Marketplace seller API** (version 2.6) at `https://vendeur.fnac.com/api.php`, the XML API of Fnac's own seller back office. Since 2024 Darty offers are sold through the same back office, so one connector covers both brands: offers with price and stock, orders with acceptance and shipping, carriers, customer ratings, messages, incidents (claims), competitor prices, shop invoices and sales periods. Fnac Darty runs marketplaces in France, Belgium, Spain and Portugal; each country is its own shop with its own shop ID, so install one connector per country.\n\n**Setup**\n1. API access is not on by default: Fnac switches it on for a seller account and hands out three values, a **partner ID**, a **shop ID** and a **key** (the API documentation says they are provided by Fnac support and differ between the test and the production environment). Ask your Fnac Darty account manager or write to the marketplace API team at `Marketplace.api@fnacdarty.com`; the API documentation names `dl-fd-api.mp@fnac.com` as technical support.\n2. Put the values in `FNAC_PARTNER_ID`, `FNAC_SHOP_ID` and `FNAC_KEY`. Use the production values: this connector talks to `vendeur.fnac.com`, not to the test platform.\n\nAnythingMCP signs in with `POST /auth` (an XML document with the three values), receives a temporary token with its expiry time and sends that token inside every request. When Fnac reports the token as expired (`ERR_098`) or the session as not authenticated (`ERR_102`), the connector signs in again and repeats the call once. `ERR_097` means one of the three values is wrong.\n\n**Where to start**: `fnac_query_orders` with `states` set to `Created` shows the orders waiting for a decision, and with `ToShip` the paid orders waiting for shipment. `fnac_query_offers` pages through the catalogue; `fnac_query_messages` with `message_state` UNREAD and `fnac_query_incidents` with `status` OPENED show what customers are waiting for.\n\n**Answers** are XML, handed over as JSON: the root element is named after the service (`orders_query_response`), its `status` is OK, WARNING, ERROR or FATAL, attributes sit next to child elements, and every value is a string. A repeated element is a list when there are several and a single object when there is one, so handle both. An `error` element carries `code` (such as `ERR_007`), `severity` and its text.\n\n**Order workflow**: Created (new) -> Accepted -> ToShip (Fnac has charged the customer) -> Shipped -> Received (the customer confirmed). The seller acts twice.\n- Accept: `fnac_accept_order` accepts every line. Fnac wants a decision on all lines of an order in one call; `fnac_accept_or_refuse_order_lines` decides line by line and is installed switched off, because a refusal cancels the sale.\n- Wait for ToShip before sending anything: only then is the order paid, and only then does the order carry the shipping and billing address.\n- Ship: `fnac_ship_order` marks the whole order as shipped with one tracking number; `fnac_ship_order_lines` gives each line its own. `tracking_company` is the carrier **code** from `fnac_list_carriers`, not its name, and is required whenever a tracking number is sent. `fnac_update_order_tracking` adds or corrects tracking on a shipped order.\n- Other states: Refused, Cancelled (by the customer or Fnac), NotReceived (the customer opened a claim), Refunded, Error. Order lines have their own state (ToAccept, Accepted, Refused, ToShip, Shipped, Received, NotReceived, Refunded, Cancelled).\n`fnac_list_countries` gives the three-letter country codes used in addresses and for `expedition_country_code`.\n\n**Offers are updated in batches**: `fnac_update_offers` (create, or change price, stock and texts) does not answer with the result. It answers with a `batch_id`; Fnac processes the batch in the background (ACTIVE, then RUNNING, then OK, WARNING, ERROR or FATAL). Read the per-offer report with `fnac_get_batch_status`, and see what is still queued with `fnac_list_running_batches`. An offer sent with unchanged values is reported as skipped. A new offer needs the product reference (EAN), your SKU, a price, a condition and a quantity; products missing from the Fnac catalogue cannot be created through the API. Conditions: 11 new, 10 refurbished, 1 to 4 used (like new, very good, good, correct), 5 to 8 collection. `fnac_delete_offers` is installed switched off; set the quantity to 0 to pause an offer. Promotions and offer pictures are not covered.\n\n**Customers**: `fnac_query_order_comments` reads ratings and `fnac_reply_to_order_comment` answers one (once, in at most 255 characters). `fnac_query_messages` reads messages on orders and offers, `fnac_reply_to_message` answers and `fnac_update_message_status` marks them read or archives them. Customer e-mail addresses are Fnac relay addresses. `fnac_query_incidents` reads claims; `fnac_refund_order_lines` refunds order lines from the seller's balance and is installed switched off.\n\n**Prices and money**: `fnac_query_competing_offers` ranks the offers of other sellers on a product by EAN and shows who holds the buy box; Fnac offers this version of the pricing service to shops operating in France and switches it on per account (the answer is \"Service not found\" otherwise). `fnac_query_shop_invoices` lists Fnac's invoices to the shop with PDF links and `fnac_query_sales_periods` the official sales periods. Amounts are in EUR. The connector never moves money unless an admin switches the refund tool on.\n\n**Limits and formats**: orders are read at most 50 per call and offers at most 10,000; a pricing call takes at most 200 references. Fnac limits the number of calls per hour and answers `ERR_107` beyond it, so page with `page` and `results_count` and filter by date instead of reading everything. Dates are ISO 8601 with an offset (`2026-11-01T00:00:00+01:00`). Order ids have 13 characters; partner, shop, offer, message and incident ids are UUIDs. Fnac validates every request against its XML schema and answers `ERR_096` or HTTP 400 for a value outside the allowed list. \"Service not found\" means the service is not enabled for the account: ask Fnac to activate it.",
+  "prerequisites": "A professional seller account on the Fnac Darty marketplace with API access switched on by Fnac, and the partner ID, shop ID and key Fnac hands out for the production environment. Getting them takes a request to Fnac; entering them takes about 2 minutes.",
+  "requiredEnvVars": [
+    "FNAC_PARTNER_ID",
+    "FNAC_SHOP_ID",
+    "FNAC_KEY"
+  ],
+  "envVarMeta": {
+    "FNAC_PARTNER_ID": {
+      "label": "Partner ID",
+      "kind": "credential",
+      "help": "The partner ID Fnac gave you for the production API, a UUID such as 1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D. It comes from Fnac (your account manager or the marketplace API team), not from a page you can generate it on.",
+      "link": "https://marketplace.fnacdarty.com/s/ressources/les-liens-de-connexion-a-nos-outils?language=fr",
+      "example": "1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "Paste the partner ID as Fnac sent it: 36 characters, hexadecimal digits in five groups separated by dashes."
+    },
+    "FNAC_SHOP_ID": {
+      "label": "Shop ID",
+      "kind": "credential",
+      "help": "The shop ID of the marketplace country this connector is for (France, Belgium, Spain or Portugal each have their own). A UUID, from your Fnac account manager or the seller back office.",
+      "link": "https://marketplace.fnacdarty.com/s/ressources/les-liens-de-connexion-a-nos-outils?language=fr",
+      "example": "6D5C4B3A-2F1E-D0C9-B8A7-F6E5D4C3B2A1",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "Paste the shop ID as Fnac sent it: 36 characters, hexadecimal digits in five groups separated by dashes."
+    },
+    "FNAC_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The authentication key Fnac gave you together with the partner ID, for the production environment. The key of the test platform does not work here.",
+      "link": "https://marketplace.fnacdarty.com/s/ressources/les-liens-de-connexion-a-nos-outils?language=fr",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the key without spaces or line breaks."
+    }
+  },
+  "verifyHints": {
+    "400": "Fnac refused the sign-in or the request. ERR_097 means the partner ID, the shop ID or the key is wrong, or they are the values of the test platform: copy the three production values again as Fnac sent them. ERR_096 or ERR_146 means a value is outside the list Fnac allows.",
+    "401": "Fnac did not accept the partner ID, shop ID and key (ERR_097), or the session could not be renewed (ERR_098, ERR_102). Copy the three production values again as Fnac sent them; each marketplace country has its own shop ID.",
+    "404": "Fnac answered that the service was not found: it is not switched on for this account. Ask Fnac (your account manager or dl-fd-api.mp@fnac.com) to activate API access and the service.",
+    "rate_limited": "Fnac limits the number of API calls per hour (ERR_107). Wait for the next hour and try again."
+  },
+  "probe": {
+    "tool": "fnac_list_carriers",
+    "params": {}
+  },
+  "setupGuide": {
+    "effort": "api_key",
+    "minutes": 5,
+    "examples": [
+      "Which Fnac orders are waiting to be accepted?",
+      "Mark order 1P3HCS77E4QYE as shipped with Chronopost, tracking XJ123456789FR",
+      "Set the stock of SKU TV-55-OLED to 12 and its price to 899"
+    ],
+    "needs": [
+      "A professional seller account on the Fnac Darty marketplace",
+      "API access switched on by Fnac for that account"
+    ],
+    "why": "Fnac does not let sellers create API keys themselves: it switches the API on per seller account and sends a partner ID, a shop ID and a key.",
+    "steps": [
+      {
+        "id": "api-access",
+        "title": "Ask Fnac for API access",
+        "body": "Ask your Fnac Darty account manager, or write to the marketplace API team at **Marketplace.api@fnacdarty.com**, to switch on API access for your seller account. Fnac sends back three values for the **production** environment: a partner ID, a shop ID and a key.\n\nEach marketplace country (France, Belgium, Spain, Portugal) has its own shop ID. Ask for the one of the country you want to connect.",
+        "action": {
+          "label": "Open the Fnac Darty seller tools page",
+          "url": "https://marketplace.fnacdarty.com/s/ressources/les-liens-de-connexion-a-nos-outils?language=fr"
+        },
+        "confirm": "I have the partner ID, the shop ID and the key from Fnac",
+        "problems": [
+          {
+            "q": "I only have values for the test platform",
+            "a": "They do not work here. The API documentation says the values differ between the test and the production environment: ask Fnac for the production ones."
+          },
+          {
+            "q": "Who is the technical contact?",
+            "a": "The API documentation names **dl-fd-api.mp@fnac.com** as technical support."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Enter the three values",
+        "body": "Paste the partner ID, the shop ID and the key exactly as Fnac sent them. The partner ID and the shop ID look like `1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D`.",
+        "fields": [
+          "FNAC_PARTNER_ID",
+          "FNAC_SHOP_ID",
+          "FNAC_KEY"
+        ],
+        "problems": [
+          {
+            "q": "Fnac answers ERR_097",
+            "a": "One of the three values is wrong or belongs to another environment or country. Copy them again; the shop ID is different for each marketplace country."
+          },
+          {
+            "q": "Fnac answers Service not found",
+            "a": "API access, or the service, is not switched on for the account yet. Ask Fnac to activate it."
+          },
+          {
+            "q": "I sell in several countries",
+            "a": "Install the connector once per country, each with its own shop ID."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Fnac Darty Marketplace API",
+    "type": "REST",
+    "baseUrl": "https://vendeur.fnac.com/api.php",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://vendeur.fnac.com/api.php/auth",
+      "loginMethod": "POST",
+      "loginBodyFormat": "xml",
+      "loginBody": "<?xml version=\"1.0\" encoding=\"utf-8\"?><auth xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\"><partner_id>${username}</partner_id><shop_id>${aud}</shop_id><key>${password}</key></auth>",
+      "loginHeaders": {
+        "Content-Type": "text/xml; charset=utf-8"
+      },
+      "username": "{{FNAC_PARTNER_ID}}",
+      "password": "{{FNAC_KEY}}",
+      "aud": "{{FNAC_SHOP_ID}}",
+      "loginResponseFormat": "xml",
+      "tokenJsonPath": "auth_response.token",
+      "expiryJsonPath": "auth_response.validity",
+      "expiryFormat": "iso8601",
+      "tokenTTLSeconds": 900,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "refreshOnBody401": true,
+      "tokenPlacement": "body"
+    },
+    "headers": {
+      "Content-Type": "text/xml; charset=utf-8"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "offers_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "offers_query_response.error.code",
+            "offers_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "offers_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "offers_query_response.error.code",
+            "offers_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "offers_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "offers_query_response.error.code",
+            "offers_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "offers_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "offers_query_response.error[0].code",
+            "offers_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "offers_update_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "offers_update_response.error.code",
+            "offers_update_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "offers_update_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "offers_update_response.error.code",
+            "offers_update_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "offers_update_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "offers_update_response.error.code",
+            "offers_update_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "offers_update_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "offers_update_response.error[0].code",
+            "offers_update_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "batch_status_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "batch_status_response.error.code",
+            "batch_status_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "batch_status_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "batch_status_response.error.code",
+            "batch_status_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "batch_status_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "batch_status_response.error.code",
+            "batch_status_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "batch_status_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "batch_status_response.error[0].code",
+            "batch_status_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "batch_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "batch_query_response.error.code",
+            "batch_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "batch_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "batch_query_response.error.code",
+            "batch_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "batch_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "batch_query_response.error.code",
+            "batch_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "batch_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "batch_query_response.error[0].code",
+            "batch_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "orders_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "orders_query_response.error.code",
+            "orders_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "orders_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "orders_query_response.error.code",
+            "orders_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "orders_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "orders_query_response.error.code",
+            "orders_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "orders_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "orders_query_response.error[0].code",
+            "orders_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "orders_update_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "orders_update_response.error.code",
+            "orders_update_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "orders_update_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "orders_update_response.error.code",
+            "orders_update_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "orders_update_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "orders_update_response.error.code",
+            "orders_update_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "orders_update_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "orders_update_response.error[0].code",
+            "orders_update_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "carriers_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "carriers_query_response.error.code",
+            "carriers_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "carriers_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "carriers_query_response.error.code",
+            "carriers_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "carriers_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "carriers_query_response.error.code",
+            "carriers_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "carriers_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "carriers_query_response.error[0].code",
+            "carriers_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "countries_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "countries_query_response.error.code",
+            "countries_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "countries_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "countries_query_response.error.code",
+            "countries_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "countries_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "countries_query_response.error.code",
+            "countries_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "countries_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "countries_query_response.error[0].code",
+            "countries_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "client_order_comments_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "client_order_comments_query_response.error.code",
+            "client_order_comments_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "client_order_comments_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "client_order_comments_query_response.error.code",
+            "client_order_comments_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "client_order_comments_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "client_order_comments_query_response.error.code",
+            "client_order_comments_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "client_order_comments_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "client_order_comments_query_response.error[0].code",
+            "client_order_comments_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "client_order_comments_update_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "client_order_comments_update_response.error.code",
+            "client_order_comments_update_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "client_order_comments_update_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "client_order_comments_update_response.error.code",
+            "client_order_comments_update_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "client_order_comments_update_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "client_order_comments_update_response.error.code",
+            "client_order_comments_update_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "client_order_comments_update_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "client_order_comments_update_response.error[0].code",
+            "client_order_comments_update_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "messages_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "messages_query_response.error.code",
+            "messages_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "messages_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "messages_query_response.error.code",
+            "messages_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "messages_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "messages_query_response.error.code",
+            "messages_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "messages_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "messages_query_response.error[0].code",
+            "messages_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "messages_update_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "messages_update_response.error.code",
+            "messages_update_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "messages_update_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "messages_update_response.error.code",
+            "messages_update_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "messages_update_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "messages_update_response.error.code",
+            "messages_update_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "messages_update_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "messages_update_response.error[0].code",
+            "messages_update_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "incidents_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "incidents_query_response.error.code",
+            "incidents_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "incidents_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "incidents_query_response.error.code",
+            "incidents_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "incidents_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "incidents_query_response.error.code",
+            "incidents_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "incidents_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "incidents_query_response.error[0].code",
+            "incidents_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "incidents_update_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "incidents_update_response.error.code",
+            "incidents_update_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "incidents_update_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "incidents_update_response.error.code",
+            "incidents_update_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "incidents_update_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "incidents_update_response.error.code",
+            "incidents_update_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "incidents_update_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "incidents_update_response.error[0].code",
+            "incidents_update_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "pricing_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "pricing_query_response.error.code",
+            "pricing_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "pricing_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "pricing_query_response.error.code",
+            "pricing_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "pricing_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "pricing_query_response.error.code",
+            "pricing_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "pricing_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "pricing_query_response.error[0].code",
+            "pricing_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "shop_invoices_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "shop_invoices_query_response.error.code",
+            "shop_invoices_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "shop_invoices_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "shop_invoices_query_response.error.code",
+            "shop_invoices_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "shop_invoices_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "shop_invoices_query_response.error.code",
+            "shop_invoices_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "shop_invoices_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "shop_invoices_query_response.error[0].code",
+            "shop_invoices_query_response.error[0].#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "sales_periods_query_response.error.code",
+          "in": [
+            "ERR_097",
+            "ERR_098",
+            "ERR_102"
+          ],
+          "messagePath": [
+            "sales_periods_query_response.error.code",
+            "sales_periods_query_response.error.#text"
+          ],
+          "status": 401
+        },
+        {
+          "path": "sales_periods_query_response.error.code",
+          "equals": "ERR_107",
+          "messagePath": [
+            "sales_periods_query_response.error.code",
+            "sales_periods_query_response.error.#text"
+          ],
+          "status": 429
+        },
+        {
+          "path": "sales_periods_query_response.error.code",
+          "matches": ".+",
+          "messagePath": [
+            "sales_periods_query_response.error.code",
+            "sales_periods_query_response.error.#text"
+          ],
+          "status": 400
+        },
+        {
+          "path": "sales_periods_query_response.error[0].code",
+          "matches": ".+",
+          "messagePath": [
+            "sales_periods_query_response.error[0].code",
+            "sales_periods_query_response.error[0].#text"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "fnac_query_offers",
+      "description": "List the offers of the shop: offers_query_response with page, total_paging, nb_total_per_page, nb_total_result and offer (one object, or a list) with product_name, product_fnac_id, offer_fnac_id, offer_seller_id (your SKU), product_state (11 new, 10 refurbished, 1 used like new, 2 used very good, 3 used good, 4 used correct, 5 collection like new, 6 collection very good, 7 collection good, 8 collection correct), price (EUR), adherent_price, quantity, description, internal_comment, product_url, image, nb_messages, showcase, is_fulfilled and, with with_fees, fee_excluding_taxes and fee_including_all_taxes. Filter by SKU, Fnac ids, stock level or creation and change date. Read-only; Fnac refuses a call that would return more than 10,000 offers, so page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. total_paging in the answer is the number of pages."
+          },
+          "results_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Offers per page (default 50, at most 1000)."
+          },
+          "with_fees": {
+            "type": "boolean",
+            "description": "true: add the marketplace fee of each offer (fee_excluding_taxes, fee_including_all_taxes, EUR)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "Created",
+              "Modified"
+            ],
+            "default": "Modified",
+            "description": "Which date date_min and date_max filter on (default Modified). Created: when the offer was created; Modified: when it last changed."
+          },
+          "date_min": {
+            "type": "string",
+            "description": "Only rows on or after this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "date_max": {
+            "type": "string",
+            "description": "Only rows on or before this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "quantity_value": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Filter on the stock of the offer, compared as quantity_mode says. 0 with Equals lists the offers that are out of stock."
+          },
+          "quantity_mode": {
+            "type": "string",
+            "enum": [
+              "Equals",
+              "LessThan",
+              "GreaterThan",
+              "LessThanOrEquals",
+              "GreaterThanOrEquals"
+            ],
+            "default": "Equals",
+            "description": "How the stock is compared with quantity_value (default Equals)."
+          },
+          "product_fnac_id": {
+            "type": "string",
+            "description": "Only offers on this Fnac product id."
+          },
+          "offer_fnac_id": {
+            "type": "string",
+            "description": "One offer by its Fnac offer id (a UUID)."
+          },
+          "offer_seller_id": {
+            "type": "string",
+            "description": "One offer by your own reference (SKU)."
+          },
+          "promotion_types": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "Sales",
+                "Destocking",
+                "GoodDeal",
+                "Batch",
+                "FlashSale",
+                "FreeShipping"
+              ]
+            },
+            "description": "Only offers that carry a promotion of one of these types."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><offers_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"${?results_count} results_count=\"${results_count}\"${/results_count}${?with_fees} with_fees=\"${with_fees}\"${/with_fees}>${?page}<paging>${page}</paging>${/page}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}${?quantity_value}<quantity mode=\"${quantity_mode}\" value=\"${quantity_value}\"/>${/quantity_value}${?product_fnac_id}<product_fnac_id>${product_fnac_id}</product_fnac_id>${/product_fnac_id}${?offer_fnac_id}<offer_fnac_id>${offer_fnac_id}</offer_fnac_id>${/offer_fnac_id}${?offer_seller_id}<offer_seller_id>${offer_seller_id}</offer_seller_id>${/offer_seller_id}${?promotion_types}<promotion_types>${*promotion_types}<promotion_type>${.}</promotion_type>${/promotion_types}</promotion_types>${/promotion_types}</offers_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_update_offers",
+      "description": "Create or change offers: price, stock, condition, descriptions, showcase position. Fnac does not answer with the result but with offers_update_response.batch_id: the offers are processed in the background, so read the outcome with fnac_get_batch_status until it is no longer ACTIVE or RUNNING. A new offer needs product_reference (usually the EAN), offer_reference (your SKU), price, product_state and quantity; a change needs only offer_reference and the fields that change. The condition of an existing offer cannot be changed. Prices are in EUR from 0.90 to 20,000; stock is 0 to 9,999. Deleting is a separate tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "description": "The offers to create or change, each its own SKU (a SKU listed twice is processed once).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "offer_reference": {
+                  "type": "string",
+                  "description": "Your reference for the offer (SKU): letters, digits and spaces."
+                },
+                "offer_reference_type": {
+                  "type": "string",
+                  "enum": [
+                    "SellerSku",
+                    "FnacId"
+                  ],
+                  "description": "What offer_reference is: SellerSku (default) or FnacId (the Fnac offer id)."
+                },
+                "product_reference": {
+                  "type": "string",
+                  "description": "The product the offer is for, usually its EAN. Needed to create an offer; leave out to change one."
+                },
+                "product_reference_type": {
+                  "type": "string",
+                  "enum": [
+                    "Ean",
+                    "FnacId",
+                    "Isbn",
+                    "PartNumber",
+                    "CnetId",
+                    "PartnerId"
+                  ],
+                  "description": "What product_reference is (default Ean)."
+                },
+                "price": {
+                  "type": "number",
+                  "minimum": 0.9,
+                  "maximum": 20000,
+                  "description": "Price in EUR including VAT, 0.90 to 20,000."
+                },
+                "product_state": {
+                  "type": "integer",
+                  "enum": [
+                    11,
+                    10,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8
+                  ],
+                  "description": "Condition: 11 new, 10 refurbished, 1 used like new, 2 used very good, 3 used good, 4 used correct, 5 collection like new, 6 collection very good, 7 collection good, 8 collection correct. Needed to create an offer."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9999,
+                  "description": "Stock, 0 to 9,999. 0 takes the offer off sale without deleting it."
+                },
+                "description_fr": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Offer description in French (France and Belgium), at most 255 characters."
+                },
+                "description_es": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Offer description in Spanish (Spain), at most 255 characters."
+                },
+                "description_pt": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Offer description in Portuguese (Portugal), at most 255 characters."
+                },
+                "description_nl": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Offer description in Dutch (Belgium), at most 255 characters."
+                },
+                "internal_comment": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Note only the seller sees, at most 255 characters."
+                },
+                "showcase": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100,
+                  "description": "Position of the offer in the shop showcase, 1 to 100."
+                },
+                "adherent_price": {
+                  "type": "number",
+                  "minimum": 0.9,
+                  "maximum": 20000,
+                  "description": "Price in EUR for Fnac members, below price. Only for sellers Fnac has qualified for it."
+                },
+                "is_shipping_free": {
+                  "type": "boolean",
+                  "description": "true: shipping is free for this offer."
+                },
+                "logistic_type_id": {
+                  "type": "string",
+                  "description": "Logistic type that sets the shipping costs: 101 to 111 (categories A to K), 201 to 210 (custom), or RESET for the default of the product."
+                },
+                "time_to_ship": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 999,
+                  "description": "Days between the order confirmation and the handover to the carrier."
+                }
+              },
+              "required": [
+                "offer_reference"
+              ]
+            }
+          }
+        },
+        "required": [
+          "offers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><offers_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\">${*offers}<offer>${?product_reference}<product_reference${?product_reference_type} type=\"${product_reference_type}\"${/product_reference_type}>${product_reference}</product_reference>${/product_reference}<offer_reference${?offer_reference_type} type=\"${offer_reference_type}\"${/offer_reference_type}>${offer_reference}</offer_reference>${?price}<price>${price}</price>${/price}${?product_state}<product_state>${product_state}</product_state>${/product_state}${?quantity}<quantity>${quantity}</quantity>${/quantity}${?description_fr}<description_fr>${description_fr}</description_fr>${/description_fr}${?description_es}<description_es>${description_es}</description_es>${/description_es}${?description_pt}<description_pt>${description_pt}</description_pt>${/description_pt}${?description_nl}<description_nl>${description_nl}</description_nl>${/description_nl}${?internal_comment}<internal_comment>${internal_comment}</internal_comment>${/internal_comment}${?showcase}<showcase>${showcase}</showcase>${/showcase}${?adherent_price}<adherent_price>${adherent_price}</adherent_price>${/adherent_price}${?is_shipping_free}<is_shipping_free>${is_shipping_free}</is_shipping_free>${/is_shipping_free}${?logistic_type_id}<logistic_type_id>${logistic_type_id}</logistic_type_id>${/logistic_type_id}${?time_to_ship}<time_to_ship>${time_to_ship}</time_to_ship>${/time_to_ship}</offer>${/offers}</offers_update>"
+      }
+    },
+    {
+      "name": "fnac_delete_offers",
+      "description": "Delete offers from the shop for good, by SKU. Fnac answers with offers_update_response.batch_id; read the outcome with fnac_get_batch_status. A deleted offer cannot be restored, so this tool is installed switched off; to pause an offer set its quantity to 0 with fnac_update_offers instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_references": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "string"
+            },
+            "description": "The offers to delete: your SKUs, or Fnac offer ids with offer_reference_type FnacId."
+          },
+          "offer_reference_type": {
+            "type": "string",
+            "enum": [
+              "SellerSku",
+              "FnacId"
+            ],
+            "default": "SellerSku",
+            "description": "What the references are: SellerSku (default) or FnacId."
+          }
+        },
+        "required": [
+          "offer_references"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><offers_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\">${*offer_references}<offer><offer_reference${?offer_reference_type} type=\"${offer_reference_type}\"${/offer_reference_type}>${.}</offer_reference><treatment>delete</treatment></offer>${/offer_references}</offers_update>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "fnac_get_batch_status",
+      "description": "Read the report of an offer batch from fnac_update_offers or fnac_delete_offers: batch_status_response with status (ACTIVE queued, RUNNING, then OK, WARNING, ERROR or FATAL), batch_id and, once processed, offer (one object, or a list) with status, product_fnac_id, offer_fnac_id, offer_seller_id and error (code such as ERR_011 unknown product or ERR_017 price below 0.90, and its text). Read-only; ask again while the status is ACTIVE or RUNNING.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "description": "The batch_id an offer update or delete answered with (a UUID)."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/batch_status",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><batch_status xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><batch_id>${batch_id}</batch_id></batch_status>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_list_running_batches",
+      "description": "List the offer batches that are still queued or being processed: batch_query_response with nb_batch_running, nb_batch_active (waiting) and batch (one object, or a list) with status, batch_id, nb_lines and created_at. Finished batches are not listed; read those with fnac_get_batch_status. Read-only, no parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/batch_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><batch_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"></batch_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_query_orders",
+      "description": "List orders with their lines: orders_query_response with page, total_paging, nb_total_result and order (one object, or a list) with order_id, state, created_at, updated_at, client_firstname, client_lastname, client_email (a Fnac relay address), fees and vat_rate, max_expedition_date, max_delivery_date, delivery_note (PDF link), shipping_address and billing_address (present once the order is paid) and order_detail (one object, or a list) with order_detail_id, state, product_name, offer_seller_id (your SKU), quantity, price, fees, shipping_price, shipping_method, tracking_number and refunds. Amounts are in EUR. Filter by state, date, order id, SKU or product. Read-only; at most 50 orders per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. total_paging in the answer is the number of pages."
+          },
+          "results_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Orders per page (default 50, at most 50)."
+          },
+          "states": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "Created",
+                "Accepted",
+                "Refused",
+                "ToShip",
+                "Shipped",
+                "NotReceived",
+                "Received",
+                "Cancelled",
+                "Refunded",
+                "Error"
+              ]
+            },
+            "description": "Only orders in one of these states: Created (new, to accept), Accepted (waiting for payment), ToShip (paid, to ship), Shipped, Received, NotReceived (claim open), Refused, Cancelled, Refunded, Error."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "CreatedAt",
+              "UpdatedAt",
+              "AcceptedAt",
+              "DebitedAt",
+              "ShippedAt",
+              "ReceivedAt",
+              "RefusedAt",
+              "CancelledAt"
+            ],
+            "default": "CreatedAt",
+            "description": "Which date date_min and date_max filter on (default CreatedAt). CreatedAt and UpdatedAt are the creation and last change of the order; the others are the moment it reached that step."
+          },
+          "date_min": {
+            "type": "string",
+            "description": "Only rows on or after this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "date_max": {
+            "type": "string",
+            "description": "Only rows on or before this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "DESC",
+              "ASC"
+            ],
+            "description": "Sort order of the list: DESC or ASC."
+          },
+          "order_fnac_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "string",
+              "minLength": 13,
+              "maxLength": 13
+            },
+            "description": "Read these orders by their Fnac order id (13 characters each), at most 50."
+          },
+          "product_fnac_id": {
+            "type": "string",
+            "description": "Only orders that contain this Fnac product id."
+          },
+          "offer_fnac_id": {
+            "type": "string",
+            "description": "Only orders that contain this Fnac offer id."
+          },
+          "offer_seller_id": {
+            "type": "string",
+            "description": "Only orders that contain this SKU."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><orders_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?states}<states>${*states}<state>${.}</state>${/states}</states>${/states}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}${?sort}<sort_by>${sort}</sort_by>${/sort}${?order_fnac_ids}<orders_fnac_id>${*order_fnac_ids}<order_fnac_id>${.}</order_fnac_id>${/order_fnac_ids}</orders_fnac_id>${/order_fnac_ids}${?product_fnac_id}<product_fnac_id>${product_fnac_id}</product_fnac_id>${/product_fnac_id}${?offer_fnac_id}<offer_fnac_id>${offer_fnac_id}</offer_fnac_id>${/offer_fnac_id}${?offer_seller_id}<offer_seller_id>${offer_seller_id}</offer_seller_id>${/offer_seller_id}</orders_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_accept_order",
+      "description": "Accept every line of a new order (state Created). Fnac then bills the customer and moves the order to ToShip once it is paid; ship only after that. Answers orders_update_response with order.status, order_id, the new state and per order_detail its order_detail_id, status and state, or an error such as ERR_003 (the order is past this step). To refuse a line use fnac_accept_or_refuse_order_lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 13,
+            "description": "Fnac order id (order_id in fnac_query_orders), 13 characters, e.g. 1P3HCS77E4QYE."
+          },
+          "expedition_country_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "Country the parcel ships from, as the three-letter code from fnac_list_countries (FRA, BEL, ESP, PRT). Left out, Fnac uses the default expedition country of the shop."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><orders_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><order order_id=\"${order_id}\" action=\"accept_all_orders\"><order_detail><action>Accepted</action>${?expedition_country_code}<expedition_country_code>${expedition_country_code}</expedition_country_code>${/expedition_country_code}</order_detail></order></orders_update>"
+      }
+    },
+    {
+      "name": "fnac_accept_or_refuse_order_lines",
+      "description": "Decide line by line on a new order (state Created): Accepted or Refused. Every line of the order must be listed in the same call (Fnac refuses a partial decision with ERR_004), and a decision cannot be changed afterwards. A refused line cancels that sale for the customer and counts against the seller, so this tool is installed switched off; to accept a whole order use fnac_accept_order. Answers orders_update_response with the status and new state of the order and of each line.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 13,
+            "description": "Fnac order id (order_id in fnac_query_orders), 13 characters, e.g. 1P3HCS77E4QYE."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry for every line of the order.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_detail_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Line number (order_detail_id in fnac_query_orders)."
+                },
+                "decision": {
+                  "type": "string",
+                  "enum": [
+                    "Accepted",
+                    "Refused"
+                  ],
+                  "description": "Accepted or Refused."
+                },
+                "expedition_country_code": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z]{3}$",
+                  "description": "Country the parcel ships from, as the three-letter code from fnac_list_countries (FRA, BEL, ESP, PRT). Left out, Fnac uses the default expedition country of the shop."
+                }
+              },
+              "required": [
+                "order_detail_id",
+                "decision"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><orders_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><order order_id=\"${order_id}\" action=\"accept_order\">${*lines}<order_detail><order_detail_id>${order_detail_id}</order_detail_id><action>${decision}</action>${?expedition_country_code}<expedition_country_code>${expedition_country_code}</expedition_country_code>${/expedition_country_code}</order_detail>${/lines}</order></orders_update>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "fnac_ship_order",
+      "description": "Mark every line of an order as shipped, in one parcel, with its tracking. The order must be in state ToShip (accepted and paid). tracking_company takes the carrier code from fnac_list_carriers and is required whenever a tracking number is given. Answers orders_update_response with the status and new state (Shipped) of the order and of each line, or an error such as ERR_002 (not ready to ship) or ERR_169 (carrier code missing or unknown). For lines that travel in different parcels use fnac_ship_order_lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 13,
+            "description": "Fnac order id (order_id in fnac_query_orders), 13 characters, e.g. 1P3HCS77E4QYE."
+          },
+          "tracking_number": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Tracking number of the parcel (at most 32 characters). Needs tracking_company."
+          },
+          "tracking_company": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Carrier code from fnac_list_carriers (the code attribute, e.g. CHRONOPOST, LAPOSTE, UPS), not the carrier name."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><orders_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><order order_id=\"${order_id}\" action=\"confirm_all_to_send\"><order_detail><action>Shipped</action>${?tracking_number}<tracking_number>${tracking_number}</tracking_number>${/tracking_number}${?tracking_company}<tracking_company>${tracking_company}</tracking_company>${/tracking_company}</order_detail></order></orders_update>"
+      }
+    },
+    {
+      "name": "fnac_ship_order_lines",
+      "description": "Mark an order as shipped line by line, each line with its own tracking, for orders that leave in several parcels. The order must be in state ToShip and every line of the order must be listed in the same call (ERR_004 otherwise). tracking_company takes the carrier code from fnac_list_carriers and is required whenever a tracking number is given. Answers orders_update_response with the status and new state of the order and of each line.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 13,
+            "description": "Fnac order id (order_id in fnac_query_orders), 13 characters, e.g. 1P3HCS77E4QYE."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry for every line of the order.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_detail_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Line number (order_detail_id in fnac_query_orders)."
+                },
+                "tracking_number": {
+                  "type": "string",
+                  "maxLength": 32,
+                  "description": "Tracking number of the parcel (at most 32 characters). Needs tracking_company."
+                },
+                "tracking_company": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Carrier code from fnac_list_carriers (the code attribute, e.g. CHRONOPOST, LAPOSTE, UPS), not the carrier name."
+                }
+              },
+              "required": [
+                "order_detail_id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><orders_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><order order_id=\"${order_id}\" action=\"confirm_to_send\">${*lines}<order_detail><order_detail_id>${order_detail_id}</order_detail_id><action>Shipped</action>${?tracking_number}<tracking_number>${tracking_number}</tracking_number>${/tracking_number}${?tracking_company}<tracking_company>${tracking_company}</tracking_company>${/tracking_company}</order_detail>${/lines}</order></orders_update>"
+      }
+    },
+    {
+      "name": "fnac_update_order_tracking",
+      "description": "Add or correct the tracking of an order that is already shipped (state Shipped), for all its lines at once. tracking_company takes the carrier code from fnac_list_carriers. Answers orders_update_response with the status of the order and of each line, or an error such as ERR_028 (the order is not in state Shipped).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 13,
+            "description": "Fnac order id (order_id in fnac_query_orders), 13 characters, e.g. 1P3HCS77E4QYE."
+          },
+          "tracking_number": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Tracking number of the parcel (at most 32 characters). Needs tracking_company."
+          },
+          "tracking_company": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Carrier code from fnac_list_carriers (the code attribute, e.g. CHRONOPOST, LAPOSTE, UPS), not the carrier name."
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_company"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><orders_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><order order_id=\"${order_id}\" action=\"update_all\"><order_detail><action>Updated</action>${?tracking_number}<tracking_number>${tracking_number}</tracking_number>${/tracking_number}<tracking_company>${tracking_company}</tracking_company></order_detail></order></orders_update>"
+      }
+    },
+    {
+      "name": "fnac_list_carriers",
+      "description": "List the carriers Fnac Darty knows: carriers_query_response.carrier (a list) with code (the value tracking_company takes when shipping, e.g. CHRONOPOST, DHL, LAPOSTE, MONDIALRELAY, UPS), global (1: usable by every seller) and name. Read-only, no parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/carriers_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><carriers_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><query>all</query></carriers_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_list_countries",
+      "description": "List the countries Fnac Darty knows with the three-letter code the API uses: countries_query_response.country (a list) with name and code (FRA metropolitan France, BEL, ESP, PRT ...). The code is what expedition_country_code takes and what order addresses carry. Read-only, no parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/countries_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><countries_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><query>all</query></countries_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_query_order_comments",
+      "description": "List the ratings and comments customers left on orders: client_order_comments_query_response with page, total_paging, nb_total_result and client_order_comment (one object, or a list) with client_order_comment_id, order_fnac_id, rate (1 to 5), client_name, comment, reply (your answer, empty when there is none), is_received, is_fast, is_well_packed, is_good_shape (1 or 0) and created_at. Filter by rating, date, order or comment id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. total_paging in the answer is the number of pages."
+          },
+          "results_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Comments per page (default 50, at most 100)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "Created",
+              "Modified"
+            ],
+            "default": "Created",
+            "description": "Which date date_min and date_max filter on (default Created). Created: when the comment was written; Modified: when it last changed."
+          },
+          "date_min": {
+            "type": "string",
+            "description": "Only rows on or after this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "date_max": {
+            "type": "string",
+            "description": "Only rows on or before this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "rate_value": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "Filter on the rating, compared as rate_mode says. 2 with LessThanOrEquals lists the bad ratings."
+          },
+          "rate_mode": {
+            "type": "string",
+            "enum": [
+              "Equals",
+              "LessThan",
+              "GreaterThan",
+              "LessThanOrEquals",
+              "GreaterThanOrEquals"
+            ],
+            "default": "Equals",
+            "description": "How the rating is compared with rate_value (default Equals)."
+          },
+          "client_order_comment_id": {
+            "type": "string",
+            "description": "One comment by its id (a UUID)."
+          },
+          "order_fnac_id": {
+            "type": "string",
+            "description": "The comment on this Fnac order id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/client_order_comments_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><client_order_comments_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}${?rate_value}<rate mode=\"${rate_mode}\" value=\"${rate_value}\"/>${/rate_value}${?client_order_comment_id}<client_order_comment_id>${client_order_comment_id}</client_order_comment_id>${/client_order_comment_id}${?order_fnac_id}<order_fnac_id>${order_fnac_id}</order_fnac_id>${/order_fnac_id}</client_order_comments_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_reply_to_order_comment",
+      "description": "Answer a customer comment on an order, publicly, in at most 255 characters. A comment takes one reply and it cannot be edited afterwards (ERR_147 when it already has one), so check the wording with the seller first. Answers client_order_comments_update_response.comment with id and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "comment_id": {
+            "type": "string",
+            "description": "client_order_comment_id from fnac_query_order_comments (a UUID)."
+          },
+          "reply": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "The reply shown under the comment, at most 255 characters."
+          }
+        },
+        "required": [
+          "comment_id",
+          "reply"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/client_order_comments_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><client_order_comments_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><comment id=\"${comment_id}\"><comment_reply>${reply}</comment_reply></comment></client_order_comments_update>"
+      }
+    },
+    {
+      "name": "fnac_query_messages",
+      "description": "List the messages on orders and offers: messages_query_response with page, total_paging, nb_total_result, messages_unread_result, messages_read_result and message (one object, or a list) with state (READ or UNREAD), archived (TRUE or FALSE), message_id, message_referer (the order id or offer id, with type ORDER or OFFER), message_from (with type CLIENT, CALLCENTER or SELLER), message_subject, message_description (the text), created_at, updated_at, answer, answer_at and message_file (name, url, filetype). Filter by read state, type, order, offer, author or date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. total_paging in the answer is the number of pages."
+          },
+          "results_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Messages per page (default 50, at most 100)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "CreatedAt",
+              "UpdatedAt"
+            ],
+            "default": "CreatedAt",
+            "description": "Which date date_min and date_max filter on (default CreatedAt). CreatedAt: when the message was written; UpdatedAt: when it last changed."
+          },
+          "date_min": {
+            "type": "string",
+            "description": "Only rows on or after this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "date_max": {
+            "type": "string",
+            "description": "Only rows on or before this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "message_type": {
+            "type": "string",
+            "enum": [
+              "ORDER",
+              "OFFER"
+            ],
+            "description": "ORDER: messages about an order; OFFER: questions about an offer."
+          },
+          "message_state": {
+            "type": "string",
+            "enum": [
+              "UNREAD",
+              "READ"
+            ],
+            "description": "UNREAD: not read by the seller yet; READ."
+          },
+          "message_archived": {
+            "type": "string",
+            "enum": [
+              "FALSE",
+              "TRUE"
+            ],
+            "description": "FALSE: not archived; TRUE: archived by the seller."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "One message by its id (a UUID)."
+          },
+          "order_fnac_id": {
+            "type": "string",
+            "description": "Messages about this Fnac order id."
+          },
+          "offer_fnac_id": {
+            "type": "string",
+            "description": "Messages about this Fnac offer id."
+          },
+          "offer_seller_id": {
+            "type": "string",
+            "description": "Messages about the offer with this SKU."
+          },
+          "sort_field": {
+            "type": "string",
+            "enum": [
+              "CREATED_AT",
+              "UPDATED_AT"
+            ],
+            "description": "Sort the list by creation or by last change, in sort_order."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "DESC",
+              "ASC"
+            ],
+            "default": "DESC",
+            "description": "DESC (default, newest first) or ASC. Used with sort_field."
+          },
+          "from_types": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "CLIENT",
+                "CALLCENTER",
+                "SELLER",
+                "SYSTEM"
+              ]
+            },
+            "description": "Only messages written by these authors: CLIENT, CALLCENTER (Fnac customer service), SELLER, SYSTEM."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><messages_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}${?message_type}<message_type>${message_type}</message_type>${/message_type}${?message_archived}<message_archived>${message_archived}</message_archived>${/message_archived}${?message_state}<message_state>${message_state}</message_state>${/message_state}${?message_id}<message_id>${message_id}</message_id>${/message_id}${?order_fnac_id}<order_fnac_id>${order_fnac_id}</order_fnac_id>${/order_fnac_id}${?offer_fnac_id}<offer_fnac_id>${offer_fnac_id}</offer_fnac_id>${/offer_fnac_id}${?offer_seller_id}<offer_seller_id>${offer_seller_id}</offer_seller_id>${/offer_seller_id}${?sort_field}<sort_by type=\"${sort_order}\">${sort_field}</sort_by>${/sort_field}${?from_types}<message_from_types>${*from_types}<from_type>${.}</from_type>${/from_types}</message_from_types>${/from_types}</messages_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_reply_to_message",
+      "description": "Answer a message from a customer or from Fnac customer service. The reply is sent in the name of the shop and cannot be taken back, so check the wording with the seller first. A question on an offer takes one reply (ERR_116 when it already has one); a message on an order can be answered several times. message_to CALLCENTER only works on an order with an open claim (ERR_117). Answers messages_update_response.message with id and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "message_id from fnac_query_messages (a UUID)."
+          },
+          "message_description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The text of the reply."
+          },
+          "message_type": {
+            "type": "string",
+            "enum": [
+              "ORDER",
+              "OFFER"
+            ],
+            "description": "What the message is about, as message_referer type in fnac_query_messages says: ORDER or OFFER."
+          },
+          "message_to": {
+            "type": "string",
+            "enum": [
+              "CLIENT",
+              "CALLCENTER",
+              "ALL"
+            ],
+            "description": "Who receives the reply on an order message: CLIENT, CALLCENTER (Fnac customer service) or ALL. Required for ORDER messages."
+          },
+          "message_subject": {
+            "type": "string",
+            "enum": [
+              "product_information",
+              "shipping_information",
+              "order_information",
+              "offer_problem",
+              "offer_not_received",
+              "other_question"
+            ],
+            "description": "Subject of the reply, one of the fixed values."
+          }
+        },
+        "required": [
+          "message_id",
+          "message_description",
+          "message_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><messages_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><message action=\"reply\" id=\"${message_id}\">${?message_to}<message_to>${message_to}</message_to>${/message_to}${?message_subject}<message_subject>${message_subject}</message_subject>${/message_subject}<message_description>${message_description}</message_description>${?message_type}<message_type>${message_type}</message_type>${/message_type}</message></messages_update>"
+      }
+    },
+    {
+      "name": "fnac_update_message_status",
+      "description": "Mark messages as read or unread, or archive and unarchive them, several at once. Nothing is sent to the customer. Answers messages_update_response.message (one object, or a list) with id and status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            },
+            "description": "message_id values from fnac_query_messages."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "mark_as_read",
+              "mark_as_unread",
+              "archive",
+              "mark_as_read_and_archive",
+              "unarchive"
+            ],
+            "default": "mark_as_read",
+            "description": "What to do with the messages (default mark_as_read)."
+          }
+        },
+        "required": [
+          "message_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><messages_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\">${*message_ids}<message action=\"${action}\" id=\"${.}\"/>${/message_ids}</messages_update>"
+      }
+    },
+    {
+      "name": "fnac_query_incidents",
+      "description": "List the incidents (claims) on orders: incidents_query_response with page, total_paging and incident (one object, or a list) with id, header (status, waiting_for_seller_answer TRUE or FALSE, message, opened_by, closed_by, closed_status, created_at, updated_at, closed_at, order_id) and order_details_incident.order_detail_incident with order_detail_id, type (the opening reason as a number), status, dates and refund (product_amount, shipping_amount, fee_ht_amount in EUR). Opening reasons: 1 article not received, 2 inconsistent with the item, 3 defective, 4 withdrawal, 5 infringing item, 7 refund, 8 no stock, 9 returned by the customer, 10 cancelled by the customer, 11 shipping impossible. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. total_paging in the answer is the number of pages."
+          },
+          "results_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Incidents per page (default 50, at most 100)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "CreatedAt",
+              "UpdatedAt",
+              "ClosedAt"
+            ],
+            "default": "CreatedAt",
+            "description": "Which date date_min and date_max filter on (default CreatedAt). When the incident was opened, last changed or closed."
+          },
+          "date_min": {
+            "type": "string",
+            "description": "Only rows on or after this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "date_max": {
+            "type": "string",
+            "description": "Only rows on or before this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPENED",
+              "CLOSED"
+            ],
+            "description": "OPENED: still open; CLOSED."
+          },
+          "waiting_for_seller_answer": {
+            "type": "string",
+            "enum": [
+              "TRUE",
+              "FALSE"
+            ],
+            "description": "TRUE: only incidents where Fnac customer service waits for an answer from the seller."
+          },
+          "incident_type": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18,
+            "description": "Opening reason as a number, e.g. 1 article not received, 3 defective item, 4 withdrawal, 8 no stock."
+          },
+          "closed_status": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 22,
+            "description": "Closing reason as a number, e.g. 2 refund by check, 4 item received, 6 item not received, 10 refund, 16 item returned."
+          },
+          "incident_id": {
+            "type": "string",
+            "description": "One incident by its id (a UUID)."
+          },
+          "order_fnac_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 13,
+            "description": "Incidents on this Fnac order id (13 characters)."
+          },
+          "opened_by": {
+            "type": "string",
+            "enum": [
+              "client",
+              "call-center",
+              "seller"
+            ],
+            "description": "Who opened the incident: client, call-center (Fnac customer service) or seller."
+          },
+          "closed_by": {
+            "type": "string",
+            "enum": [
+              "client",
+              "call-center",
+              "seller"
+            ],
+            "description": "Who closed the incident: client, call-center or seller."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "DESC",
+              "ASC"
+            ],
+            "description": "Sort order of the list: DESC or ASC. Unsorted when left out."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/incidents_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><incidents_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}${?status}<status>${status}</status>${/status}${?incident_type}<type>${incident_type}</type>${/incident_type}${?incident_id}<incident_id>${incident_id}</incident_id>${/incident_id}${?closed_status}<closed_status>${closed_status}</closed_status>${/closed_status}${?waiting_for_seller_answer}<waiting_for_seller_answer>${waiting_for_seller_answer}</waiting_for_seller_answer>${/waiting_for_seller_answer}${?opened_by}<opened_by>${opened_by}</opened_by>${/opened_by}${?closed_by}<closed_by>${closed_by}</closed_by>${/closed_by}${?sort}<sort_by>${sort}</sort_by>${/sort}${?order_fnac_id}<order>${order_fnac_id}</order>${/order_fnac_id}</incidents_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_refund_order_lines",
+      "description": "Refund lines of an order to the customer: a full refund of each listed line (action refund), or on Darty orders a partial amount (action partial_refund with refund_amount_product and refund_amount_shipping in EUR). The money is taken from the balance of the seller and cannot be taken back, so this tool is installed switched off; a workspace admin turns it on deliberately. Answers incidents_update_response.order with status, order_id, state, incident_id and per order_detail its status, or an error such as ERR_109 (the order cannot be refunded) or ERR_112 (not enough balance).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "minLength": 13,
+            "maxLength": 13,
+            "description": "Fnac order id (order_id in fnac_query_orders), 13 characters, e.g. 1P3HCS77E4QYE."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "refund",
+              "partial_refund"
+            ],
+            "default": "refund",
+            "description": "refund (default): the whole line; partial_refund: the amounts given per line, Darty orders only."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The order lines to refund.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_detail_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Line number (order_detail_id in fnac_query_orders)."
+                },
+                "refund_reason": {
+                  "type": "string",
+                  "enum": [
+                    "no_stock",
+                    "retraction",
+                    "not_recovery_old_item",
+                    "unreceived_article",
+                    "item_faulty_by_delivery",
+                    "unmatch_article",
+                    "damaged_article",
+                    "counterfeit"
+                  ],
+                  "description": "Why: no_stock, retraction (withdrawal), not_recovery_old_item, unreceived_article, item_faulty_by_delivery, unmatch_article, damaged_article or counterfeit."
+                },
+                "refund_amount_product": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "With partial_refund: amount of the product price to refund, in EUR."
+                },
+                "refund_amount_shipping": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "With partial_refund: amount of the shipping price to refund, in EUR."
+                }
+              },
+              "required": [
+                "order_detail_id",
+                "refund_reason"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/incidents_update",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><incidents_update xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"><order order_id=\"${order_id}\" action=\"${action}\">${*lines}<order_detail><order_detail_id>${order_detail_id}</order_detail_id>${?refund_reason}<refund_reason>${refund_reason}</refund_reason>${/refund_reason}${?refund_amount_product}<refund_amount_product>${refund_amount_product}</refund_amount_product>${/refund_amount_product}${?refund_amount_shipping}<refund_amount_shipping>${refund_amount_shipping}</refund_amount_shipping>${/refund_amount_shipping}</order_detail>${/lines}</order></incidents_update>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "fnac_query_competing_offers",
+      "description": "Compare prices on a product with the other sellers on Fnac, by EAN (Pricing Query V3): pricing_query_response.pricing_products.pricing_product (one object, or a list) with product_reference, product_name, product_url, product_ean and, under standard and under adherent (Fnac member prices), seller_offer (your own price and shipping_price) and ranked_offers (one object, or a list) with type (professional, non-professional or fnac), seller_name, seller_sales_number, seller_reliability_rate, seller_expedition_country, has_buybox, offer_status (the condition), position, price, shipping_price (EUR) and updated_at. An unknown product comes back as an error ERR_120 inside its pricing_product. Read-only; at most 200 references per call. Fnac offers this version to shops operating in France only and switches it on per account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_references": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "string"
+            },
+            "description": "The products to look up, usually EANs (digits only), at most 200."
+          },
+          "reference_type": {
+            "type": "string",
+            "enum": [
+              "Ean",
+              "FnacId",
+              "Isbn",
+              "CnetId"
+            ],
+            "default": "Ean",
+            "description": "What the references are (default Ean)."
+          },
+          "sellers": {
+            "type": "string",
+            "enum": [
+              "all",
+              "all-pro",
+              "others",
+              "others-pro"
+            ],
+            "description": "Whose offers to rank: all (default), all-pro (professional sellers only), others (without your own) or others-pro."
+          },
+          "states": {
+            "type": "string",
+            "enum": [
+              "all",
+              "new",
+              "refurbished",
+              "used-as-new",
+              "used-very-good",
+              "used-good",
+              "used-correct",
+              "collection-as-new",
+              "collection-very-good",
+              "collection-good",
+              "collection-correct"
+            ],
+            "description": "Only offers in this condition (default all)."
+          },
+          "prices": {
+            "type": "string",
+            "enum": [
+              "all",
+              "standard",
+              "adherent"
+            ],
+            "description": "all (default), standard (without member prices) or adherent (member prices only)."
+          }
+        },
+        "required": [
+          "product_references"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/prices_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><pricing_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"${?sellers} sellers=\"${sellers}\"${/sellers}${?states} states=\"${states}\"${/states}${?prices} prices=\"${prices}\"${/prices}>${*product_references}<product_reference type=\"${reference_type}\">${.}</product_reference>${/product_references}</pricing_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_query_shop_invoices",
+      "description": "List the invoices Fnac issued to the shop: shop_invoices_query_response with page, total_paging, nb_total_result and shop_invoice (one object, or a list) with invoice_id, url (PDF download link), invoice_related_orders_url (CSV of the orders behind it), created_at, transfer_amount (what was paid out), tva (tax rate), order_amount, shipping_amount, fee_tax_inc_amount, subscription_tax_inc_amount and the refunded fee and subscription amounts. Amounts are in EUR. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. total_paging in the answer is the number of pages."
+          },
+          "results_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Invoices per page (default 50, at most 100)."
+          },
+          "date_min": {
+            "type": "string",
+            "description": "Only invoices created on or after this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "date_max": {
+            "type": "string",
+            "description": "Only invoices created on or before this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shop_invoices_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><shop_invoices_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?date_min|date_max}<date>${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}</shop_invoices_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fnac_query_sales_periods",
+      "description": "List the official sales periods (soldes) Fnac manages: sales_periods_query_response with page, total_paging, nb_total_result and sales_periods.sales_period (one object, or a list) with label (per culture, e.g. fr_FR), reference, starts_at and ends_at. The reference is what a promotion of type Sales has to name. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. total_paging in the answer is the number of pages."
+          },
+          "results_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Sales periods per page (default 50, at most 100)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "StartAt",
+              "EndAt"
+            ],
+            "default": "StartAt",
+            "description": "Which date date_min and date_max filter on (default StartAt). StartAt: periods that start in the range; EndAt: periods that end in it."
+          },
+          "date_min": {
+            "type": "string",
+            "description": "Only rows on or after this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "date_max": {
+            "type": "string",
+            "description": "Only rows on or before this moment. ISO 8601 date and time with offset, e.g. 2026-11-01T00:00:00+01:00."
+          },
+          "reference": {
+            "type": "string",
+            "description": "One sales period by its reference, e.g. SLD_HIVER_2017."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sales_periods_query",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><sales_periods_query xmlns=\"http://www.fnac.com/schemas/mp-dialog.xsd\" partner_id=\"{{FNAC_PARTNER_ID}}\" shop_id=\"{{FNAC_SHOP_ID}}\" token=\"${loginToken}\"${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}${?reference}<reference>${reference}</reference>${/reference}</sales_periods_query>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
