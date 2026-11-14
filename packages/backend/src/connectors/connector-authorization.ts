@@ -10,6 +10,7 @@ import type { ConnectorsService } from './connectors.service';
 import { connectorSecretValues } from './connector-secrets.util';
 import type { ClientAssertionSettings } from './engines/client-assertion.util';
 import { tokenEndpointUserAgent } from './engines/oauth2-token.service';
+import { tokenResponsePathOf } from './engines/token-response.util';
 import { mcpPathOf } from './mcp-connector-config.util';
 import type { McpOAuthService, PendingOAuthFlow } from './mcp-oauth.service';
 import {
@@ -85,6 +86,9 @@ export async function startConnectorAuthorization(
   // REST/GraphQL only: the redirect_uri the provider wants in place of the
   // callback URL (eBay's RuName, see resolveProviderRedirectUri).
   let providerRedirectUri: string | undefined;
+  // REST/GraphQL only: the object of the token answer that holds the token
+  // fields, for a provider that wraps them (authConfig.tokenResponsePath).
+  let tokenResponsePath: string | undefined;
 
   if (connector.type === 'MCP') {
     // MCP: discover OAuth metadata from the remote server, then pick the
@@ -184,6 +188,8 @@ export async function startConnectorAuthorization(
     clientAssertion = settings.clientAssertion;
     pkce = settings.pkce;
     providerRedirectUri = settings.providerRedirectUri;
+    // Read from the row alone, as the renewals do (OAuth2TokenService).
+    tokenResponsePath = tokenResponsePathOf(authConfig.tokenResponsePath);
     // The client id/secret stay as stored (placeholders included, so a
     // later env var edit still reaches them); only what was taken from
     // the catalog is added.
@@ -228,6 +234,7 @@ export async function startConnectorAuthorization(
     clientAssertion,
     persistAuthConfig,
     ...(userAgent ? { userAgent } : {}),
+    ...(tokenResponsePath ? { tokenResponsePath } : {}),
     ...(resource ? { resource } : {}),
     ...(dynamicClient ? { dynamicClient } : {}),
     ...(opts.forUser ? { forUser: true } : {}),

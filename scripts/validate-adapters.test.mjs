@@ -314,6 +314,69 @@ test('optional and repeated blocks in an XML bodyTemplate are named, closed and 
   }
 });
 
+test('a LOGIN_TOKEN token in a response header needs its header name', () => {
+  const login = (authConfig, authType = 'LOGIN_TOKEN') => validateAdapter(adapter({
+    connector: { type: 'REST', authType, authConfig: {
+      loginUrl: 'https://good.test/token', loginMethod: 'GET', loginBody: {},
+      loginHeaders: { Authorization: 'Basic {{GOOD_KEY}}' },
+      username: '{{GOOD_KEY}}', password: '{{GOOD_KEY}}', ...authConfig,
+    } },
+  }), 'good.json', 'de').errors.filter((e) => e.rule === 'login-token-source');
+
+  assert.deepEqual(login({ tokenSource: 'header', tokenHeaderName: 'access_token' }), []);
+  assert.deepEqual(login({ tokenSource: 'header', tokenHeaderName: 'X-Auth-Token' }), []);
+  // The sources that existed before are left alone, with or without a name for them.
+  assert.deepEqual(login({ tokenJsonPath: 'token' }), []);
+  assert.deepEqual(login({ tokenSource: 'body', tokenJsonPath: 'token' }), []);
+  assert.deepEqual(login({ tokenSource: 'cookie', cookieName: 'SESSION' }), []);
+  assert.deepEqual(login({ tokenSource: 'cookie', cookieMode: 'all' }), []);
+  for (const [config, expected] of [
+    [{ tokenSource: 'header' }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'header', tokenHeaderName: '' }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'header', tokenHeaderName: 7 }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'header', tokenHeaderName: 'access token' }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'header', tokenHeaderName: 'access_token:' }, /needs authConfig\.tokenHeaderName/],
+    [{ tokenSource: 'headers', tokenJsonPath: 'token' }, /must be one of body, cookie, header/],
+    [{ tokenSource: 'Header', tokenJsonPath: 'token' }, /must be one of body, cookie, header/],
+    [{ tokenJsonPath: 'token', tokenHeaderName: 'access_token' }, /only read with tokenSource "header"/],
+    [{ tokenSource: 'cookie', cookieName: 'SESSION', tokenHeaderName: 'access_token' }, /only read with tokenSource "header"/],
+  ]) {
+    const errors = login(config);
+    assert.equal(errors.length, 1, JSON.stringify(config));
+    assert.match(errors[0].message, expected);
+    assert.equal(errors[0].path, 'connector.authConfig.tokenSource');
+    assert.equal(errors[0].docs, 'authentication');
+  }
+  const elsewhere = login({ tokenSource: 'header', tokenHeaderName: 'access_token' }, 'API_KEY');
+  assert.deepEqual(elsewhere.map((e) => e.message), [
+    'tokenSource only applies to LOGIN_TOKEN authentication',
+    'tokenHeaderName only applies to LOGIN_TOKEN authentication',
+  ]);
+});
+
+test('an OAUTH2 tokenResponsePath is a dotted path of keys', () => {
+  const oauth = (authConfig, authType = 'OAUTH2') => validateAdapter(adapter({
+    connector: { type: 'REST', authType, authConfig: {
+      grant: 'refresh_token', authorizationUrl: 'https://good.test/authorize', tokenUrl: 'https://good.test/token',
+      clientId: '{{GOOD_KEY}}', ...authConfig,
+    } },
+  }), 'good.json', 'de').errors.filter((e) => e.rule === 'token-response-path');
+
+  assert.deepEqual(oauth({}), []);
+  assert.deepEqual(oauth({ tokenResponsePath: 'data' }), []);
+  assert.deepEqual(oauth({ tokenResponsePath: 'result.token_set' }), []);
+  for (const value of ['', ' ', '.', 'data.', '.data', 'data..token', 'data[0]', 'data token', 7, true, null, ['data'], { path: 'data' }]) {
+    const errors = oauth({ tokenResponsePath: value });
+    assert.equal(errors.length, 1, JSON.stringify(value));
+    assert.match(errors[0].message, /must be a dotted path of keys/);
+    assert.equal(errors[0].path, 'connector.authConfig.tokenResponsePath');
+    assert.equal(errors[0].docs, 'authentication');
+  }
+  for (const authType of ['LOGIN_TOKEN', 'API_KEY', 'BEARER_TOKEN']) {
+    assert.match(oauth({ tokenResponsePath: 'data' }, authType)[0].message, /only applies to OAUTH2/);
+  }
+});
+
 test('DATABASE adapters may authenticate with a connection string', () => {
   const result = validateAdapter(adapter({
     slug: 'postgres', icon: 'postgres', region: 'intl',
@@ -600,4 +663,65 @@ test('setupGuide saves and checks the keys mid-way only when the provider can be
 
 test('docs explain the setup guide the validator links to', () => {
   assert.match(docs, /^### Setup guide$/m);
+});
+
+test('hmac signature options for a digest in the body and a nonce are checked', () => {
+  const problems = (signature, authType = 'HMAC') => validatorModule.hmacSignatureProblems({ authType, authConfig: { signature } });
+  const temu = {
+    mode: 'digest', algorithm: 'md5', encoding: 'hex-upper', placement: 'body', paramName: 'sign', timestampParam: 'timestamp',
+    bodyParams: { app_key: '{{GOOD_KEY}}', data_type: 'JSON' }, template: '{{GOOD_KEY}}${sortedParams}{{GOOD_KEY}}',
+  };
+  const shein = {
+    algorithm: 'sha256', encoding: 'hex-base64', secret: '{{GOOD_KEY}}${nonce}', nonceLength: 5, template: 'id&${timestamp}&${pathname}',
+    timestampFormat: 'ms', headerName: 'x-lt-signature', headerTemplate: '${nonce}${signature}', timestampHeader: 'x-lt-timestamp',
+  };
+  assert.deepEqual(problems(temu), []);
+  assert.deepEqual(problems(shein), []);
+  // Signatures written before these options, and the signed-JWT kind, pass untouched.
+  assert.deepEqual(problems({ algorithm: 'sha256', encoding: 'hex', secret: '{{GOOD_KEY}}', template: '${method}', headerName: 'X' }), []);
+  assert.deepEqual(problems({ algorithm: 'sha256', encoding: 'hex-upper', secret: '{{GOOD_KEY}}', placement: 'query', queryParams: { a: 'b' }, template: '${sortedParams}' }), []);
+  assert.deepEqual(problems({ jwt: { key: '{{GOOD_KEY}}' }, headerTemplate: 'Ghost ${jwt}', mode: 'whatever' }), []);
+  assert.deepEqual(problems({ mode: 'whatever' }, 'API_KEY'), []);
+
+  for (const [change, expected] of [
+    [{ mode: 'plain' }, /mode must be "hmac" or "digest"/],
+    [{ placement: 'cookie' }, /placement must be/],
+    [{ encoding: 'base32' }, /encoding must be/],
+    [{ mode: 'hmac', secret: 'k' }, /"md5" is only accepted with signature.mode "digest"/],
+    [{ algorithm: 'sha3' }, /algorithm must be/],
+    [{ template: '' }, /needs signature.template/],
+    [{ secret: '{{GOOD_KEY}}' }, /does not use signature.secret/],
+    [{ bodyParams: { nested: { a: 1 } } }, /text, numbers or true\/false/],
+    [{ placement: 'query' }, /bodyParams only applies/],
+    [{ bodyParams: { sign: 'x' } }, /must not set "sign"/],
+    [{ timestampParam: 'sign' }, /must be different fields/],
+    [{ headerName: 'X-Sign' }, /do not apply to signature.placement "body"/],
+    [{ queryParams: { a: 'b' } }, /use signature.bodyParams/],
+  ]) {
+    const found = problems({ ...temu, ...change });
+    assert.ok(found.some((p) => expected.test(p)), `${JSON.stringify(change)} -> ${JSON.stringify(found)}`);
+  }
+  for (const [change, expected] of [
+    [{ nonceLength: 0 }, /whole number from 1 to 64/],
+    [{ nonceLength: 2.5 }, /whole number from 1 to 64/],
+    [{ nonceLength: undefined }, /\$\{nonce\} needs signature.nonceLength/],
+    [{ secret: 'k', headerTemplate: '${signature}' }, /used in neither template, secret nor headerTemplate/],
+    [{ headerTemplate: '${nonce}' }, /must contain \$\{signature\}/],
+    [{ placement: 'query' }, /headerTemplate does not apply/],
+    [{ mode: 'digest', secret: undefined, template: 'k${nonce}', headerTemplate: '${signature}' }, /^$/],
+  ]) {
+    const found = problems({ ...shein, ...change });
+    if (String(expected) === '/^$/') assert.deepEqual(found, []);
+    else assert.ok(found.some((p) => expected.test(p)), `${JSON.stringify(change)} -> ${JSON.stringify(found)}`);
+  }
+  assert.ok(problems({ mode: 'digest', template: 't', secret: 'k${nonce}', nonceLength: 5 }).some((p) => /has no effect/.test(p)));
+
+  const result = validateAdapter(adapter({ connector: { type: 'REST', authType: 'HMAC', authConfig: { signature: { ...temu, encoding: 'base32' } } } }), 'good.json', 'de');
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].rule, 'hmac-signature');
+  assert.equal(result.errors[0].path, 'connector.authConfig.signature');
+  assert.equal(result.errors[0].docs, 'hmac-signed-requests');
+  assert.match(docs, /^### HMAC-signed requests$/m);
+  assert.match(docs, /^#### Plain digest and body placement \(opt-in\)$/m);
+  assert.match(docs, /^#### Nonce and header template \(opt-in\)$/m);
 });

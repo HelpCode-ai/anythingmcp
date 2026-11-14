@@ -407,6 +407,46 @@ way. Set `tokenAuthMethod` to `private_key_jwt` and describe the signature under
   (`BEGIN EC PRIVATE KEY`). A key pasted into a single-line field, with its line breaks gone, still works.
   Passphrase-protected keys are refused with a message saying how to export one without a passphrase.
 
+#### Token answers inside a wrapper (`tokenResponsePath`)
+
+RFC 6749 §5.1 puts `access_token`, `refresh_token` and `expires_in` at the top level of the token answer,
+and that is where they are read. A few providers wrap them in an answer of their own. Joom's token and
+refresh calls answer:
+
+```json
+{ "code": 0, "message": "", "data": { "access_token": "…", "refresh_token": "…", "expires_in": 2592000 } }
+```
+
+Name the object that holds the token fields in `authConfig.tokenResponsePath`, as a dotted path of keys:
+
+```json
+"authConfig": {
+  "grant": "refresh_token",
+  "authorizationUrl": "https://api-merchant.joom.com/api/v2/oauth/authorize",
+  "tokenUrl": "https://api-merchant.joom.com/api/v2/oauth/access_token",
+  "refreshUrl": "https://api-merchant.joom.com/api/v2/oauth/refresh_token",
+  "tokenResponsePath": "data",
+  "pkce": false,
+  "clientId": "{{JOOM_CLIENT_ID}}",
+  "clientSecret": "{{JOOM_CLIENT_SECRET}}",
+  "refreshToken": "{{JOOM_REFRESH_TOKEN}}"
+}
+```
+
+- The setting applies to the authorization-code exchange, to every refresh and to the `client_credentials`
+  and `password` grants: the access token, the refresh token and the lifetime are all read from that object.
+- It is opt-in. Without it nothing changes: the fields are read at the top level and a `data` object in the
+  answer is not looked into.
+- When the answer has no object at the path, the sign-in or the renewal fails with a message that names
+  the path and quotes the provider's own top-level `code` and `message` (how these APIs report a refused
+  code or refresh token inside a `200`). Nothing else of the answer is quoted.
+- It is part of the adapter definition (or of a connector's `authConfig` set through the API); the connector
+  form has no field for it. `scripts/validate-adapters.mjs` checks it (rule `token-response-path`): a dotted
+  path of keys, on `OAUTH2` only.
+
+`refreshUrl`, in the same example, is for providers that renew at another address than the one that issues
+the first token; without it refreshes go to `tokenUrl`.
+
 ---
 
 ## Environment Variables

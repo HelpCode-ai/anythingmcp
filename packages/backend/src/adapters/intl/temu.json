@@ -1,0 +1,1493 @@
+{
+  "slug": "temu",
+  "name": "Temu",
+  "aliases": [
+    "Temu Seller",
+    "Temu Partner API",
+    "Temu Seller Center"
+  ],
+  "description": "Temu Partner API for sellers with a local shop: orders with buyer address and amounts, confirming shipments with your own carrier and tracking number, tracking, products and SKUs, stock, base prices, categories, and refund, return and cancellation requests. Self-developed app with App Key, App Secret and the shop's access token; calls are signed.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "temu",
+  "docsUrl": "https://partner.temu.com/documentation",
+  "instructions": "## Temu\nThis connector works with the **Temu Partner API** for sellers with a local shop (the order and shipping tools also serve semi-managed shops; the product, stock and price tools are the local ones): orders with buyer address and amounts, shipping orders with your own carrier and tracking number, tracking, products and SKUs, stock, base prices, categories, and refund, return and cancellation requests. Every call is a signed `POST` to one address, `/openapi/router`, with the operation name in the field `type`; the connector adds your app key, the access token, the timestamp and the signature.\n\n**Setup (about 20 minutes, plus Temu's review of your app)**\n1. On the Temu Partner Platform (https://partner-us.temu.com for the United States, https://partner-eu.temu.com for Europe, https://partner.temu.com for other countries) create an account, choose the partner type **Self-developed applications seller** and link your Seller Center **primary account**. One Seller Center account can have one self-developed app.\n2. Fill in the app information and the compliance and security questionnaires. Question 5 of the compliance part asks for the IP addresses your calls come from: enter the outbound IP address of this AnythingMCP server. Only these addresses may call the API, cloud providers in China are not accepted, and the server must be in the region of the shop (a United States address for a United States shop, a European one for a European shop). Later changes go through **Edit app information**, **Only IP address list and Support site**, and are reviewed again.\n3. After the approval copy the **App Key** into `TEMU_APP_KEY` and the **App Secret** into `TEMU_APP_SECRET`, and pick the region of the shop in `TEMU_REGION`.\n4. In Seller Center open **System Management, Authorization Management** (https://seller.temu.com/open-platform/client-manage, in Europe https://seller-eu.temu.com/open-platform/client-manage), click **Authorize a new app**, select your app and the permissions, submit, and copy the **Access Token** into `TEMU_ACCESS_TOKEN`.\n\nThe access token expires: the authorization list in Seller Center shows the date, and `temu_get_token_info` returns it as `expiredTime`. Authorize again and paste the new token then; AnythingMCP does not renew it.\n\n**Where to start**: `temu_get_token_info` shows the shop (`mallId`, `regionId`), the expiry and the operations the token may call. Then `temu_list_orders`.\n\n**Orders**: `temu_list_orders`, `temu_get_order`, `temu_get_order_shipping_address` (the buyer address, personal data), `temu_get_order_amount`. A purchase is a parent order (`parentOrderSn`, starts with `PO-`) with one sub-order (`orderSn`) per product line. Statuses: 1 pending (do not ship yet), 2 awaiting shipment, 3 cancelled, 4 shipped, 41 partially shipped, 5 delivered, 51 partially delivered.\n\n**Shipping**: read the carriers with `temu_list_carriers` (pass the region id) and the warehouses with `temu_list_warehouses`, then `temu_confirm_shipment` with the carrier id, the tracking number, the warehouse id and the order lines. `temu_list_combinable_orders` lists parent orders that may share a package. Check the result with `temu_get_shipment` and follow the package with `temu_get_tracking`. Before shipping look at `temu_list_cancel_requests`: `temu_agree_cancel_request` is installed switched off because it cancels the order and refunds the buyer.\n\n**Products, stock and prices**: `temu_list_products`, `temu_get_product`, `temu_list_skus`, `temu_list_categories`. `temu_get_stock` and `temu_update_stock` read and change stock per SKU. `temu_list_sku_prices` reads the base price, `temu_change_sku_price` asks Temu for a new one and `temu_list_price_offers` follows the request; the two price order tools work only for shops Temu has enabled. `temu_set_sale_status` (take a product off the shelf) is installed switched off.\n\n**Refunds and returns**: `temu_list_after_sales` lists them. Refunding, return labels and return decisions are not part of this connector.\n\n**Field notes**\n- Ids: `goodsId` is a product, `skuId` a variant, both numbers; `outGoodsSn` and `outSkuSn` are your own codes. Order numbers are text.\n- Times in orders and after-sales are Unix seconds; the creation filters of the product lists are Unix milliseconds.\n- Money is an object with `amount` and `currency`. Order amounts given as whole numbers are in the smallest unit of the currency (cents).\n- An answer has `success`, `errorCode`, `errorMsg` and `result`. The connector reports `success: false` as a failed call.\n- Rate limit: 20 calls per second per app at the start; some operations have their own (the product list 20, the price offers 10 per second). Error 4000004 means too many calls.\n\n**Errors**: 3000001 the signature is wrong (App Secret does not belong to the App Key). 3000026 unknown App Key. 3000031 unknown access token, 3000033 token and App Key do not belong together, 3000034 token expired or replaced. 3000032 the seller did not authorise this operation: authorise again with the permission ticked. 5000003 the calling IP address is not on the allow-list of the app. 3000011 and 3000012: the clock of the server is off by more than 300 seconds.\n\n**Not covered**: Temu shipping labels (Buy-Shipping), pickups, ads, promotions, creating and editing products, refunds.",
+  "prerequisites": "A Temu Seller Center primary account, a self-developed app on the Temu Partner Platform (Temu reviews it and asks for the IP addresses that will call the API), and the access token from authorizing the app in Seller Center. About 20 minutes, plus Temu's review.",
+  "requiresIpAllowlist": true,
+  "appRegistrationUrl": "https://partner.temu.com",
+  "requiredEnvVars": [
+    "TEMU_REGION",
+    "TEMU_APP_KEY",
+    "TEMU_APP_SECRET",
+    "TEMU_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "TEMU_REGION": {
+      "label": "Shop region",
+      "kind": "address",
+      "help": "Where the Temu shop is registered: it decides which Temu address is called. The app and the shop must be in the same region.",
+      "link": "https://partner.temu.com/documentation?menu_code=38e79b35d2cb463d85619c1c786dd303&sub_menu_code=8311de2b2d434e4d805e88413ab815d8",
+      "options": [
+        {
+          "value": "https://openapi-b-us.temu.com",
+          "label": "United States"
+        },
+        {
+          "value": "https://openapi-b-eu.temu.com",
+          "label": "Europe and United Kingdom"
+        },
+        {
+          "value": "https://openapi-b-global.temu.com",
+          "label": "Other countries (Mexico, Japan and others)"
+        }
+      ]
+    },
+    "TEMU_APP_KEY": {
+      "label": "App Key",
+      "kind": "setting",
+      "help": "Temu Partner Platform, your self-developed app: the App Key, shown once the app is approved.",
+      "link": "https://partner.temu.com",
+      "pattern": "^[0-9A-Za-z]{16,64}$",
+      "patternMessage": "Paste the App Key alone: letters and digits, no spaces."
+    },
+    "TEMU_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page as the App Key. It signs every call and is never sent.",
+      "link": "https://partner.temu.com",
+      "pattern": "^[0-9A-Za-z]{16,128}$",
+      "patternMessage": "Paste the App Secret alone: letters and digits, no spaces."
+    },
+    "TEMU_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Seller Center, System Management, Authorization Management: Authorize a new app, pick your app and its permissions, submit, and copy the Access Token. It expires on the date the authorization list shows; paste a new one then.",
+      "link": "https://seller.temu.com/open-platform/client-manage",
+      "pattern": "^[A-Za-z0-9]{20,200}$",
+      "patternMessage": "Paste the access token alone: letters and digits, no spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Temu refused the keys or the signature. Check that the App Key and the App Secret are of the same app, that the access token was created for this app in Seller Center and has not expired, and that the region is the one of the shop.",
+    "403": "Temu refused the call: the IP address of this server is not on the allow-list of your app (error 5000003), the seller did not authorise this operation (3000032), or the app is suspended. Add the address on the Temu Partner Platform, or authorize the app again in Seller Center with the permission ticked.",
+    "rate_limited": "Temu is rate limiting this app (20 calls per second at the start). Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "temu_get_token_info",
+    "params": {}
+  },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 20,
+    "examples": [
+      "Which Temu orders are waiting to be shipped?",
+      "Mark order PO-211-21905452099192792 as shipped with UPS, tracking 1Z999AA10123456784",
+      "Which of my Temu SKUs have fewer than 5 pieces in stock?",
+      "Set the stock of SKU 17592352673534 to 40"
+    ],
+    "needs": [
+      "Your Temu Seller Center primary account",
+      "About 20 minutes, plus Temu's review of your app",
+      "The outbound IP address of this AnythingMCP server, for Temu's allow-list"
+    ],
+    "why": "Temu lets a seller's own tools reach the shop only through a self-developed app registered on the Temu Partner Platform. Registering one is free: you link your Seller Center account, describe the app and answer Temu's security questions, and Temu reviews it.\n\nTemu accepts calls only from the IP addresses you list for the app, and the access token is created by you in Seller Center. AnythingMCP never sees your Temu password, and deleting the connector removes the keys.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Start your self-developed app",
+        "body": "On the Temu Partner Platform create an account and choose the partner type **Self-developed applications seller** (it cannot be changed later). Pick the business type of your shop, local or cross-border seller: Temu sends you to Seller Center to link your **primary account**. Then fill in the app information: a name, your shop, screenshots of the system that will use the API and the interfaces you want (orders, fulfillment, products, prices, after-sales).\n\nSellers in the United States register at partner-us.temu.com, sellers in Europe at partner-eu.temu.com, all others at partner.temu.com.",
+        "action": {
+          "label": "Open the Temu Partner Platform",
+          "url": "https://partner.temu.com"
+        },
+        "values": [
+          {
+            "label": "Partner type",
+            "value": "Self-developed applications seller",
+            "pick": true
+          }
+        ],
+        "confirm": "I filled in the app information",
+        "problems": [
+          {
+            "q": "Temu says my account already has an app",
+            "a": "Each Seller Center account can have one self-developed app. Use the one you have: its App Key and App Secret work here."
+          },
+          {
+            "q": "Which account do I link?",
+            "a": "The primary account of your Seller Center. Sub-accounts cannot be linked."
+          }
+        ]
+      },
+      {
+        "id": "allow-ip",
+        "title": "Add the address of this server",
+        "body": "The application continues with the **compliance and security questionnaires**. Question 5 of the compliance part asks for the **IP addresses** that will call the API: only these addresses are accepted. Enter the outbound IP address of this AnythingMCP server (AnythingMCP shows it in the setup of connectors that need an allow-list), and answer the questions about server country and cloud provider for that address. Submit and wait for Temu's approval.\n\nTemu does not accept cloud providers in China, and the server must be in the region of the shop: a United States address for a United States shop, a European one for a European shop. To change the address later, open the app, **Edit app information**, **Only IP address list and Support site**; Temu reviews the change.",
+        "action": {
+          "label": "Open the Temu Partner Platform",
+          "url": "https://partner.temu.com"
+        },
+        "confirm": "I entered the address and submitted the application",
+        "problems": [
+          {
+            "q": "Temu refuses the address for my region",
+            "a": "The server and the shop must be in the same region. A self-hosted AnythingMCP in the right region, with its own address on the list, solves it."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Paste the keys of the app",
+        "body": "Once Temu has approved the app, its page on the Partner Platform shows the **App Key** and the **App Secret**. Copy both, and pick the region of your shop.",
+        "action": {
+          "label": "Open the Temu Partner Platform",
+          "url": "https://partner.temu.com"
+        },
+        "fields": [
+          "TEMU_REGION",
+          "TEMU_APP_KEY",
+          "TEMU_APP_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "I see no App Key",
+            "a": "The keys appear after Temu approves the app. Until then the app is in review."
+          }
+        ]
+      },
+      {
+        "id": "authorize",
+        "title": "Authorize the app for your shop",
+        "body": "In Seller Center open **System Management**, then **Authorization Management**. Click **Authorize a new app**, select your app, tick the permissions the assistant should have (order, order fulfillment, product, price and after-sales management), and click **Submit**. Seller Center shows the **Access Token**: copy it here.\n\nIn Europe use seller-eu.temu.com. The authorization list shows when the token expires.",
+        "action": {
+          "label": "Open Authorization Management",
+          "url": "https://seller.temu.com/open-platform/client-manage"
+        },
+        "fields": [
+          "TEMU_ACCESS_TOKEN"
+        ],
+        "problems": [
+          {
+            "q": "My app is not in the list",
+            "a": "The app must be approved, and it must be linked to this Seller Center account."
+          },
+          {
+            "q": "The check says the IP address is not allowed",
+            "a": "Temu error 5000003: add the outbound address of this server to the app on the Partner Platform, then check again."
+          },
+          {
+            "q": "A tool says the token has no access to it",
+            "a": "Temu error 3000032: authorize the app again in Seller Center with that permission ticked, and paste the new token."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Temu Partner API",
+    "type": "REST",
+    "baseUrl": "{{TEMU_REGION}}",
+    "authType": "HMAC",
+    "authConfig": {
+      "signature": {
+        "mode": "digest",
+        "algorithm": "md5",
+        "encoding": "hex-upper",
+        "placement": "body",
+        "paramName": "sign",
+        "timestampParam": "timestamp",
+        "bodyParams": {
+          "app_key": "{{TEMU_APP_KEY}}",
+          "access_token": "{{TEMU_ACCESS_TOKEN}}",
+          "data_type": "JSON"
+        },
+        "template": "{{TEMU_APP_SECRET}}${sortedParams}{{TEMU_APP_SECRET}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "errorCode",
+          "in": [
+            3000001,
+            3000019,
+            3000020,
+            3000025,
+            3000026,
+            3000030,
+            3000031,
+            3000033,
+            3000034,
+            5000000
+          ],
+          "messagePath": [
+            "errorCode",
+            "errorMsg"
+          ],
+          "status": 401
+        },
+        {
+          "path": "errorCode",
+          "in": [
+            3000021,
+            3000022,
+            3000027,
+            3000028,
+            3000032,
+            5000003
+          ],
+          "messagePath": [
+            "errorCode",
+            "errorMsg"
+          ],
+          "status": 403
+        },
+        {
+          "path": "errorCode",
+          "equals": 4000004,
+          "messagePath": [
+            "errorCode",
+            "errorMsg"
+          ],
+          "status": 429
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "errorCode",
+            "errorMsg"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "temu_get_token_info",
+      "description": "Read what the access token stands for: mallId, mallType (1 semi-managed, 100 local), regionId of the shop (211 is the United States), expiredTime (when the token expires, Unix seconds) and apiScopeList (the operations the seller authorised). No parameters; the lightest call and the check that the keys, the signature, the region and the allowed IP address line up. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.open.accesstoken.info.get"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_list_orders",
+      "description": "List orders, newest first. Returns totalItemNum and pageItems, each with parentOrderMap (parentOrderSn, parentOrderStatus, parentOrderTime, expectShipLatestTime, latestDeliveryTime, regionId, labels such as soon_to_be_overdue or pending_buyer_cancellation) and orderList (orderSn, goodsId, skuId, goodsName, spec, quantity to fulfil, orderStatus, fulfillmentType). Statuses: 1 pending, 2 awaiting shipment, 3 cancelled, 4 shipped, 41 partially shipped, 5 delivered, 51 partially delivered. Times are Unix seconds. Paged with page_number and page_size. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "status": {
+            "type": "integer",
+            "description": "Only parent orders in this status: 0 all, 1 pending, 2 awaiting shipment, 3 cancelled, 4 shipped, 5 received, 41 partially shipped, 51 partially received.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              41,
+              51
+            ]
+          },
+          "parent_order_sns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these parent order numbers, at most 100.",
+            "maxItems": 100
+          },
+          "order_sns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these order numbers (sub-orders), at most 100.",
+            "maxItems": 100
+          },
+          "created_after": {
+            "type": "integer",
+            "description": "Parent orders created from this moment, Unix timestamp in seconds. Use together with created_before."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Parent orders created up to this moment, Unix timestamp in seconds. Use together with created_after."
+          },
+          "updated_after": {
+            "type": "integer",
+            "description": "Parent orders whose status changed from this moment, Unix timestamp in seconds. Use together with updated_before."
+          },
+          "updated_before": {
+            "type": "integer",
+            "description": "Parent orders whose status changed up to this moment, Unix timestamp in seconds. Use together with updated_after."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort, newest first: createTime (default) or updateTime.",
+            "enum": [
+              "createTime",
+              "updateTime"
+            ]
+          },
+          "sku_id": {
+            "type": "integer",
+            "description": "Only orders that contain this SKU id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.order.list.v2.get",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size",
+          "parentOrderStatus": "$status",
+          "parentOrderSnList": "$parent_order_sns",
+          "orderSnList": "$order_sns",
+          "createAfter": "$created_after",
+          "createBefore": "$created_before",
+          "updateAtStart": "$updated_after",
+          "updateAtEnd": "$updated_before",
+          "sortby": "$sort_by",
+          "skuId": "$sku_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_get_order",
+      "description": "Read one parent order with its sub-orders: parentOrderMap (status, order, confirmation and latest shipment times, region names, payment type COD or PPD, shipping method) and orderList (orderSn, goodsId, skuId, names and specification, quantity, cancelled quantity, orderStatus, productList with your item code extCode, packageSnInfo with package numbers, labels and fulfilment warnings). The buyer address is in temu_get_order_shipping_address. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_order_sn": {
+            "type": "string",
+            "description": "Parent order number, e.g. PO-211-21905452099192792 (parentOrderSn)."
+          }
+        },
+        "required": [
+          "parent_order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.order.detail.v2.get",
+          "parentOrderSn": "$parent_order_sn"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_get_order_shipping_address",
+      "description": "Read the delivery address of one parent order: receiptName, mobile, virtual mail address, regionName1 to regionName4 (country, state, city, district), addressLine1 to addressLine3, postCode, addressLineAll, and a warning when the address is restricted. Personal data: use it only to ship the order. Not available in every country (error 180020001) and only after the data processing agreement is signed in Seller Center (error 180020008). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_order_sn": {
+            "type": "string",
+            "description": "Parent order number, e.g. PO-211-21905452099192792 (parentOrderSn)."
+          }
+        },
+        "required": [
+          "parent_order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.order.shippinginfo.v2.get",
+          "parentOrderSn": "$parent_order_sn"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_get_order_amount",
+      "description": "Read the amounts of one parent order: sales proceeds (base price total, seller discount, shipping, product and shipping tax, estimated deduction, estimatedSettlementTotal) and what the customer paid, for the parent order and per sub-order. Each amount is an object with amount and currency. Available only in some marketplaces. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_order_sn": {
+            "type": "string",
+            "description": "Parent order number, e.g. PO-211-21905452099192792 (parentOrderSn)."
+          }
+        },
+        "required": [
+          "parent_order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "temu.order.amount.v2.query",
+          "parentOrderSn": "$parent_order_sn"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_list_combinable_orders",
+      "description": "List the groups of parent orders that may be shipped together in one package (same buyer and address): combinedShippingGroups, each a list with parentOrderSn, parentOrderStatus and parentOrderTime. Use it before temu_confirm_shipment with send_type 2. No parameters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.order.combinedshipment.list.get"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_list_warehouses",
+      "description": "List the shop's shipping warehouses: warehouseId, warehouseName, regionId1, defaultWarehouse, warehouseManagementType (0 cooperative, 1 self built, 2 family) and whether Temu shipping labels can be bought for it. temu_confirm_shipment needs a warehouseId. No parameters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.logistics.warehouse.list.get"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_list_carriers",
+      "description": "List the carriers Temu accepts for a region: logisticsServiceProviderId (the carrierId of temu_confirm_shipment), logisticsServiceProviderName and logisticsBrandName. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "integer",
+            "description": "Region id of the shop or order, e.g. 211 for the United States (regionId of temu_get_token_info or of an order)."
+          }
+        },
+        "required": [
+          "region_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.logistics.companies.get",
+          "regionId": "$region_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_confirm_shipment",
+      "description": "Mark orders as shipped with your own carrier and tracking number: the order moves from awaiting shipment to shipped and the buyer sees the tracking. It buys no label and costs nothing. Take carrierId from temu_list_carriers, selfShippingWarehouseId from temu_list_warehouses, and the order numbers, goodsId, skuId and quantity from temu_get_order. Returns warningMessage when Temu doubts the carrier or number. A shipped order cannot be confirmed again (error 120012004); some shops are limited to Temu labels (errors 120011123, 120012076).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "send_type": {
+            "type": "integer",
+            "description": "0: all products of one parent order in one package with one tracking number. 1: one parent order in several packages, all of them in this one call. 2: several parent orders in one package (see temu_list_combinable_orders).",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 0
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "carrierId": {
+                  "type": "integer",
+                  "description": "Carrier id (logisticsServiceProviderId of temu_list_carriers)."
+                },
+                "trackingNumber": {
+                  "type": "string",
+                  "description": "Tracking number of the package."
+                },
+                "selfShippingWarehouseId": {
+                  "type": "string",
+                  "description": "Warehouse the package ships from (warehouseId of temu_list_warehouses)."
+                },
+                "orderSendInfoList": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "parentOrderSn": {
+                        "type": "string",
+                        "description": "Parent order number."
+                      },
+                      "orderSn": {
+                        "type": "string",
+                        "description": "Order number (sub-order)."
+                      },
+                      "goodsId": {
+                        "type": "integer",
+                        "description": "Goods id of the order line."
+                      },
+                      "skuId": {
+                        "type": "integer",
+                        "description": "SKU id of the order line."
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Pieces of this line in the package.",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "parentOrderSn",
+                      "orderSn",
+                      "quantity"
+                    ]
+                  },
+                  "description": "The order lines in this package.",
+                  "minItems": 1
+                },
+                "confirmAcceptance": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "DENY_CANCELLATION",
+                      "DENY_ADDRESS_CHANGE",
+                      "DENY_PARENT_RISK_WARNING"
+                    ]
+                  },
+                  "description": "Ship although the buyer asked to cancel or to change the address, or despite Temu's risk warning: only when the seller said so."
+                }
+              },
+              "required": [
+                "carrierId",
+                "trackingNumber",
+                "selfShippingWarehouseId",
+                "orderSendInfoList"
+              ]
+            },
+            "description": "One entry per package.",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "send_type",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.logistics.shipment.v2.confirm",
+          "sendType": "$send_type",
+          "sendRequestList": "$packages"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "temu_get_shipment",
+      "description": "Read how one order was shipped: shipmentInfoDTO with carrierId, carrierName, trackingNumber, skuId, quantity, packageSn, packageDeliveryType (1 seller with own carrier, 2 seller with a Temu label, 3 and 4 the same for a cooperative warehouse) and trackingWarningLabel (0 no issue, 1 no tracking information, 2 possibly incorrect). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_order_sn": {
+            "type": "string",
+            "description": "Parent order number, e.g. PO-211-21905452099192792 (parentOrderSn)."
+          },
+          "order_sn": {
+            "type": "string",
+            "description": "Order number (sub-order, orderSn of temu_get_order)."
+          }
+        },
+        "required": [
+          "parent_order_sn",
+          "order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.logistics.shipment.v2.get",
+          "parentOrderSn": "$parent_order_sn",
+          "orderSn": "$order_sn"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_get_tracking",
+      "description": "Read the tracking events of one package: trackingNum (the last-mile number) and trackingInfo, each with logisticsUpdatedAt (Unix seconds), logisticsStatus and statusText. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_sn": {
+            "type": "string",
+            "description": "Package number (packageSn of temu_get_order or temu_get_shipment)."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the status texts, e.g. en. English when the language is not supported."
+          }
+        },
+        "required": [
+          "package_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "temu.track.trackinginfo.get",
+          "packageSn": "$package_sn",
+          "language": "$language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_list_products",
+      "description": "List the products of the shop. Returns total and goodsList with goodsId, goodsName, specName, outGoodsSn (your product code), status and sub-status, price and retailPrice (amount and currency), quantity in stock, catId, skuIdList, outSkuSnList and crtTime. Paged with page_no and page_size (at most 100). At most 20 calls per second for the app. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_no": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "status": {
+            "type": "integer",
+            "description": "Product status: 1 available or off the shelf, 4 not yet published, 5 draft, 6 deleted.",
+            "enum": [
+              1,
+              4,
+              5,
+              6
+            ],
+            "default": 1
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Search by product name or goods id."
+          },
+          "goods_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these goods ids."
+          },
+          "cat_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these category ids (leaf or not)."
+          },
+          "order_field": {
+            "type": "string",
+            "description": "Sort field; creation time when left out.",
+            "enum": [
+              "goodsId",
+              "createTime",
+              "goodsName",
+              "outGoodsSn",
+              "quantity",
+              "price"
+            ]
+          },
+          "order_type": {
+            "type": "integer",
+            "description": "0 descending (default), 1 ascending.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "created_from": {
+            "type": "integer",
+            "description": "Created from this moment, Unix timestamp in milliseconds (13 digits)."
+          },
+          "created_to": {
+            "type": "integer",
+            "description": "Created up to this moment, Unix timestamp in milliseconds (13 digits)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.list.query",
+          "pageNo": "$page_no",
+          "pageSize": "$page_size",
+          "goodsStatusFilterType": "$status",
+          "searchText": "$search_text",
+          "goodsIdList": "$goods_ids",
+          "catIdList": "$cat_ids",
+          "orderField": "$order_field",
+          "orderType": "$order_type",
+          "crtFrom": "$created_from",
+          "crtTo": "$created_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_get_product",
+      "description": "Read one product in full: goodsName, goodsDesc, bulletPoints, catId and catName, outGoodsSn, product type, gallery (carousel and detail images, videos), service promise (shipping days, shipping template), and its SKUs with specifications, codes, prices, dimensions and weight. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goods_id": {
+            "type": "integer",
+            "description": "Goods id (goodsId of temu_list_products)."
+          },
+          "version": {
+            "type": "integer",
+            "description": "2 the version that is live (default), 1 the latest edit still under review.",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the texts, e.g. en."
+          }
+        },
+        "required": [
+          "goods_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.detail.query",
+          "goodsId": "$goods_id",
+          "versionQueryType": "$version",
+          "language": "$language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_list_skus",
+      "description": "List SKUs (variants) across products. Returns total and skuList with skuId, skuSn (your SKU code), goodsId, goodsName, specName and specList, stock, price and retailPrice (amount and currency), status, whether the product is on sale, weight and volume. Paged with page_no and page_size (at most 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_no": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "SKUs per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "status": {
+            "type": "integer",
+            "description": "SKU status: 2 available for sale, 3 not available for sale.",
+            "enum": [
+              2,
+              3
+            ],
+            "default": 2
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Search by product name, goods id or SKU code."
+          },
+          "sku_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these SKU ids."
+          },
+          "cat_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these category ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.sku.list.query",
+          "pageNo": "$page_no",
+          "pageSize": "$page_size",
+          "skuStatusFilterType": "$status",
+          "searchText": "$search_text",
+          "skuIdList": "$sku_ids",
+          "catIdList": "$cat_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_get_stock",
+      "description": "Read the stock of SKUs: stockList per goodsId with skuStockInfoList (skuId, outSkuSn, selfOrdinaryStock, selfPreSaleStock and certOrdinaryStock, each with stockType and stock in pieces). Give a goods id, SKU ids or your SKU codes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goods_id": {
+            "type": "integer",
+            "description": "Goods id: all its SKUs."
+          },
+          "sku_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "SKU ids."
+          },
+          "out_sku_sns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Your SKU codes (outSkuSn)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "temu.local.goods.sku.stock.query",
+          "goodsId": "$goods_id",
+          "skuIdList": "$sku_ids",
+          "outSkuSnList": "$out_sku_sns"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_update_stock",
+      "description": "Change the stock of SKUs of one product: set it to a target quantity (targets) or add and subtract (changes). Returns skuStockEditStatusInfoList with stockEditStatus per SKU and an errorMsg where it failed, plus operateResult. Stock 0 makes the SKU unavailable to buyers. Use request_key so a repeated call is refused instead of applied twice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goods_id": {
+            "type": "integer",
+            "description": "Goods id of the product."
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skuId": {
+                  "type": "integer",
+                  "description": "SKU id."
+                },
+                "stockTarget": {
+                  "type": "integer",
+                  "description": "New stock in pieces.",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "skuId",
+                "stockTarget"
+              ]
+            },
+            "description": "Set the stock of these SKUs to a quantity."
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skuId": {
+                  "type": "integer",
+                  "description": "SKU id."
+                },
+                "stockDiff": {
+                  "type": "integer",
+                  "description": "Pieces to add (positive) or remove (negative)."
+                }
+              },
+              "required": [
+                "skuId",
+                "stockDiff"
+              ]
+            },
+            "description": "Add to or subtract from the stock of these SKUs."
+          },
+          "stock_type": {
+            "type": "integer",
+            "description": "0 ordinary stock (default), 1 pre-sale stock.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "request_key": {
+            "type": "string",
+            "description": "Your own unique id for this change; Temu rejects a second request with the same id.",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "goods_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.stock.edit",
+          "goodsId": "$goods_id",
+          "skuStockTargetList": "$targets",
+          "skuStockChangeList": "$changes",
+          "stockType": "$stock_type",
+          "requestUniqueKey": "$request_key"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "temu_list_sku_prices",
+      "description": "Read the current base price (the price Temu pays the seller) of SKUs of one product: per SKU skuId and supplierPrice with amount and currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goods_id": {
+            "type": "integer",
+            "description": "Goods id of the product."
+          },
+          "sku_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "SKU ids of that product.",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "goods_id",
+          "sku_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.sku.list.price.query",
+          "querySupplierPriceBaseList": [
+            {
+              "goodsId": "$goods_id",
+              "skuIdList": "$sku_ids"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_list_price_offers",
+      "description": "List price offers (price orders): Temu's pricing assessments and price change requests with priceOrderId, goodsId, skuIdList, pricingType, status, the reference, source, target and final base price (amount and currency) and a rejection reason. Only for shops Temu has enabled for it. At most 10 calls per second. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "size": {
+            "type": "integer",
+            "description": "Offers per page, below 100.",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 20
+          },
+          "type": {
+            "type": "integer",
+            "description": "1 offers for pricing assessment (default), 2 offers for pricing opportunities or modifications.",
+            "enum": [
+              1,
+              2
+            ]
+          },
+          "goods_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these goods ids, as text."
+          },
+          "price_order_sns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these price order numbers."
+          },
+          "status": {
+            "type": "integer",
+            "description": "Only offers in this status (a status value of an earlier answer)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.priceorder.query",
+          "page": "$page",
+          "size": "$size",
+          "priceOrderType": "$type",
+          "goodsIdList": "$goods_ids",
+          "priceOrderSnList": "$price_order_sns",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_change_sku_price",
+      "description": "Ask Temu to change the base price of SKUs of one product. Returns successSkuList, failedSkuList with failedSkuReasonMap, and successPriceOrderList (the price orders created, to follow with temu_list_price_offers). Temu reviews the request; the price does not change at once. Only for shops Temu has enabled for it. Read the current price and its currency with temu_list_sku_prices first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goods_id": {
+            "type": "integer",
+            "description": "Goods id of the product."
+          },
+          "price_changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "description": "Why the price changes."
+                },
+                "skuChangePriceBaseDTOList": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "skuId": {
+                        "type": "integer",
+                        "description": "SKU id."
+                      },
+                      "newSupplierPrice": {
+                        "type": "object",
+                        "description": "The new base price.",
+                        "properties": {
+                          "amount": {
+                            "type": "string",
+                            "description": "Amount as text, in the form temu_list_sku_prices returns it."
+                          },
+                          "currency": {
+                            "type": "string",
+                            "description": "Currency code as temu_list_sku_prices returns it, e.g. USD."
+                          }
+                        },
+                        "required": [
+                          "amount",
+                          "currency"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "skuId",
+                      "newSupplierPrice"
+                    ]
+                  },
+                  "description": "The SKUs and their new base price.",
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "skuChangePriceBaseDTOList"
+              ]
+            },
+            "description": "One entry per reason, each with its SKUs.",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "goods_id",
+          "price_changes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.priceorder.change.sku.price",
+          "goodsId": "$goods_id",
+          "changeSkuPriceDTOList": "$price_changes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "temu_list_categories",
+      "description": "List the categories below a parent category: catId, catName, level, parentId, leaf (products go into leaf categories only), catType and availableStatus (0 available). Start with parent 0 for the top level and walk down. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_cat_id": {
+            "type": "integer",
+            "description": "Parent category id; 0 for the top-level categories.",
+            "minimum": 0,
+            "default": 0
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the names, e.g. en."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.cats.get",
+          "parentCatId": "$parent_cat_id",
+          "language": "$language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_set_sale_status",
+      "description": "Take a product or some of its SKUs off the shelf, or put them back on sale. Off the shelf, buyers can no longer order it. Returns success. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "goods_id": {
+            "type": "integer",
+            "description": "Goods id of the product."
+          },
+          "on_sale": {
+            "type": "integer",
+            "description": "0 off the shelf, 1 on the shelf.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "sku_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these SKUs; set operation_type to 2 with it."
+          },
+          "operation_type": {
+            "type": "integer",
+            "description": "1 the whole product (default), 2 the SKUs in sku_ids.",
+            "enum": [
+              1,
+              2
+            ]
+          }
+        },
+        "required": [
+          "goods_id",
+          "on_sale"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.local.goods.sale.status.set",
+          "goodsId": "$goods_id",
+          "onsale": "$on_sale",
+          "skuIdList": "$sku_ids",
+          "operationType": "$operation_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "temu_list_after_sales",
+      "description": "List refund and return requests. Returns total and data with parentAfterSalesSn, parentOrderSn, afterSalesType (1 refund only, 2 return and refund), parentAfterSalesStatus (1 refund requested, 2 return package shipped, 3 return received, 4 and 9 refund in progress, 5 refunded, 6 cancelled by the buyer, 7 rejected, 8 waiting for the return label, 10 return requested, 11 under platform review), createAt and updateAt (Unix seconds) and returnDeliveryType. A creation or an update time range is required. Read-only; this connector does not refund.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "integer",
+            "description": "Requests created from this moment, Unix timestamp in seconds. Use together with created_before."
+          },
+          "created_before": {
+            "type": "integer",
+            "description": "Requests created up to this moment, Unix timestamp in seconds."
+          },
+          "updated_after": {
+            "type": "integer",
+            "description": "Requests whose status changed from this moment, Unix timestamp in seconds. Use together with updated_before."
+          },
+          "updated_before": {
+            "type": "integer",
+            "description": "Requests whose status changed up to this moment, Unix timestamp in seconds."
+          },
+          "status_group": {
+            "type": "integer",
+            "description": "1 pending, 2 requested, 3 package shipped, 4 platform reviewing, 5 refunded, 6 rejected, 7 cancelled.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ]
+          },
+          "parent_order_sns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these parent order numbers."
+          },
+          "page_no": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Requests per page, 1 to 200.",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.aftersales.parentaftersales.list.get",
+          "createAtStart": "$created_after",
+          "createAtEnd": "$created_before",
+          "updateAtStart": "$updated_after",
+          "updateAtEnd": "$updated_before",
+          "afterSalesStatusGroup": "$status_group",
+          "parentOrderSnList": "$parent_order_sns",
+          "pageNo": "$page_no",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_list_cancel_requests",
+      "description": "List buyers' requests to cancel an order before it ships: total and data with parentAfterSalesSn, parentAfterSalesStatus and afterSalesInfoList. Check it before shipping: an order with a pending request carries the label pending_buyer_cancellation. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_group": {
+            "type": "integer",
+            "description": "8 pending, 9 approved, 10 rejected, 11 revoked.",
+            "enum": [
+              8,
+              9,
+              10,
+              11
+            ]
+          },
+          "parent_order_sns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these parent order numbers, at most 200.",
+            "maxItems": 200
+          },
+          "page_no": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Requests per page, 1 to 200.",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.aftersales.cancel.list.get",
+          "afterSalesStatusGroup": "$status_group",
+          "parentOrderSnList": "$parent_order_sns",
+          "pageNo": "$page_no",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "temu_agree_cancel_request",
+      "description": "Agree to a buyer's request to cancel an order: the order is cancelled and the buyer refunded by Temu. It cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_after_sales_sn": {
+            "type": "string",
+            "description": "Parent after-sales number of the request (parentAfterSalesSn of temu_list_cancel_requests)."
+          },
+          "parent_order_sn": {
+            "type": "string",
+            "description": "Parent order number, e.g. PO-211-21905452099192792 (parentOrderSn)."
+          }
+        },
+        "required": [
+          "parent_after_sales_sn",
+          "parent_order_sn"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/openapi/router",
+        "bodyMapping": {
+          "type": "bg.aftersales.cancel.agree",
+          "parentAfterSalesSn": "$parent_after_sales_sn",
+          "parentOrderSn": "$parent_order_sn"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

@@ -191,6 +191,41 @@ export function loginTokenXmlProblems(adapter) {
   return problems;
 }
 
+const LOGIN_TOKEN_SOURCES = ['body', 'cookie', 'header'];
+
+/**
+ * LOGIN_TOKEN reads the token from the login answer's body (default), a
+ * cookie or, with tokenSource "header", a response header named by
+ * tokenHeaderName (Ceneo answers it in `access_token`). LoginTokenService
+ * refuses a header source without a name at sign-in, and reads the body for a
+ * source it does not know; both fail here instead.
+ */
+export function loginTokenSourceProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object') return [];
+  const problems = [];
+  const { tokenSource, tokenHeaderName } = cfg;
+  if (tokenSource === undefined && tokenHeaderName === undefined) return problems;
+  if (connector.authType !== 'LOGIN_TOKEN') {
+    for (const field of ['tokenSource', 'tokenHeaderName']) {
+      if (cfg[field] !== undefined) problems.push(`${field} only applies to LOGIN_TOKEN authentication`);
+    }
+    return problems;
+  }
+  if (tokenSource !== undefined && !LOGIN_TOKEN_SOURCES.includes(tokenSource)) {
+    problems.push(`tokenSource must be one of ${LOGIN_TOKEN_SOURCES.join(', ')}`);
+  }
+  if (tokenSource === 'header') {
+    // RFC 9110 field-name characters: what a response header can be called.
+    if (typeof tokenHeaderName !== 'string' || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(tokenHeaderName)) {
+      problems.push('tokenSource "header" needs authConfig.tokenHeaderName, the name of the response header that carries the token');
+    }
+  } else if (tokenHeaderName !== undefined) {
+    problems.push('tokenHeaderName is only read with tokenSource "header"');
+  }
+  return problems;
+}
+
 const BLOCK_NAME = '[A-Za-z_][A-Za-z0-9_]*';
 const OPTIONAL_BLOCK = new RegExp('^' + BLOCK_NAME + '(?:\\|' + BLOCK_NAME + ')*$');
 const REPEATED_BLOCK = new RegExp('^' + BLOCK_NAME + '$');
@@ -236,6 +271,87 @@ export function xmlTemplateBlockProblems(endpointMapping) {
       if (depth < 0) break;
     }
     if (depth !== 0) problems.push(`the block ${expr} is not closed once for every time it is opened (${BLOCK_OPENERS.close}${expr}})`);
+  }
+  return problems;
+}
+
+/**
+ * OAUTH2 token answers are read at the top level (RFC 6749). An adapter whose
+ * provider wraps the token fields names the wrapper in
+ * authConfig.tokenResponsePath, a dotted path of keys ("data"); see
+ * token-response.util.ts.
+ */
+export function tokenResponsePathProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object' || cfg.tokenResponsePath === undefined) return [];
+  if (connector.authType !== 'OAUTH2') return ['tokenResponsePath only applies to OAUTH2 authentication'];
+  const path = cfg.tokenResponsePath;
+  if (typeof path !== 'string' || !/^[A-Za-z0-9_$-]+(\.[A-Za-z0-9_$-]+)*$/.test(path)) {
+    return ['tokenResponsePath must be a dotted path of keys to the object that holds the token fields, such as "data"'];
+  }
+  return [];
+}
+
+const SIGNATURE_MODES = new Set(['hmac', 'digest']);
+const SIGNATURE_PLACEMENTS = new Set(['header', 'query', 'body']);
+const SIGNATURE_ENCODINGS = new Set(['hex', 'base64', 'hex-upper', 'hex-base64']);
+const HMAC_ALGORITHMS = new Set(['sha256', 'sha1', 'sha512']);
+
+/**
+ * `authConfig.signature` of an HMAC connector: the options added for a plain
+ * digest in the JSON body (Temu) and for a nonce in the key with a wrapped
+ * header value (SHEIN). The engine (applyHmacSignature in
+ * packages/backend/src/connectors/engines/rest.engine.ts) reads these fields
+ * leniently, so a typing mistake here would sign differently without failing:
+ * the mistakes are refused at this gate instead. A signed-JWT signature
+ * (`signature.jwt`) has its own fields and is not checked here.
+ */
+export function hmacSignatureProblems(connector) {
+  const sig = connector?.authConfig?.signature;
+  if (connector?.authType !== 'HMAC' || !sig || typeof sig !== 'object' || Array.isArray(sig) || sig.jwt !== undefined) return [];
+  const problems = [];
+  const mode = sig.mode ?? 'hmac';
+  const placement = sig.placement ?? 'header';
+  const template = typeof sig.template === 'string' ? sig.template : '';
+  const secret = typeof sig.secret === 'string' ? sig.secret : '';
+  const headerTemplate = typeof sig.headerTemplate === 'string' ? sig.headerTemplate : '';
+  const usesNonce = (text) => text.includes('${nonce}');
+
+  if (!SIGNATURE_MODES.has(mode)) problems.push('signature.mode must be "hmac" or "digest"');
+  if (!SIGNATURE_PLACEMENTS.has(placement)) problems.push('signature.placement must be "header", "query" or "body"');
+  if (sig.encoding !== undefined && !SIGNATURE_ENCODINGS.has(sig.encoding)) problems.push('signature.encoding must be "hex", "base64", "hex-upper" or "hex-base64"');
+  if (sig.algorithm !== undefined && !HMAC_ALGORITHMS.has(sig.algorithm) && !(sig.algorithm === 'md5' && mode === 'digest')) {
+    problems.push(sig.algorithm === 'md5'
+      ? 'signature.algorithm "md5" is only accepted with signature.mode "digest"'
+      : 'signature.algorithm must be "sha256", "sha1" or "sha512" (or "md5" with signature.mode "digest")');
+  }
+  if (mode === 'digest') {
+    if (!template.trim()) problems.push('signature.mode "digest" needs signature.template: a plain hash has no key, so the template must hold the secret where the vendor puts it');
+    if (sig.secret !== undefined) problems.push('signature.mode "digest" does not use signature.secret: put the secret in signature.template');
+  }
+  if (sig.bodyParams !== undefined) {
+    const flat = sig.bodyParams && typeof sig.bodyParams === 'object' && !Array.isArray(sig.bodyParams)
+      && Object.values(sig.bodyParams).every((v) => ['string', 'number', 'boolean'].includes(typeof v));
+    if (!flat) problems.push('signature.bodyParams must map field names to text, numbers or true/false');
+    if (placement !== 'body') problems.push('signature.bodyParams only applies to signature.placement "body"');
+  }
+  if (placement === 'body') {
+    const paramName = sig.paramName ?? 'sign';
+    if (sig.bodyParams && typeof sig.bodyParams === 'object' && paramName in sig.bodyParams) problems.push(`signature.bodyParams must not set "${paramName}", the field the signature is written to`);
+    if (sig.timestampParam !== undefined && sig.timestampParam === paramName) problems.push('signature.timestampParam and signature.paramName must be different fields');
+    if (sig.headerName !== undefined || sig.headerTemplate !== undefined) problems.push('signature.headerName and signature.headerTemplate do not apply to signature.placement "body"');
+    if (sig.queryParams !== undefined) problems.push('signature.queryParams does not apply to signature.placement "body": use signature.bodyParams');
+  }
+  if (sig.nonceLength !== undefined) {
+    if (!Number.isInteger(sig.nonceLength) || sig.nonceLength < 1 || sig.nonceLength > 64) problems.push('signature.nonceLength must be a whole number from 1 to 64');
+    if (!usesNonce(template) && !usesNonce(secret) && !usesNonce(headerTemplate)) problems.push('signature.nonceLength is set, but ${nonce} is used in neither template, secret nor headerTemplate');
+  } else if (usesNonce(template) || usesNonce(secret) || usesNonce(headerTemplate)) {
+    problems.push('${nonce} needs signature.nonceLength');
+  }
+  if (mode === 'digest' && usesNonce(secret)) problems.push('${nonce} in signature.secret has no effect with signature.mode "digest"');
+  if (sig.headerTemplate !== undefined) {
+    if (!headerTemplate.includes('${signature}')) problems.push('signature.headerTemplate must contain ${signature}');
+    if (placement === 'query') problems.push('signature.headerTemplate does not apply to signature.placement "query"');
   }
   return problems;
 }
@@ -709,6 +825,18 @@ export function validateAdapter(adapter, file, region) {
 
   for (const problem of loginBasicAuthProblems(adapter.connector)) {
     errors.push(error('login-basic-auth', 'connector.authConfig.loginBasicAuth', problem, 'With loginBasicAuth: true the engine sends Authorization: Basic base64(username:password) on the login request; give username and password, and keep the password out of loginBody and loginHeaders.', 'authentication'));
+  }
+
+  for (const problem of loginTokenSourceProblems(adapter.connector)) {
+    errors.push(error('login-token-source', 'connector.authConfig.tokenSource', problem, 'Leave tokenSource out to read the token from the body (tokenJsonPath), use "cookie" with cookieName, or "header" with tokenHeaderName, e.g. "tokenSource": "header", "tokenHeaderName": "access_token".', 'authentication'));
+  }
+
+  for (const problem of tokenResponsePathProblems(adapter.connector)) {
+    errors.push(error('token-response-path', 'connector.authConfig.tokenResponsePath', problem, 'Set it only when the token endpoint wraps access_token, refresh_token and expires_in in another object, e.g. "tokenResponsePath": "data"; leave it out when they are at the top level.', 'authentication'));
+  }
+
+  for (const problem of hmacSignatureProblems(adapter.connector)) {
+    errors.push(error('hmac-signature', 'connector.authConfig.signature', problem, 'See the tables under "Plain digest and body placement" and "Nonce and header template" for the fields and their values.', 'hmac-signed-requests'));
   }
 
   if (adapter.checkBeforeAuthorization !== undefined) {

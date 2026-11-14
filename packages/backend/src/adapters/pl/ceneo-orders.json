@@ -1,0 +1,487 @@
+{
+  "slug": "ceneo-orders",
+  "name": "Ceneo: Kup na Ceneo orders",
+  "description": "Orders of the \"Kup na Ceneo\" checkout for shops on Ceneo.pl, Poland's largest price comparison site: read orders with items, delivery and invoice data, attach tracking numbers, mark orders as sent, plus Ceneo's categories and their most popular products. API key from Panel Ceneo.",
+  "instructions": "## Ceneo: Kup na Ceneo orders\nThis connector works with the order part of the **Ceneo API** at `https://developers.ceneo.pl`, for shops that sell through \"Kup na Ceneo\", the checkout on Ceneo.pl, Poland's largest price comparison site: read the orders with their items, delivery and invoice data, attach tracking numbers, mark orders as sent, and look up Ceneo's categories and their most popular products.\n\n**What it needs**: a shop integrated with Ceneo.pl that has \"Kup na Ceneo\" switched on, and the shop's API key. Price analysis, position bids, quick offer updates and the call limits are in the separate **Ceneo** connector (`ceneo`), which works with the same key and does not need \"Kup na Ceneo\".\n\n**Setup (about 3 minutes)**\n1. Sign in to **Panel Ceneo** with your shop account and copy the shop's **API key** (a code of the form `F7869662-F334-427C-94B9-2D876BFCD589`). The key does not expire and can be changed in Panel Ceneo.\n2. Paste it into `CENEO_API_KEY`.\n\nWith the key the connector asks Ceneo for a token that lasts 15 minutes and renews it on its own. You never handle the token yourself.\n\n**Where to start**: `ceneo_orders_list_order_states` proves the key works and explains the state ids. `ceneo_orders_list_orders` shows the newest orders; add the filter `OrderStateId eq 1` (with the id you need) for one state.\n\n**Reading orders**: `ceneo_orders_list_orders` lists orders, newest first, and takes OData options: `filter`, `orderby`, and `skip` for the next page. An order is addressed by its `Id`, a GUID, not by `DisplayedOrderId` (the number the buyer sees) or `ShopOrderId` (your own number). `ceneo_orders_get_order` reads one order, `ceneo_orders_get_order_items` its products, `ceneo_orders_get_order_shipping_data` the delivery address and contact, `ceneo_orders_get_order_invoice_data` the invoice data and `ceneo_orders_get_order_pickup_point` the parcel locker or collection point.\n\n**Shipping**: `ceneo_orders_set_order_shipment` attaches the tracking number with a carrier id from `ceneo_orders_list_parcel_carriers`, then `ceneo_orders_send_order` marks the order as sent.\n\n**Confirming and cancelling**: `ceneo_orders_confirm_order` accepts an order and `ceneo_orders_cancel_order` cancels it with a reason from `ceneo_orders_list_cancellation_reasons`, which refunds a paid order. Both commit the shop towards the buyer and are installed switched off; switch them on only if the assistant may decide that.\n\n**Categories**: `ceneo_orders_list_categories` lists Ceneo's categories with their parents. `ceneo_orders_get_top_category_products` returns the up to 100 most popular products of a category, by the category name, with the lowest price and whether you sell or bid on them. They are here because Ceneo gives them out with the same token as the orders.\n\n**Writes are GET requests in this API.** `ceneo_orders_confirm_order`, `ceneo_orders_set_order_shipment`, `ceneo_orders_send_order` and `ceneo_orders_cancel_order` change data although they use GET; they are marked as writes. Never call them to look something up.\n\n**Reading the answers**: the order tools answer in OData form: one record sits under `d`, a list under `d.results` (the carriers and cancellation reasons directly under `d`); the two category tools answer a plain list. Amounts are PLN as numbers. `CreatedDate` comes as an ISO 8601 text or in the OData form `/Date(milliseconds)/`. State names and reasons are in Polish. Ceneo keeps results for 5 minutes, so a repeated identical call returns the same data even when it has changed meanwhile.\n\n**Limits**: Ceneo may limit the calls per function and period; the **Ceneo** connector shows the limits of the key.\n\n**Not included**: changing the quantities of an order, writing your own order number onto a Ceneo order, and promotion texts.",
+  "aliases": [
+    "Kup na Ceneo",
+    "Ceneo Kup Teraz",
+    "Ceneo orders",
+    "Ceneo zamówienia"
+  ],
+  "region": "pl",
+  "category": "e-commerce",
+  "icon": "ceneo-orders",
+  "docsUrl": "https://developers.ceneo.pl/swagger/ui/index",
+  "requiredEnvVars": [
+    "CENEO_API_KEY"
+  ],
+  "envVarMeta": {
+    "CENEO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API key of your shop, shown in Panel Ceneo. Only shops integrated with Ceneo have one; the order tools also need \"Kup na Ceneo\" on the shop.",
+      "link": "https://www.ceneo.pl/lp/API-ceneo-opis",
+      "example": "F7869662-F334-427C-94B9-2D876BFCD589",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+      "patternMessage": "The API key has the form XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX (hexadecimal digits), without the word Basic."
+    }
+  },
+  "verifyHints": {
+    "400": "Ceneo did not accept the API key or a parameter. When every tool fails this way, the sign-in itself was refused: copy the key again from Panel Ceneo, without spaces and without the word Basic. Otherwise check the order id (the GUID in the Id field) and the filter.",
+    "401": "Ceneo did not accept the access. The connector renews its 15-minute token on its own; if the error stays, the API key was changed in Panel Ceneo: copy it again.",
+    "403": "Ceneo refused the call: the shop has no access to it. The order tools need \"Kup na Ceneo\" on the shop. Copy the key again from Panel Ceneo; if it is right, ask Ceneo support whether \"Kup na Ceneo\" and API access are active for your shop.",
+    "404": "Ceneo found no order with that id. Use the GUID in the Id field of ceneo_orders_list_orders, not the order number the buyer sees.",
+    "rate_limited": "The call limit of this function is used up. Wait for the period to end; the Ceneo connector shows the limits of the key and when they reset."
+  },
+  "probe": {
+    "tool": "ceneo_orders_list_order_states",
+    "params": {}
+  },
+  "prerequisites": "A shop integrated with Ceneo.pl that sells through \"Kup na Ceneo\", and access to Panel Ceneo, where the shop's API key is shown. About 3 minutes.",
+  "connector": {
+    "name": "Ceneo API: Kup na Ceneo orders",
+    "type": "REST",
+    "baseUrl": "https://developers.ceneo.pl",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://developers.ceneo.pl/AuthorizationService.svc/GetToken?grantType='client_credentials'",
+      "loginMethod": "GET",
+      "loginHeaders": {
+        "Authorization": "Basic {{CENEO_API_KEY}}"
+      },
+      "loginBody": {},
+      "username": "{{CENEO_API_KEY}}",
+      "password": "{{CENEO_API_KEY}}",
+      "tokenSource": "header",
+      "tokenHeaderName": "access_token",
+      "tokenTTLSeconds": 900,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "ceneo_orders_list_orders",
+      "description": "List \"Kup na Ceneo\" orders, newest first: Id (the GUID the other order tools take), DisplayedOrderId, ShopOrderId, CreatedDate, OrderStateId, OrderValue, ProductsValue and DeliveryCost (PLN), ShopDeliveryFormName, PaymentTypeId, CustomerRemark and ShopRemark. The rows sit under `d.results`. Filter and sort with OData options; page with skip. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. `OrderStateId eq 1`, or `CreatedDate ge datetime'2026-11-01T00:00:00'` for orders since a date. ceneo_orders_list_order_states lists the state ids."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData sort, e.g. `CreatedDate desc` (newest first, the default) or `OrderValue desc`.",
+            "default": "CreatedDate desc"
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of orders to skip, for the next page: pass the number of orders already read.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/Orders",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$skip": "$skip",
+          "$format": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_get_order",
+      "description": "Read the base data of one \"Kup na Ceneo\" order: Id, DisplayedOrderId, ShopOrderId, CreatedDate, OrderStateId, OrderValue, ProductsValue and DeliveryCost (PLN), ShopDeliveryFormName, PaymentTypeId, PaymentMethodId, CustomerRemark and ShopRemark. The data sits under `d`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/Orders(guid'{order_id}')",
+        "queryParams": {
+          "$format": "json"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_get_order_items",
+      "description": "Read the items of one \"Kup na Ceneo\" order: ShopProductId (your product id), Name, Price and TotalItemPrice (PLN), Count, Returned and SubOrderId. The rows sit under `d.results`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/Orders(guid'{order_id}')/OrderItems",
+        "queryParams": {
+          "$format": "json"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_get_order_shipping_data",
+      "description": "Read the delivery data of one \"Kup na Ceneo\" order: Email, PhoneNumber, ShippingFirstName, ShippingLastName, ShippingCompanyName, ShippingAddress, ShippingPostCode, ShippingCity, ShippingRegion and ShippingCountry. This is personal data of the buyer. The rows sit under `d.results`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/Orders(guid'{order_id}')/ShippingData",
+        "queryParams": {
+          "$format": "json"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_get_order_invoice_data",
+      "description": "Read the invoice data of one \"Kup na Ceneo\" order: InvoiceFirstName, InvoiceLastName, InvoiceCompanyName, InvoiceNIP (tax number), InvoiceAddress, InvoicePostCode, InvoiceCity, InvoiceRegion, InvoiceCountry and InvoiceProformaRequested. The rows sit under `d.results`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/Orders(guid'{order_id}')/InvoiceData",
+        "queryParams": {
+          "$format": "json"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_get_order_pickup_point",
+      "description": "Read the pickup point chosen for one \"Kup na Ceneo\" order (parcel locker or collection point), when there is one: Name (the point code), StreetAddress, City and PostCode. The rows sit under `d.results`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/Orders(guid'{order_id}')/PickupPoint",
+        "queryParams": {
+          "$format": "json"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_list_order_states",
+      "description": "List the order states of \"Kup na Ceneo\": Id, Value (a code name) and Description (in Polish). Use it to read OrderStateId and to build a filter for ceneo_orders_list_orders. A cheap call that proves the key works. The rows sit under `d.results`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/OrderStates",
+        "queryParams": {
+          "$format": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_list_parcel_carriers",
+      "description": "List the parcel carriers of \"Kup na Ceneo\": Id and Name. The Id is what ceneo_orders_set_order_shipment takes as carrier_id. The rows sit under `d`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/ParcelCarriers",
+        "queryParams": {
+          "$format": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_list_cancellation_reasons",
+      "description": "List the reasons a \"Kup na Ceneo\" order can be cancelled with: Id, Reason (in Polish), RequiresDetailedText and Visible. The Id is what ceneo_orders_cancel_order takes as reason_id. The rows sit under `d`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/OrderCancellationReasons",
+        "queryParams": {
+          "$format": "json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_confirm_order",
+      "description": "Confirm a \"Kup na Ceneo\" order that waits for the shop: the shop accepts the order and commits to deliver it. Ceneo runs this change as a GET request; it is a write. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/ConfirmOrder",
+        "queryParams": {
+          "id": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "ceneo_orders_set_order_shipment",
+      "description": "Attach a tracking number and its carrier to a \"Kup na Ceneo\" order, so the buyer can follow the parcel. Ceneo runs this change as a GET request; it is a write. Call ceneo_orders_send_order afterwards to mark the order as sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number the carrier gave for the parcel."
+          },
+          "carrier_id": {
+            "type": "integer",
+            "description": "Carrier id, the `Id` of a carrier from ceneo_orders_list_parcel_carriers."
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_number",
+          "carrier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/SetOrderShipment",
+        "queryParams": {
+          "orderId": "$order_id",
+          "trackingNumber": "$tracking_number",
+          "carrierId": "$carrier_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_send_order",
+      "description": "Mark a \"Kup na Ceneo\" order as sent, which tells the buyer the parcel is on its way. Ceneo runs this change as a GET request; it is a write. Attach the tracking number first with ceneo_orders_set_order_shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/SendOrder",
+        "queryParams": {
+          "id": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_cancel_order",
+      "description": "Cancel a \"Kup na Ceneo\" order with a reason. A paid order is refunded to the buyer and the cancellation cannot be undone. Only the reason id is sent, so a reason whose RequiresDetailedText is true may be refused. Ceneo runs this change as a GET request; it is a write. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Ceneo order id, the GUID in the `Id` field of an order from ceneo_orders_list_orders (not DisplayedOrderId or ShopOrderId).",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+          },
+          "reason_id": {
+            "type": "integer",
+            "description": "Cancellation reason id, the `Id` of a reason from ceneo_orders_list_cancellation_reasons.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id",
+          "reason_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BasketService.svc/CancelOrder",
+        "queryParams": {
+          "id": "$order_id",
+          "reason": "{\"Id\":\"${reason_id}\"}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "ceneo_orders_list_categories",
+      "description": "List every Ceneo category: Id, ParentId, Name and TopCategoryName. The answer is a plain list. Data is up to 60 minutes old. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/GetCategories"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ceneo_orders_get_top_category_products",
+      "description": "List up to 100 most popular products of a Ceneo category: Id, Name, Category, TopCategory, LowestPrice (PLN), IsProductBid, IsProductBidByMe, IsProductSoldByMe, MyProductId and MyPrice. The answer is a plain list. Data is up to 20 minutes old. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_name": {
+            "type": "string",
+            "description": "Category name as written on Ceneo, e.g. Komputery. ceneo_orders_list_categories lists the names."
+          },
+          "top": {
+            "type": "integer",
+            "description": "Number of products, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        "required": [
+          "category_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v3/GetTopCategoryProducts",
+        "queryParams": {
+          "categoryName": "$category_name",
+          "top": "$top"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
