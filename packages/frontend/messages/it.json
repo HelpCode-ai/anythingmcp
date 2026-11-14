@@ -1011,6 +1011,8 @@
       "required": "Obbligatorio",
       "looksWrongExample": "Sembra errato. Esempio: {example}",
       "looksWrong": "Sembra errato",
+      "choose": "Scegli…",
+      "chooseOne": "Scegli una delle opzioni",
       "optional": "(facoltativo)",
       "stored": "Salvato. Lascia vuoto per mantenerlo",
       "hide": "Nascondi",

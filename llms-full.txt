@@ -3572,6 +3572,30 @@ holding an example (`host`, `example.com`, `your-api-key`, `<...>`,
 `PASTE_KEY_HERE`) and a credential pasted more than once (the same string
 repeated). See `packages/backend/src/adapters/env-var-checks.ts`.
 
+`envVarMeta.<VAR>.options` gives a variable a fixed list of choices, for an
+API with one host per country or region. The setup form shows a select with
+the labels instead of a text field, a model setting the connector up from a
+chat is given the list and asks the user to pick, and every path that writes
+the variable refuses a value that is not one of the listed `value`s (an
+optional variable may stay empty). List 2 to 20 choices with unique values;
+write each `value` exactly as it is stored (a whole `https://` URL when the
+variable starts `connector.baseUrl`), make it match `pattern` when there is
+one, and never combine `options` with `"secret": true`:
+
+```json
+"envVarMeta": {
+  "ACME_MARKET_URL": {
+    "label": "Country",
+    "kind": "address",
+    "help": "The country of your seller account.",
+    "options": [
+      { "value": "https://fr.market.example.com", "label": "France" },
+      { "value": "https://es.market.example.com", "label": "Spain" }
+    ]
+  }
+}
+```
+
 `verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
 `"unreachable"`) to what the setup check tells the user. A tool call that
 the API answers 401 uses the adapter's `"401"` (or `"auth_failed"`) hint too

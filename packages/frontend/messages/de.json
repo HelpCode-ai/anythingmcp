@@ -1011,6 +1011,8 @@
       "required": "Pflichtfeld",
       "looksWrongExample": "Sieht falsch aus. Beispiel: {example}",
       "looksWrong": "Sieht falsch aus",
+      "choose": "Bitte wählen…",
+      "chooseOne": "Bitte eine der Optionen wählen",
       "optional": "(optional)",
       "stored": "Gespeichert. Leer lassen, um den Wert zu behalten",
       "hide": "Verbergen",
