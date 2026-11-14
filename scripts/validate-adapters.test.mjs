@@ -353,6 +353,72 @@ test('envVarMeta describes declared variables with known fields only', () => {
   assert.deepEqual(rules, ['env-meta-field', 'env-meta-kind', 'env-meta-link', 'env-meta-pattern']);
 });
 
+test('envVarMeta options are a list of 2 to 20 unique value and label pairs', () => {
+  const fr = { value: 'https://fr.example.test', label: 'France' };
+  const es = { value: 'https://es.example.test', label: 'Spain' };
+  const check = (meta, extra = {}) => validateAdapter(adapter({
+    requiredEnvVars: ['GOOD_KEY', 'GOOD_HOST'], envVarMeta: { GOOD_HOST: meta }, ...extra,
+  }), 'good.json', 'de').errors;
+  const paths = (meta, extra) => check(meta, extra).map((e) => `${e.rule} ${e.path}`);
+
+  assert.deepEqual(check({ label: 'Country', kind: 'address', options: [fr, es] }), []);
+  assert.deepEqual(check({ pattern: '^https://[a-z]+\\.example\\.test$', options: [fr, es] }), []);
+  assert.deepEqual(check({ options: Array.from({ length: 20 }, (_, i) => ({ value: `v${i}`, label: `Choice ${i}` })) }), []);
+  // The value may equal the label, and an explicit "secret": false is fine.
+  assert.deepEqual(check({ secret: false, options: [{ value: 'eu', label: 'eu' }, { value: 'us', label: 'us' }] }), []);
+
+  for (const options of ['fr,es', {}, [], [fr], Array.from({ length: 21 }, (_, i) => ({ value: `v${i}`, label: `Choice ${i}` }))]) {
+    assert.deepEqual(paths({ options }), ['env-meta-options envVarMeta.GOOD_HOST.options']);
+  }
+  assert.deepEqual(paths({ options: [fr, 'es', null] }), [
+    'env-meta-options envVarMeta.GOOD_HOST.options[1]',
+    'env-meta-options envVarMeta.GOOD_HOST.options[2]',
+  ]);
+  assert.deepEqual(paths({ options: [fr, { value: '', label: 'Spain' }, { value: 7, label: 'Italy' }, { label: 'Poland' }] }), [
+    'env-meta-options envVarMeta.GOOD_HOST.options[1].value',
+    'env-meta-options envVarMeta.GOOD_HOST.options[2].value',
+    'env-meta-options envVarMeta.GOOD_HOST.options[3].value',
+  ]);
+  assert.deepEqual(paths({ options: [fr, { value: 'https://es.example.test' }, { value: 'https://it.example.test', label: '  ' }] }), [
+    'env-meta-options envVarMeta.GOOD_HOST.options[1].label',
+    'env-meta-options envVarMeta.GOOD_HOST.options[2].label',
+  ]);
+  assert.deepEqual(paths({ options: [fr, es, { ...fr, label: 'Frankreich' }] }), ['env-meta-options envVarMeta.GOOD_HOST.options[2].value']);
+  assert.deepEqual(paths({ options: [fr, { ...es, value: ' https://es.example.test' }] }), ['env-meta-options envVarMeta.GOOD_HOST.options[1].value']);
+  assert.deepEqual(paths({ options: [fr, { ...es, hint: 'Iberia' }] }), ['env-meta-options envVarMeta.GOOD_HOST.options[1].hint']);
+
+  // Every value must be one the variable's own pattern accepts.
+  const offPattern = check({ pattern: '^https://', options: [fr, { value: 'es.example.test', label: 'Spain' }] });
+  assert.deepEqual(offPattern.map((e) => `${e.rule} ${e.path}`), ['env-meta-options envVarMeta.GOOD_HOST.options[1].value']);
+  assert.match(offPattern[0].message, /does not match the variable's own pattern/);
+  // A broken pattern is reported once, by its own rule.
+  assert.deepEqual(paths({ pattern: '(', options: [fr, es] }), ['env-meta-pattern envVarMeta.GOOD_HOST.pattern']);
+
+  // The choices are shown and the chosen one is shown back: never a secret.
+  const secret = check({ secret: true, options: [fr, es] });
+  assert.deepEqual(secret.map((e) => `${e.rule} ${e.path}`), ['env-meta-options envVarMeta.GOOD_HOST.options']);
+  assert.match(secret[0].message, /secret/);
+
+  // Values are compared as stored: a variable the base URL starts with is
+  // stored as a whole URL, the first label of a host in lower case.
+  const rest = (baseUrl) => ({ connector: { type: 'REST', authType: 'API_KEY', baseUrl } });
+  const bare = [{ value: 'fr.example.test', label: 'France' }, { value: 'es.example.test', label: 'Spain' }];
+  assert.deepEqual(paths({ options: bare }, rest('{{GOOD_HOST}}/api')), [
+    'env-meta-options envVarMeta.GOOD_HOST.options[0].value',
+    'env-meta-options envVarMeta.GOOD_HOST.options[1].value',
+  ]);
+  assert.deepEqual(paths({ options: [fr, es] }, rest('{{GOOD_HOST}}/api')), []);
+  assert.deepEqual(paths({ options: bare }, rest('https://{{GOOD_HOST}}/api')), []);
+  const regions = [{ value: 'eu', label: 'Europe' }, { value: 'US', label: 'United States' }];
+  assert.deepEqual(paths({ options: regions }, rest('https://{{GOOD_HOST}}.example.test/api')), ['env-meta-options envVarMeta.GOOD_HOST.options[1].value']);
+  assert.deepEqual(paths({ options: regions }, rest('https://api-{{GOOD_HOST}}.example.test')), []);
+
+  for (const e of [...offPattern, ...secret, ...check({ options: [fr] })]) {
+    assert.ok(e.fix && e.fix.length > 20, 'every options error says how to fix it');
+    assert.equal(e.docs, 'adapter-fields');
+  }
+});
+
 test('connector.config.errorWhen rules are checked', () => {
   const good = validateAdapter(adapter({
     connector: { type: 'REST', authType: 'API_KEY', config: { errorWhen: [

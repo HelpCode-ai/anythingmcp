@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AdaptersService } from './adapters.service';
-import { describeAdapterEnvVars, needsBrowserAuthorization } from './env-var-meta';
+import { describeAdapterEnvVars, describeEnvVarOptions, needsBrowserAuthorization } from './env-var-meta';
 import { normalizeAdapterEnvValue } from './env-var-checks';
 import { addressFix, describeAddressFix } from './address-fix';
 import { LicenseGuardService } from '../license/license-guard.service';
@@ -257,7 +257,21 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             ...(full.setupKind === 'oauth_browser' && !registersItsOwnClient(full) ? providerApp(full) : {}),
             settingsYouMayPass: vars
               .filter((v) => !v.secret)
-              .map((v) => ({ name: v.name, label: v.label, required: v.required, help: v.help, example: v.example })),
+              .map((v) => ({
+                name: v.name,
+                label: v.label,
+                required: v.required,
+                help: v.help,
+                example: v.example,
+                // A fixed list of choices (one API host per country): the
+                // user picks, the model passes that choice's value.
+                ...(v.options?.length
+                  ? {
+                      options: v.options,
+                      howToPass: 'Takes one of the options and nothing else. Ask the user which one applies (name the labels), then pass the value of the one they pick, exactly as listed.',
+                    }
+                  : {}),
+              })),
             enteredByTheUserOnTheLinkedPage: vars.filter((v) => v.secret).map((v) => v.label),
           };
         }),
@@ -340,7 +354,17 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           },
         };
       }
-      if (text && d.pattern && !matchesPattern(d.pattern, text)) {
+      // A variable with a fixed list of choices takes one of their values.
+      if (text && d.options?.length && !d.options.some((o) => o.value === text)) {
+        return {
+          isError: true,
+          body: {
+            error: `'${d.label}' must be one of: ${describeEnvVarOptions(d.options)}.`,
+            hint: 'Ask the user which one applies and pass its value exactly as listed (the value, not the label), or install without it: they can choose it on the page linked in the answer.',
+          },
+        };
+      }
+      if (text && !d.options?.length && d.pattern && !matchesPattern(d.pattern, text)) {
         // Secrets never get here, so the fixed address can be named.
         const fix = d.kind !== 'credential' ? addressFix(d.pattern, text) : undefined;
         return {

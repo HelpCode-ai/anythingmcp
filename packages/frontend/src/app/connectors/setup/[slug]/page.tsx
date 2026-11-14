@@ -498,7 +498,11 @@ function SetupContent() {
       if (hiddenField(f.name)) continue;
       const v = withMissingScheme(f, (values[f.name] ?? '').trim());
       if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = t('field.required');
-      else if (v && f.pattern) {
+      else if (f.options?.length) {
+        // A fixed list of choices: anything else (a value stored before the
+        // list existed, one handed over in a link) is not accepted.
+        if (v && !f.options.some((o) => o.value === v)) errs[f.name] = t('field.chooseOne');
+      } else if (v && f.pattern) {
         try {
           if (!new RegExp(f.pattern).test(v)) {
             // Say what to change when the pattern tells it; the adapter's own words otherwise.
@@ -952,47 +956,87 @@ function SetupContent() {
   const renderField = (f: EnvVarDescriptor) => {
     const id = `field-${f.name}`;
     const show = revealed[f.name] === true;
+    // A fixed list of choices (one API host per country) is a select.
+    const options = f.options?.length ? f.options : null;
+    const chosen = values[f.name] ?? '';
     return (
       <div key={f.name}>
         <label htmlFor={id} className="mb-1 block text-sm font-medium text-[var(--text)]">
           {f.label}
           {!f.required && <span className="ml-1 font-normal text-[var(--text-3)]">{t('field.optional')}</span>}
         </label>
-        <div className="relative">
-          <input
+        {options ? (
+          <select
             id={id}
-            // API credentials, never the person's own login: a non-login name
-            // and the password managers' opt-outs stop a browser from filling
-            // the signed-in user's e-mail and password in here.
             name={`amcp-connector-var-${f.name}`}
-            type={f.secret && !show ? 'password' : 'text'}
-            autoComplete={f.secret ? 'new-password' : 'off'}
-            data-1p-ignore
-            data-lpignore="true"
-            data-bwignore="true"
-            data-form-type="other"
-            spellCheck={false}
-            value={values[f.name] ?? ''}
-            placeholder={storedSecrets.includes(f.name) ? t('field.stored') : (f.example ?? '')}
-            onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
-            onBlur={() => completeAddress(f)}
+            autoComplete="off"
+            value={chosen}
+            onChange={(e) => {
+              const value = e.target.value;
+              setValues((v) => ({ ...v, [f.name]: value }));
+              setFieldErrors((errs) => {
+                if (!errs[f.name]) return errs;
+                const next = { ...errs };
+                delete next[f.name];
+                return next;
+              });
+            }}
             aria-invalid={!!fieldErrors[f.name]}
             className={cn(
-              'w-full rounded-[9px] border bg-[var(--surface)] px-3 py-2 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:outline-none sm:text-sm',
+              'w-full rounded-[9px] border bg-[var(--surface)] px-3 py-2 text-[16px] focus:outline-none sm:text-sm',
+              chosen ? 'text-[var(--text)]' : 'text-[var(--text-3)]',
               fieldErrors[f.name] ? 'border-[var(--danger)]' : 'border-[var(--border)] focus:border-[var(--border-strong)]',
-              f.secret && 'pr-16',
             )}
-          />
-          {f.secret && (
-            <button
-              type="button"
-              onClick={() => setRevealed((r) => ({ ...r, [f.name]: !show }))}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-3)] hover:text-[var(--text)]"
-            >
-              {show ? t('field.hide') : t('field.show')}
-            </button>
-          )}
-        </div>
+          >
+            {/* Nothing chosen yet; an optional choice can also be taken back. */}
+            {(!chosen || !f.required) && (
+              <option value="">{storedSecrets.includes(f.name) ? t('field.stored') : t('field.choose')}</option>
+            )}
+            {/* A value from before the list existed stays visible until one is chosen. */}
+            {chosen && !options.some((o) => o.value === chosen) && <option value={chosen}>{chosen}</option>}
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="relative">
+            <input
+              id={id}
+              // API credentials, never the person's own login: a non-login name
+              // and the password managers' opt-outs stop a browser from filling
+              // the signed-in user's e-mail and password in here.
+              name={`amcp-connector-var-${f.name}`}
+              type={f.secret && !show ? 'password' : 'text'}
+              autoComplete={f.secret ? 'new-password' : 'off'}
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              data-form-type="other"
+              spellCheck={false}
+              value={values[f.name] ?? ''}
+              placeholder={storedSecrets.includes(f.name) ? t('field.stored') : (f.example ?? '')}
+              onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+              onBlur={() => completeAddress(f)}
+              aria-invalid={!!fieldErrors[f.name]}
+              className={cn(
+                'w-full rounded-[9px] border bg-[var(--surface)] px-3 py-2 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:outline-none sm:text-sm',
+                fieldErrors[f.name] ? 'border-[var(--danger)]' : 'border-[var(--border)] focus:border-[var(--border-strong)]',
+                f.secret && 'pr-16',
+              )}
+            />
+            {f.secret && (
+              <button
+                type="button"
+                onClick={() => setRevealed((r) => ({ ...r, [f.name]: !show }))}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-3)] hover:text-[var(--text)]"
+              >
+                {show ? t('field.hide') : t('field.show')}
+              </button>
+            )}
+          </div>
+        )}
         {fieldErrors[f.name] && <p className="mt-1 text-xs text-[var(--danger)]">{fieldErrors[f.name]}</p>}
         {(f.help || f.link) && (
           <p className="mt-1 text-xs text-[var(--text-3)]">

@@ -1011,6 +1011,8 @@
       "required": "Required",
       "looksWrongExample": "Looks wrong. Example: {example}",
       "looksWrong": "Looks wrong",
+      "choose": "Choose…",
+      "chooseOne": "Choose one of the options",
       "optional": "(optional)",
       "stored": "Stored. Leave empty to keep it",
       "hide": "Hide",

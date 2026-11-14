@@ -827,6 +827,14 @@ export const fileSearchSetup = {
 // Adapters (built-in connector recipes)
 export type SetupKind = 'none' | 'credentials' | 'oauth_browser';
 
+/** One choice of a variable that takes one of a fixed list of values. */
+export interface EnvVarOption {
+  /** What is stored and sent. */
+  value: string;
+  /** What the user picks. */
+  label: string;
+}
+
 export interface EnvVarDescriptor {
   name: string;
   required: boolean;
@@ -840,6 +848,8 @@ export interface EnvVarDescriptor {
   patternMessage?: string;
   link?: string;
   advanced?: boolean;
+  /** A fixed list of choices: the form shows a select, and only these values are accepted. */
+  options?: EnvVarOption[];
 }
 
 export interface AdapterSetupInfo {

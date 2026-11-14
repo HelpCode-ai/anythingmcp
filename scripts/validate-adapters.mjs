@@ -188,6 +188,54 @@ export function graphqlVariableDefinitions(document) {
     .filter(Boolean);
 }
 
+const MIN_ENV_OPTIONS = 2;
+const MAX_ENV_OPTIONS = 20;
+// Connector types whose address variables are cleaned up when saved
+// (packages/backend/src/common/url.util.ts, HTTP_CONNECTOR_TYPES).
+const ADDRESS_NORMALISED_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'ODATA']);
+
+/**
+ * `envVarMeta.<VAR>.options`: a fixed list of choices, shown as a select in
+ * the setup form and enforced on every path that writes the variable
+ * (packages/backend/src/adapters/env-var-checks.ts). A stored value is
+ * compared with the option values as written, so each must be exactly what
+ * ends up stored.
+ */
+function envMetaOptionErrors(adapter, envVar, m, path) {
+  const errors = [];
+  const rule = 'env-meta-options';
+  const docs = 'adapter-fields';
+  const at = `${path}.options`;
+  const example = '[{ "value": "https://api.example.fr", "label": "France" }, { "value": "https://api.example.es", "label": "Spain" }]';
+  const options = m.options;
+  if (!Array.isArray(options) || options.length < MIN_ENV_OPTIONS || options.length > MAX_ENV_OPTIONS) {
+    errors.push(error(rule, at, `options must be an array of ${MIN_ENV_OPTIONS} to ${MAX_ENV_OPTIONS} choices`, `Use ${example}. A single possible value needs no variable; a longer list is a text field with a pattern.`, docs));
+    return errors;
+  }
+  if (m.secret === true) errors.push(error(rule, at, 'a variable with options cannot be "secret": true: the form shows the choices and the one that is stored', 'Remove "secret": true, or remove options and keep a text field.', docs));
+  let pattern;
+  if (typeof m.pattern === 'string') { try { pattern = new RegExp(m.pattern); } catch { /* reported by env-meta-pattern */ } }
+  const baseUrl = ADDRESS_NORMALISED_TYPES.has(adapter.connector?.type) && typeof adapter.connector?.baseUrl === 'string' ? adapter.connector.baseUrl.trim() : '';
+  // As in packages/backend/src/common/base-url-variable.util.ts (LEADING_VAR, SUBDOMAIN_SLOT).
+  const startsBaseUrl = /^\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/.exec(baseUrl)?.[1] === envVar;
+  const firstHostLabel = [...baseUrl.matchAll(/:\/\/\{\{([A-Za-z0-9_]+)\}\}\./g)].some((slot) => slot[1] === envVar);
+  const seen = new Set();
+  for (const [i, option] of options.entries()) {
+    const here = `${at}[${i}]`;
+    if (!option || typeof option !== 'object' || Array.isArray(option)) { errors.push(error(rule, here, 'each option must be an object with a value and a label', `Use ${example}.`, docs)); continue; }
+    for (const k of Object.keys(option)) if (k !== 'value' && k !== 'label') errors.push(error(rule, `${here}.${k}`, `Unknown option field "${k}"`, 'An option has exactly two fields: value and label.', docs));
+    if (typeof option.label !== 'string' || !option.label.trim()) errors.push(error(rule, `${here}.label`, 'option label must be a non-empty string', 'Set label to what the user picks, e.g. "France".', docs));
+    if (typeof option.value !== 'string' || !option.value) { errors.push(error(rule, `${here}.value`, 'option value must be a non-empty string', 'Set value to what is stored and sent, e.g. "https://api.example.fr". Leaving the variable empty is not a choice: make the variable optional instead.', docs)); continue; }
+    if (option.value !== option.value.trim()) errors.push(error(rule, `${here}.value`, 'option value starts or ends with a space; submitted values are trimmed, so it could never be chosen', 'Remove the surrounding whitespace.', docs));
+    if (seen.has(option.value)) errors.push(error(rule, `${here}.value`, `option value "${option.value}" is listed more than once`, 'Keep each value once; two labels for the same value cannot be told apart once stored.', docs));
+    seen.add(option.value);
+    if (pattern && !pattern.test(option.value)) errors.push(error(rule, `${here}.value`, `option value "${option.value}" does not match the variable's own pattern`, 'Fix the value or the pattern (or drop the pattern: the options already limit the value).', docs));
+    if (startsBaseUrl && !/^https?:\/\/\S+$/i.test(option.value)) errors.push(error(rule, `${here}.value`, `option value "${option.value}" is not a whole URL, but {{${envVar}}} starts connector.baseUrl: it is stored with https:// in front and then no longer equals this option`, 'Write the value with its scheme, e.g. "https://api.example.fr".', docs));
+    if (firstHostLabel && !/^[a-z0-9_-]+$/.test(option.value)) errors.push(error(rule, `${here}.value`, `option value "${option.value}" is not a lower-case host label, but {{${envVar}}} is the first label of the host in connector.baseUrl: it is stored as one and then no longer equals this option`, 'Use only the label, in lower case, e.g. "eu".', docs));
+  }
+  return errors;
+}
+
 /** True when a `$param` reference is nested somewhere inside an object or array. */
 function hasNestedParamRef(value) {
   if (typeof value === 'string') return /^\$[A-Za-z_]/.test(value);
@@ -426,7 +474,7 @@ export function validateAdapter(adapter, file, region) {
     const meta = adapter.envVarMeta;
     const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
     const KINDS = new Set(['address', 'credential', 'setting']);
-    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'patternMessage', 'link', 'advanced']);
+    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'patternMessage', 'link', 'advanced', 'options']);
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
       errors.push(error('env-meta-shape', 'envVarMeta', 'envVarMeta must map a variable name to its description', 'Use { "MY_VAR": { "label": "…", "help": "…" } }.', 'adapter-fields'));
     } else {
@@ -438,6 +486,7 @@ export function validateAdapter(adapter, file, region) {
         if (m.kind !== undefined && !KINDS.has(m.kind)) errors.push(error('env-meta-kind', `${path}.kind`, `kind must be address, credential or setting, not "${m.kind}"`, 'Pick the kind that matches what the value is.', 'adapter-fields'));
         if (m.pattern !== undefined) { try { new RegExp(m.pattern); } catch { errors.push(error('env-meta-pattern', `${path}.pattern`, 'pattern is not a valid regular expression', 'Fix or remove the pattern.', 'adapter-fields')); } }
         if (m.link !== undefined && !/^https:\/\//.test(String(m.link))) errors.push(error('env-meta-link', `${path}.link`, 'link must be an https URL', 'Use the provider page where the value is created.', 'adapter-fields'));
+        if (m.options !== undefined) errors.push(...envMetaOptionErrors(adapter, envVar, m, path));
       }
     }
   }
