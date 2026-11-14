@@ -1,6 +1,12 @@
 import { NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { SupportIdentityService, connectorLinks, mcpServerUrls, splitName } from './support-identity.service';
+import {
+  SupportIdentityService,
+  connectorLinks,
+  mcpServerUrls,
+  missingOAuthAppKeys,
+  splitName,
+} from './support-identity.service';
 import { instanceHost, supportChatConfig, supportModuleEnabled, supportTriageConfig } from './support-config';
 
 const SAVED = { ...process.env };
@@ -134,6 +140,57 @@ describe('SupportIdentityService', () => {
     expect(attrs.connector_issues).toContain('Etsy: auth needs_reauth');
     expect(attrs.connector_issues).toContain('Shopify: 7 failed calls/24h, last shopify_list_orders: 401');
     expect(attrs.connector_issues).not.toContain('FAKE-not-a-real-credential-0000');
+  });
+
+  it('says when a catalog OAuth app has no keys saved, so the desk knows why Authorize does nothing', async () => {
+    const { svc, prisma } = build();
+    prisma.connector.findMany.mockResolvedValue([
+      {
+        id: 'c9',
+        name: 'Etsy Open API v3',
+        isActive: true,
+        authStatus: null,
+        authStatusMessage: null,
+        config: { adapterSlug: 'etsy' },
+        type: 'REST',
+        authType: 'OAUTH2',
+        envVars: null,
+      },
+    ]);
+    prisma.toolInvocation.groupBy.mockResolvedValue([]);
+    const attrs = await svc.contactAttributes('u1', 'org1');
+    expect(attrs.connector_issues).toBe(
+      'Etsy Open API v3: app keys not saved: Keystring, Shared Secret (Authorize cannot start)',
+    );
+  });
+
+  describe('missingOAuthAppKeys', () => {
+    const etsy = { type: 'REST', authType: 'OAUTH2', config: { adapterSlug: 'etsy' } };
+
+    it('lists the empty, placeholder or unsaved app keys by their label', () => {
+      expect(missingOAuthAppKeys({ ...etsy, envVars: null })).toEqual(['Keystring', 'Shared Secret']);
+      expect(missingOAuthAppKeys({ ...etsy, envVars: { ETSY_CLIENT_ID: 'abc123', ETSY_CLIENT_SECRET: ' ' } })).toEqual([
+        'Shared Secret',
+      ]);
+      expect(
+        missingOAuthAppKeys({ ...etsy, envVars: { ETSY_CLIENT_ID: 'PASTE_YOUR_KEYSTRING', ETSY_CLIENT_SECRET: 'x1' } }),
+      ).toEqual(['Keystring']);
+    });
+
+    it('is empty once both keys are saved', () => {
+      expect(missingOAuthAppKeys({ ...etsy, envVars: { ETSY_CLIENT_ID: 'abc123', ETSY_CLIENT_SECRET: 'def456' } })).toEqual(
+        [],
+      );
+    });
+
+    it('leaves out non-OAuth, MCP, hand-made and unknown connectors', () => {
+      expect(missingOAuthAppKeys({ ...etsy, authType: 'API_KEY', envVars: null })).toEqual([]);
+      expect(missingOAuthAppKeys({ ...etsy, type: 'MCP', envVars: null })).toEqual([]);
+      expect(missingOAuthAppKeys({ type: 'REST', authType: 'OAUTH2', config: {}, envVars: null })).toEqual([]);
+      expect(
+        missingOAuthAppKeys({ type: 'REST', authType: 'OAUTH2', config: { adapterSlug: 'no-such-adapter' }, envVars: null }),
+      ).toEqual([]);
+    });
   });
 
   it('names the connectors and the day of the last successful tool call', async () => {

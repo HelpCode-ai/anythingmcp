@@ -18,7 +18,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { NetworkNote } from '@/components/connector-setup/network-note';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
-import { SetupStatusBanner, SetupStatusPill } from '@/components/setup-status';
+import { SetupStatusBanner, SetupStatusPill, finishSetupHref } from '@/components/setup-status';
 import { AuthStatusBanner, AuthStatusPill } from '@/components/auth-status';
 import { MetaSignInBanner, type MetaSignInStatus } from '@/components/meta-sign-in-banner';
 import ReactMarkdown from 'react-markdown';
@@ -55,6 +55,39 @@ const IMPORT_SOURCES: { id: string; placeholder?: string }[] = [
   { id: 'mcp' },
   { id: 'odata' },
 ];
+
+/**
+ * The backend's answers when "Authorize with Provider" cannot start because
+ * the app's client id/secret are not saved (connector-authorization.ts):
+ * shown in plain words instead.
+ */
+function isMissingClientKeysError(error: string): boolean {
+  return /No clientId configured|environment variables first/i.test(error);
+}
+
+/** Stands for "no client id stored at all" in the list of missing keys. */
+const CLIENT_ID_UNSET = '__client_id__';
+
+/**
+ * The variables of a REST/GraphQL OAuth client that are still empty: the
+ * `{{VAR}}` names in the stored client id that the connector reports as
+ * missing, or the client id itself when none is stored. Empty while the
+ * OAuth settings are loading, and for MCP connectors (they register a
+ * client on their own).
+ */
+function missingOAuthClientKeys(
+  connector: { type?: string; missingVariables?: string[] },
+  clientIdRaw: string | null,
+): string[] {
+  if (connector.type === 'MCP' || clientIdRaw === null) return [];
+  if (clientIdRaw.trim() === '') return [CLIENT_ID_UNSET];
+  const missing = new Set(connector.missingVariables ?? []);
+  const used = [...clientIdRaw.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)].map((m) => m[1]);
+  if (!used.some((name) => missing.has(name))) return [];
+  // The secret is not returned to the page; any other missing variable named
+  // like a client credential belongs to the same app.
+  return [...missing].filter((name) => used.includes(name) || /CLIENT|SECRET|KEY/i.test(name)).sort();
+}
 
 /** OData settings live under config.odata on ODATA connectors and OData-enabled REST connectors. */
 function hasOData(connector: any): boolean {
@@ -211,6 +244,12 @@ export default function ConnectorDetailPage() {
 
   // OAuth + MCP discovery
   const [authorizing, setAuthorizing] = useState(false);
+  // What "Authorize with Provider" answered when it could not start, shown
+  // next to the button: the page-level message sits far above it and was
+  // missed (a customer clicked five times and saw nothing).
+  const [oauthError, setOauthError] = useState('');
+  // The stored client id as written ("{{ETSY_CLIENT_ID}}"); null until loaded.
+  const [oauthClientIdRaw, setOauthClientIdRaw] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [editing, setEditing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<
@@ -391,6 +430,7 @@ export default function ConnectorDetailPage() {
             setEditOauthGrant(r.grant || 'authorization_code');
             setLoadedOauthGrant(r.grant || 'authorization_code');
             setOauthHasPasswordCreds(r.hasUsername && r.hasPassword);
+            setOauthClientIdRaw(typeof r.clientId === 'string' ? r.clientId : '');
           })
           .catch(() => setEditTokenAuthMethod('client_secret_post'));
       }
@@ -1007,15 +1047,16 @@ export default function ConnectorDetailPage() {
   const handleOAuthAuthorize = async () => {
     if (!token) return;
     setAuthorizing(true);
+    setOauthError('');
     try {
       const result = await connectors.oauthAuthorize(id, token);
       if (result.authorizationUrl) {
         window.location.href = result.authorizationUrl;
       } else if (result.error) {
-        setMsg(result.error);
+        setOauthError(isMissingClientKeysError(result.error) ? t('oauthCard.keysMissing') : result.error);
       }
     } catch (err: any) {
-      setMsg(t('msg.authorizationFailed', { message: err.message }));
+      setOauthError(t('msg.authorizationFailed', { message: err.message }));
     } finally {
       setAuthorizing(false);
     }
@@ -1108,6 +1149,9 @@ export default function ConnectorDetailPage() {
   }
 
   if (!connector) return null;
+
+  const oauthKeysMissing =
+    connector.authType === 'OAUTH2' ? missingOAuthClientKeys(connector, oauthClientIdRaw) : [];
 
   const monoMethodTone = (method?: string): string => {
     switch ((method || '').toUpperCase()) {
@@ -1999,7 +2043,12 @@ export default function ConnectorDetailPage() {
             </p>
             <div className="flex gap-3 flex-wrap">
               {connector.credentialScope !== 'USER' && (
-                <Button variant="primary" size="lg" onClick={handleOAuthAuthorize} disabled={authorizing}>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onClick={handleOAuthAuthorize}
+                  disabled={authorizing || oauthKeysMissing.length > 0}
+                >
                   {authorizing
                     ? t('oauthCard.redirecting')
                     : connector.type === 'MCP'
@@ -2013,6 +2062,26 @@ export default function ConnectorDetailPage() {
                 </Button>
               )}
             </div>
+            {connector.credentialScope !== 'USER' && oauthKeysMissing.length > 0 && (
+              <div role="status" className="mt-3 text-sm text-[var(--t-warn-fg)]">
+                <p>{t('oauthCard.keysMissing')}</p>
+                <p className="mt-0.5 text-xs">
+                  {t('oauthCard.keysStillEmpty', {
+                    names: oauthKeysMissing.map((n) => (n === CLIENT_ID_UNSET ? t('oauthCard.clientId') : n)).join(', '),
+                  })}
+                </p>
+                {connector.config?.adapterSlug && (
+                  <Link href={finishSetupHref(connector)} className="mt-1 inline-block text-xs underline">
+                    {t('oauthCard.enterKeys')}
+                  </Link>
+                )}
+              </div>
+            )}
+            {oauthError && oauthKeysMissing.length === 0 && (
+              <p role="alert" className="mt-3 text-sm text-[var(--t-warn-fg)]">
+                {oauthError}
+              </p>
+            )}
           </Card>
         )}
 
