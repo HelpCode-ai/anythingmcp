@@ -3809,5 +3809,14 @@
     "starterTitle": "Con Starter",
     "seeStarter": "Cosa cambia con Starter",
     "hideStarter": "Nascondi"
+  },
+  "activeSubscription": {
+    "title": "Prima disdici l'abbonamento",
+    "body": "Questo workspace ha ancora un abbonamento, e cancellare il workspace non lo disdice: continueresti a pagarlo. Disdicilo prima, poi torna qui e cancella.",
+    "cancelButton": "Disdici l'abbonamento",
+    "opening": "Apertura…",
+    "after": "Dopo la disdetta torni qui.",
+    "openFailed": "Impossibile aprire la pagina di disdetta.",
+    "licensePage": "Apri Impostazioni → Licenza"
   }
 }

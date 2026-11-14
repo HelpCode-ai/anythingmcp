@@ -45,15 +45,27 @@ export class LicenseReleaseService {
    * is already set to cancel, ended, or a trial without a card does not block.
    * Asks the licence site for the subscription's current state, and refuses
    * when it cannot tell rather than risk a charge for a deleted workspace.
+   *
+   * Every paid licence of the workspace counts, not only the one in use. A
+   * card trial whose first charge was declined is no longer valid here (the
+   * site answers "revoked" and the row is marked so), while Stripe goes on
+   * retrying the charge for days. Such a workspace was deleted on 10 Nov 2026
+   * and the retry went through four days later. The site sends the
+   * subscription's state with an invalid answer too, so that state decides.
+   *
+   * The refusal carries `code: 'active_subscription'` and the workspaces
+   * concerned, so the app can offer to cancel right there.
    */
   async assertNoLiveSubscription(organizationIds: string[]): Promise<void> {
     if (!this.deployment.isCloud() || organizationIds.length === 0) return;
     const paid = await this.prisma.license.findMany({
-      where: { organizationId: { in: organizationIds }, status: 'active', plan: { not: 'trial' } },
-      select: { licenseKey: true, billing: true, organizationId: true },
+      where: { organizationId: { in: organizationIds }, plan: { not: 'trial' } },
+      select: { licenseKey: true, billing: true, organizationId: true, status: true },
     });
 
+    const blocked = new Set<string>();
     for (const licence of paid) {
+      if (licence.organizationId && blocked.has(licence.organizationId)) continue;
       let billing = parseLicenseBilling(licence.billing);
       try {
         const { data } = await axios.get(`${LICENSE_API_URL}/api/license/verify`, {
@@ -65,24 +77,38 @@ export class LicenseReleaseService {
           timeout: 10000,
           headers: licenseServiceHeaders(),
         });
-        billing = data?.valid ? parseLicenseBilling(data.billing) : null;
+        billing = parseLicenseBilling(data?.billing);
       } catch (err: any) {
         this.logger.warn(
           `Could not check the subscription of licence …${licence.licenseKey.slice(-4)} before a deletion: ${err?.message ?? err}`,
         );
-        if (!billing) {
+        // A licence in use whose state is unknown refuses the deletion. One
+        // that already stopped here and left no state behind decides nothing,
+        // as before this looked at stopped licences at all.
+        if (!billing && licence.status === 'active') {
           throw new ServiceUnavailableException(
             'We could not check the subscription of this workspace. Please try again in a few minutes.',
           );
         }
       }
       if (billing && LIVE_SUBSCRIPTION.has(billing.status) && !billing.cancelling) {
-        throw new ConflictException(
-          'This workspace has an active subscription. Cancel it first under Settings → License → ' +
-            'Manage subscription & billing; the workspace can be deleted once it is cancelled.',
-        );
+        if (licence.organizationId) blocked.add(licence.organizationId);
       }
     }
+
+    if (blocked.size === 0) return;
+    const organizations = await this.prisma.organization.findMany({
+      where: { id: { in: [...blocked] } },
+      select: { id: true, name: true },
+    });
+    throw new ConflictException({
+      statusCode: 409,
+      code: 'active_subscription',
+      message:
+        'This workspace has an active subscription. Cancel it first under Settings → License → ' +
+        'Manage subscription & billing; the workspace can be deleted once it is cancelled.',
+      organizations,
+    });
   }
 
   /** Fire and forget, for the deletion paths: the user is not kept waiting. */
