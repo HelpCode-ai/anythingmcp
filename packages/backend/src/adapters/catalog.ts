@@ -104,6 +104,7 @@ import * as airtable from './intl/airtable.json';
 import * as algolia from './intl/algolia.json';
 import * as aliexpressAffiliate from './intl/aliexpress-affiliate.json';
 import * as aliexpressDropshipping from './intl/aliexpress-dropshipping.json';
+import * as aliexpressSeller from './intl/aliexpress-seller.json';
 import * as allegro from './intl/allegro.json';
 import * as alphaVantage from './intl/alpha-vantage.json';
 import * as amazonAds from './intl/amazon-ads.json';
@@ -385,6 +386,7 @@ import * as koreaLaw from './intl/korea-law.json';
 import * as kustomer from './intl/kustomer.json';
 import * as langfuse from './intl/langfuse.json';
 import * as launchdarkly from './intl/launchdarkly.json';
+import * as lazada from './intl/lazada.json';
 import * as lemlist from './intl/lemlist.json';
 import * as lemonsqueezy from './intl/lemonsqueezy.json';
 import * as leroyMerlin from './intl/leroy-merlin.json';
@@ -756,6 +758,7 @@ import * as zucchetti from './it/zucchetti.json';
 import * as borme from './es/borme.json';
 import * as elCorteIngles from './es/el-corte-ingles.json';
 import * as holded from './es/holded.json';
+import * as miravia from './es/miravia.json';
 import * as pccomponentes from './es/pccomponentes.json';
 import * as quipu from './es/quipu.json';
 import * as axonaut from './fr/axonaut.json';
@@ -1200,6 +1203,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   algolia as unknown as AdapterDefinition,
   aliexpressAffiliate as unknown as AdapterDefinition,
   aliexpressDropshipping as unknown as AdapterDefinition,
+  aliexpressSeller as unknown as AdapterDefinition,
   allegro as unknown as AdapterDefinition,
   alphaVantage as unknown as AdapterDefinition,
   amazonAds as unknown as AdapterDefinition,
@@ -1481,6 +1485,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   kustomer as unknown as AdapterDefinition,
   langfuse as unknown as AdapterDefinition,
   launchdarkly as unknown as AdapterDefinition,
+  lazada as unknown as AdapterDefinition,
   lemlist as unknown as AdapterDefinition,
   lemonsqueezy as unknown as AdapterDefinition,
   leroyMerlin as unknown as AdapterDefinition,
@@ -1852,6 +1857,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   borme as unknown as AdapterDefinition,
   elCorteIngles as unknown as AdapterDefinition,
   holded as unknown as AdapterDefinition,
+  miravia as unknown as AdapterDefinition,
   pccomponentes as unknown as AdapterDefinition,
   quipu as unknown as AdapterDefinition,
   axonaut as unknown as AdapterDefinition,
