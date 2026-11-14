@@ -1,0 +1,443 @@
+{
+  "slug": "spartoo",
+  "name": "Spartoo Marketplace",
+  "aliases": [
+    "Spartoo seller",
+    "Spartoo web services"
+  ],
+  "description": "Spartoo marketplace web services for sellers: orders with customer and delivery details, accepting and shipping orders with a tracking number, returns, the status of a product on the site and stock updates per size. Partner code as a form field, XML answers read as JSON.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "spartoo",
+  "docsUrl": "https://www.spartoo.eu/mp/documentation.php?page=webservices",
+  "instructions": "## Spartoo Marketplace\nThis connector works with the **Spartoo marketplace web services** for merchants who sell on Spartoo (shoes, clothing, bags). It reads orders and returns, accepts and ships orders, checks whether a product is online and updates stock per size. Each web service is one address that takes form fields and answers in XML; the connector sends the partner code for you and hands the answer back as JSON under `root`.\n\n**Setup (about 3 minutes)**\n1. Sign in to the Spartoo marketplace back office and open **Documentation**, then **Webservices** and any service page, e.g. **Exporting orders**.\n2. The line **Webservice URL** names the web service address of your Spartoo site, e.g. `https://sws.spartoo.eu` or `https://sws.spartoo.it`. Put the part before `/mp/` into `SPARTOO_HOST`.\n3. On the same page the row `partner` shows your unique code when you are signed in. Put it into `SPARTOO_PARTNER_KEY`. If the page shows no code, ask your Spartoo marketplace contact for the web service code of your account.\n\n**Where to start**: `spartoo_list_orders` with a start date. `spartoo_get_order` reads one order by its id.\n\n**Orders**: an order arrives in status 11 (verified). `spartoo_accept_order` moves it to 2 (in preparation): after that its name, address and carrier can no longer change. `spartoo_ship_order` moves it from 2 to 3 (shipped) with the carrier's tracking number, and Spartoo emails the tracking link to the customer. `spartoo_cancel_order` (status 41) is installed switched off: the customer is refunded and it cannot be undone. Statuses 45 (parcel lost) and 47 (parcel not delivered) are set by Spartoo.\n\n**Returns**: `spartoo_list_returns` and `spartoo_get_return`. One return holds one product. Return statuses: 2 waiting to be received, 3 refused, 4 parcel received and return accepted, 5 paid, 7 refund, 14 waiting for the merchant's prepaid return label. This connector does not accept or refuse returns.\n\n**Products and stock**: `spartoo_check_product_status` says whether a product is on the site (`OK`), out of stock (`OS`), created but not yet online (`EC`) or unknown (`KO`), with the reason. `spartoo_update_stock` sets the stock of one size. Both use your own references: `reference_partenaire` is the product in one colour, `size_reference` one size of it. Stock 0 takes the size off the site.\n\n**Field notes**\n- Order ids and return ids are short codes such as `90D813EA1A2365A8`.\n- The order date filter is written `YYYY-MM-DD:hh:mm:ss` with a colon between day and hour. The return date filter is a Unix timestamp in seconds. Spartoo does not document the time zone.\n- Prices are decimal numbers in the currency of the order's site; `products_final_price` is the discounted unit price times the quantity.\n- An order for a pickup point has `relay_info` instead of the delivery address.\n- Text values arrive as strings, numbers included. One order or product in a list arrives as an object, several as an array.\n\n**Errors**: every answer carries a code. 1 means no error. -1 and -2: the partner code is missing or unknown. -3: date or id missing. -4: wrong date format. -6 and -28: order or return not found. -8: tracking number refused. -9: the order already has that status. -19: wrong order of statuses (2 only from 11, 3 only from 2). -14: product not found. -16, -18 and -20: stock not changed (not possible, already that value, or the size is no longer valid). -30: order too old to ship, contact Spartoo. -428: account deactivated. -429: too many requests in one hour. The connector reports a negative code as a failed call.\n\n**Not covered**: creating and editing products, prices and discounts (they go through an XML catalogue file), packing slips, and return decisions.",
+  "prerequisites": "A Spartoo marketplace merchant account with web service access and its partner code, shown on the web service documentation pages of the back office. About 3 minutes.",
+  "requiredEnvVars": [
+    "SPARTOO_HOST",
+    "SPARTOO_PARTNER_KEY"
+  ],
+  "envVarMeta": {
+    "SPARTOO_HOST": {
+      "label": "Web service address",
+      "kind": "address",
+      "help": "The address in the line Webservice URL of the Spartoo web service documentation, without the path: https://sws.spartoo.eu for spartoo.eu, https://sws.spartoo.com for spartoo.com and France, https://sws.spartoo.it for Italy, and so on.",
+      "example": "https://sws.spartoo.eu",
+      "link": "https://www.spartoo.eu/mp/documentation.php?page=xml_export_orders",
+      "pattern": "^https://sws\\.spartoo\\.(eu|com|net|co\\.uk|de|it|es|be|nl|pl|pt|se|dk|fi|gr|cz|sk|hu|ro|si|com\\.hr)$",
+      "patternMessage": "Use the Spartoo web service address with https:// and without a path, e.g. https://sws.spartoo.eu."
+    },
+    "SPARTOO_PARTNER_KEY": {
+      "label": "Partner code",
+      "kind": "credential",
+      "secret": true,
+      "help": "Your unique web service code. Signed in to the Spartoo marketplace back office, open Documentation, Webservices, Exporting orders: the row partner shows it.",
+      "link": "https://www.spartoo.eu/mp/documentation.php?page=xml_export_orders",
+      "pattern": "^[A-Za-z0-9]{6,64}$",
+      "patternMessage": "Paste the partner code alone: letters and digits, no spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Spartoo does not know this partner code (error -1 or -2). Copy it again from the web service documentation pages of your marketplace back office, and check that the web service address belongs to the same Spartoo site.",
+    "403": "Spartoo answered that this account is deactivated for web services (error -428). Contact the Spartoo marketplace team.",
+    "404": "Spartoo found no order or return with that id for this partner code (error -6 or -28).",
+    "rate_limited": "Spartoo limits the number of web service calls per hour (error -429). Wait and try again later."
+  },
+  "probe": {
+    "tool": "spartoo_list_orders",
+    "params": {
+      "since": "__TOMORROW__:00:00:00"
+    }
+  },
+  "connector": {
+    "name": "Spartoo marketplace web services",
+    "type": "REST",
+    "baseUrl": "{{SPARTOO_HOST}}/mp",
+    "authType": "NONE",
+    "authConfig": {},
+    "headers": {
+      "Accept": "text/xml, application/xml",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "root.errors",
+          "in": [
+            -1,
+            -2
+          ],
+          "status": 401
+        },
+        {
+          "path": "root.errors",
+          "equals": -428,
+          "status": 403
+        },
+        {
+          "path": "root.errors",
+          "equals": -429,
+          "status": 429
+        },
+        {
+          "path": "root.errors",
+          "in": [
+            -6,
+            -28
+          ],
+          "status": 404
+        },
+        {
+          "path": "root.errors",
+          "matches": "^-[0-9]+$",
+          "status": 400
+        },
+        {
+          "path": "root.orders.order.errors.error.id",
+          "matches": "^-[0-9]+$",
+          "messagePath": [
+            "root.orders.order.errors.error.id",
+            "root.orders.order.errors.error.description"
+          ],
+          "status": 400
+        },
+        {
+          "path": "root.returns.return.errors.error.id",
+          "matches": "^-[0-9]+$",
+          "messagePath": [
+            "root.returns.return.errors.error.id",
+            "root.returns.return.errors.error.description"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "spartoo_list_orders",
+      "description": "List the orders placed since a date, optionally only those in one status. Per order under `root.orders.order`: orders_id, customers (billing name, address, phone), delivery (name and address, or relay_info for a pickup point), payment_method, shipping_name, shipping_price, order_total, orders_status_id and orders_status_name, date_purchased, last_modified, and products (your reference, Spartoo's reference, name, brand, size, size reference, colour, quantity, unit price, discounted price, final price). No paging: narrow the date to keep the answer small. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "Orders placed from this moment on, written YYYY-MM-DD:hh:mm:ss with a colon between day and hour, e.g. 2026-11-01:00:00:00."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              11,
+              2,
+              3,
+              41,
+              45,
+              47
+            ],
+            "description": "Only orders in this status: 11 verified (new, to accept), 2 in preparation (accepted), 3 shipped, 41 cancelled, 45 parcel lost, 47 parcel not delivered. Leave out for all."
+          }
+        },
+        "required": [
+          "since"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_export_orders.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "date": "$since",
+          "status": "$status",
+          "statut": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "spartoo_get_order",
+      "description": "Read one order by its id: customer and delivery details (or the pickup point in relay_info), payment method, shipping name and price, order total, current status id and name, purchase and last change dates, and the ordered products with your references, sizes, quantities and prices. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Spartoo order id, e.g. 90D813EA1A2365A8 (orders_id of spartoo_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_export_orders.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "oID": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "spartoo_accept_order",
+      "description": "Accept a new order: moves it from status 11 (verified) to 2 (in preparation). After that the order's name, delivery address and carrier can no longer change. Fails with error -19 when the order is not in status 11 and -9 when it is already accepted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Spartoo order id to accept (orders_id of spartoo_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_maj_orders.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "oID": "$order_id",
+          "statut": "2"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "spartoo_ship_order",
+      "description": "Mark an accepted order as shipped with the carrier's tracking number: moves it from status 2 to 3, and Spartoo emails the tracking link to the customer. The whole order ships in one parcel. Fails with error -19 when the order is not in status 2, -8 when the tracking number is refused and -30 when the order is too old.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Spartoo order id to ship; it must be in status 2 (accept it first)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Tracking number given by the carrier named in the order (shipping_name)."
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_maj_orders.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "oID": "$order_id",
+          "statut": "3",
+          "tracking_number": "$tracking_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "spartoo_cancel_order",
+      "description": "Cancel an order that has not shipped (status 41). The customer does not receive the order and is refunded by Spartoo; it cannot be undone and counts against the merchant. Not possible once the order is in status 3. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Spartoo order id to cancel."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_maj_orders.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "oID": "$order_id",
+          "statut": "41"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "spartoo_list_returns",
+      "description": "List the returns registered since a moment, optionally only those in one status. Per return under `root.returns.return`: return_id, return_date, return_status and return_status_name, return_reason, the order id, and the returned product (your reference, Spartoo's reference, name, brand, size, colour). One return holds one product. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Returns registered from this moment on, as a Unix timestamp in seconds, e.g. 1793491200."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              2,
+              3,
+              4,
+              5,
+              7,
+              14
+            ],
+            "description": "Only returns in this status: 2 waiting to be received, 3 refused, 4 parcel received and accepted, 5 paid, 7 refund, 14 waiting for the merchant's prepaid return label. Leave out for all."
+          }
+        },
+        "required": [
+          "since"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_export_returns.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "date": "$since",
+          "statut": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "spartoo_get_return",
+      "description": "Read the returns of one order, or one return by its id: return id and date, status id and name, reason, order id and the returned product with size and colour. Give return_id or order_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{3,40}$",
+            "description": "Spartoo return id, e.g. EEAJBCC (return_id of spartoo_list_returns)."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Spartoo order id: all returns of that order."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_export_returns.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "rID": "$return_id",
+          "oID": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "spartoo_check_product_status",
+      "description": "Check whether one of your products is on the Spartoo site. Returns under `root.products.product` your reference, a status (OK on the site, OS not in stock, EC created but not yet online, KO not created in Spartoo's system) and a description with the reason when it is offline. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_reference": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,100}$",
+            "description": "Your product reference (reference_partenaire: one model in one colour). Letters, digits, dash, underscore and full stop only."
+          }
+        },
+        "required": [
+          "product_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_check_status_products.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "xml": "<root><products><product><reference_partenaire>${product_reference}</reference_partenaire></product></products></root>"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "spartoo_update_stock",
+      "description": "Set the stock of one size of one product, in real time. Stock 0 takes that size off the site; a product whose sizes are all 0 goes offline. The size must have been created with a size reference. Fails with error -14 when the product is unknown, -18 when the stock already has that value and -20 when the size is no longer valid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_reference": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._-]{1,100}$",
+            "description": "Your product reference (reference_partenaire: one model in one colour)."
+          },
+          "size_reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Your reference of the size to update (size_reference of the product, products_size_reference in orders)."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "New stock quantity for that size, in pieces. 0 takes the size off the site."
+          }
+        },
+        "required": [
+          "product_reference",
+          "size_reference",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/xml_maj_stock.php",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "partner": "{{SPARTOO_PARTNER_KEY}}",
+          "reference_partenaire": "$product_reference",
+          "products_size_reference": "$size_reference",
+          "products_quantity": "$quantity"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    }
+  ]
+}
