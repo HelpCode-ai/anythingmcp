@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 774 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 776 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -92,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-774 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
+776 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
 
 | Category | Examples |
 |---|---|
@@ -1808,6 +1808,8 @@ If your provider already speaks OAuth2, prefer `OAUTH2` — it has standardised 
                                               response 401? ──► forceRelogin() + retry once
 ```
 
+With `tokenPlacement: "body"` the token is rendered into the tool's body instead of a header, and with `refreshOnBody401` a refused token reported in the response body triggers the same re-login (see [XML logins and a token in the request body](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md#xml-logins-and-a-token-in-the-request-body>)).
+
 The token cache is keyed by `connectorId` (when available) or by `loginUrl|username`. A per-key mutex prevents concurrent refresh storms.
 
 ---
@@ -1836,6 +1838,9 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   },
   // …or a raw string template (only for very simple JSON bodies):
   "loginBodyTemplate": "{\"u\":\"${username}\",\"p\":\"${passwordHashed}\"}",
+  // …or, for an XML API, the document as a string (see "XML logins" below):
+  "loginBodyFormat": "xml",                  // optional: a string loginBody is XML, its values are XML-escaped
+  "loginResponseFormat": "xml",              // optional: parse an XML login answer so the paths below address it
 
   // ─── Credentials & client identity ─────────────────────────────
   "username": "{{SERVICE_EMAIL}}",
@@ -1881,9 +1886,11 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
 
   // ─── Re-login policy ───────────────────────────────────────────
   "refreshOn401": true,                              // re-login on a 401 and retry once (default true)
+  "refreshOnBody401": false,                         // also when the body reports the refused token (default false, see below)
   "proactiveRefreshSeconds": 86400,                  // re-login when this much remains (default 24 h)
 
   // ─── Header injection for downstream tool calls ────────────────
+  "tokenPlacement": "header",                        // header (default) | body: no token header, ${loginToken} in the bodyTemplate
   "headerName":     "Authorization",                 // default Authorization
   "headerTemplate": "Bearer ${token}",               // default "Bearer ${token}"
   "extraHeaders": {
@@ -1920,7 +1927,103 @@ The placeholders below are substituted by the engine when rendering `loginBody` 
 
 In `headerTemplate` and `extraHeaders`, only `${token}`, `${aud}` and `${uuid}` are available. `${token}` and `${aud}` refer to the issued token, not the credentials. `${uuid}` is a new random UUID for every API request (the same value wherever it appears in that request), for APIs that want a unique request or correlation id on each call. In `loginHeaders`, `${uuid}` is the only placeholder and gives each login its own UUID.
 
-A `loginBody` that is a string is sent as is. Together with `"Content-Type": "application/x-www-form-urlencoded"` in `loginHeaders` that covers OAuth-style token endpoints which take a form body, such as Walmart's client-credentials call (`"loginBody": "grant_type=client_credentials"` with `loginBasicAuth: true`).
+With `tokenPlacement: "body"`, a tool's `endpointMapping.bodyTemplate` has one more placeholder, `${loginToken}`: the issued token (see [XML logins and a token in the request body](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md#xml-logins-and-a-token-in-the-request-body>)).
+
+A `loginBody` that is a string is sent as is, with its placeholders filled in (XML-escaped with `loginBodyFormat: "xml"`). Together with `"Content-Type": "application/x-www-form-urlencoded"` in `loginHeaders` that covers OAuth-style token endpoints which take a form body, such as Walmart's client-credentials call (`"loginBody": "grant_type=client_credentials"` with `loginBasicAuth: true`).
+
+### XML logins and a token in the request body
+
+Some APIs speak XML from the login on and never use an `Authorization` header:
+Fnac Darty's marketplace API takes an XML document with a partner id, a shop id
+and a key at `/auth`, answers `<auth_response><token>…</token><validity>…</validity></auth_response>`,
+and expects the token as an attribute of the root element of every later
+request. Four fields cover this. Each is opt-in, and a connector without them
+behaves exactly as before.
+
+```json
+"authConfig": {
+  "loginUrl": "https://api.example.com/auth",
+  "loginBodyFormat": "xml",
+  "loginBody": "<auth xmlns=\"urn:example\"><partner_id>${username}</partner_id><shop_id>${aud}</shop_id><key>${password}</key></auth>",
+  "loginHeaders": { "Content-Type": "text/xml; charset=utf-8" },
+  "username": "{{PARTNER_ID}}",
+  "password": "{{API_KEY}}",
+  "aud": "{{SHOP_ID}}",
+  "loginResponseFormat": "xml",
+  "tokenJsonPath": "auth_response.token",
+  "expiryJsonPath": "auth_response.validity",
+  "expiryFormat": "iso8601",
+  "tokenPlacement": "body",
+  "refreshOnBody401": true
+}
+```
+
+- **`loginBodyFormat: "xml"`**: a string `loginBody` is an XML document. The
+  values `${username}`, `${password}`, `${aud}` and the other login
+  placeholders insert are XML-escaped (`&` `<` `>` `"` `'`), and the request is
+  labelled `application/xml; charset=utf-8` unless `loginHeaders` set a
+  Content-Type. Without the field a string `loginBody` is sent as before: the
+  values go in as they are and the request is labelled `application/json`
+  unless `loginHeaders` say otherwise. The field has no effect on a structured
+  `loginBody` or on `loginBodyTemplate`.
+- **`loginResponseFormat: "xml"`**: a login answer that is a string and is
+  declared XML (`text/xml`, `application/xml`, `…+xml`), or starts with `<`,
+  is parsed with the parser the REST engine uses for XML answers: attributes
+  sit next to child elements without a prefix, namespace prefixes are dropped
+  and every value stays a string. `tokenJsonPath`, `expiryJsonPath` and
+  `audJsonPath` then address the document by element name, root element
+  included (`auth_response.token`). When the answer carries no token, the text
+  of its first `<error>` element is reported as the service's refusal, with the
+  error's `code` attribute in front. Anything that is not an XML document is
+  read as it arrived.
+- **`tokenPlacement: "body"`**: REST tool calls send no token header
+  (`headerName` and `headerTemplate` are not used; `extraHeaders` still are).
+  The token is the placeholder `${loginToken}` in a tool's
+  `endpointMapping.bodyTemplate`: XML-escaped with `bodyEncoding: "xml"`,
+  JSON-escaped in a JSON template. The engine's value always wins: a tool
+  argument named `loginToken` cannot replace it. A body that carries the token
+  is not sent again to another origin after a redirect. Fixed values the body
+  needs next to the token (a partner id, a shop id) are ordinary connector
+  variables: `{{PARTNER_ID}}` in the template.
+
+  ```json
+  "endpointMapping": {
+    "method": "POST",
+    "path": "/offers_query",
+    "bodyEncoding": "xml",
+    "bodyTemplate": "<offers_query partner_id=\"{{PARTNER_ID}}\" shop_id=\"{{SHOP_ID}}\" token=\"${loginToken}\"><paging>${page}</paging></offers_query>"
+  }
+  ```
+
+- **`refreshOnBody401: true`**: an API of this kind also reports an expired
+  token in the body rather than with HTTP 401. Describe the error in
+  `connector.config.errorWhen` (see
+  [Errors inside a 200 response](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#errors-inside-a-200-response>))
+  with `status: 401`; when such a rule matches a 2xx answer, or the body of an
+  HTTP error answer (Fnac's test platform refuses a wrong key with HTTP 400 and
+  the XML error in the body), the engine logs in again and repeats the call
+  once, with the new token in the header or in the body. A second refusal is
+  reported as it is. Without the field a mapped 401 is reported and nothing is
+  retried, as before.
+
+  ```json
+  "config": {
+    "errorWhen": [
+      { "path": "offers_query_response.error.code", "in": ["ERR_098", "ERR_102"], "messagePath": "offers_query_response.error.#text", "status": 401 }
+    ]
+  }
+  ```
+
+  An `<error code="ERR_098">text</error>` element parses to
+  `{ "code": "ERR_098", "#text": "text" }`, hence the `#text` path.
+
+`tokenPlacement: "body"` and `refreshOnBody401` apply to REST connectors.
+`scripts/validate-adapters.mjs` checks the combinations (rule
+`login-token-xml`): a `${loginToken}` without `tokenPlacement: "body"`, a body
+placement no template uses, a `refreshOnBody401` without a 401 rule.
+
+Optional elements of an XML request are left out with template blocks, see
+[XML bodies](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#xml-bodies>).
 
 ### Signed JWT logins
 
@@ -4102,6 +4205,14 @@ of the REST rules simply do not apply to it:
   bound parameters, never string-interpolated.
 - Adapters install **read-only**; the engine rejects anything but a read until
   the user flips the switch in the connector's settings.
+- A table name cannot be a bound parameter. When part of it depends on the
+  installation (OpenCart's table prefix), list the variable in
+  `connector.config.sqlIdentifierVars` and write it as `{{VAR}}` inside the
+  identifier: `` FROM `{{OPENCART_DB_PREFIX}}order` ``. Its value must then be
+  at most 20 letters, digits or underscores (empty is allowed), or the call
+  is refused before anything reaches the database; no other `{{VAR}}` may
+  appear in the SQL of that connector. Values still go through `${name}`.
+  Without the list nothing is checked, so never put `{{VAR}}` in SQL without it.
 - Declare a `probe` (a listing tool with no required parameters). A DATABASE
   adapter has no HTTP healthcheck, so without one the install reports nothing.
 
@@ -4357,6 +4468,39 @@ break the document:
   or the tool sets its own `Content-Type`.
 
 Without `bodyEncoding: "xml"`, `__raw` values are inserted as they are, as
+before.
+
+**Optional and repeated blocks.** An API that validates requests against a
+schema refuses an element that is present but empty (`<paging></paging>` where
+a number is expected), so an XML `bodyTemplate` can leave parts out and repeat
+parts per item of a list:
+
+| Block | Meaning |
+|-------|---------|
+| `${?name}…${/name}` | Kept when the parameter `name` has a value. |
+| `${?a\|b}…${/a\|b}` | Kept when `a` or `b` has a value. |
+| `${*items}…${/items}` | Repeated for every item of the list `items` (a single value counts as a list of one). Inside, `${.}` is the item, and the fields of an object item are placeholders of their own (`${sku}`), on top of the call's parameters. |
+
+"Has a value" means not missing, not `null`, not `""` and not an empty list;
+`0` and `false` are values. Blocks nest, also under the same name, so a wrapper
+element goes with its list:
+
+```json
+{
+  "method": "POST",
+  "path": "/orders_query",
+  "bodyEncoding": "xml",
+  "bodyTemplate": "<orders_query${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?states}<states>${*states}<state>${.}</state>${/states}</states>${/states}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}</orders_query>"
+}
+```
+
+With `{"page": 1, "states": ["Created", "ToShip"]}` this sends
+`<orders_query><paging>1</paging><states><state>Created</state><state>ToShip</state></states></orders_query>`.
+Every substituted value is XML-escaped, as elsewhere in an XML body. A block
+that is opened and never closed, or that names no parameter, stops the call
+before anything is sent; `scripts/validate-adapters.mjs` reports it (rule
+`xml-template-blocks`). Blocks exist only in a `bodyTemplate` with
+`bodyEncoding: "xml"`, and a template without them is rendered exactly as
 before.
 
 ### Response headers and pagination (`exposeHeaders`)
@@ -4974,6 +5118,8 @@ The engine handles salt fetch → bcrypt → login → token cache → proactive
 A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenticate`) sets `"loginBasicAuth": true`: the engine sends `Authorization: Basic base64(username:password)` on the login request only (the API calls keep using `headerTemplate`), the password is never offered to the body templates (`${password}` renders empty), and no body is sent without a `loginBody`. An `Authorization` in `loginHeaders` is refused rather than overridden, as are `signedJwt`, bcrypt `passwordHashing` and a username containing `:`; `scripts/validate-adapters.mjs` reports the same mistakes (rule `login-basic-auth`).
 
 When the login answer is not documented, `tokenJsonPath` may be a list of paths tried in order (the first non-empty string wins), e.g. `["AuthenticationResult.IdToken", "idToken", "token", "."]`.
+
+An XML API (Fnac Darty's marketplace) logs in with an XML document and carries the token in the body of every request instead of a header. Four opt-in fields cover it: `"loginBodyFormat": "xml"` (a string `loginBody` is XML, its values are XML-escaped), `"loginResponseFormat": "xml"` (the XML login answer is parsed, so `tokenJsonPath` reads `auth_response.token`), `"tokenPlacement": "body"` (no token header; the token is `${loginToken}` in a tool's `bodyTemplate`) and `"refreshOnBody401": true` (log in again when a `config.errorWhen` rule with `status: 401` matches the response body). `scripts/validate-adapters.mjs` checks the combinations (rule `login-token-xml`).
 
 See [`docs/connectors/login-token-auth.md`](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md>) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
 
