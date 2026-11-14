@@ -60,14 +60,9 @@ export function ActiveSubscriptionNotice({
         replaceSession(switched.accessToken, switched.user, switched.organization?.name ?? null);
         session = switched.accessToken;
       }
-      let url: string;
-      try {
-        ({ url } = await license.billingPortal(session, returnUrl, 'cancel'));
-      } catch {
-        // Stripe may not offer its cancellation page for every subscription
-        // state; the portal's start page has the same Cancel button.
-        ({ url } = await license.billingPortal(session, returnUrl));
-      }
+      // Stripe's cancellation page itself: the portal's start page has no
+      // Cancel button on Cloud (the licence site leaves it out there).
+      const { url } = await license.billingPortal(session, returnUrl, 'cancel');
       window.location.assign(url);
     } catch (err: any) {
       setError(err?.message || t('openFailed'));
