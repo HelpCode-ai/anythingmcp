@@ -532,6 +532,14 @@ of the REST rules simply do not apply to it:
   bound parameters, never string-interpolated.
 - Adapters install **read-only**; the engine rejects anything but a read until
   the user flips the switch in the connector's settings.
+- A table name cannot be a bound parameter. When part of it depends on the
+  installation (OpenCart's table prefix), list the variable in
+  `connector.config.sqlIdentifierVars` and write it as `{{VAR}}` inside the
+  identifier: `` FROM `{{OPENCART_DB_PREFIX}}order` ``. Its value must then be
+  at most 20 letters, digits or underscores (empty is allowed), or the call
+  is refused before anything reaches the database; no other `{{VAR}}` may
+  appear in the SQL of that connector. Values still go through `${name}`.
+  Without the list nothing is checked, so never put `{{VAR}}` in SQL without it.
 - Declare a `probe` (a listing tool with no required parameters). A DATABASE
   adapter has no HTTP healthcheck, so without one the install reports nothing.
 
