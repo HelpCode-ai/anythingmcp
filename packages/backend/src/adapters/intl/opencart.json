@@ -1,0 +1,1021 @@
+{
+  "slug": "opencart",
+  "name": "OpenCart",
+  "aliases": [
+    "OpenCart 3",
+    "OpenCart 4",
+    "ocStore",
+    "Open Cart"
+  ],
+  "description": "Ask questions about an OpenCart shop from its own MySQL database, read-only: orders and sales per day, best-selling products, stock and missing content, customers, categories, coupons, returns, reviews and SEO URLs. OpenCart 3 and 4. A database user with SELECT only.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "opencart",
+  "docsUrl": "https://docs.opencart.com/",
+  "instructions": "## OpenCart\n\nAnswers a shop owner's questions from the OpenCart shop's own MySQL or MariaDB database: orders and sales, products and stock, customers, categories, coupons, returns, reviews and SEO URLs. Everything is read-only SQL. It works on OpenCart 3.0, 4.0 and 4.1 and their forks (ocStore). OpenCart's built-in API is not used: it can only build or read one order at a time.\n\n**Setup**\n1. Create a database user that may only read. In cPanel: **MySQL Databases**, add a new user, add it to the shop's database and tick only **SELECT**. With SQL:\n   ```sql\n   CREATE USER 'amcp_reader'@'%' IDENTIFIED BY 'a-long-password';\n   GRANT SELECT ON shop_database.* TO 'amcp_reader'@'%';\n   ```\n   The shop's own database user also works, but it can write. This connector never does, and a user with SELECT only makes that certain.\n2. Allow the AnythingMCP outbound address to reach MySQL. In cPanel: **Remote MySQL** (or **Remote Database Access**), add the address shown on the setup page. On Plesk it is the database user's **Access control**; on your own server open port 3306 in the firewall for that address only and check that `bind-address` is not `127.0.0.1`.\n3. Fill in the connection. The values are in the shop's `config.php`:\n   - `DB_HOSTNAME` is `localhost` there; from outside use the shop's domain or the server's IP address as `OPENCART_DB_HOST`.\n   - `DB_PORT` (usually 3306) goes to `OPENCART_DB_PORT`, `DB_DATABASE` to `OPENCART_DB_NAME`.\n   - `OPENCART_DB_USER` and `OPENCART_DB_PASSWORD` are the read-only user from step 1, not `DB_USERNAME`.\n   - `DB_PREFIX` goes to `OPENCART_DB_PREFIX`. It is almost always `oc_`. Leave the field empty only when `DB_PREFIX` is empty.\n\n**Self-hosted AnythingMCP next to the shop**: use the internal host name or address of the database (the value of `DB_HOSTNAME` when both run on the same machine or Docker network), skip step 2, and add that host to `SSRF_ALLOWED_HOSTS`, because private addresses are blocked by default.\n\n**Where to start**\n- `opencart_guide` explains the data model and costs nothing. `opencart_get_shop_overview` returns the language, store and currency ids and how much data there is.\n- Sales: `opencart_list_order_statuses` first, then `opencart_sales_summary` and `opencart_top_products` with the status ids that count as sales; `opencart_list_orders` and `opencart_get_order` for single orders.\n- Catalogue: `opencart_search_products`, `opencart_get_product`, `opencart_list_product_specials`, `opencart_low_stock`, `opencart_products_missing_content`, `opencart_list_categories`.\n- Customers and service: `opencart_list_customers`, `opencart_get_customer`, `opencart_list_returns`, `opencart_list_reviews`.\n- Marketing and set-up: `opencart_list_coupons`, `opencart_list_seo_urls`, `opencart_list_extensions`.\n- Anything else: `opencart_list_tables`, `opencart_describe_table` and `opencart_query`.\n\n**Data notes**\n- An order with `order_status_id` 0 is a checkout that was never completed. The fixed tools leave those out. Which statuses are sales is the shop's choice: pass them as `status_ids`. Without it, every order with a status counts, cancelled and refunded ones too.\n- Order totals include tax and shipping and are in the shop's default currency. Line prices on an order are without tax.\n- Texts exist once per language. Tools take `language_id`; 0 means the shop's first active language.\n- Dates are in the shop server's local time. Date filters take `YYYY-MM-DD` and include both days.\n- Lists return 50 to 200 rows per call; page with `limit` and `offset`. Any result stops at 1000 rows and any statement at 60 seconds.\n- Version differences are handled by the fixed tools where possible: SKU and the other product codes left the product table in OpenCart 4.1.0.4, sale prices moved into the discount table in 4.1, SEO URLs changed columns in 4.0. `opencart_list_product_specials` needs OpenCart 3.x or 4.0.\n- Stock kept per option value (size, colour) is not in the stock tools; read `product_option_value` with `opencart_query`.\n- The standard order table has no index on date or customer, so reports over many years read the whole table. Keep date ranges reasonable on shops with hundreds of thousands of orders.\n\n**Not included**\n- No writes: prices, stock, order statuses and content cannot be changed. OpenCart keeps derived data in several tables and caches (order history, stock, SEO URLs, the admin's own events), so a direct database write can leave the shop inconsistent, and writes would need a database user with more than SELECT.\n- Blocked on purpose, also in `opencart_query`: admin users, API keys and sessions, customer sign-in attempts and tokens, IP logs and the `setting` table, which holds the mail password and the payment providers' keys. Passwords, tokens and IP addresses are never selected by the fixed tools. The customer table still contains password hashes: name the columns you need in `opencart_query` and never use `SELECT *` there.\n- Files, images, themes, caches and anything outside the database.\n",
+  "requiredEnvVars": [
+    "OPENCART_DB_HOST",
+    "OPENCART_DB_PORT",
+    "OPENCART_DB_NAME",
+    "OPENCART_DB_USER",
+    "OPENCART_DB_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "OPENCART_DB_PREFIX"
+  ],
+  "envVarMeta": {
+    "OPENCART_DB_HOST": {
+      "label": "Database host",
+      "kind": "address",
+      "secret": false,
+      "help": "The shop's domain or the server's IP address, without http:// and without a port. Not localhost, unless AnythingMCP runs on the same machine as the shop.",
+      "example": "shop.example.com",
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$",
+      "patternMessage": "Enter only the host name or IP address, for example shop.example.com: no http://, no port, no path."
+    },
+    "OPENCART_DB_PORT": {
+      "label": "Database port",
+      "kind": "address",
+      "secret": false,
+      "help": "The MySQL port: 3306 unless your host says otherwise (DB_PORT in config.php).",
+      "example": "3306",
+      "pattern": "^[0-9]{2,5}$",
+      "patternMessage": "Enter the port number only, usually 3306."
+    },
+    "OPENCART_DB_NAME": {
+      "label": "Database name",
+      "kind": "address",
+      "secret": false,
+      "help": "DB_DATABASE in the shop's config.php. On cPanel it starts with your account name, for example account_shop.",
+      "example": "account_opencart",
+      "pattern": "^[A-Za-z0-9_$-]{1,64}$",
+      "patternMessage": "Enter the database name exactly as in config.php (DB_DATABASE): letters, digits, underscores and hyphens."
+    },
+    "OPENCART_DB_USER": {
+      "label": "Database user (read-only)",
+      "kind": "credential",
+      "secret": false,
+      "help": "The user you created with SELECT only. Prefer it over the shop's own DB_USERNAME, which can write.",
+      "example": "account_amcp",
+      "pattern": "^\\S{1,80}$",
+      "patternMessage": "Enter the user name without spaces."
+    },
+    "OPENCART_DB_PASSWORD": {
+      "label": "Database password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that database user."
+    },
+    "OPENCART_DB_PREFIX": {
+      "label": "Table prefix",
+      "kind": "setting",
+      "secret": false,
+      "help": "DB_PREFIX in the shop's config.php, almost always oc_. Leave empty only when DB_PREFIX is empty there.",
+      "example": "oc_",
+      "pattern": "^[A-Za-z0-9_]{0,20}$",
+      "patternMessage": "The prefix may only contain letters, digits and underscores, at most 20 characters, for example oc_."
+    }
+  },
+  "prerequisites": "Access to the shop's hosting (cPanel, Plesk or the server itself) to create a MySQL user with SELECT only and to allow a remote address, plus the shop's `config.php` for the database name and table prefix. About 10 minutes.",
+  "requiresIpAllowlist": true,
+  "verifyHints": {
+    "auth_failed": "MySQL refused this user. Check the user name and password, that the user was added to the shop's database with SELECT, and that Remote MySQL allows the AnythingMCP address: MySQL also answers \"Access denied\" when the user may not connect from this address.",
+    "unreachable": "No MySQL server answered at this host and port. Most hosts block MySQL from outside until the AnythingMCP address is added under Remote MySQL (cPanel) or the firewall opens port 3306 for it. Use the shop's domain or IP address as host, not localhost. Self-hosted with a private address: add the host to SSRF_ALLOWED_HOSTS.",
+    "error": "The database answered but the check query failed. If the message says a table does not exist, the table prefix is wrong: copy DB_PREFIX from the shop's config.php (usually oc_), and check that the database name is the shop's."
+  },
+  "probe": {
+    "tool": "opencart_get_shop_overview",
+    "params": {}
+  },
+  "setupGuide": {
+    "effort": "admin_needed",
+    "minutes": 10,
+    "examples": [
+      "How much did we sell per day last week?",
+      "Which products are low on stock?",
+      "Which reviews are waiting for approval?"
+    ],
+    "needs": [
+      "Access to your hosting control panel (cPanel, Plesk) or to the database server",
+      "The shop's `config.php`, for the database name and the table prefix"
+    ],
+    "why": "OpenCart's built-in API can only build or read one order at a time. Reading the shop's database with a user that may only SELECT answers questions about sales, products and customers, and cannot change anything in the shop.",
+    "steps": [
+      {
+        "id": "database-user",
+        "title": "Create a read-only database user",
+        "body": "In your hosting control panel open the MySQL section (cPanel: **MySQL Databases**). Create a new user with a long password, add it to the shop's database and tick only **SELECT**.\n\nOn your own server the same in SQL:\n\n```sql\nCREATE USER 'amcp_reader'@'%' IDENTIFIED BY 'a-long-password';\nGRANT SELECT ON shop_database.* TO 'amcp_reader'@'%';\n```",
+        "values": [
+          {
+            "label": "Privileges",
+            "value": "SELECT",
+            "pick": true,
+            "note": "Nothing else: no INSERT, UPDATE, DELETE or ALL PRIVILEGES."
+          }
+        ],
+        "confirm": "I created a user that has SELECT only",
+        "problems": [
+          {
+            "q": "Which database is the shop's?",
+            "a": "Open `config.php` in the shop's folder: `DB_DATABASE` is the database name and `DB_PREFIX` the table prefix."
+          },
+          {
+            "q": "Can I use the shop's own database user?",
+            "a": "It works, but that user can write. This connector only reads either way; a separate user with SELECT only makes that certain and can be removed without touching the shop."
+          }
+        ]
+      },
+      {
+        "id": "remote-access",
+        "title": "Allow the AnythingMCP address",
+        "body": "Hosts block MySQL from outside until an address is allowed. In cPanel open **Remote MySQL** (some hosts call it **Remote Database Access**) and add the outbound IP address shown on this page. On Plesk it is the database user's **Access control**. On your own server, open port 3306 in the firewall for that address only.\n\nIf AnythingMCP runs on the same server or network as the shop, skip this step and use the internal host in the next one.",
+        "confirm": "I allowed the address, or AnythingMCP runs next to the shop",
+        "problems": [
+          {
+            "q": "My host has no Remote MySQL",
+            "a": "Some shared hosts do not allow remote database access at all. Ask their support to allow the address, or run AnythingMCP self-hosted on the same server as the shop."
+          },
+          {
+            "q": "My own server still refuses the connection",
+            "a": "Check that MySQL listens on the public interface (`bind-address` is not `127.0.0.1`) and that the user was created for the remote host (`'amcp_reader'@'%'` or the AnythingMCP address), not only for `localhost`."
+          }
+        ]
+      },
+      {
+        "id": "connection",
+        "title": "Paste the connection details",
+        "body": "Host: the shop's domain or the server's IP address (not `localhost`, which is what `config.php` says from the shop's own point of view). Database name and table prefix: `DB_DATABASE` and `DB_PREFIX` from `config.php`. User and password: the read-only user from the first step.\n\nWhen you continue, AnythingMCP connects and reads the shop's languages and currencies to check the connection and the prefix.",
+        "fields": [
+          "OPENCART_DB_HOST",
+          "OPENCART_DB_PORT",
+          "OPENCART_DB_NAME",
+          "OPENCART_DB_USER",
+          "OPENCART_DB_PASSWORD",
+          "OPENCART_DB_PREFIX"
+        ],
+        "problems": [
+          {
+            "q": "It says access denied",
+            "a": "The user name or password is wrong, the user was not added to the shop's database, or the AnythingMCP address is not allowed yet (previous step)."
+          },
+          {
+            "q": "It says a table does not exist",
+            "a": "The table prefix does not match. Copy `DB_PREFIX` from `config.php` exactly, including the underscore: usually `oc_`."
+          },
+          {
+            "q": "Nothing answers",
+            "a": "The host or port is wrong, or the firewall still blocks port 3306 from outside. Try the server's IP address instead of the domain when the domain runs behind a proxy such as Cloudflare."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "OpenCart",
+    "type": "DATABASE",
+    "baseUrl": "mysql://{{OPENCART_DB_HOST}}:{{OPENCART_DB_PORT}}/{{OPENCART_DB_NAME}}",
+    "authType": "CONNECTION_STRING",
+    "authConfig": {
+      "username": "{{OPENCART_DB_USER}}",
+      "password": "{{OPENCART_DB_PASSWORD}}"
+    },
+    "config": {
+      "sqlIdentifierVars": [
+        "OPENCART_DB_PREFIX"
+      ],
+      "deniedTables": [
+        "*user",
+        "*user_login",
+        "*user_authorize",
+        "*user_token",
+        "*api",
+        "*api_ip",
+        "*api_session",
+        "*api_history",
+        "*session",
+        "*customer_ip",
+        "*customer_login",
+        "*customer_authorize",
+        "*customer_token",
+        "*setting"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "opencart_guide",
+      "description": "How the OpenCart database is organised: orders and which statuses count as sales, totals and currencies, products and stock, customers, language and store ids, the differences between OpenCart 3 and 4, what is blocked, and example queries for opencart_query. Call it first; it costs nothing and touches no data.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "static",
+        "path": "",
+        "staticResponse": "OpenCart shop database: how to read it.\n\nHow these tools work\n- Every tool is a read-only SELECT on the shop's own MySQL or MariaDB database. Nothing can be changed.\n- The fixed tools add the shop's table prefix themselves. In opencart_query you write the full table names: opencart_list_tables shows them (usually oc_order, oc_product and so on).\n- They work on OpenCart 3.0, 4.0 and 4.1. Where the versions differ it is said below.\n- Start with opencart_get_shop_overview (languages, stores, currencies, how much data there is) and opencart_list_order_statuses.\n\nOrders\n- order: one row per checkout. order_status_id 0 means the customer never finished the checkout (the admin calls these missing orders): never count them as sales. The fixed tools leave them out unless you pass status_ids 0.\n- Which statuses are a sale is the shop's choice. Typical: Processing, Shipped and Complete count; Canceled, Refunded, Failed and Reversed do not. Take the ids from opencart_list_order_statuses and pass them as status_ids, for example 2,3,5. Without status_ids every order with a status is counted.\n- Amounts come back as text with four decimals (123.2000). order.total is the order total including tax and shipping, in the shop's default currency (the currency whose value is 1 in opencart_get_shop_overview). currency_code and currency_value are what the customer saw: total multiplied by currency_value is the amount charged.\n- order_product: name, model, quantity, price (one unit, without tax), total (the line, without tax), tax (per unit). order_option: the options chosen, by order_product_id. order_total: the lines that add up to the total (sub_total, shipping, tax, coupon, total), by code. order_history: every status change with its comment.\n- Name, e-mail and addresses on an order are copies made at checkout. customer_id 0 is a guest.\n- payment_method and shipping_method are plain text in 3.x and JSON text with a name and a code from 4.0.2.\n\nProducts\n- product: model (the shop's own code), price (base price, without tax), quantity (stock), status 1 = enabled, subtract 1 = orders reduce the stock, stock_status_id = the label shown when the stock is 0, image = main picture.\n- sku, upc, ean, jan, isbn and mpn are columns of product up to 4.1.0.3. From 4.1.0.4 they are rows of the table product_code (product_id, code, value): read them with opencart_query.\n- product_description: name, description, meta_title, meta_description; one row per language_id. Names and descriptions are stored with HTML entities: a double quote is &quot; and a description is HTML written as &lt;p&gt;.\n- product_discount: quantity prices per customer group. product_special: sale prices with a start and end date (3.x and 4.0, opencart_list_product_specials). From 4.1 the sale prices are rows of product_discount with special = 1.\n- Stock per option value (size, colour) is in product_option_value.quantity; the fixed tools report the product's own quantity.\n- category (parent_id), category_description, category_path (all ancestors of a category) and product_to_category link products to the tree.\n\nCustomers\n- customer (customer_group_id, status, newsletter, date_added), address (several per customer), customer_group_description.\n- In opencart_query name the columns you need. Do not SELECT * on customer: the row also holds the password hash and sign-in tokens.\n\nAlso there\n- coupon and coupon_history; return with return_status, return_reason and return_action; review (status 0 = waiting for approval); seo_url; extension (what is installed); manufacturer; information and information_description (the shop's text pages); stock_status; tax_class and tax_rate.\n- seo_url: 3.x has query (product_id=42); 4.x has key and value (product_id and 42). opencart_list_seo_urls returns both as target.\n\nIds\n- language_id: every text table has one row per language. The fixed tools take language_id; 0 means the shop's first active language.\n- store_id 0 is the default store; further stores are in the store table.\n- order_status_id, return_status_id, stock_status_id and customer_group_id have name tables with a language_id.\n\nDates\n- Stored in the shop server's local time, without a time zone. Date filters take YYYY-MM-DD and include both days.\n\nReading large shops\n- Results stop at 1000 rows and a statement at 60 seconds. Aggregate in SQL (COUNT, SUM, GROUP BY) and always give a LIMIT in opencart_query.\n- order has no index on date_added or customer_id in a standard installation: a query over all orders reads the whole table. Narrow by order_id ranges or dates and keep the row count small.\n\nNot available\n- Admin users, API keys, sessions, sign-in attempts and tokens, IP logs and the setting table (it holds the mail and payment credentials) are blocked. There are no write tools.\n\nExamples for opencart_query (replace oc_ with the shop's prefix)\n- Revenue by country: SELECT payment_country, COUNT(*) AS orders, SUM(total) AS revenue FROM oc_order WHERE order_status_id IN (2,3,5) AND date_added >= '2026-01-01' GROUP BY payment_country ORDER BY revenue DESC LIMIT 20\n- Revenue by payment method: SELECT payment_method, COUNT(*) AS orders, SUM(total) AS revenue FROM oc_order WHERE order_status_id IN (2,3,5) GROUP BY payment_method ORDER BY revenue DESC LIMIT 20\n- Products never sold: SELECT p.product_id, p.model FROM oc_product p LEFT JOIN oc_order_product op ON op.product_id = p.product_id WHERE op.product_id IS NULL AND p.status = 1 LIMIT 100\n- Coupon use: SELECT c.code, COUNT(*) AS uses, SUM(h.amount) AS amount FROM oc_coupon_history h JOIN oc_coupon c ON c.coupon_id = h.coupon_id GROUP BY c.code ORDER BY uses DESC LIMIT 50\n- Stock per option value: SELECT pov.product_id, ovd.name, pov.quantity FROM oc_product_option_value pov JOIN oc_option_value_description ovd ON ovd.option_value_id = pov.option_value_id AND ovd.language_id = 1 WHERE pov.subtract = 1 ORDER BY pov.quantity LIMIT 100\n"
+      }
+    },
+    {
+      "name": "opencart_get_shop_overview",
+      "description": "The ids every other tool needs, in one call: languages (id, code, name, status), currencies (code, title, status; value is the exchange rate and the default currency has value 1), the extra stores (store 0 is the default store) and three counts: products, customers and orders with a status (detail holds the first and last order date). One row per item with a section column. About 20 rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT x.section, x.id, x.code, x.name, x.status, x.value, x.detail FROM ( SELECT 1 AS part, l.sort_order AS line_no, 'language' AS section, l.language_id AS id, CONVERT(l.code USING utf8mb4) AS code, CONVERT(l.name USING utf8mb4) AS name, l.status AS status, NULL AS value, NULL AS detail FROM `{{OPENCART_DB_PREFIX}}language` l UNION ALL SELECT 2, c.currency_id, 'currency', c.currency_id, CONVERT(c.code USING utf8mb4), CONVERT(c.title USING utf8mb4), c.status, c.value, NULL FROM `{{OPENCART_DB_PREFIX}}currency` c UNION ALL SELECT 3, 0, 'store', 0, NULL, 'Default store', NULL, NULL, NULL UNION ALL SELECT 3, s.store_id, 'store', s.store_id, NULL, CONVERT(s.name USING utf8mb4), NULL, NULL, CONVERT(s.url USING utf8mb4) FROM `{{OPENCART_DB_PREFIX}}store` s UNION ALL SELECT 4, 1, 'count', NULL, 'products', 'Products', NULL, COUNT(*), NULL FROM `{{OPENCART_DB_PREFIX}}product` p UNION ALL SELECT 4, 2, 'count', NULL, 'customers', 'Customer accounts', NULL, COUNT(*), NULL FROM `{{OPENCART_DB_PREFIX}}customer` cu UNION ALL SELECT 4, 3, 'count', NULL, 'orders', 'Orders with a status', NULL, COUNT(*), CONCAT_WS(' to ', DATE_FORMAT(MIN(o.date_added), '%Y-%m-%d'), DATE_FORMAT(MAX(o.date_added), '%Y-%m-%d')) FROM `{{OPENCART_DB_PREFIX}}order` o WHERE o.order_status_id > 0 ) x ORDER BY x.part, x.line_no, x.id LIMIT 200"
+      }
+    },
+    {
+      "name": "opencart_list_order_statuses",
+      "description": "Order statuses with their id, name and the number of orders in each. Use the ids as status_ids in the order tools and decide with the shop owner which ones count as sales. The row with id 0 counts the checkouts that were never completed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT os.order_status_id AS order_status_id, CONVERT(os.name USING utf8mb4) AS name, COALESCE(n.orders, 0) AS orders FROM `{{OPENCART_DB_PREFIX}}order_status` os LEFT JOIN (SELECT o.order_status_id, COUNT(*) AS orders FROM `{{OPENCART_DB_PREFIX}}order` o GROUP BY o.order_status_id) n ON n.order_status_id = os.order_status_id WHERE os.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) UNION ALL SELECT 0, 'Checkout not completed (missing orders)', COUNT(*) FROM `{{OPENCART_DB_PREFIX}}order` o0 WHERE o0.order_status_id = 0 ORDER BY order_status_id LIMIT 200"
+      }
+    },
+    {
+      "name": "opencart_list_orders",
+      "description": "Orders, newest first: order_id, date_added, status, customer_id (0 = guest), customer name and e-mail as given at checkout, total (incl. tax and shipping, in the shop's default currency), the currency the customer paid in, shipping country, store_id and the number of items. Filter by status, date range, customer and minimum total. Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_ids": {
+            "type": "string",
+            "default": "",
+            "description": "Order status ids that count, comma-separated, e.g. 2,3,5 (ids from opencart_list_order_statuses). Empty: every order that has a status, cancelled and refunded ones included. 0 selects the orders whose checkout was never completed."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "First order day, YYYY-MM-DD, in the shop server's local time. Empty: no limit.",
+            "default": ""
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last order day (included), YYYY-MM-DD, in the shop server's local time. Empty: no limit.",
+            "default": ""
+          },
+          "customer_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Only orders of this customer account. 0: all."
+          },
+          "customer": {
+            "type": "string",
+            "default": "",
+            "description": "Part of the customer's name or e-mail address as written on the order."
+          },
+          "min_total": {
+            "type": "number",
+            "default": 0,
+            "description": "Only orders with at least this total, in the shop's default currency."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 50, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT o.order_id, DATE_FORMAT(o.date_added, '%Y-%m-%d %H:%i:%s') AS date_added, o.order_status_id, os.name AS status, o.customer_id, CONCAT(o.firstname, ' ', o.lastname) AS customer, o.email, o.total, o.currency_code, o.shipping_country, o.store_id, (SELECT SUM(op.quantity) FROM `{{OPENCART_DB_PREFIX}}order_product` op WHERE op.order_id = o.order_id) AS items FROM `{{OPENCART_DB_PREFIX}}order` o LEFT JOIN `{{OPENCART_DB_PREFIX}}order_status` os ON os.order_status_id = o.order_status_id AND os.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE ((REPLACE(COALESCE(${status_ids}, ''), ' ', '') = '' AND o.order_status_id > 0) OR FIND_IN_SET(o.order_status_id, REPLACE(COALESCE(${status_ids}, ''), ' ', '')) > 0) AND (COALESCE(${date_from}, '') = '' OR o.date_added >= STR_TO_DATE(${date_from}, '%Y-%m-%d')) AND (COALESCE(${date_to}, '') = '' OR o.date_added < DATE_ADD(STR_TO_DATE(${date_to}, '%Y-%m-%d'), INTERVAL 1 DAY)) AND (COALESCE(${customer_id}, 0) = 0 OR o.customer_id = ${customer_id}) AND (COALESCE(${customer}, '') = '' OR o.email LIKE CONCAT('%', ${customer}, '%') OR CONCAT(o.firstname, ' ', o.lastname) LIKE CONCAT('%', ${customer}, '%')) AND o.total >= COALESCE(${min_total}, 0) ORDER BY o.date_added DESC, o.order_id DESC LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_get_order",
+      "description": "One order in full, as rows with a section column. order: customer name (name), status (detail), total, date, customer_id, e-mail, phone, payment and shipping method, both addresses, currency, invoice number, store and the customer's comment. product: one row per line with model (detail), quantity, unit price and line total without tax, and tax per unit. option: the options chosen, line_id is the order_product_id of the product row. total: the lines that add up to the order total (sub-total, shipping, taxes, coupons), with their code in detail. history: every status change with its comment and date. Amounts are in the shop's default currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "The order number (order_id)."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT x.section, x.line_id, x.name, x.detail, x.quantity, x.price, x.tax, x.total, x.date_added, x.order_status_id, x.customer_id, x.email, x.telephone, x.payment_method, x.shipping_method, x.payment_address, x.shipping_address, x.currency_code, x.currency_value, x.invoice, x.store_name, x.comment FROM ( SELECT 1 AS part, 0 AS line_no, 'order' AS section, o.order_id AS line_id, CONVERT(CONCAT(o.firstname, ' ', o.lastname) USING utf8mb4) AS name, CONVERT(os.name USING utf8mb4) AS detail, NULL AS quantity, NULL AS price, NULL AS tax, o.total AS total, DATE_FORMAT(o.date_added, '%Y-%m-%d %H:%i:%s') AS date_added, o.order_status_id AS order_status_id, o.customer_id AS customer_id, CONVERT(o.email USING utf8mb4) AS email, CONVERT(o.telephone USING utf8mb4) AS telephone, CONVERT(o.payment_method USING utf8mb4) AS payment_method, CONVERT(o.shipping_method USING utf8mb4) AS shipping_method, CONVERT(CONCAT_WS(', ', NULLIF(o.payment_company, ''), CONCAT(o.payment_firstname, ' ', o.payment_lastname), NULLIF(o.payment_address_1, ''), NULLIF(o.payment_address_2, ''), NULLIF(CONCAT(o.payment_postcode, ' ', o.payment_city), ' '), NULLIF(o.payment_zone, ''), NULLIF(o.payment_country, '')) USING utf8mb4) AS payment_address, CONVERT(CONCAT_WS(', ', NULLIF(o.shipping_company, ''), CONCAT(o.shipping_firstname, ' ', o.shipping_lastname), NULLIF(o.shipping_address_1, ''), NULLIF(o.shipping_address_2, ''), NULLIF(CONCAT(o.shipping_postcode, ' ', o.shipping_city), ' '), NULLIF(o.shipping_zone, ''), NULLIF(o.shipping_country, '')) USING utf8mb4) AS shipping_address, CONVERT(o.currency_code USING utf8mb4) AS currency_code, o.currency_value AS currency_value, CASE WHEN o.invoice_no > 0 THEN CONVERT(CONCAT(o.invoice_prefix, o.invoice_no) USING utf8mb4) END AS invoice, CONVERT(o.store_name USING utf8mb4) AS store_name, CONVERT(o.comment USING utf8mb4) AS comment FROM `{{OPENCART_DB_PREFIX}}order` o LEFT JOIN `{{OPENCART_DB_PREFIX}}order_status` os ON os.order_status_id = o.order_status_id AND os.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE o.order_id = ${order_id} UNION ALL SELECT 2, op.order_product_id, 'product', op.order_product_id, CONVERT(op.name USING utf8mb4), CONVERT(op.model USING utf8mb4), op.quantity, op.price, op.tax, op.total, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM `{{OPENCART_DB_PREFIX}}order_product` op WHERE op.order_id = ${order_id} UNION ALL SELECT 3, oo.order_option_id, 'option', oo.order_product_id, CONVERT(oo.name USING utf8mb4), CONVERT(oo.value USING utf8mb4), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM `{{OPENCART_DB_PREFIX}}order_option` oo WHERE oo.order_id = ${order_id} UNION ALL SELECT 4, ot.sort_order, 'total', ot.order_total_id, CONVERT(ot.title USING utf8mb4), CONVERT(ot.code USING utf8mb4), NULL, NULL, NULL, ot.value, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM `{{OPENCART_DB_PREFIX}}order_total` ot WHERE ot.order_id = ${order_id} UNION ALL SELECT 5, oh.order_history_id, 'history', oh.order_history_id, CONVERT(hs.name USING utf8mb4), CONVERT(oh.comment USING utf8mb4), NULL, NULL, NULL, NULL, DATE_FORMAT(oh.date_added, '%Y-%m-%d %H:%i:%s'), oh.order_status_id, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM `{{OPENCART_DB_PREFIX}}order_history` oh LEFT JOIN `{{OPENCART_DB_PREFIX}}order_status` hs ON hs.order_status_id = oh.order_status_id AND hs.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE oh.order_id = ${order_id} ) x ORDER BY x.part, x.line_no, x.line_id LIMIT 500"
+      }
+    },
+    {
+      "name": "opencart_sales_summary",
+      "description": "Sales per day or per month for a date range: period, number of orders, revenue (sum of the order totals incl. tax and shipping, in the shop's default currency), average order value and the number of different customer e-mail addresses. Days without orders are not listed. Pass the status ids that count as sales; without them every order with a status is counted. At most 1000 periods: use group_by month for more than about two years.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD, in the shop server's local time."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day (included), YYYY-MM-DD, in the shop server's local time."
+          },
+          "status_ids": {
+            "type": "string",
+            "default": "",
+            "description": "Order status ids that count, comma-separated, e.g. 2,3,5 (ids from opencart_list_order_statuses). Empty: every order that has a status, cancelled and refunded ones included. 0 selects the orders whose checkout was never completed."
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "day",
+              "month"
+            ],
+            "default": "day",
+            "description": "One row per day (YYYY-MM-DD) or per month (YYYY-MM)."
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT CASE WHEN COALESCE(${group_by}, 'day') = 'month' THEN DATE_FORMAT(o.date_added, '%Y-%m') ELSE DATE_FORMAT(o.date_added, '%Y-%m-%d') END AS period, COUNT(*) AS orders, SUM(o.total) AS revenue, ROUND(AVG(o.total), 2) AS average_order, COUNT(DISTINCT o.email) AS customers FROM `{{OPENCART_DB_PREFIX}}order` o WHERE ((REPLACE(COALESCE(${status_ids}, ''), ' ', '') = '' AND o.order_status_id > 0) OR FIND_IN_SET(o.order_status_id, REPLACE(COALESCE(${status_ids}, ''), ' ', '')) > 0) AND (COALESCE(${date_from}, '') = '' OR o.date_added >= STR_TO_DATE(${date_from}, '%Y-%m-%d')) AND (COALESCE(${date_to}, '') = '' OR o.date_added < DATE_ADD(STR_TO_DATE(${date_to}, '%Y-%m-%d'), INTERVAL 1 DAY)) GROUP BY 1 ORDER BY 1 LIMIT 1000"
+      }
+    },
+    {
+      "name": "opencart_top_products",
+      "description": "Best-selling products in a date range, by units sold or by revenue: product_id, name and model as written on the orders, quantity, revenue (line totals without tax, in the shop's default currency) and the number of orders. Pass the status ids that count as sales; without them every order with a status is counted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First order day, YYYY-MM-DD, in the shop server's local time."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last order day (included), YYYY-MM-DD, in the shop server's local time."
+          },
+          "status_ids": {
+            "type": "string",
+            "default": "",
+            "description": "Order status ids that count, comma-separated, e.g. 2,3,5 (ids from opencart_list_order_statuses). Empty: every order that has a status, cancelled and refunded ones included. 0 selects the orders whose checkout was never completed."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "quantity",
+              "revenue"
+            ],
+            "default": "quantity",
+            "description": "Rank by units sold or by revenue."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Rows per call (default 20, at most 200)."
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT op.product_id, MAX(op.name) AS name, MAX(op.model) AS model, SUM(op.quantity) AS quantity, SUM(op.total) AS revenue, COUNT(DISTINCT op.order_id) AS orders FROM `{{OPENCART_DB_PREFIX}}order` o JOIN `{{OPENCART_DB_PREFIX}}order_product` op ON op.order_id = o.order_id WHERE ((REPLACE(COALESCE(${status_ids}, ''), ' ', '') = '' AND o.order_status_id > 0) OR FIND_IN_SET(o.order_status_id, REPLACE(COALESCE(${status_ids}, ''), ' ', '')) > 0) AND (COALESCE(${date_from}, '') = '' OR o.date_added >= STR_TO_DATE(${date_from}, '%Y-%m-%d')) AND (COALESCE(${date_to}, '') = '' OR o.date_added < DATE_ADD(STR_TO_DATE(${date_to}, '%Y-%m-%d'), INTERVAL 1 DAY)) GROUP BY op.product_id ORDER BY CASE WHEN COALESCE(${sort_by}, 'quantity') = 'revenue' THEN SUM(op.total) ELSE SUM(op.quantity) END DESC, op.product_id LIMIT ${limit}"
+      }
+    },
+    {
+      "name": "opencart_search_products",
+      "description": "Find products by part of their name, model or SKU, or by exact product_id: product_id, name, model, sku, price (base price without tax), quantity in stock, status (1 = enabled), manufacturer and date_modified. Empty search lists the catalogue by name. Page with limit and offset. sku is empty from OpenCart 4.1.0.4, where product codes moved to the product_code table.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "default": "",
+            "description": "Part of the product name, model or SKU, or a product_id. Empty: all products."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "any",
+              "enabled",
+              "disabled"
+            ],
+            "default": "any",
+            "description": "Which products to return by their status switch (default any)."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 50, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT p.product_id, pd.name, p.model, (SELECT sku FROM `{{OPENCART_DB_PREFIX}}product` s WHERE s.product_id = p.product_id) AS sku, p.price, p.quantity, p.status, m.name AS manufacturer, DATE_FORMAT(p.date_modified, '%Y-%m-%d %H:%i:%s') AS date_modified FROM `{{OPENCART_DB_PREFIX}}product` p CROSS JOIN (SELECT NULL AS sku) dflt LEFT JOIN `{{OPENCART_DB_PREFIX}}product_description` pd ON pd.product_id = p.product_id AND pd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN `{{OPENCART_DB_PREFIX}}manufacturer` m ON m.manufacturer_id = p.manufacturer_id WHERE (COALESCE(${search}, '') = '' OR pd.name LIKE CONCAT('%', ${search}, '%') OR p.model LIKE CONCAT('%', ${search}, '%') OR (SELECT sku FROM `{{OPENCART_DB_PREFIX}}product` s WHERE s.product_id = p.product_id) LIKE CONCAT('%', ${search}, '%') OR CAST(p.product_id AS CHAR) = ${search}) AND (COALESCE(${status}, 'any') = 'any' OR p.status = CASE COALESCE(${status}, 'any') WHEN 'disabled' THEN 0 ELSE 1 END) ORDER BY pd.name, p.product_id LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_get_product",
+      "description": "One product in full, as rows with a section column. product: name, model, sku, base price without tax, quantity in stock, status (1 = enabled), the label shown when out of stock, subtract (1 = orders reduce stock), minimum order quantity, manufacturer, dates, main image path, the number of additional images, meta title, meta description and the description (HTML stored with entities). category: one row per category the product is in. discount: quantity prices per customer group (name) with the minimum quantity, price, priority and validity dates; from OpenCart 4.1 sale prices are discount rows with special = 1 and discount_type says how price is applied. For sale prices on 3.x and 4.0 call opencart_list_product_specials.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "The product_id, from opencart_search_products."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT x.section, x.line_id, x.name, x.price, x.quantity, x.priority, x.date_start, x.date_end, x.special, x.discount_type, x.model, x.sku, x.status, x.stock_status, x.subtract, x.minimum, x.manufacturer, x.date_available, x.date_added, x.date_modified, x.image, x.additional_images, x.meta_title, x.meta_description, x.description FROM ( SELECT 1 AS part, 0 AS line_no, 'product' AS section, p.product_id AS line_id, CONVERT(pd.name USING utf8mb4) AS name, p.price AS price, p.quantity AS quantity, NULL AS priority, NULL AS date_start, NULL AS date_end, NULL AS special, NULL AS discount_type, CONVERT(p.model USING utf8mb4) AS model, CONVERT((SELECT sku FROM `{{OPENCART_DB_PREFIX}}product` s WHERE s.product_id = p.product_id) USING utf8mb4) AS sku, p.status AS status, CONVERT(ss.name USING utf8mb4) AS stock_status, p.subtract AS subtract, p.minimum AS minimum, CONVERT(m.name USING utf8mb4) AS manufacturer, DATE_FORMAT(p.date_available, '%Y-%m-%d') AS date_available, DATE_FORMAT(p.date_added, '%Y-%m-%d %H:%i:%s') AS date_added, DATE_FORMAT(p.date_modified, '%Y-%m-%d %H:%i:%s') AS date_modified, CONVERT(p.image USING utf8mb4) AS image, (SELECT COUNT(*) FROM `{{OPENCART_DB_PREFIX}}product_image` pi WHERE pi.product_id = p.product_id) AS additional_images, CONVERT(pd.meta_title USING utf8mb4) AS meta_title, CONVERT(pd.meta_description USING utf8mb4) AS meta_description, CONVERT(pd.description USING utf8mb4) AS description FROM `{{OPENCART_DB_PREFIX}}product` p CROSS JOIN (SELECT NULL AS sku) dflt LEFT JOIN `{{OPENCART_DB_PREFIX}}product_description` pd ON pd.product_id = p.product_id AND pd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN `{{OPENCART_DB_PREFIX}}stock_status` ss ON ss.stock_status_id = p.stock_status_id AND ss.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN `{{OPENCART_DB_PREFIX}}manufacturer` m ON m.manufacturer_id = p.manufacturer_id WHERE p.product_id = ${product_id} UNION ALL SELECT 2, p2c.category_id, 'category', p2c.category_id, CONVERT(cd.name USING utf8mb4), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM `{{OPENCART_DB_PREFIX}}product_to_category` p2c LEFT JOIN `{{OPENCART_DB_PREFIX}}category_description` cd ON cd.category_id = p2c.category_id AND cd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE p2c.product_id = ${product_id} UNION ALL SELECT 3, dc.priority, 'discount', dc.product_discount_id, CONVERT(cgd.name USING utf8mb4), dc.price, dc.quantity, dc.priority, DATE_FORMAT(dc.date_start, '%Y-%m-%d'), DATE_FORMAT(dc.date_end, '%Y-%m-%d'), (SELECT special FROM `{{OPENCART_DB_PREFIX}}product_discount` dx WHERE dx.product_discount_id = dc.product_discount_id), CONVERT((SELECT type FROM `{{OPENCART_DB_PREFIX}}product_discount` dy WHERE dy.product_discount_id = dc.product_discount_id) USING utf8mb4), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM `{{OPENCART_DB_PREFIX}}product_discount` dc CROSS JOIN (SELECT NULL AS special, NULL AS type) dflt LEFT JOIN `{{OPENCART_DB_PREFIX}}customer_group_description` cgd ON cgd.customer_group_id = dc.customer_group_id AND cgd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE dc.product_id = ${product_id} ) x ORDER BY x.part, x.line_no, x.line_id LIMIT 500"
+      }
+    },
+    {
+      "name": "opencart_list_product_specials",
+      "description": "Sale prices (specials) on OpenCart 3.x and 4.0: product_id, name, model, regular price, special price, customer_group_id, priority and the start and end date (0000-00-00 = no limit). By default only the ones valid today; pass a product_id for one product. Not available from OpenCart 4.1, which has no product_special table: there the sale prices are the discount rows with special = 1 in opencart_get_product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Only this product. 0: all products."
+          },
+          "show": {
+            "type": "string",
+            "enum": [
+              "active",
+              "all"
+            ],
+            "default": "active",
+            "description": "active: valid today. all: past and future ones too."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 100, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT ps.product_special_id, ps.product_id, pd.name, p.model, p.price AS regular_price, ps.price AS special_price, ps.customer_group_id, ps.priority, DATE_FORMAT(ps.date_start, '%Y-%m-%d') AS date_start, DATE_FORMAT(ps.date_end, '%Y-%m-%d') AS date_end FROM `{{OPENCART_DB_PREFIX}}product_special` ps JOIN `{{OPENCART_DB_PREFIX}}product` p ON p.product_id = ps.product_id LEFT JOIN `{{OPENCART_DB_PREFIX}}product_description` pd ON pd.product_id = ps.product_id AND pd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE (COALESCE(${product_id}, 0) = 0 OR ps.product_id = ${product_id}) AND (COALESCE(${show}, 'active') = 'all' OR ((ps.date_start IS NULL OR ps.date_start <= CURDATE()) AND (ps.date_end IS NULL OR ps.date_end < '1000-01-01' OR ps.date_end >= CURDATE()))) ORDER BY ps.product_id, ps.priority, ps.product_special_id LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_low_stock",
+      "description": "Products whose stock is at or below a threshold, lowest first: product_id, name, model, quantity, the label shown when out of stock, subtract (1 = orders reduce stock; 0 means the quantity is not maintained), status and price. Enabled products only unless status says otherwise. Stock kept per option value (size, colour) is not included. Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "threshold": {
+            "type": "integer",
+            "default": 5,
+            "description": "Return products with this many units or fewer (default 5). 0: out of stock only."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "any",
+              "enabled",
+              "disabled"
+            ],
+            "default": "enabled",
+            "description": "Which products to return by their status switch (default enabled)."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 100, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT p.product_id, pd.name, p.model, p.quantity, ss.name AS stock_status, p.subtract, p.status, p.price FROM `{{OPENCART_DB_PREFIX}}product` p LEFT JOIN `{{OPENCART_DB_PREFIX}}product_description` pd ON pd.product_id = p.product_id AND pd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN `{{OPENCART_DB_PREFIX}}stock_status` ss ON ss.stock_status_id = p.stock_status_id AND ss.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE p.quantity <= COALESCE(${threshold}, 5) AND (COALESCE(${status}, 'enabled') = 'any' OR p.status = CASE COALESCE(${status}, 'enabled') WHEN 'disabled' THEN 0 ELSE 1 END) ORDER BY p.quantity, p.product_id LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_products_missing_content",
+      "description": "Products with gaps in their content, for one language: product_id, name, model, status and four flags (1 = missing): missing_image (no main image), missing_description (empty or under 30 characters), missing_meta_title and missing_meta_description, plus description_length. By default lists enabled products missing an image, a description or a meta title; choose one check with missing. Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "missing": {
+            "type": "string",
+            "enum": [
+              "any",
+              "image",
+              "description",
+              "meta_title",
+              "meta_description"
+            ],
+            "default": "any",
+            "description": "Which gap to look for. any: no image, no description or no meta title."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "any",
+              "enabled",
+              "disabled"
+            ],
+            "default": "enabled",
+            "description": "Which products to return by their status switch (default enabled)."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 100, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT p.product_id, pd.name, p.model, p.status, CASE WHEN (p.image IS NULL OR p.image = '') THEN 1 ELSE 0 END AS missing_image, CASE WHEN CHAR_LENGTH(TRIM(COALESCE(pd.description, ''))) < 30 THEN 1 ELSE 0 END AS missing_description, CASE WHEN COALESCE(pd.meta_title, '') = '' THEN 1 ELSE 0 END AS missing_meta_title, CASE WHEN COALESCE(pd.meta_description, '') = '' THEN 1 ELSE 0 END AS missing_meta_description, CHAR_LENGTH(COALESCE(pd.description, '')) AS description_length FROM `{{OPENCART_DB_PREFIX}}product` p LEFT JOIN `{{OPENCART_DB_PREFIX}}product_description` pd ON pd.product_id = p.product_id AND pd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE (COALESCE(${status}, 'enabled') = 'any' OR p.status = CASE COALESCE(${status}, 'enabled') WHEN 'disabled' THEN 0 ELSE 1 END) AND ( (COALESCE(${missing}, 'any') IN ('any', 'image') AND (p.image IS NULL OR p.image = '')) OR (COALESCE(${missing}, 'any') IN ('any', 'description') AND CHAR_LENGTH(TRIM(COALESCE(pd.description, ''))) < 30) OR (COALESCE(${missing}, 'any') IN ('any', 'meta_title') AND COALESCE(pd.meta_title, '') = '') OR (COALESCE(${missing}, 'any') = 'meta_description' AND COALESCE(pd.meta_description, '') = '')) ORDER BY p.product_id LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_list_customers",
+      "description": "Customer accounts: customer_id, name, e-mail, phone, customer group, status (1 = enabled), newsletter (1 = subscribed), store_id, registration date, and from their orders with a status: number of orders, total spent (shop's default currency) and last order date. Search by name, e-mail or phone, filter by registration date, sort by newest or by total spent. Guests who ordered without an account are not listed. Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "default": "",
+            "description": "Part of the name, e-mail address or phone number."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "any",
+              "enabled",
+              "disabled"
+            ],
+            "default": "any",
+            "description": "Which accounts to return by their status switch (default any)."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Registered on or after, YYYY-MM-DD, in the shop server's local time. Empty: no limit.",
+            "default": ""
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Registered on or before, YYYY-MM-DD, in the shop server's local time. Empty: no limit.",
+            "default": ""
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "newest",
+              "total_spent"
+            ],
+            "default": "newest",
+            "description": "newest: latest registrations first. total_spent: best customers first."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 50, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT c.customer_id, CONCAT(c.firstname, ' ', c.lastname) AS name, c.email, c.telephone, cgd.name AS customer_group, c.status, c.newsletter, c.store_id, DATE_FORMAT(c.date_added, '%Y-%m-%d %H:%i:%s') AS date_added, COALESCE(a.orders, 0) AS orders, COALESCE(a.total_spent, 0) AS total_spent, DATE_FORMAT(a.last_order, '%Y-%m-%d %H:%i:%s') AS last_order FROM `{{OPENCART_DB_PREFIX}}customer` c LEFT JOIN `{{OPENCART_DB_PREFIX}}customer_group_description` cgd ON cgd.customer_group_id = c.customer_group_id AND cgd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN (SELECT o.customer_id, COUNT(*) AS orders, SUM(o.total) AS total_spent, MIN(o.date_added) AS first_order, MAX(o.date_added) AS last_order FROM `{{OPENCART_DB_PREFIX}}order` o WHERE o.order_status_id > 0 AND o.customer_id > 0 GROUP BY o.customer_id) a ON a.customer_id = c.customer_id WHERE (COALESCE(${search}, '') = '' OR c.email LIKE CONCAT('%', ${search}, '%') OR CONCAT(c.firstname, ' ', c.lastname) LIKE CONCAT('%', ${search}, '%') OR c.telephone LIKE CONCAT('%', ${search}, '%')) AND (COALESCE(${status}, 'any') = 'any' OR c.status = CASE COALESCE(${status}, 'any') WHEN 'disabled' THEN 0 ELSE 1 END) AND (COALESCE(${date_from}, '') = '' OR c.date_added >= STR_TO_DATE(${date_from}, '%Y-%m-%d')) AND (COALESCE(${date_to}, '') = '' OR c.date_added < DATE_ADD(STR_TO_DATE(${date_to}, '%Y-%m-%d'), INTERVAL 1 DAY)) ORDER BY CASE WHEN COALESCE(${sort_by}, 'newest') = 'total_spent' THEN COALESCE(a.total_spent, 0) ELSE 0 END DESC, c.date_added DESC, c.customer_id DESC LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_get_customer",
+      "description": "One customer account, as rows with a section column. customer: name, e-mail, phone, customer group, status (1 = enabled), newsletter, store_id, registration date, and from the orders with a status: number of orders, total spent (shop's default currency), first and last order date. address: one row per saved address with company, street, city, postcode, zone code and ISO country code. Passwords, tokens and IP addresses are never returned. For the orders themselves call opencart_list_orders with customer_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "The customer_id, from opencart_list_customers or an order."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT x.section, x.line_id, x.name, x.email, x.telephone, x.company, x.address_1, x.address_2, x.city, x.postcode, x.zone_code, x.country_code, x.customer_group, x.status, x.newsletter, x.store_id, x.date_added, x.orders, x.total_spent, x.first_order, x.last_order FROM ( SELECT 1 AS part, 'customer' AS section, c.customer_id AS line_id, CONVERT(CONCAT(c.firstname, ' ', c.lastname) USING utf8mb4) AS name, CONVERT(c.email USING utf8mb4) AS email, CONVERT(c.telephone USING utf8mb4) AS telephone, NULL AS company, NULL AS address_1, NULL AS address_2, NULL AS city, NULL AS postcode, NULL AS zone_code, NULL AS country_code, CONVERT(cgd.name USING utf8mb4) AS customer_group, c.status AS status, c.newsletter AS newsletter, c.store_id AS store_id, DATE_FORMAT(c.date_added, '%Y-%m-%d %H:%i:%s') AS date_added, COALESCE(a.orders, 0) AS orders, COALESCE(a.total_spent, 0) AS total_spent, DATE_FORMAT(a.first_order, '%Y-%m-%d %H:%i:%s') AS first_order, DATE_FORMAT(a.last_order, '%Y-%m-%d %H:%i:%s') AS last_order FROM `{{OPENCART_DB_PREFIX}}customer` c LEFT JOIN `{{OPENCART_DB_PREFIX}}customer_group_description` cgd ON cgd.customer_group_id = c.customer_group_id AND cgd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN (SELECT o.customer_id, COUNT(*) AS orders, SUM(o.total) AS total_spent, MIN(o.date_added) AS first_order, MAX(o.date_added) AS last_order FROM `{{OPENCART_DB_PREFIX}}order` o WHERE o.order_status_id > 0 AND o.customer_id = ${customer_id} GROUP BY o.customer_id) a ON a.customer_id = c.customer_id WHERE c.customer_id = ${customer_id} UNION ALL SELECT 2, 'address', ad.address_id, CONVERT(CONCAT(ad.firstname, ' ', ad.lastname) USING utf8mb4), NULL, NULL, CONVERT(ad.company USING utf8mb4), CONVERT(ad.address_1 USING utf8mb4), CONVERT(ad.address_2 USING utf8mb4), CONVERT(ad.city USING utf8mb4), CONVERT(ad.postcode USING utf8mb4), CONVERT(z.code USING utf8mb4), CONVERT(co.iso_code_2 USING utf8mb4), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM `{{OPENCART_DB_PREFIX}}address` ad LEFT JOIN `{{OPENCART_DB_PREFIX}}country` co ON co.country_id = ad.country_id LEFT JOIN `{{OPENCART_DB_PREFIX}}zone` z ON z.zone_id = ad.zone_id WHERE ad.customer_id = ${customer_id} ) x ORDER BY x.part, x.line_id LIMIT 200"
+      }
+    },
+    {
+      "name": "opencart_list_categories",
+      "description": "The category tree: category_id, parent_id (0 = top level), name, path (the names from the top level down, joined with \" > \"), status (1 = enabled), sort_order and the number of products assigned directly to the category. Sorted by path. Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "default": "",
+            "description": "Part of the category name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "any",
+              "enabled",
+              "disabled"
+            ],
+            "default": "any",
+            "description": "Which categories to return by their status switch (default any)."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 200,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 200, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT c.category_id, c.parent_id, cd.name, (SELECT GROUP_CONCAT(pcd.name ORDER BY cp.level SEPARATOR ' > ') FROM `{{OPENCART_DB_PREFIX}}category_path` cp JOIN `{{OPENCART_DB_PREFIX}}category_description` pcd ON pcd.category_id = cp.path_id AND pcd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE cp.category_id = c.category_id) AS path, c.status, c.sort_order, COALESCE(n.products, 0) AS products FROM `{{OPENCART_DB_PREFIX}}category` c LEFT JOIN `{{OPENCART_DB_PREFIX}}category_description` cd ON cd.category_id = c.category_id AND cd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN (SELECT p2c.category_id, COUNT(*) AS products FROM `{{OPENCART_DB_PREFIX}}product_to_category` p2c GROUP BY p2c.category_id) n ON n.category_id = c.category_id WHERE (COALESCE(${search}, '') = '' OR cd.name LIKE CONCAT('%', ${search}, '%')) AND (COALESCE(${status}, 'any') = 'any' OR c.status = CASE COALESCE(${status}, 'any') WHEN 'disabled' THEN 0 ELSE 1 END) ORDER BY path, cd.name, c.category_id LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_list_coupons",
+      "description": "Discount coupons, newest first: coupon_id, name, code, type (P = percent, F = fixed amount), discount, minimum order total, logged (1 = signed-in customers only), shipping (1 = free shipping), start and end date, uses_total and uses_customer (the limits; 0 = unlimited), status (1 = enabled), and how often it was used and for how much (amount_used is negative: it is the discount given). Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "default": "",
+            "description": "Part of the coupon name or code."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "any",
+              "enabled",
+              "disabled"
+            ],
+            "default": "any",
+            "description": "Which coupons to return by their status switch (default any)."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 100, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT cp.coupon_id, cp.name, cp.code, cp.type, cp.discount, cp.total AS minimum_order_total, cp.logged, cp.shipping, DATE_FORMAT(cp.date_start, '%Y-%m-%d') AS date_start, DATE_FORMAT(cp.date_end, '%Y-%m-%d') AS date_end, cp.uses_total, cp.uses_customer, cp.status, DATE_FORMAT(cp.date_added, '%Y-%m-%d %H:%i:%s') AS date_added, COALESCE(h.times_used, 0) AS times_used, COALESCE(h.amount_used, 0) AS amount_used FROM `{{OPENCART_DB_PREFIX}}coupon` cp LEFT JOIN (SELECT ch.coupon_id, COUNT(*) AS times_used, SUM(ch.amount) AS amount_used FROM `{{OPENCART_DB_PREFIX}}coupon_history` ch GROUP BY ch.coupon_id) h ON h.coupon_id = cp.coupon_id WHERE (COALESCE(${search}, '') = '' OR cp.name LIKE CONCAT('%', ${search}, '%') OR cp.code LIKE CONCAT('%', ${search}, '%')) AND (COALESCE(${status}, 'any') = 'any' OR cp.status = CASE COALESCE(${status}, 'any') WHEN 'disabled' THEN 0 ELSE 1 END) ORDER BY cp.date_added DESC, cp.coupon_id DESC LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_list_returns",
+      "description": "Product returns, newest first: return_id, order_id, date_added, date_ordered, customer_id, customer name and e-mail, product_id, product, model, quantity, opened (1 = the package was opened), reason, action, return_status_id with its name, the customer's comment and date_modified. Filter by return status, order and date range. Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_status_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Only returns in this status (the ids appear in the return_status_id column). 0: all."
+          },
+          "order_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Only returns for this order. 0: all."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Requested on or after, YYYY-MM-DD, in the shop server's local time. Empty: no limit.",
+            "default": ""
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Requested on or before, YYYY-MM-DD, in the shop server's local time. Empty: no limit.",
+            "default": ""
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 50, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT r.return_id, r.order_id, DATE_FORMAT(r.date_added, '%Y-%m-%d %H:%i:%s') AS date_added, DATE_FORMAT(r.date_ordered, '%Y-%m-%d') AS date_ordered, r.customer_id, CONCAT(r.firstname, ' ', r.lastname) AS customer, r.email, r.product_id, r.product, r.model, r.quantity, r.opened, rr.name AS reason, ra.name AS action, r.return_status_id, rs.name AS status, r.comment, DATE_FORMAT(r.date_modified, '%Y-%m-%d %H:%i:%s') AS date_modified FROM `{{OPENCART_DB_PREFIX}}return` r LEFT JOIN `{{OPENCART_DB_PREFIX}}return_reason` rr ON rr.return_reason_id = r.return_reason_id AND rr.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN `{{OPENCART_DB_PREFIX}}return_action` ra ON ra.return_action_id = r.return_action_id AND ra.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) LEFT JOIN `{{OPENCART_DB_PREFIX}}return_status` rs ON rs.return_status_id = r.return_status_id AND rs.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE (COALESCE(${return_status_id}, 0) = 0 OR r.return_status_id = ${return_status_id}) AND (COALESCE(${order_id}, 0) = 0 OR r.order_id = ${order_id}) AND (COALESCE(${date_from}, '') = '' OR r.date_added >= STR_TO_DATE(${date_from}, '%Y-%m-%d')) AND (COALESCE(${date_to}, '') = '' OR r.date_added < DATE_ADD(STR_TO_DATE(${date_to}, '%Y-%m-%d'), INTERVAL 1 DAY)) ORDER BY r.date_added DESC, r.return_id DESC LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_list_reviews",
+      "description": "Product reviews, newest first: review_id, product_id and product name, author, customer_id (0 = guest), rating (1 to 5), the text, status (0 = waiting for approval, 1 = published) and date_added. By default only the ones waiting for approval. Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "any"
+            ],
+            "default": "pending",
+            "description": "pending: waiting for approval (default). approved: published. any: both."
+          },
+          "product_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Only reviews of this product. 0: all."
+          },
+          "language_id": {
+            "type": "integer",
+            "default": 0,
+            "description": "Language of names and descriptions (a language_id from opencart_get_shop_overview). 0 or omitted: the shop's first active language."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 50, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT rv.review_id, rv.product_id, pd.name AS product, rv.author, rv.customer_id, rv.rating, rv.text, rv.status, DATE_FORMAT(rv.date_added, '%Y-%m-%d %H:%i:%s') AS date_added FROM `{{OPENCART_DB_PREFIX}}review` rv LEFT JOIN `{{OPENCART_DB_PREFIX}}product_description` pd ON pd.product_id = rv.product_id AND pd.language_id = COALESCE(NULLIF(${language_id}, 0), (SELECT lg.language_id FROM `{{OPENCART_DB_PREFIX}}language` lg WHERE lg.status = 1 ORDER BY lg.sort_order, lg.language_id LIMIT 1)) WHERE (COALESCE(${status}, 'pending') = 'any' OR rv.status = CASE COALESCE(${status}, 'pending') WHEN 'approved' THEN 1 ELSE 0 END) AND (COALESCE(${product_id}, 0) = 0 OR rv.product_id = ${product_id}) ORDER BY rv.date_added DESC, rv.review_id DESC LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_list_seo_urls",
+      "description": "SEO URL keywords: seo_url_id, store_id, language_id, keyword (the readable part of the address) and target (what it points to, e.g. product_id=42, category_id=20, manufacturer_id=8, information_id=4; OpenCart 4 writes category paths as path=20_27). Works on 3.x (query column) and 4.x (key and value columns). Filter by part of the keyword and by target: product_id lists every product URL, product_id=42 exactly one. Sorted by keyword. Page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "default": "",
+            "description": "Part of the keyword."
+          },
+          "target": {
+            "type": "string",
+            "default": "",
+            "description": "A kind of target (product_id, category_id, path, manufacturer_id, information_id) or an exact one (product_id=42)."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per call (default 100, at most 500)."
+          },
+          "offset": {
+            "type": "integer",
+            "default": 0,
+            "minimum": 0,
+            "description": "Rows to skip, for the next page: offset = rows already read."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT x.seo_url_id, x.store_id, x.language_id, x.keyword, x.target FROM ( SELECT su.seo_url_id, su.store_id, su.language_id, su.keyword, COALESCE((SELECT `query` FROM `{{OPENCART_DB_PREFIX}}seo_url` q WHERE q.seo_url_id = su.seo_url_id), (SELECT CONCAT(`key`, '=', `value`) FROM `{{OPENCART_DB_PREFIX}}seo_url` k WHERE k.seo_url_id = su.seo_url_id)) AS target FROM `{{OPENCART_DB_PREFIX}}seo_url` su CROSS JOIN (SELECT NULL AS `query`, NULL AS `key`, NULL AS `value`) dflt ) x WHERE (COALESCE(${keyword}, '') = '' OR x.keyword LIKE CONCAT('%', ${keyword}, '%')) AND (COALESCE(${target}, '') = '' OR x.target = ${target} OR x.target LIKE CONCAT(${target}, '=%')) ORDER BY x.keyword, x.seo_url_id LIMIT ${limit} OFFSET ${offset}"
+      }
+    },
+    {
+      "name": "opencart_list_extensions",
+      "description": "Installed extensions: type (payment, shipping, total, module, theme, analytics, captcha, fraud, feed, report, dashboard and others) and code. Names only: their settings, which can hold API keys, are not readable. Up to 500 rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "default": "",
+            "description": "Only this type, e.g. payment or shipping. Empty: all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT e.type, e.code FROM `{{OPENCART_DB_PREFIX}}extension` e WHERE (COALESCE(${type}, '') = '' OR e.type = ${type}) ORDER BY e.type, e.code LIMIT 500"
+      }
+    },
+    {
+      "name": "opencart_list_tables",
+      "description": "The shop's tables: full table_name (what to write in opencart_query), name (without the shop's prefix), approximate row count and size in MB. Only tables that start with the configured prefix, so a second application in the same database is left out. If this is empty, the table prefix variable is wrong.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "default": "",
+            "description": "Part of the table name, e.g. order or product."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT t.table_name AS table_name, SUBSTRING(t.table_name, CHAR_LENGTH(${OPENCART_DB_PREFIX}) + 1) AS name, t.table_rows AS approx_rows, ROUND((t.data_length + t.index_length) / 1048576, 2) AS size_mb FROM information_schema.tables t WHERE t.table_schema = DATABASE() AND LEFT(t.table_name, CHAR_LENGTH(${OPENCART_DB_PREFIX})) = ${OPENCART_DB_PREFIX} AND (COALESCE(${search}, '') = '' OR t.table_name LIKE CONCAT('%', ${search}, '%')) ORDER BY t.table_name LIMIT 1000"
+      }
+    },
+    {
+      "name": "opencart_describe_table",
+      "description": "The columns of one table: column_name, column_type, is_nullable, column_key (PRI = primary key, MUL = indexed) and column_default. Read it before writing a query against a table you have not seen, since columns differ between OpenCart 3 and 4 and extensions add their own.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table name, with or without the shop's prefix: order or oc_order."
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "SELECT c.table_name AS table_name, c.column_name AS column_name, c.column_type AS column_type, c.is_nullable AS is_nullable, c.column_key AS column_key, c.column_default AS column_default FROM information_schema.columns c WHERE c.table_schema = DATABASE() AND c.table_name IN (${table}, CONCAT(${OPENCART_DB_PREFIX}, ${table})) ORDER BY c.table_name, c.ordinal_position LIMIT 1000"
+      }
+    },
+    {
+      "name": "opencart_query",
+      "description": "Run one read-only SQL SELECT on the shop database and get up to 1000 rows, for questions the other tools do not answer. Write full table names with the shop's prefix (opencart_list_tables) and check columns with opencart_describe_table. The statement runs as written, with no automatic LIMIT: always add one and aggregate in SQL. Admin users, API keys, sessions, sign-in tokens, IP logs and the setting table are blocked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A single SELECT statement (a leading WITH is accepted) with its own LIMIT. Name the columns you need; never SELECT * on the customer table."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "${query}"
+      }
+    }
+  ]
+}
