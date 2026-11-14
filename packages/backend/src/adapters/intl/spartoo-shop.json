@@ -1,0 +1,408 @@
+{
+  "slug": "spartoo-shop",
+  "name": "Spartoo Shop",
+  "aliases": [
+    "Spartoo",
+    "Spartoo MCP"
+  ],
+  "description": "Search the Spartoo fashion catalog (shoes, clothing, bags) from Claude, ChatGPT or Copilot through Spartoo's official MCP server: product search with brand, colour, size and price filters, the filters a search offers, and product details with the sizes in stock. Read-only, no account or API key; one country site per connector.",
+  "instructions": "## Spartoo Shop\nThis connector bridges **Spartoo's official MCP server**, a read-only window on the catalog of the European online fashion retailer Spartoo: shoes, clothing, bags and accessories from several thousand brands. It searches products, lists the filters a search offers and reads product details with the sizes in stock. It cannot order, manage a basket or see a customer account.\n\n**Setup**: choose the country site in `SPARTOO_SHOP_SITE`. Spartoo runs one server per site, each with its own catalog, prices, language and currency, at the site's own address followed by `/mcp` (for example `https://www.spartoo.com/mcp` for France or `https://www.spartoo.co.uk/mcp` for the United Kingdom). No account, API key or sign-in is needed. To use two countries, install the connector twice.\n\n**The tools come from the server.** At install AnythingMCP asks Spartoo for its tools. Open the connector and click **Discover tools** to pick up new ones later.\n\n**Where to start**: `spartoo_shop_search_products` with a query written the way a shopper types it on that site, in the site's language (\"baskets blanches femme\" on the French site, \"white trainers women\" on the UK site). To offer choices first, or to check that a brand, colour or size exists, call `spartoo_shop_list_filters` with the same query and pass the names it returns to the search. Then `spartoo_shop_get_product` with a product id from the search for the description, photos, other colours and, above all, which sizes are in stock.\n\n**Field notes**:\n- Prices are in the currency of the chosen site (EUR on most, GBP on the UK site, PLN, SEK, DKK, HUF, RON and others elsewhere), as decimal amounts, not in cents. `price_min` and `price_max` are in that currency and are rounded outward to the catalog's price steps.\n- Sizes are the labels shown on the site: EU shoe sizes such as \"38\" or \"42.5\", clothing sizes such as \"M\". With a `size`, only products that have it in stock are returned.\n- `gender` is one of men, women, kids, girls, boys; men and women include unisex products.\n- `sort` is relevance, price_asc, price_desc, newest or discount. Results are paged: 20 per page by default, 50 at most, up to page 100.\n- Every product carries the link to its page on the site: give it to the user to buy there.\n- Searching in another language than the site's finds little. Pick the site whose country and language match the user.\n\n**Privacy**: Spartoo says it logs each call for monitoring and security: the client name and version, the user agent, the IP address, the tool called with its arguments, the status and the duration. It asks for no personal data, so do not put any into a query.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "spartoo-shop",
+  "docsUrl": "https://www.spartoo.com/mcp.php",
+  "prerequisites": "Nothing but the choice of a Spartoo country site: no account and no API key.",
+  "requiredEnvVars": [
+    "SPARTOO_SHOP_SITE"
+  ],
+  "envVarMeta": {
+    "SPARTOO_SHOP_SITE": {
+      "label": "Spartoo country site",
+      "kind": "address",
+      "secret": false,
+      "help": "The Spartoo site to search: each one has its own catalog, prices, language and currency. The connector calls this address followed by /mcp.",
+      "example": "https://www.spartoo.com",
+      "link": "https://www.spartoo.com/mcp.php",
+      "pattern": "^https://www\\.spartoo\\.(com|co\\.uk|de|it|es|pt|be|nl|pl|gr|se|dk|fi|sk|hu|ro|si|com\\.hr|net)$",
+      "patternMessage": "Choose one of the Spartoo country sites, for example https://www.spartoo.com (France) or https://www.spartoo.co.uk (United Kingdom), without a path.",
+      "options": [
+        {
+          "value": "https://www.spartoo.com",
+          "label": "France: www.spartoo.com (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.co.uk",
+          "label": "United Kingdom: www.spartoo.co.uk (GBP)"
+        },
+        {
+          "value": "https://www.spartoo.de",
+          "label": "Germany: www.spartoo.de (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.it",
+          "label": "Italy: www.spartoo.it (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.es",
+          "label": "Spain: www.spartoo.es (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.pt",
+          "label": "Portugal: www.spartoo.pt (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.be",
+          "label": "Belgium: www.spartoo.be (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.nl",
+          "label": "Netherlands: www.spartoo.nl (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.pl",
+          "label": "Poland: www.spartoo.pl (PLN)"
+        },
+        {
+          "value": "https://www.spartoo.gr",
+          "label": "Greece: www.spartoo.gr (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.se",
+          "label": "Sweden: www.spartoo.se (SEK)"
+        },
+        {
+          "value": "https://www.spartoo.dk",
+          "label": "Denmark: www.spartoo.dk (DKK)"
+        },
+        {
+          "value": "https://www.spartoo.fi",
+          "label": "Finland: www.spartoo.fi (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.sk",
+          "label": "Slovakia: www.spartoo.sk (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.hu",
+          "label": "Hungary: www.spartoo.hu (HUF)"
+        },
+        {
+          "value": "https://www.spartoo.ro",
+          "label": "Romania: www.spartoo.ro (RON)"
+        },
+        {
+          "value": "https://www.spartoo.si",
+          "label": "Slovenia: www.spartoo.si (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.com.hr",
+          "label": "Croatia: www.spartoo.com.hr (EUR)"
+        },
+        {
+          "value": "https://www.spartoo.net",
+          "label": "Rest of the world: www.spartoo.net (USD)"
+        }
+      ]
+    }
+  },
+  "verifyHints": {
+    "404": "This Spartoo site has no MCP server at /mcp. Choose one of the listed country sites.",
+    "429": "Spartoo is limiting requests from this address. Wait a minute and try again."
+  },
+  "connector": {
+    "name": "Spartoo Shop",
+    "type": "MCP",
+    "baseUrl": "{{SPARTOO_SHOP_SITE}}/mcp",
+    "authType": "NONE",
+    "config": {
+      "mcpToolPrefix": "spartoo_shop_"
+    }
+  },
+  "tools": [
+    {
+      "name": "spartoo_shop_list_filters",
+      "description": "List what a Spartoo search can be narrowed by, before running it: the brands, colours, sizes, genders and categories that exist for the query (with product counts where known), the price range in the currency of the site and the total number of matching products (`count_products`). Takes the same arguments as the product search, without sort and paging. Brand names, colours and size labels returned here can be passed as they are to `spartoo_shop_search_products`. A very broad query (no category, brand or known word) is refused with a message: make it more specific.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Free-text search, e.g. brand, category, color, gender words (\"red nike sneakers for women\")."
+          },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "men",
+              "women",
+              "kids",
+              "girls",
+              "boys"
+            ],
+            "description": "Gender of the products. Overrides the gender found in the query. men and women include unisex products; kids includes girls and boys."
+          },
+          "brand": {
+            "type": [
+              "string",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "maxItems": 10,
+            "description": "Brand name, or list of brand names (any of them), e.g. \"Nike\" or [\"Nike\", \"adidas\"]. Case and accents are ignored. Overrides the brand found in the query. Use the names returned by list_filters."
+          },
+          "color": {
+            "type": [
+              "string",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "white",
+                "black",
+                "grey",
+                "beige",
+                "brown",
+                "red",
+                "burgundy",
+                "pink",
+                "orange",
+                "yellow",
+                "green",
+                "khaki",
+                "blue",
+                "navy",
+                "purple",
+                "gold",
+                "silver",
+                "multicolor"
+              ]
+            },
+            "maxItems": 10,
+            "description": "Color, or list of colors (any of them), among: white, black, grey, beige, brown, red, burgundy, pink, orange, yellow, green, khaki, blue, navy, purple, gold, silver, multicolor. Overrides the color found in the query."
+          },
+          "size": {
+            "type": [
+              "string",
+              "number",
+              "array"
+            ],
+            "items": {
+              "type": [
+                "string",
+                "number"
+              ],
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "maxItems": 10,
+            "description": "Size label, or list of size labels (any of them), as displayed on the site: shoe sizes in EU (\"38\", \"42.5\" or \"42 1/2\"), clothing sizes (\"M\", \"XL\", \"38\", \"10 ans\"). Only products with this size in stock are returned. A half size also matches the neighbouring whole sizes. Use the sizes returned by list_filters."
+          },
+          "price_min": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Minimum price, in the currency of the site. Rounded down to the nearest price step."
+          },
+          "price_max": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Maximum price, in the currency of the site. Rounded up to the nearest price step."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "list_filters",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "List search filters"
+      }
+    },
+    {
+      "name": "spartoo_shop_search_products",
+      "description": "Search the Spartoo catalog (shoes, clothing, bags, accessories) with a free-text query written as a shopper would type it on the site, in the language of the site. Brand, category, colour and gender words in the query become filters; the optional arguments override or refine them (size in stock, price range in the currency of the site, sort order). Returns products with id, name, brand, price, discount and the link to the product page, up to 50 per page (20 by default): ask for the next `page` while `has_more` is true. `applied_filters` says how the query was understood.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Free-text search, e.g. brand, category, color, gender words (\"red nike sneakers for women\")."
+          },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "men",
+              "women",
+              "kids",
+              "girls",
+              "boys"
+            ],
+            "description": "Gender of the products. Overrides the gender found in the query. men and women include unisex products; kids includes girls and boys."
+          },
+          "brand": {
+            "type": [
+              "string",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "maxItems": 10,
+            "description": "Brand name, or list of brand names (any of them), e.g. \"Nike\" or [\"Nike\", \"adidas\"]. Case and accents are ignored. Overrides the brand found in the query. Use the names returned by list_filters."
+          },
+          "color": {
+            "type": [
+              "string",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "enum": [
+                "white",
+                "black",
+                "grey",
+                "beige",
+                "brown",
+                "red",
+                "burgundy",
+                "pink",
+                "orange",
+                "yellow",
+                "green",
+                "khaki",
+                "blue",
+                "navy",
+                "purple",
+                "gold",
+                "silver",
+                "multicolor"
+              ]
+            },
+            "maxItems": 10,
+            "description": "Color, or list of colors (any of them), among: white, black, grey, beige, brown, red, burgundy, pink, orange, yellow, green, khaki, blue, navy, purple, gold, silver, multicolor. Overrides the color found in the query."
+          },
+          "size": {
+            "type": [
+              "string",
+              "number",
+              "array"
+            ],
+            "items": {
+              "type": [
+                "string",
+                "number"
+              ],
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "maxItems": 10,
+            "description": "Size label, or list of size labels (any of them), as displayed on the site: shoe sizes in EU (\"38\", \"42.5\" or \"42 1/2\"), clothing sizes (\"M\", \"XL\", \"38\", \"10 ans\"). Only products with this size in stock are returned. A half size also matches the neighbouring whole sizes. Use the sizes returned by list_filters."
+          },
+          "price_min": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Minimum price, in the currency of the site. Rounded down to the nearest price step."
+          },
+          "price_max": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Maximum price, in the currency of the site. Rounded up to the nearest price step."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "price_asc",
+              "price_desc",
+              "newest",
+              "discount"
+            ],
+            "default": "relevance",
+            "description": "Sort order: relevance (default ranking of the site), price_asc, price_desc, newest, discount (highest discount first)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Number of products per page."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "search_products",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Search products"
+      }
+    },
+    {
+      "name": "spartoo_shop_get_product",
+      "description": "Full detail of one Spartoo product (`product_id`) or of up to 10 at once (`product_ids`), using the ids returned by the search: description, price, every size with whether it is in stock (and its own price when it differs), photos, the other colours of the same model with their product ids, and characteristics such as materials, heel height and country of origin. Call it before recommending a product in a given size. Ids that do not exist or are no longer sold come back in `not_found`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the product (field id of search_products). Use either product_id or product_ids."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxItems": 10,
+            "description": "Ids of several products (at most 10), to compare them."
+          }
+        },
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "get_product",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "title": "Get product details"
+      }
+    }
+  ]
+}

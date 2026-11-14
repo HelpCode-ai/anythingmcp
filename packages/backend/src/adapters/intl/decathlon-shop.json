@@ -1,0 +1,3072 @@
+{
+  "slug": "decathlon-shop",
+  "name": "Decathlon US Shop",
+  "aliases": [
+    "Decathlon",
+    "Decathlon US",
+    "Decathlon USA",
+    "decathlon.com"
+  ],
+  "description": "Search and browse Decathlon's US online store from Claude, ChatGPT or Copilot through its official shopping endpoint: product search with price filters, product details with sizes and live availability, and questions about shipping, returns and store policies. No account or API key; cart and checkout tools install switched off.",
+  "instructions": "## Decathlon US Shop\nThis connector bridges the **official shopping endpoint of Decathlon's US online store** (`https://www.decathlon.com/api/ucp/mcp`), an MCP server that speaks the Universal Commerce Protocol (UCP) and runs on Shopify. It covers the catalog of decathlon.com only: sports gear, clothing and shoes sold and shipped in the United States, with prices in US dollars. Other Decathlon country sites are not behind this endpoint.\n\n**Setup**: nothing to enter. No Decathlon account, no API key and no sign-in are needed; install the connector and it works. Every call tells Decathlon which agent is asking by sending the address of AnythingMCP's public agent profile (`https://anythingmcp.com/.well-known/ucp-agent.json`); the connector adds it by itself, so it never appears as a tool parameter.\n\n**The tools come from the server.** At install AnythingMCP asks Decathlon for its tools, so you get the current set. Open the connector and click **Discover tools** to pick up new ones later.\n\n**Where to start**: `decathlon_shop_search_catalog` with what the user is looking for in `catalog.query` (\"hiking backpack 30 l\", \"kids bike helmet\"). Narrow with `catalog.filters.price.min` and `max` (in US cents) and page with `catalog.pagination.cursor`. `decathlon_shop_get_product` gives one product with sizes, colours and live availability; `decathlon_shop_lookup_catalog` refreshes several products or variants by id in one call. `decathlon_shop_ask_business` answers questions about the store itself: shipping, returns, policies, services.\n\n**Prices**: every amount is an integer in minor units with a currency code. `amount` 2500 with `currency` USD is $25.00: divide by 100 before quoting a price. The same holds for filters: `price.max` 5000 means up to $50.00.\n\n**Ids** are Shopify global ids: `gid://shopify/Product/...` for products and `gid://shopify/ProductVariant/...` for variants. Always pass them exactly as a previous answer returned them. Each product carries the `url` of its page on decathlon.com: give it to the user to look at or buy the product.\n\n**Carts and checkout are switched off at install.** The server also offers `decathlon_shop_create_cart`, `decathlon_shop_update_cart`, `decathlon_shop_cancel_cart`, `decathlon_shop_create_checkout`, `decathlon_shop_update_checkout`, `decathlon_shop_cancel_checkout` and `decathlon_shop_complete_checkout`. They change things at the store, and `decathlon_shop_complete_checkout` places a real order and charges a payment method, so none of them is available until an administrator turns it on for this connector. Decathlon's own rule is that an order is placed and payment submitted only with the buyer's authorization. The safe default is to find the product here and send the user to its page on decathlon.com to buy it. The read tools `decathlon_shop_get_cart`, `decathlon_shop_get_checkout` and `decathlon_shop_get_order` stay on; without an account they only answer for an id you already have.\n\n**Limits and pitfalls**:\n- US store only: availability, prices and delivery are those of decathlon.com in the United States.\n- A search needs a query, filters, or both. Results come 10 at a time unless `catalog.pagination.limit` says otherwise.\n- `decathlon_shop_ask_business` has no memory: ask a complete question each time.\n- The store asks agents to slow down on HTTP 429 and to respect `Retry-After`.\n- An error `profile_unreachable` or `UCP discovery failed` means Decathlon could not read the agent profile address; it is not a problem with the search itself.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "decathlon-shop",
+  "docsUrl": "https://www.decathlon.com/llms.txt",
+  "prerequisites": "Nothing: no Decathlon account and no API key. It covers Decathlon's US store (decathlon.com) only.",
+  "requiredEnvVars": [],
+  "verifyHints": {
+    "422": "Decathlon could not read the agent profile this connector sends with every call. That is on the AnythingMCP side, not a setting of yours: try again later.",
+    "429": "Decathlon is limiting requests from this address. Wait for the Retry-After seconds and try again.",
+    "rate_limited": "Decathlon is limiting requests from this address. Wait for the Retry-After seconds and try again."
+  },
+  "connector": {
+    "name": "Decathlon US Shop",
+    "type": "MCP",
+    "baseUrl": "https://www.decathlon.com/api/ucp/mcp",
+    "authType": "NONE",
+    "config": {
+      "mcpToolPrefix": "decathlon_shop_",
+      "mcpFixedArguments": {
+        "meta": {
+          "ucp-agent": {
+            "profile": "https://anythingmcp.com/.well-known/ucp-agent.json"
+          }
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "decathlon_shop_search_catalog",
+      "description": "Search the Decathlon US online store by free text, by filters, or both (at least one is needed). Put the text in `catalog.query`; narrow with `catalog.filters` (`categories`, `price.min` and `price.max` in US cents, `available`). Returns products with id, title, description, price range, options, variants (price, availability, SKU, checkout link), images and the product page URL, plus `pagination` with `has_next_page` and a `cursor`: pass it as `catalog.pagination.cursor` for the next page; `catalog.pagination.limit` sets the page size (10 by default). Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog": {
+            "type": "object",
+            "description": "Catalog search parameters.",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Search query string."
+              },
+              "context": {
+                "type": "object",
+                "description": "Buyer signals for localization and personalization.",
+                "additionalProperties": true,
+                "properties": {
+                  "address_country": {
+                    "type": "string",
+                    "description": "Country code in ISO 3166-1 alpha-2 format."
+                  },
+                  "address_region": {
+                    "type": "string",
+                    "description": "Region or state."
+                  },
+                  "postal_code": {
+                    "type": "string",
+                    "description": "Postal code."
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "Language tag in IETF BCP 47 format."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Currency code in ISO 4217 format."
+                  },
+                  "intent": {
+                    "type": "string",
+                    "description": "Buyer intent."
+                  }
+                }
+              },
+              "signals": {
+                "type": "object",
+                "description": "Platform environment data.",
+                "additionalProperties": true,
+                "properties": {
+                  "dev.ucp.buyer_ip": {
+                    "type": "string",
+                    "description": "Buyer IP address."
+                  },
+                  "dev.ucp.user_agent": {
+                    "type": "string",
+                    "description": "Buyer user agent."
+                  }
+                }
+              },
+              "filters": {
+                "type": "object",
+                "description": "Narrowing criteria for catalog results.",
+                "additionalProperties": true,
+                "properties": {
+                  "categories": {
+                    "type": "array",
+                    "description": "Category filters combined with OR logic.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "price": {
+                    "type": "object",
+                    "description": "Price range filter.",
+                    "properties": {
+                      "min": {
+                        "type": "integer",
+                        "description": "Minimum price in minor currency units."
+                      },
+                      "max": {
+                        "type": "integer",
+                        "description": "Maximum price in minor currency units."
+                      }
+                    }
+                  },
+                  "available": {
+                    "type": "boolean",
+                    "description": "Filter by availability. Default true (only sale-ready items).",
+                    "default": true
+                  }
+                }
+              },
+              "pagination": {
+                "type": "object",
+                "description": "Pagination parameters.",
+                "properties": {
+                  "cursor": {
+                    "type": "string",
+                    "description": "Pagination cursor."
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "description": "Number of results to return.",
+                    "default": 10,
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "catalog"
+        ]
+      },
+      "endpointMapping": {
+        "method": "search_catalog",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Search the catalog"
+      }
+    },
+    {
+      "name": "decathlon_shop_lookup_catalog",
+      "description": "Look up several products or variants of the Decathlon US store in one call. `catalog.ids` takes product ids (`gid://shopify/Product/...`, answered with the featured variant) and variant ids (`gid://shopify/ProductVariant/...`, answered with the parent product and that exact variant). Results are grouped by product, and each variant says which requested id it answers. Use it to refresh prices and availability of products found earlier. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog": {
+            "type": "object",
+            "description": "Catalog lookup parameters.",
+            "required": [
+              "ids"
+            ],
+            "properties": {
+              "ids": {
+                "type": "array",
+                "description": "Product IDs to look up.",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "maxItems": 10
+              },
+              "context": {
+                "type": "object",
+                "description": "Buyer signals for localization and personalization.",
+                "additionalProperties": true,
+                "properties": {
+                  "address_country": {
+                    "type": "string",
+                    "description": "Country code in ISO 3166-1 alpha-2 format."
+                  },
+                  "address_region": {
+                    "type": "string",
+                    "description": "Region or state."
+                  },
+                  "postal_code": {
+                    "type": "string",
+                    "description": "Postal code."
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "Language tag in IETF BCP 47 format."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Currency code in ISO 4217 format."
+                  },
+                  "intent": {
+                    "type": "string",
+                    "description": "Buyer intent."
+                  }
+                }
+              },
+              "signals": {
+                "type": "object",
+                "description": "Platform environment data.",
+                "additionalProperties": true,
+                "properties": {
+                  "dev.ucp.buyer_ip": {
+                    "type": "string",
+                    "description": "Buyer IP address."
+                  },
+                  "dev.ucp.user_agent": {
+                    "type": "string",
+                    "description": "Buyer user agent."
+                  }
+                }
+              },
+              "filters": {
+                "type": "object",
+                "description": "Narrowing criteria for catalog results.",
+                "additionalProperties": true,
+                "properties": {
+                  "categories": {
+                    "type": "array",
+                    "description": "Category filters combined with OR logic.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "price": {
+                    "type": "object",
+                    "description": "Price range filter.",
+                    "properties": {
+                      "min": {
+                        "type": "integer",
+                        "description": "Minimum price in minor currency units."
+                      },
+                      "max": {
+                        "type": "integer",
+                        "description": "Maximum price in minor currency units."
+                      }
+                    }
+                  },
+                  "available": {
+                    "type": "boolean",
+                    "description": "Filter by availability. Default true (only sale-ready items).",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "catalog"
+        ]
+      },
+      "endpointMapping": {
+        "method": "lookup_catalog",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Look up products by id"
+      }
+    },
+    {
+      "name": "decathlon_shop_get_product",
+      "description": "Full detail of one product of the Decathlon US store by its id in `catalog.id`: title, description, options (size, colour) with which values exist and are available, the matching variants with exact price and live availability, images and the product page URL. Pass the options the buyer chose in `catalog.selected` (name and label) to narrow the variants. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog": {
+            "type": "object",
+            "description": "Product detail parameters.",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Product ID."
+              },
+              "selected": {
+                "type": "array",
+                "description": "Selected variant options.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "preferences": {
+                "type": "array",
+                "description": "Buyer preferences.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "context": {
+                "type": "object",
+                "description": "Buyer signals for localization and personalization.",
+                "additionalProperties": true,
+                "properties": {
+                  "address_country": {
+                    "type": "string",
+                    "description": "Country code in ISO 3166-1 alpha-2 format."
+                  },
+                  "address_region": {
+                    "type": "string",
+                    "description": "Region or state."
+                  },
+                  "postal_code": {
+                    "type": "string",
+                    "description": "Postal code."
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "Language tag in IETF BCP 47 format."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Currency code in ISO 4217 format."
+                  },
+                  "intent": {
+                    "type": "string",
+                    "description": "Buyer intent."
+                  }
+                }
+              },
+              "signals": {
+                "type": "object",
+                "description": "Platform environment data.",
+                "additionalProperties": true,
+                "properties": {
+                  "dev.ucp.buyer_ip": {
+                    "type": "string",
+                    "description": "Buyer IP address."
+                  },
+                  "dev.ucp.user_agent": {
+                    "type": "string",
+                    "description": "Buyer user agent."
+                  }
+                }
+              },
+              "filters": {
+                "type": "object",
+                "description": "Narrowing criteria for catalog results.",
+                "additionalProperties": true,
+                "properties": {
+                  "categories": {
+                    "type": "array",
+                    "description": "Category filters combined with OR logic.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "price": {
+                    "type": "object",
+                    "description": "Price range filter.",
+                    "properties": {
+                      "min": {
+                        "type": "integer",
+                        "description": "Minimum price in minor currency units."
+                      },
+                      "max": {
+                        "type": "integer",
+                        "description": "Maximum price in minor currency units."
+                      }
+                    }
+                  },
+                  "available": {
+                    "type": "boolean",
+                    "description": "Filter by availability. Default true (only sale-ready items).",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "catalog"
+        ]
+      },
+      "endpointMapping": {
+        "method": "get_product",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Get a product"
+      }
+    },
+    {
+      "name": "decathlon_shop_ask_business",
+      "description": "Ask Decathlon US a question in plain language in `ask.query`: what it sells, shipping, returns, policies, services. Returns `answer.plain` with the text and `links` to the pages it is based on. `ask.ids` can name up to 10 products, variants or collections of this store to ground the answer. Follow-up conversations are not supported: ask a complete question each time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ask": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "maxLength": 10000,
+                "description": "Natural-language question."
+              },
+              "conversation": {
+                "type": "object",
+                "description": "Opaque conversation identifier. Multi-turn conversations are not currently supported.",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              },
+              "ids": {
+                "type": "array",
+                "description": "Resource identifiers for grounding. Up to 10 of this store's Shopify Product, ProductVariant, Collection or Cart GIDs are supported. A cart or collection grounds the answer in its products.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "context": {
+                "type": "object",
+                "description": "Buyer context for localization and personalization.",
+                "additionalProperties": true,
+                "properties": {
+                  "address_country": {
+                    "type": "string"
+                  },
+                  "address_region": {
+                    "type": "string"
+                  },
+                  "postal_code": {
+                    "type": "string"
+                  },
+                  "language": {
+                    "type": "string"
+                  },
+                  "currency": {
+                    "type": "string"
+                  },
+                  "intent": {
+                    "type": "string"
+                  }
+                }
+              },
+              "signals": {
+                "type": "object",
+                "description": "Platform environment data. Signals are not currently supported.",
+                "additionalProperties": true
+              },
+              "attribution": {
+                "type": "object",
+                "description": "Platform attribution data. Attribution is not currently supported.",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "description": "The question and what it is about: `query` (the question in plain language), optional `ids` and `context`."
+          }
+        },
+        "required": [
+          "ask"
+        ]
+      },
+      "endpointMapping": {
+        "method": "ask_business",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Ask the store a question"
+      }
+    },
+    {
+      "name": "decathlon_shop_get_cart",
+      "description": "Read a cart of the Decathlon US store by its id (`gid://shopify/Cart/...`): line items with quantities, totals, the buyer details and discount codes it holds, when it expires and the `continue_url` where the buyer can go on in the browser. Only carts created through this connector can be read: there is no account behind it. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the cart. Format: 'gid://shopify/Cart/abc123'"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "get_cart",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Get a cart"
+      }
+    },
+    {
+      "name": "decathlon_shop_create_cart",
+      "description": "Create a cart at the Decathlon US store from `cart.line_items` (a variant id and a quantity each). Returns the cart with its id, line items, totals and a `continue_url` the buyer can open to continue on decathlon.com. Nothing is bought or paid. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00. Ask the buyer before calling it; it installs switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cart": {
+            "type": "object",
+            "description": "Cart properties.",
+            "properties": {
+              "line_items": {
+                "type": "array",
+                "description": "Items to add to the cart or checkout. Required when creating a new cart or checkout.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "item",
+                    "quantity"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The ID of the line item to update."
+                    },
+                    "quantity": {
+                      "type": "integer"
+                    },
+                    "item": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The Product Variant ID to add or update."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "buyer": {
+                "type": "object",
+                "description": "Information about the buyer including email and phone number.",
+                "additionalProperties": true,
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "phone_number": {
+                    "type": "string"
+                  },
+                  "consent": {
+                    "type": "object",
+                    "description": "Per-purpose buyer consent decisions, keyed by reverse-DNS identifiers. Omission leaves existing choices unchanged.",
+                    "additionalProperties": {
+                      "type": "object",
+                      "required": [
+                        "granted",
+                        "source"
+                      ],
+                      "additionalProperties": true,
+                      "properties": {
+                        "granted": {
+                          "type": "boolean",
+                          "description": "Whether consent is granted."
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "business",
+                            "platform"
+                          ],
+                          "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                        },
+                        "segments": {
+                          "type": "object",
+                          "description": "One level of refinements. Marketing supports dev.ucp.consent.marketing.email and dev.ucp.consent.marketing.sms; a segment overrides its parent.",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "granted",
+                              "source"
+                            ],
+                            "additionalProperties": true,
+                            "properties": {
+                              "granted": {
+                                "type": "boolean",
+                                "description": "Whether consent is granted."
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "business",
+                                  "platform"
+                                ],
+                                "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "context": {
+                "type": "object",
+                "description": "Provisional context hints for localization and pricing. Used when authoritative data (e.g., shipping address) is missing; higher-resolution data supersedes these values and unsupported hints may be ignored without error.",
+                "additionalProperties": true,
+                "properties": {
+                  "address_country": {
+                    "type": "string",
+                    "description": "Country hint for localization."
+                  },
+                  "address_region": {
+                    "type": "string",
+                    "description": "Region/state hint for localization."
+                  },
+                  "postal_code": {
+                    "type": "string",
+                    "description": "Postal code hint for localization."
+                  },
+                  "intent": {
+                    "type": "string",
+                    "description": "Context describing buyer's intent."
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "Language tag in IETF BCP 47 format."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Preferred currency (ISO 4217, e.g., 'EUR', 'USD')."
+                  },
+                  "eligibility": {
+                    "type": "array",
+                    "description": "Buyer claims about eligible benefits such as loyalty membership, payment perks, and similar.",
+                    "items": {
+                      "type": "string",
+                      "description": "Reverse-domain identifier. Must contain at least two dot-separated segments (e.g., 'com.example.loyalty').",
+                      "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?)+$"
+                    }
+                  }
+                }
+              },
+              "attribution": {
+                "type": "object",
+                "description": "Marketing attribution context for the buyer's session (referring domain, click IDs, UTM parameters). Forwarded to the cart for downstream reporting.",
+                "properties": {
+                  "referring_domain": {
+                    "type": "string",
+                    "description": "Domain that referred the buyer to the merchant's storefront."
+                  },
+                  "click_id_tag": {
+                    "type": "string",
+                    "description": "Click identifier parameter name (e.g., 'gclid', 'fbclid')."
+                  },
+                  "click_id_value": {
+                    "type": "string",
+                    "description": "Click identifier value matching click_id_tag."
+                  },
+                  "activity_id_tag": {
+                    "type": "string",
+                    "description": "Activity identifier parameter name."
+                  },
+                  "activity_id_value": {
+                    "type": "string",
+                    "description": "Activity identifier value matching activity_id_tag."
+                  },
+                  "utm_campaign": {
+                    "type": "string",
+                    "description": "UTM campaign parameter."
+                  },
+                  "utm_source": {
+                    "type": "string",
+                    "description": "UTM source parameter."
+                  },
+                  "utm_medium": {
+                    "type": "string",
+                    "description": "UTM medium parameter."
+                  },
+                  "utm_content": {
+                    "type": "string",
+                    "description": "UTM content parameter."
+                  },
+                  "utm_term": {
+                    "type": "string",
+                    "description": "UTM term parameter."
+                  }
+                }
+              },
+              "fulfillment": {
+                "type": "object",
+                "description": "Information about the fulfillment.",
+                "properties": {
+                  "methods": {
+                    "type": "array",
+                    "description": "The methods of fulfillment.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "selected_destination_id": {
+                          "type": "string",
+                          "description": "ID of the selected destination."
+                        },
+                        "destinations": {
+                          "type": "array",
+                          "description": "The destinations to fulfill to.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "first_name": {
+                                "type": "string"
+                              },
+                              "last_name": {
+                                "type": "string"
+                              },
+                              "phone_number": {
+                                "type": "string"
+                              },
+                              "street_address": {
+                                "type": "string"
+                              },
+                              "extended_address": {
+                                "type": "string"
+                              },
+                              "address_locality": {
+                                "type": "string"
+                              },
+                              "address_region": {
+                                "type": "string"
+                              },
+                              "postal_code": {
+                                "type": "string"
+                              },
+                              "address_country": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "groups": {
+                          "type": "array",
+                          "description": "The groups to fulfill to.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "selected_option_id": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ]
+                    }
+                  }
+                }
+              },
+              "discounts": {
+                "type": "object",
+                "description": "Discount or promo codes to apply to the cart. Only prompt if customer mentions having a discount code.",
+                "properties": {
+                  "codes": {
+                    "type": "array",
+                    "description": "Discount codes to apply. Case-insensitive. Replaces previously submitted codes. Send empty array to clear.",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "declared_fields": {
+                "type": "array",
+                "description": "Merchant-defined cart or checkout fields and their values. On updates, replaces previously submitted custom field values; omitted or null fields are cleared. Send empty array to clear all custom fields.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "Unique identifier for the declared field."
+                    },
+                    "value": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "object",
+                        "array",
+                        "null"
+                      ],
+                      "description": "Submitted JSON value for the field. Null clears the value."
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "line_items"
+            ]
+          }
+        },
+        "required": [
+          "cart"
+        ]
+      },
+      "endpointMapping": {
+        "method": "create_cart",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "title": "Create a cart"
+      },
+      "enabled": false
+    },
+    {
+      "name": "decathlon_shop_update_cart",
+      "description": "Change a cart of the Decathlon US store by its id: send `cart.line_items` (variant id and quantity, with the line item id to change an existing line), and optionally buyer details, discount codes and delivery choices. Returns the updated cart with totals. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00. Ask the buyer before calling it; it installs switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cart": {
+            "type": "object",
+            "description": "Cart properties.",
+            "properties": {
+              "line_items": {
+                "type": "array",
+                "description": "Items to add to the cart or checkout. Required when creating a new cart or checkout.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "item",
+                    "quantity"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The ID of the line item to update."
+                    },
+                    "quantity": {
+                      "type": "integer"
+                    },
+                    "item": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The Product Variant ID to add or update."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "buyer": {
+                "type": "object",
+                "description": "Information about the buyer including email and phone number.",
+                "additionalProperties": true,
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "phone_number": {
+                    "type": "string"
+                  },
+                  "consent": {
+                    "type": "object",
+                    "description": "Per-purpose buyer consent decisions, keyed by reverse-DNS identifiers. Omission leaves existing choices unchanged.",
+                    "additionalProperties": {
+                      "type": "object",
+                      "required": [
+                        "granted",
+                        "source"
+                      ],
+                      "additionalProperties": true,
+                      "properties": {
+                        "granted": {
+                          "type": "boolean",
+                          "description": "Whether consent is granted."
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "business",
+                            "platform"
+                          ],
+                          "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                        },
+                        "segments": {
+                          "type": "object",
+                          "description": "One level of refinements. Marketing supports dev.ucp.consent.marketing.email and dev.ucp.consent.marketing.sms; a segment overrides its parent.",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "granted",
+                              "source"
+                            ],
+                            "additionalProperties": true,
+                            "properties": {
+                              "granted": {
+                                "type": "boolean",
+                                "description": "Whether consent is granted."
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "business",
+                                  "platform"
+                                ],
+                                "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "context": {
+                "type": "object",
+                "description": "Provisional context hints for localization and pricing. Used when authoritative data (e.g., shipping address) is missing; higher-resolution data supersedes these values and unsupported hints may be ignored without error.",
+                "additionalProperties": true,
+                "properties": {
+                  "address_country": {
+                    "type": "string",
+                    "description": "Country hint for localization."
+                  },
+                  "address_region": {
+                    "type": "string",
+                    "description": "Region/state hint for localization."
+                  },
+                  "postal_code": {
+                    "type": "string",
+                    "description": "Postal code hint for localization."
+                  },
+                  "intent": {
+                    "type": "string",
+                    "description": "Context describing buyer's intent."
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "Language tag in IETF BCP 47 format."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Preferred currency (ISO 4217, e.g., 'EUR', 'USD')."
+                  },
+                  "eligibility": {
+                    "type": "array",
+                    "description": "Buyer claims about eligible benefits such as loyalty membership, payment perks, and similar.",
+                    "items": {
+                      "type": "string",
+                      "description": "Reverse-domain identifier. Must contain at least two dot-separated segments (e.g., 'com.example.loyalty').",
+                      "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?)+$"
+                    }
+                  }
+                }
+              },
+              "attribution": {
+                "type": "object",
+                "description": "Marketing attribution context for the buyer's session (referring domain, click IDs, UTM parameters). Forwarded to the cart for downstream reporting.",
+                "properties": {
+                  "referring_domain": {
+                    "type": "string",
+                    "description": "Domain that referred the buyer to the merchant's storefront."
+                  },
+                  "click_id_tag": {
+                    "type": "string",
+                    "description": "Click identifier parameter name (e.g., 'gclid', 'fbclid')."
+                  },
+                  "click_id_value": {
+                    "type": "string",
+                    "description": "Click identifier value matching click_id_tag."
+                  },
+                  "activity_id_tag": {
+                    "type": "string",
+                    "description": "Activity identifier parameter name."
+                  },
+                  "activity_id_value": {
+                    "type": "string",
+                    "description": "Activity identifier value matching activity_id_tag."
+                  },
+                  "utm_campaign": {
+                    "type": "string",
+                    "description": "UTM campaign parameter."
+                  },
+                  "utm_source": {
+                    "type": "string",
+                    "description": "UTM source parameter."
+                  },
+                  "utm_medium": {
+                    "type": "string",
+                    "description": "UTM medium parameter."
+                  },
+                  "utm_content": {
+                    "type": "string",
+                    "description": "UTM content parameter."
+                  },
+                  "utm_term": {
+                    "type": "string",
+                    "description": "UTM term parameter."
+                  }
+                }
+              },
+              "fulfillment": {
+                "type": "object",
+                "description": "Information about the fulfillment.",
+                "properties": {
+                  "methods": {
+                    "type": "array",
+                    "description": "The methods of fulfillment.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "line_item_ids": {
+                          "type": "array",
+                          "description": "The line item ids to fulfill.",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "selected_destination_id": {
+                          "type": "string",
+                          "description": "ID of the selected destination."
+                        },
+                        "destinations": {
+                          "type": "array",
+                          "description": "The destinations to fulfill to.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "first_name": {
+                                "type": "string"
+                              },
+                              "last_name": {
+                                "type": "string"
+                              },
+                              "phone_number": {
+                                "type": "string"
+                              },
+                              "street_address": {
+                                "type": "string"
+                              },
+                              "extended_address": {
+                                "type": "string"
+                              },
+                              "address_locality": {
+                                "type": "string"
+                              },
+                              "address_region": {
+                                "type": "string"
+                              },
+                              "postal_code": {
+                                "type": "string"
+                              },
+                              "address_country": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "groups": {
+                          "type": "array",
+                          "description": "The groups to fulfill to.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "selected_option_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "line_item_ids"
+                      ]
+                    }
+                  }
+                }
+              },
+              "discounts": {
+                "type": "object",
+                "description": "Discount or promo codes to apply to the cart. Only prompt if customer mentions having a discount code.",
+                "properties": {
+                  "codes": {
+                    "type": "array",
+                    "description": "Discount codes to apply. Case-insensitive. Replaces previously submitted codes. Send empty array to clear.",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "declared_fields": {
+                "type": "array",
+                "description": "Merchant-defined cart or checkout fields and their values. On updates, replaces previously submitted custom field values; omitted or null fields are cleared. Send empty array to clear all custom fields.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "Unique identifier for the declared field."
+                    },
+                    "value": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "object",
+                        "array",
+                        "null"
+                      ],
+                      "description": "Submitted JSON value for the field. Null clears the value."
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "line_items"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The ID of the cart. Format: 'gid://shopify/Cart/abc123'"
+          }
+        },
+        "required": [
+          "cart",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "update_cart",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Update a cart"
+      },
+      "enabled": false
+    },
+    {
+      "name": "decathlon_shop_cancel_cart",
+      "description": "Cancel a cart of the Decathlon US store by its id (`gid://shopify/Cart/...`). The cart can no longer be used afterwards. Returns the cancelled cart. Ask the buyer before calling it; it installs switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the cart. Format: 'gid://shopify/Cart/abc123'"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "cancel_cart",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Cancel a cart"
+      },
+      "enabled": false
+    },
+    {
+      "name": "decathlon_shop_get_checkout",
+      "description": "Read a checkout of the Decathlon US store by its id (`gid://shopify/Checkout/...`): line items, totals, discounts, taxes, delivery options, status and the messages that say what is still missing before it can be completed. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the checkout to update. Format: 'gid://shopify/Checkout/abc123'"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "get_checkout",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Get a checkout"
+      }
+    },
+    {
+      "name": "decathlon_shop_create_checkout",
+      "description": "Start a checkout at the Decathlon US store from `checkout.line_items` (variant id and quantity) or from an existing cart (`checkout.cart_id`). Returns the checkout with its id, line items, totals, taxes, delivery options and status. Nothing is paid yet. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00. Ask the buyer before calling it; it installs switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "checkout": {
+            "type": "object",
+            "description": "Checkout properties.",
+            "properties": {
+              "payment": {
+                "type": "object",
+                "description": "Payment information for this checkout.",
+                "additionalProperties": true,
+                "properties": {
+                  "instruments": {
+                    "type": "array",
+                    "description": "Payment instruments for this checkout (e.g., credit cards, tokens, wallets).",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "handler_id",
+                        "type"
+                      ],
+                      "additionalProperties": true,
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "handler_id": {
+                                "const": "apple-pay"
+                              }
+                            },
+                            "required": [
+                              "handler_id"
+                            ]
+                          },
+                          "then": {
+                            "required": [
+                              "billing_address",
+                              "credential"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "card"
+                              },
+                              "credential": {
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "payment_data"
+                                ]
+                              }
+                            }
+                          },
+                          "else": {
+                            "properties": {
+                              "credential": {
+                                "required": [
+                                  "type"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "not": {
+                                      "const": "apple_pay_token"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "A unique identifier for this payment instrument instance."
+                        },
+                        "handler_id": {
+                          "type": "string",
+                          "description": "Identifier of the payment handler that was used to generate this instrument."
+                        },
+                        "type": {
+                          "type": "string",
+                          "description": "Instrument type. Apple Pay uses 'card' because the submitted instrument represents a tokenized card."
+                        },
+                        "billing_address": {
+                          "type": "object",
+                          "description": "Billing address for the instrument.",
+                          "additionalProperties": true,
+                          "properties": {
+                            "street_address": {
+                              "type": "string",
+                              "description": "Street address of the billing address."
+                            },
+                            "extended_address": {
+                              "type": "string",
+                              "description": "Extended address of the billing address such as an apartment number, C/O, or alternative name."
+                            },
+                            "address_locality": {
+                              "type": "string",
+                              "description": "Locality of the billing address."
+                            },
+                            "address_region": {
+                              "type": "string",
+                              "description": "Region of the billing address."
+                            },
+                            "postal_code": {
+                              "type": "string",
+                              "description": "Postal code of the billing address."
+                            },
+                            "address_country": {
+                              "type": "string",
+                              "description": "Country of the billing address in 2-letter ISO 3166-1 alpha-2 format."
+                            },
+                            "first_name": {
+                              "type": "string",
+                              "description": "First name of the contact associated with the billing address."
+                            },
+                            "last_name": {
+                              "type": "string",
+                              "description": "Last name of the contact associated with the billing address."
+                            },
+                            "phone_number": {
+                              "type": "string",
+                              "description": "Phone number of the contact associated with the billing address."
+                            }
+                          }
+                        },
+                        "credential": {
+                          "type": "object",
+                          "description": "Payment credential payload to process the transaction for this instrument.",
+                          "additionalProperties": true,
+                          "allOf": [
+                            {
+                              "if": {
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ]
+                              },
+                              "then": {
+                                "required": [
+                                  "type",
+                                  "payment_data"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  },
+                                  "payment_data": {
+                                    "type": "object",
+                                    "required": [
+                                      "version",
+                                      "data",
+                                      "signature",
+                                      "header"
+                                    ],
+                                    "additionalProperties": true,
+                                    "properties": {
+                                      "version": {
+                                        "type": "string"
+                                      },
+                                      "data": {
+                                        "type": "string"
+                                      },
+                                      "signature": {
+                                        "type": "string"
+                                      },
+                                      "header": {
+                                        "type": "object",
+                                        "required": [
+                                          "public_key_hash",
+                                          "transaction_id"
+                                        ],
+                                        "anyOf": [
+                                          {
+                                            "required": [
+                                              "ephemeral_public_key"
+                                            ]
+                                          },
+                                          {
+                                            "required": [
+                                              "wrapped_key"
+                                            ]
+                                          }
+                                        ],
+                                        "additionalProperties": true,
+                                        "properties": {
+                                          "ephemeral_public_key": {
+                                            "type": "string"
+                                          },
+                                          "wrapped_key": {
+                                            "type": "string"
+                                          },
+                                          "public_key_hash": {
+                                            "type": "string"
+                                          },
+                                          "transaction_id": {
+                                            "type": "string"
+                                          },
+                                          "application_data": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "transaction_identifier": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "else": {
+                                "required": [
+                                  "type"
+                                ]
+                              }
+                            }
+                          ],
+                          "properties": {
+                            "token": {
+                              "type": "string",
+                              "description": "Opaque payment token value, required except when restating a platform-listed instrument (e.g., a Shop Pay wallet card) whose token the platform re-derives from the instrument id."
+                            },
+                            "type": {
+                              "type": "string",
+                              "description": "Namespaced token type using dot notation (e.g., stripe.token, merchant.token, google.pay)."
+                            },
+                            "payment_data": {
+                              "type": "object"
+                            },
+                            "transaction_identifier": {
+                              "type": "string"
+                            },
+                            "approval_id": {
+                              "type": "string",
+                              "description": "Identifier of the payment approval authorizing this credential, as returned by the approvals API. Required for shop_pay credentials when the merchant requires payment approvals."
+                            }
+                          }
+                        },
+                        "display": {
+                          "type": "object",
+                          "description": "Display information for this payment instrument.",
+                          "additionalProperties": true,
+                          "properties": {
+                            "brand": {
+                              "type": "string",
+                              "description": "Card brand (e.g., visa, mastercard), when available."
+                            },
+                            "last_digits": {
+                              "type": "string",
+                              "description": "Last 4 digits of the card, when available."
+                            },
+                            "expiry_month": {
+                              "type": "integer",
+                              "description": "Card expiry month (1-12). Required for card instruments."
+                            },
+                            "expiry_year": {
+                              "type": "integer",
+                              "description": "Card expiry year. Required for card instruments."
+                            },
+                            "rich_text_description": {
+                              "type": "string",
+                              "description": "Rich text description of the payment instrument for display purposes."
+                            },
+                            "rich_card_art": {
+                              "type": "string",
+                              "description": "Rich card art URL or identifier for the payment instrument."
+                            },
+                            "funding_source": {
+                              "type": "string",
+                              "enum": [
+                                "debit",
+                                "credit",
+                                "prepaid",
+                                "store"
+                              ],
+                              "description": "How the card is funded, as reported by Apple Pay."
+                            }
+                          }
+                        },
+                        "selected": {
+                          "type": "boolean",
+                          "description": "Whether this instrument is the currently selected for the checkout."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "line_items": {
+                "type": "array",
+                "description": "Items to add to the cart or checkout. Required when creating a new cart or checkout.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "item",
+                    "quantity"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The ID of the line item to update."
+                    },
+                    "quantity": {
+                      "type": "integer"
+                    },
+                    "item": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The Product Variant ID to add or update."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "buyer": {
+                "type": "object",
+                "description": "Information about the buyer including email and phone number.",
+                "additionalProperties": true,
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "phone_number": {
+                    "type": "string"
+                  },
+                  "consent": {
+                    "type": "object",
+                    "description": "Per-purpose buyer consent decisions, keyed by reverse-DNS identifiers. Omission leaves existing choices unchanged.",
+                    "additionalProperties": {
+                      "type": "object",
+                      "required": [
+                        "granted",
+                        "source"
+                      ],
+                      "additionalProperties": true,
+                      "properties": {
+                        "granted": {
+                          "type": "boolean",
+                          "description": "Whether consent is granted."
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "business",
+                            "platform"
+                          ],
+                          "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                        },
+                        "segments": {
+                          "type": "object",
+                          "description": "One level of refinements. Marketing supports dev.ucp.consent.marketing.email and dev.ucp.consent.marketing.sms; a segment overrides its parent.",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "granted",
+                              "source"
+                            ],
+                            "additionalProperties": true,
+                            "properties": {
+                              "granted": {
+                                "type": "boolean",
+                                "description": "Whether consent is granted."
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "business",
+                                  "platform"
+                                ],
+                                "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "context": {
+                "type": "object",
+                "description": "Provisional context hints for localization and pricing. Used when authoritative data (e.g., shipping address) is missing; higher-resolution data supersedes these values and unsupported hints may be ignored without error.",
+                "additionalProperties": true,
+                "properties": {
+                  "address_country": {
+                    "type": "string",
+                    "description": "Country hint for localization."
+                  },
+                  "address_region": {
+                    "type": "string",
+                    "description": "Region/state hint for localization."
+                  },
+                  "postal_code": {
+                    "type": "string",
+                    "description": "Postal code hint for localization."
+                  },
+                  "intent": {
+                    "type": "string",
+                    "description": "Context describing buyer's intent."
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "Language tag in IETF BCP 47 format."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Preferred currency (ISO 4217, e.g., 'EUR', 'USD')."
+                  },
+                  "eligibility": {
+                    "type": "array",
+                    "description": "Buyer claims about eligible benefits such as loyalty membership, payment perks, and similar.",
+                    "items": {
+                      "type": "string",
+                      "description": "Reverse-domain identifier. Must contain at least two dot-separated segments (e.g., 'com.example.loyalty').",
+                      "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?)+$"
+                    }
+                  }
+                }
+              },
+              "attribution": {
+                "type": "object",
+                "description": "Marketing attribution context for the buyer's session (referring domain, click IDs, UTM parameters).",
+                "properties": {
+                  "referring_domain": {
+                    "type": "string",
+                    "description": "Domain that referred the buyer to the merchant's storefront."
+                  },
+                  "click_id_tag": {
+                    "type": "string",
+                    "description": "Click identifier parameter name (e.g., 'gclid', 'fbclid')."
+                  },
+                  "click_id_value": {
+                    "type": "string",
+                    "description": "Click identifier value matching click_id_tag."
+                  },
+                  "activity_id_tag": {
+                    "type": "string",
+                    "description": "Activity identifier parameter name."
+                  },
+                  "activity_id_value": {
+                    "type": "string",
+                    "description": "Activity identifier value matching activity_id_tag."
+                  },
+                  "utm_campaign": {
+                    "type": "string",
+                    "description": "UTM campaign parameter."
+                  },
+                  "utm_source": {
+                    "type": "string",
+                    "description": "UTM source parameter."
+                  },
+                  "utm_medium": {
+                    "type": "string",
+                    "description": "UTM medium parameter."
+                  },
+                  "utm_content": {
+                    "type": "string",
+                    "description": "UTM content parameter."
+                  },
+                  "utm_term": {
+                    "type": "string",
+                    "description": "UTM term parameter."
+                  }
+                }
+              },
+              "cart_id": {
+                "type": "string",
+                "description": "Cart ID to convert to checkout. When provided, the business uses cart contents (line_items, context, buyer) and ignores overlapping fields in the checkout payload. line_items is still required: pass an empty array (\"line_items\": []). Format: 'gid://shopify/Cart/abc123?key=secret'"
+              },
+              "fulfillment": {
+                "type": "object",
+                "description": "Information about the fulfillment.",
+                "properties": {
+                  "methods": {
+                    "type": "array",
+                    "description": "The methods of fulfillment.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string"
+                        },
+                        "selected_destination_id": {
+                          "type": "string",
+                          "description": "ID of the selected destination."
+                        },
+                        "destinations": {
+                          "type": "array",
+                          "description": "The destinations to fulfill to.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "first_name": {
+                                "type": "string"
+                              },
+                              "last_name": {
+                                "type": "string"
+                              },
+                              "phone_number": {
+                                "type": "string"
+                              },
+                              "street_address": {
+                                "type": "string"
+                              },
+                              "extended_address": {
+                                "type": "string"
+                              },
+                              "address_locality": {
+                                "type": "string"
+                              },
+                              "address_region": {
+                                "type": "string"
+                              },
+                              "postal_code": {
+                                "type": "string"
+                              },
+                              "address_country": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "groups": {
+                          "type": "array",
+                          "description": "The groups to fulfill to.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "selected_option_id": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "type"
+                      ]
+                    }
+                  }
+                }
+              },
+              "discounts": {
+                "type": "object",
+                "description": "Discount or promo codes to apply to the cart. Only prompt if customer mentions having a discount code.",
+                "properties": {
+                  "codes": {
+                    "type": "array",
+                    "description": "Discount codes to apply. Case-insensitive. Replaces previously submitted codes. Send empty array to clear.",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "declared_fields": {
+                "type": "array",
+                "description": "Merchant-defined cart or checkout fields and their values. On updates, replaces previously submitted custom field values; omitted or null fields are cleared. Send empty array to clear all custom fields.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "Unique identifier for the declared field."
+                    },
+                    "value": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "object",
+                        "array",
+                        "null"
+                      ],
+                      "description": "Submitted JSON value for the field. Null clears the value."
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "line_items"
+            ]
+          }
+        },
+        "required": [
+          "checkout"
+        ]
+      },
+      "endpointMapping": {
+        "method": "create_checkout",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "title": "Create a checkout"
+      },
+      "enabled": false
+    },
+    {
+      "name": "decathlon_shop_update_checkout",
+      "description": "Change a checkout of the Decathlon US store by its id: items, buyer email and phone, delivery method and address, discount codes. Returns the updated checkout with totals and status. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00. Ask the buyer before calling it; it installs switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "checkout": {
+            "type": "object",
+            "description": "Checkout properties.",
+            "properties": {
+              "payment": {
+                "type": "object",
+                "description": "Payment information for this checkout.",
+                "additionalProperties": true,
+                "properties": {
+                  "instruments": {
+                    "type": "array",
+                    "description": "Payment instruments for this checkout (e.g., credit cards, tokens, wallets).",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "handler_id",
+                        "type"
+                      ],
+                      "additionalProperties": true,
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "handler_id": {
+                                "const": "apple-pay"
+                              }
+                            },
+                            "required": [
+                              "handler_id"
+                            ]
+                          },
+                          "then": {
+                            "required": [
+                              "billing_address",
+                              "credential"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "card"
+                              },
+                              "credential": {
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "payment_data"
+                                ]
+                              }
+                            }
+                          },
+                          "else": {
+                            "properties": {
+                              "credential": {
+                                "required": [
+                                  "type"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "not": {
+                                      "const": "apple_pay_token"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "A unique identifier for this payment instrument instance."
+                        },
+                        "handler_id": {
+                          "type": "string",
+                          "description": "Identifier of the payment handler that was used to generate this instrument."
+                        },
+                        "type": {
+                          "type": "string",
+                          "description": "Instrument type. Apple Pay uses 'card' because the submitted instrument represents a tokenized card."
+                        },
+                        "billing_address": {
+                          "type": "object",
+                          "description": "Billing address for the instrument.",
+                          "additionalProperties": true,
+                          "properties": {
+                            "street_address": {
+                              "type": "string",
+                              "description": "Street address of the billing address."
+                            },
+                            "extended_address": {
+                              "type": "string",
+                              "description": "Extended address of the billing address such as an apartment number, C/O, or alternative name."
+                            },
+                            "address_locality": {
+                              "type": "string",
+                              "description": "Locality of the billing address."
+                            },
+                            "address_region": {
+                              "type": "string",
+                              "description": "Region of the billing address."
+                            },
+                            "postal_code": {
+                              "type": "string",
+                              "description": "Postal code of the billing address."
+                            },
+                            "address_country": {
+                              "type": "string",
+                              "description": "Country of the billing address in 2-letter ISO 3166-1 alpha-2 format."
+                            },
+                            "first_name": {
+                              "type": "string",
+                              "description": "First name of the contact associated with the billing address."
+                            },
+                            "last_name": {
+                              "type": "string",
+                              "description": "Last name of the contact associated with the billing address."
+                            },
+                            "phone_number": {
+                              "type": "string",
+                              "description": "Phone number of the contact associated with the billing address."
+                            }
+                          }
+                        },
+                        "credential": {
+                          "type": "object",
+                          "description": "Payment credential payload to process the transaction for this instrument.",
+                          "additionalProperties": true,
+                          "allOf": [
+                            {
+                              "if": {
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ]
+                              },
+                              "then": {
+                                "required": [
+                                  "type",
+                                  "payment_data"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  },
+                                  "payment_data": {
+                                    "type": "object",
+                                    "required": [
+                                      "version",
+                                      "data",
+                                      "signature",
+                                      "header"
+                                    ],
+                                    "additionalProperties": true,
+                                    "properties": {
+                                      "version": {
+                                        "type": "string"
+                                      },
+                                      "data": {
+                                        "type": "string"
+                                      },
+                                      "signature": {
+                                        "type": "string"
+                                      },
+                                      "header": {
+                                        "type": "object",
+                                        "required": [
+                                          "public_key_hash",
+                                          "transaction_id"
+                                        ],
+                                        "anyOf": [
+                                          {
+                                            "required": [
+                                              "ephemeral_public_key"
+                                            ]
+                                          },
+                                          {
+                                            "required": [
+                                              "wrapped_key"
+                                            ]
+                                          }
+                                        ],
+                                        "additionalProperties": true,
+                                        "properties": {
+                                          "ephemeral_public_key": {
+                                            "type": "string"
+                                          },
+                                          "wrapped_key": {
+                                            "type": "string"
+                                          },
+                                          "public_key_hash": {
+                                            "type": "string"
+                                          },
+                                          "transaction_id": {
+                                            "type": "string"
+                                          },
+                                          "application_data": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "transaction_identifier": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "else": {
+                                "required": [
+                                  "type"
+                                ]
+                              }
+                            }
+                          ],
+                          "properties": {
+                            "token": {
+                              "type": "string",
+                              "description": "Opaque payment token value, required except when restating a platform-listed instrument (e.g., a Shop Pay wallet card) whose token the platform re-derives from the instrument id."
+                            },
+                            "type": {
+                              "type": "string",
+                              "description": "Namespaced token type using dot notation (e.g., stripe.token, merchant.token, google.pay)."
+                            },
+                            "payment_data": {
+                              "type": "object"
+                            },
+                            "transaction_identifier": {
+                              "type": "string"
+                            },
+                            "approval_id": {
+                              "type": "string",
+                              "description": "Identifier of the payment approval authorizing this credential, as returned by the approvals API. Required for shop_pay credentials when the merchant requires payment approvals."
+                            }
+                          }
+                        },
+                        "display": {
+                          "type": "object",
+                          "description": "Display information for this payment instrument.",
+                          "additionalProperties": true,
+                          "properties": {
+                            "brand": {
+                              "type": "string",
+                              "description": "Card brand (e.g., visa, mastercard), when available."
+                            },
+                            "last_digits": {
+                              "type": "string",
+                              "description": "Last 4 digits of the card, when available."
+                            },
+                            "expiry_month": {
+                              "type": "integer",
+                              "description": "Card expiry month (1-12). Required for card instruments."
+                            },
+                            "expiry_year": {
+                              "type": "integer",
+                              "description": "Card expiry year. Required for card instruments."
+                            },
+                            "rich_text_description": {
+                              "type": "string",
+                              "description": "Rich text description of the payment instrument for display purposes."
+                            },
+                            "rich_card_art": {
+                              "type": "string",
+                              "description": "Rich card art URL or identifier for the payment instrument."
+                            },
+                            "funding_source": {
+                              "type": "string",
+                              "enum": [
+                                "debit",
+                                "credit",
+                                "prepaid",
+                                "store"
+                              ],
+                              "description": "How the card is funded, as reported by Apple Pay."
+                            }
+                          }
+                        },
+                        "selected": {
+                          "type": "boolean",
+                          "description": "Whether this instrument is the currently selected for the checkout."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "line_items": {
+                "type": "array",
+                "description": "Items to add to the cart or checkout. Required when creating a new cart or checkout.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "item",
+                    "quantity"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The ID of the line item to update."
+                    },
+                    "quantity": {
+                      "type": "integer"
+                    },
+                    "item": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "The Product Variant ID to add or update."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "buyer": {
+                "type": "object",
+                "description": "Information about the buyer including email and phone number.",
+                "additionalProperties": true,
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "phone_number": {
+                    "type": "string"
+                  },
+                  "consent": {
+                    "type": "object",
+                    "description": "Per-purpose buyer consent decisions, keyed by reverse-DNS identifiers. Omission leaves existing choices unchanged.",
+                    "additionalProperties": {
+                      "type": "object",
+                      "required": [
+                        "granted",
+                        "source"
+                      ],
+                      "additionalProperties": true,
+                      "properties": {
+                        "granted": {
+                          "type": "boolean",
+                          "description": "Whether consent is granted."
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "business",
+                            "platform"
+                          ],
+                          "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                        },
+                        "segments": {
+                          "type": "object",
+                          "description": "One level of refinements. Marketing supports dev.ucp.consent.marketing.email and dev.ucp.consent.marketing.sms; a segment overrides its parent.",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "granted",
+                              "source"
+                            ],
+                            "additionalProperties": true,
+                            "properties": {
+                              "granted": {
+                                "type": "boolean",
+                                "description": "Whether consent is granted."
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "business",
+                                  "platform"
+                                ],
+                                "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "context": {
+                "type": "object",
+                "description": "Provisional context hints for localization and pricing. Used when authoritative data (e.g., shipping address) is missing; higher-resolution data supersedes these values and unsupported hints may be ignored without error.",
+                "additionalProperties": true,
+                "properties": {
+                  "address_country": {
+                    "type": "string",
+                    "description": "Country hint for localization."
+                  },
+                  "address_region": {
+                    "type": "string",
+                    "description": "Region/state hint for localization."
+                  },
+                  "postal_code": {
+                    "type": "string",
+                    "description": "Postal code hint for localization."
+                  },
+                  "intent": {
+                    "type": "string",
+                    "description": "Context describing buyer's intent."
+                  },
+                  "language": {
+                    "type": "string",
+                    "description": "Language tag in IETF BCP 47 format."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "Preferred currency (ISO 4217, e.g., 'EUR', 'USD')."
+                  },
+                  "eligibility": {
+                    "type": "array",
+                    "description": "Buyer claims about eligible benefits such as loyalty membership, payment perks, and similar.",
+                    "items": {
+                      "type": "string",
+                      "description": "Reverse-domain identifier. Must contain at least two dot-separated segments (e.g., 'com.example.loyalty').",
+                      "pattern": "^[a-z](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?)+$"
+                    }
+                  }
+                }
+              },
+              "attribution": {
+                "type": "object",
+                "description": "Marketing attribution context for the buyer's session (referring domain, click IDs, UTM parameters).",
+                "properties": {
+                  "referring_domain": {
+                    "type": "string",
+                    "description": "Domain that referred the buyer to the merchant's storefront."
+                  },
+                  "click_id_tag": {
+                    "type": "string",
+                    "description": "Click identifier parameter name (e.g., 'gclid', 'fbclid')."
+                  },
+                  "click_id_value": {
+                    "type": "string",
+                    "description": "Click identifier value matching click_id_tag."
+                  },
+                  "activity_id_tag": {
+                    "type": "string",
+                    "description": "Activity identifier parameter name."
+                  },
+                  "activity_id_value": {
+                    "type": "string",
+                    "description": "Activity identifier value matching activity_id_tag."
+                  },
+                  "utm_campaign": {
+                    "type": "string",
+                    "description": "UTM campaign parameter."
+                  },
+                  "utm_source": {
+                    "type": "string",
+                    "description": "UTM source parameter."
+                  },
+                  "utm_medium": {
+                    "type": "string",
+                    "description": "UTM medium parameter."
+                  },
+                  "utm_content": {
+                    "type": "string",
+                    "description": "UTM content parameter."
+                  },
+                  "utm_term": {
+                    "type": "string",
+                    "description": "UTM term parameter."
+                  }
+                }
+              },
+              "fulfillment": {
+                "type": "object",
+                "description": "Information about the fulfillment.",
+                "properties": {
+                  "methods": {
+                    "type": "array",
+                    "description": "The methods of fulfillment.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "line_item_ids": {
+                          "type": "array",
+                          "description": "The line item ids to fulfill.",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "selected_destination_id": {
+                          "type": "string",
+                          "description": "ID of the selected destination."
+                        },
+                        "destinations": {
+                          "type": "array",
+                          "description": "The destinations to fulfill to.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "first_name": {
+                                "type": "string"
+                              },
+                              "last_name": {
+                                "type": "string"
+                              },
+                              "phone_number": {
+                                "type": "string"
+                              },
+                              "street_address": {
+                                "type": "string"
+                              },
+                              "extended_address": {
+                                "type": "string"
+                              },
+                              "address_locality": {
+                                "type": "string"
+                              },
+                              "address_region": {
+                                "type": "string"
+                              },
+                              "postal_code": {
+                                "type": "string"
+                              },
+                              "address_country": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "groups": {
+                          "type": "array",
+                          "description": "The groups to fulfill to.",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "selected_option_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "line_item_ids"
+                      ]
+                    }
+                  }
+                }
+              },
+              "discounts": {
+                "type": "object",
+                "description": "Discount or promo codes to apply to the cart. Only prompt if customer mentions having a discount code.",
+                "properties": {
+                  "codes": {
+                    "type": "array",
+                    "description": "Discount codes to apply. Case-insensitive. Replaces previously submitted codes. Send empty array to clear.",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "declared_fields": {
+                "type": "array",
+                "description": "Merchant-defined cart or checkout fields and their values. On updates, replaces previously submitted custom field values; omitted or null fields are cleared. Send empty array to clear all custom fields.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "description": "Unique identifier for the declared field."
+                    },
+                    "value": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "object",
+                        "array",
+                        "null"
+                      ],
+                      "description": "Submitted JSON value for the field. Null clears the value."
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "line_items"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The ID of the checkout to update. Format: 'gid://shopify/Checkout/abc123'"
+          }
+        },
+        "required": [
+          "checkout",
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "update_checkout",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Update a checkout"
+      },
+      "enabled": false
+    },
+    {
+      "name": "decathlon_shop_complete_checkout",
+      "description": "Complete a checkout of the Decathlon US store: this places the order and charges the payment instrument in `checkout.payment`. Needs the checkout id and a `meta.idempotency-key` that stays the same when the call is repeated. Returns the completed checkout with the order id and the thank-you page URL, or the errors that stopped it. Call it only after the buyer has reviewed the order and said yes. It installs switched off. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "meta": {
+            "type": "object",
+            "description": "Metadata for UCP agent profile discovery.",
+            "properties": {
+              "idempotency-key": {
+                "type": "string",
+                "description": "An idempotency key for completing the checkout."
+              }
+            },
+            "required": [
+              "idempotency-key"
+            ]
+          },
+          "checkout": {
+            "type": "object",
+            "description": "Checkout properties.",
+            "properties": {
+              "payment": {
+                "type": "object",
+                "description": "Payment information for this checkout.",
+                "additionalProperties": true,
+                "properties": {
+                  "instruments": {
+                    "type": "array",
+                    "description": "Payment instruments for this checkout (e.g., credit cards, tokens, wallets).",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "handler_id",
+                        "type"
+                      ],
+                      "additionalProperties": true,
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "handler_id": {
+                                "const": "apple-pay"
+                              }
+                            },
+                            "required": [
+                              "handler_id"
+                            ]
+                          },
+                          "then": {
+                            "required": [
+                              "billing_address",
+                              "credential"
+                            ],
+                            "properties": {
+                              "type": {
+                                "const": "card"
+                              },
+                              "credential": {
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "payment_data"
+                                ]
+                              }
+                            }
+                          },
+                          "else": {
+                            "properties": {
+                              "credential": {
+                                "required": [
+                                  "type"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "not": {
+                                      "const": "apple_pay_token"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "A unique identifier for this payment instrument instance."
+                        },
+                        "handler_id": {
+                          "type": "string",
+                          "description": "Identifier of the payment handler that was used to generate this instrument."
+                        },
+                        "type": {
+                          "type": "string",
+                          "description": "Instrument type. Apple Pay uses 'card' because the submitted instrument represents a tokenized card."
+                        },
+                        "billing_address": {
+                          "type": "object",
+                          "description": "Billing address for the instrument.",
+                          "additionalProperties": true,
+                          "properties": {
+                            "street_address": {
+                              "type": "string",
+                              "description": "Street address of the billing address."
+                            },
+                            "extended_address": {
+                              "type": "string",
+                              "description": "Extended address of the billing address such as an apartment number, C/O, or alternative name."
+                            },
+                            "address_locality": {
+                              "type": "string",
+                              "description": "Locality of the billing address."
+                            },
+                            "address_region": {
+                              "type": "string",
+                              "description": "Region of the billing address."
+                            },
+                            "postal_code": {
+                              "type": "string",
+                              "description": "Postal code of the billing address."
+                            },
+                            "address_country": {
+                              "type": "string",
+                              "description": "Country of the billing address in 2-letter ISO 3166-1 alpha-2 format."
+                            },
+                            "first_name": {
+                              "type": "string",
+                              "description": "First name of the contact associated with the billing address."
+                            },
+                            "last_name": {
+                              "type": "string",
+                              "description": "Last name of the contact associated with the billing address."
+                            },
+                            "phone_number": {
+                              "type": "string",
+                              "description": "Phone number of the contact associated with the billing address."
+                            }
+                          }
+                        },
+                        "credential": {
+                          "type": "object",
+                          "description": "Payment credential payload to process the transaction for this instrument.",
+                          "additionalProperties": true,
+                          "allOf": [
+                            {
+                              "if": {
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ]
+                              },
+                              "then": {
+                                "required": [
+                                  "type",
+                                  "payment_data"
+                                ],
+                                "properties": {
+                                  "type": {
+                                    "const": "apple_pay_token"
+                                  },
+                                  "payment_data": {
+                                    "type": "object",
+                                    "required": [
+                                      "version",
+                                      "data",
+                                      "signature",
+                                      "header"
+                                    ],
+                                    "additionalProperties": true,
+                                    "properties": {
+                                      "version": {
+                                        "type": "string"
+                                      },
+                                      "data": {
+                                        "type": "string"
+                                      },
+                                      "signature": {
+                                        "type": "string"
+                                      },
+                                      "header": {
+                                        "type": "object",
+                                        "required": [
+                                          "public_key_hash",
+                                          "transaction_id"
+                                        ],
+                                        "anyOf": [
+                                          {
+                                            "required": [
+                                              "ephemeral_public_key"
+                                            ]
+                                          },
+                                          {
+                                            "required": [
+                                              "wrapped_key"
+                                            ]
+                                          }
+                                        ],
+                                        "additionalProperties": true,
+                                        "properties": {
+                                          "ephemeral_public_key": {
+                                            "type": "string"
+                                          },
+                                          "wrapped_key": {
+                                            "type": "string"
+                                          },
+                                          "public_key_hash": {
+                                            "type": "string"
+                                          },
+                                          "transaction_id": {
+                                            "type": "string"
+                                          },
+                                          "application_data": {
+                                            "type": "string"
+                                          }
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "transaction_identifier": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "else": {
+                                "required": [
+                                  "type"
+                                ]
+                              }
+                            }
+                          ],
+                          "properties": {
+                            "token": {
+                              "type": "string",
+                              "description": "Opaque payment token value, required except when restating a platform-listed instrument (e.g., a Shop Pay wallet card) whose token the platform re-derives from the instrument id."
+                            },
+                            "type": {
+                              "type": "string",
+                              "description": "Namespaced token type using dot notation (e.g., stripe.token, merchant.token, google.pay)."
+                            },
+                            "payment_data": {
+                              "type": "object"
+                            },
+                            "transaction_identifier": {
+                              "type": "string"
+                            },
+                            "approval_id": {
+                              "type": "string",
+                              "description": "Identifier of the payment approval authorizing this credential, as returned by the approvals API. Required for shop_pay credentials when the merchant requires payment approvals."
+                            }
+                          }
+                        },
+                        "display": {
+                          "type": "object",
+                          "description": "Display information for this payment instrument.",
+                          "additionalProperties": true,
+                          "properties": {
+                            "brand": {
+                              "type": "string",
+                              "description": "Card brand (e.g., visa, mastercard), when available."
+                            },
+                            "last_digits": {
+                              "type": "string",
+                              "description": "Last 4 digits of the card, when available."
+                            },
+                            "expiry_month": {
+                              "type": "integer",
+                              "description": "Card expiry month (1-12). Required for card instruments."
+                            },
+                            "expiry_year": {
+                              "type": "integer",
+                              "description": "Card expiry year. Required for card instruments."
+                            },
+                            "rich_text_description": {
+                              "type": "string",
+                              "description": "Rich text description of the payment instrument for display purposes."
+                            },
+                            "rich_card_art": {
+                              "type": "string",
+                              "description": "Rich card art URL or identifier for the payment instrument."
+                            },
+                            "funding_source": {
+                              "type": "string",
+                              "enum": [
+                                "debit",
+                                "credit",
+                                "prepaid",
+                                "store"
+                              ],
+                              "description": "How the card is funded, as reported by Apple Pay."
+                            }
+                          }
+                        },
+                        "selected": {
+                          "type": "boolean",
+                          "description": "Whether this instrument is the currently selected for the checkout."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "attribution": {
+                "type": "object",
+                "description": "Marketing attribution context for the buyer's session (referring domain, click IDs, UTM parameters).",
+                "properties": {
+                  "referring_domain": {
+                    "type": "string",
+                    "description": "Domain that referred the buyer to the merchant's storefront."
+                  },
+                  "click_id_tag": {
+                    "type": "string",
+                    "description": "Click identifier parameter name (e.g., 'gclid', 'fbclid')."
+                  },
+                  "click_id_value": {
+                    "type": "string",
+                    "description": "Click identifier value matching click_id_tag."
+                  },
+                  "activity_id_tag": {
+                    "type": "string",
+                    "description": "Activity identifier parameter name."
+                  },
+                  "activity_id_value": {
+                    "type": "string",
+                    "description": "Activity identifier value matching activity_id_tag."
+                  },
+                  "utm_campaign": {
+                    "type": "string",
+                    "description": "UTM campaign parameter."
+                  },
+                  "utm_source": {
+                    "type": "string",
+                    "description": "UTM source parameter."
+                  },
+                  "utm_medium": {
+                    "type": "string",
+                    "description": "UTM medium parameter."
+                  },
+                  "utm_content": {
+                    "type": "string",
+                    "description": "UTM content parameter."
+                  },
+                  "utm_term": {
+                    "type": "string",
+                    "description": "UTM term parameter."
+                  }
+                }
+              },
+              "buyer": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "consent": {
+                    "type": "object",
+                    "description": "Per-purpose buyer consent decisions, keyed by reverse-DNS identifiers. Omission leaves existing choices unchanged.",
+                    "additionalProperties": {
+                      "type": "object",
+                      "required": [
+                        "granted",
+                        "source"
+                      ],
+                      "additionalProperties": true,
+                      "properties": {
+                        "granted": {
+                          "type": "boolean",
+                          "description": "Whether consent is granted."
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "business",
+                            "platform"
+                          ],
+                          "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                        },
+                        "segments": {
+                          "type": "object",
+                          "description": "One level of refinements. Marketing supports dev.ucp.consent.marketing.email and dev.ucp.consent.marketing.sms; a segment overrides its parent.",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "granted",
+                              "source"
+                            ],
+                            "additionalProperties": true,
+                            "properties": {
+                              "granted": {
+                                "type": "boolean",
+                                "description": "Whether consent is granted."
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "business",
+                                  "platform"
+                                ],
+                                "description": "Use platform for an explicit buyer decision. Business-sourced values do not update stored choices."
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "payment"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The ID of the checkout to update. Format: 'gid://shopify/Checkout/abc123'"
+          }
+        },
+        "required": [
+          "meta",
+          "id",
+          "checkout"
+        ]
+      },
+      "endpointMapping": {
+        "method": "complete_checkout",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "title": "Complete a checkout (places the order)"
+      },
+      "enabled": false
+    },
+    {
+      "name": "decathlon_shop_cancel_checkout",
+      "description": "Cancel a checkout of the Decathlon US store by its id (`gid://shopify/Checkout/...`). Returns the cancelled checkout. Ask the buyer before calling it; it installs switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the checkout to update. Format: 'gid://shopify/Checkout/abc123'"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "cancel_checkout",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Cancel a checkout"
+      },
+      "enabled": false
+    },
+    {
+      "name": "decathlon_shop_get_order",
+      "description": "Read an order of the Decathlon US store by its id (`gid://shopify/Order/...`): line items with status, totals, delivery expectations and events, adjustments such as refunds, and the `permalink_url` of the order page. There is no account behind this connector, so it only answers for an order id you already have. Money is an integer in minor units next to a currency code: amount 2500 with currency USD is $25.00.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the order. Format: 'gid://shopify/Order/123'"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "get_order",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Get an order"
+      }
+    }
+  ]
+}
