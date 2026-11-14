@@ -3809,5 +3809,14 @@
     "starterTitle": "Mit Starter",
     "seeStarter": "Was sich mit Starter ändert",
     "hideStarter": "Ausblenden"
+  },
+  "activeSubscription": {
+    "title": "Zuerst das Abonnement kündigen",
+    "body": "Dieser Workspace hat noch ein Abonnement, und das Löschen des Workspace kündigt es nicht: Es würde weiter abgerechnet. Kündige es zuerst und lösche danach.",
+    "cancelButton": "Abonnement kündigen",
+    "opening": "Wird geöffnet…",
+    "after": "Nach der Kündigung kommst du hierher zurück.",
+    "openFailed": "Die Kündigungsseite konnte nicht geöffnet werden.",
+    "licensePage": "Einstellungen → Lizenz öffnen"
   }
 }

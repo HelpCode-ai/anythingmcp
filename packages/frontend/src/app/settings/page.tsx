@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/badge';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { ActiveSubscriptionNotice, subscribedWorkspacesOf, type SubscribedWorkspace } from '@/components/active-subscription-notice';
 
 const AUTH_MODES = ['none', 'legacy', 'oauth2', 'both'] as const;
 
@@ -62,6 +63,7 @@ export default function SettingsPage() {
   // A passwordless (social) account confirms deletion with a fresh sign-in.
   const [deleteNeedsReauth, setDeleteNeedsReauth] = useState(false);
   const [blockingOrgs, setBlockingOrgs] = useState<{ id: string; name: string }[] | null>(null);
+  const [subscribedOrgs, setSubscribedOrgs] = useState<SubscribedWorkspace[] | null>(null);
 
   // Connected accounts
   const [linkable, setLinkable] = useState<LinkableProvider[]>([]);
@@ -261,6 +263,7 @@ export default function SettingsPage() {
     setDeleting(true);
     setDeleteError(null);
     setBlockingOrgs(null);
+    setSubscribedOrgs(null);
     try {
       await users.deleteSelf(
         hasPassword ? { password: deletePassword, confirm: 'DELETE' } : { confirm: 'DELETE' },
@@ -268,12 +271,15 @@ export default function SettingsPage() {
       );
       logout();
     } catch (err: any) {
+      const subscribed = subscribedWorkspacesOf(err);
       if (err instanceof ApiError) {
         if (err.status === 403 && err.body?.code === 'reauth_required') {
           setDeleteNeedsReauth(true);
           setDeleteError(err.message);
         } else if (err.status === 401) {
           setDeleteError(hasPassword ? t('incorrectPassword') : err.message || t('deleteFailed'));
+        } else if (subscribed && subscribed.length > 0) {
+          setSubscribedOrgs(subscribed);
         } else if (err.status === 409 && Array.isArray(err.body?.blockingOrganizations)) {
           setBlockingOrgs(err.body.blockingOrganizations);
           setDeleteError(err.body?.error || t('onlyAdmin'));
@@ -314,6 +320,7 @@ export default function SettingsPage() {
     setDeleteConfirm('');
     setDeleteError(null);
     setBlockingOrgs(null);
+    setSubscribedOrgs(null);
     setDeleting(false);
   };
 
@@ -863,6 +870,9 @@ export default function SettingsPage() {
                   autoComplete="off"
                 />
               </div>
+              {subscribedOrgs && (
+                <ActiveSubscriptionNotice workspaces={subscribedOrgs} returnPath="/settings?delete=1" />
+              )}
               {deleteError && !blockingOrgs && (
                 <p className="text-sm text-[var(--danger)]">{deleteError}</p>
               )}

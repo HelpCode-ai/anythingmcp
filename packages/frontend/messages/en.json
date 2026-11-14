@@ -3809,5 +3809,14 @@
     "starterTitle": "On Starter",
     "seeStarter": "See what changes with Starter",
     "hideStarter": "Hide"
+  },
+  "activeSubscription": {
+    "title": "Cancel the subscription first",
+    "body": "This workspace still has a subscription, and deleting the workspace does not cancel it: you would go on being charged. Cancel it first, then come back and delete.",
+    "cancelButton": "Cancel subscription",
+    "opening": "Opening…",
+    "after": "You will return here once it is cancelled.",
+    "openFailed": "Could not open the cancellation page.",
+    "licensePage": "Open Settings → License"
   }
 }
