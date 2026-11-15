@@ -193,6 +193,45 @@ export function connectorAuthEmail(
 }
 
 /**
+ * A connector whose saved key, token or password the API keeps refusing
+ * (credential-refusal-tracker.ts). Sent once to the owner of a workspace
+ * whose connector used to work: the calls fail in a chat they may not be
+ * watching. Unlike a revoked sign-in there is nothing to authorize again: new
+ * credentials have to be saved. Transactional: no unsubscribe line.
+ */
+export function connectorCredentialsRefusedEmail(
+  input: { name: string | null; connectorName: string; message: string; connectorUrl: string },
+  ctx: EmailBrandContext,
+): RenderedEmail {
+  const hi = greeting(input.name);
+  const connector = input.connectorName.trim() || 'A connector';
+  return build({
+    subject: `${connector} stopped working: its credentials were refused`,
+    preheader: 'Your AI client cannot use it until you save valid credentials.',
+    bodyHtml:
+      h1('A connector stopped working.', 'Its saved credentials were refused.') +
+      p(
+        `${esc(hi)} <strong style="font-weight:600;">${esc(connector)}</strong> worked before, and now the service behind it ` +
+          'refuses the key, token or password saved in the connector. Until valid ones are saved, your AI client gets an error on every call.',
+      ) +
+      p(esc(input.message)) +
+      button(input.connectorUrl, 'Update the credentials') +
+      small(
+        'The connector works again right after you save valid credentials; nothing else has to be set up. ' +
+          'We will not write again about it this week.',
+      ),
+    bodyText:
+      `${hi}\n\n"${connector}" worked before, and now the service behind it refuses the key, token or password saved in the connector. ` +
+      'Until valid ones are saved, your AI client gets an error on every call.\n\n' +
+      `${input.message}\n\n` +
+      `Update the credentials: ${input.connectorUrl}\n\n` +
+      'The connector works again right after you save valid credentials; nothing else has to be set up. ' +
+      'We will not write again about it this week.',
+    ctx,
+  });
+}
+
+/**
  * A plan change paused connectors, MCP servers or File Search folders above
  * the new plan's caps (PlanCapsService, Cloud). Sent once per downgrade to the
  * workspace admins. Transactional: it explains a change to their service.
@@ -296,21 +335,43 @@ export function connectorAddedFromSupportEmail(
  * app leaves Pending), so the sign-in that was refused works now. Sent once
  * per connector (AppApprovalWatcherService). Transactional: the user asked to
  * connect the app and is waiting for this.
+ *
+ * The button's link starts the provider's sign-in itself (signInPath): a
+ * third of those who opened the connector page never found the sign-in on it.
  */
 export function appApprovedEmail(
   input: {
     name: string | null;
     /** The provider, e.g. "Etsy". */
     providerName: string;
+    /** The connector page, opened so that the provider's sign-in starts. */
     connectorUrl: string;
     /** A first request to try once signed in, and its claude.ai link. */
     prompt: string;
     promptUrl: string;
+    /**
+     * Days the workspace's trial was extended by with this email, because the
+     * approval came when it had ended or was about to. Absent (or 0) when
+     * nothing was added: the sentence is then left out.
+     */
+    trialDaysAdded?: number;
+    /**
+     * Whether one reminder follows in two days while the sign-in is missing.
+     * False for a reader who opted out of tips: for them this is the only
+     * email, and it says so.
+     */
+    reminderFollows?: boolean;
   },
   ctx: EmailBrandContext,
 ): RenderedEmail {
   const hi = greeting(input.name);
   const provider = input.providerName.trim() || 'The provider';
+  const days = Math.floor(Number(input.trialDaysAdded) || 0);
+  const trial = days >= 1 ? `We added ${days} ${plural(days, 'day')} to your trial so you can try it.` : '';
+  const after =
+    (input.reminderFollows ?? true)
+      ? 'If the sign-in is still open in two days, we remind you once; after that we send nothing more about it.'
+      : 'This is the only email about it.';
   return build({
     subject: `${provider} approved your app`,
     preheader: `Finish the ${provider} sign-in to connect it to your AI client.`,
@@ -318,18 +379,64 @@ export function appApprovedEmail(
       h1(`${esc(provider)} approved your app.`, 'One step is left: the sign-in.') +
       p(
         `${esc(hi)} ${esc(provider)} now accepts the app keys you entered in AnythingMCP. ` +
-          `Sign in to ${esc(provider)} from the connector page and approve the access; it takes a minute.`,
+          `The button below starts the ${esc(provider)} sign-in: approve the access there; it takes a minute.`,
+      ) +
+      (trial ? p(trial) : '') +
+      button(input.connectorUrl, `Finish the ${provider} sign-in`) +
+      p(`Then ask Claude: ${link(input.promptUrl, `&ldquo;${esc(input.prompt)}&rdquo;`)}`) +
+      small(`${after} We checked your app keys with ${esc(provider)} until it approved them.`),
+    bodyText:
+      `${hi}\n\n${provider} now accepts the app keys you entered in AnythingMCP. ` +
+      `The link below starts the ${provider} sign-in: approve the access there; it takes a minute.\n\n` +
+      (trial ? `${trial}\n\n` : '') +
+      `Finish the ${provider} sign-in: ${input.connectorUrl}\n\n` +
+      `Then ask Claude: "${input.prompt}" ${input.promptUrl}\n\n` +
+      `${after} We checked your app keys with ${provider} until it approved them.`,
+    ctx,
+  });
+}
+
+/**
+ * Two days after appApprovedEmail, while the connector still waits for the
+ * provider's sign-in: the one reminder, with the same link. Sent once per
+ * connector (AppApprovalWatcherService), then nothing more. A nudge, so it
+ * follows the rule of the other reminders: not sent to a reader who opted
+ * out, and it carries the unsubscribe line.
+ */
+export function appApprovedReminderEmail(
+  input: {
+    name: string | null;
+    /** The provider, e.g. "Etsy". */
+    providerName: string;
+    /** The connector page, opened so that the provider's sign-in starts. */
+    connectorUrl: string;
+    prompt: string;
+    promptUrl: string;
+  },
+  ctx: MarketingContext,
+): RenderedEmail {
+  const hi = greeting(input.name);
+  const provider = input.providerName.trim() || 'The provider';
+  return build({
+    subject: `Your ${provider} sign-in is still open`,
+    preheader: `${provider} approved your app two days ago. One step connects it to your AI client.`,
+    bodyHtml:
+      h1(`Your ${esc(provider)} sign-in is still open.`, 'It takes a minute.') +
+      p(
+        `${esc(hi)} ${esc(provider)} approved your app two days ago, but the connector still waits for the sign-in, so your AI client cannot use it yet. ` +
+          `The button below starts the ${esc(provider)} sign-in: approve the access there and it is connected.`,
       ) +
       button(input.connectorUrl, `Finish the ${provider} sign-in`) +
       p(`Then ask Claude: ${link(input.promptUrl, `&ldquo;${esc(input.prompt)}&rdquo;`)}`) +
-      small(`This is the only email about it. We checked your app keys with ${esc(provider)} until it approved them.`),
+      small('This is the last email about it.'),
     bodyText:
-      `${hi}\n\n${provider} now accepts the app keys you entered in AnythingMCP. ` +
-      `Sign in to ${provider} from the connector page and approve the access; it takes a minute.\n\n` +
+      `${hi}\n\n${provider} approved your app two days ago, but the connector still waits for the sign-in, so your AI client cannot use it yet. ` +
+      `The link below starts the ${provider} sign-in: approve the access there and it is connected.\n\n` +
       `Finish the ${provider} sign-in: ${input.connectorUrl}\n\n` +
       `Then ask Claude: "${input.prompt}" ${input.promptUrl}\n\n` +
-      `This is the only email about it. We checked your app keys with ${provider} until it approved them.`,
+      'This is the last email about it.',
     ctx,
+    unsubscribeUrl: ctx.unsubscribeUrl,
   });
 }
 

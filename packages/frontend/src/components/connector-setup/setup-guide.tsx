@@ -329,6 +329,7 @@ export function GuideStepView({
   total,
   redirectUri,
   actionUrl,
+  onActionOpened,
   confirmed,
   onConfirm,
   children,
@@ -339,6 +340,8 @@ export function GuideStepView({
   redirectUri: string | null;
   /** The action's URL with {{VAR}} filled in; null while a value it needs is empty. */
   actionUrl: string | null;
+  /** The action's link was followed (a click, or a middle click into a new tab). */
+  onActionOpened?: () => void;
   confirmed: boolean;
   onConfirm: (v: boolean) => void;
   children?: ReactNode;
@@ -362,6 +365,10 @@ export function GuideStepView({
             href={actionUrl}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={onActionOpened}
+            onAuxClick={(e) => {
+              if (e.button === 1) onActionOpened?.();
+            }}
             className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'gap-1.5')}
           >
             {step.action.label}

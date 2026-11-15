@@ -195,6 +195,20 @@ freemail() {
  or lower(split_part($1, '@', 2)) in ('mail.ru', 'web.de', 'me.com', 'mac.com', 'msn.com', 'pm.me'))
 EOF
 }
+# Whether an org ever had a successful call. tool_invocations alone cannot
+# say: Cloud deletes rows older than INVOCATION_RETENTION_DAYS (90). The
+# stored markers outlive them: the org's first_successful_call_at setting,
+# and a member's users.first_successful_invocation_at not older than the
+# membership (the backend's first-success-markers.ts). Applied to an org id
+# column.
+ever_ok() {
+  cat <<EOF
+(exists (select 1 from tool_invocations t where t.organization_id = $1 and t.status = 'SUCCESS')
+ or exists (select 1 from org_settings st where st.organization_id = $1 and st.key = 'first_successful_call_at')
+ or exists (select 1 from organization_members mm join users uu on uu.id = mm.user_id
+            where mm.organization_id = $1 and uu.first_successful_invocation_at >= mm.joined_at))
+EOF
+}
 
 # ── State: the orgs listed last time ─────────────────────────────────────────
 STATE_FILE="$STATE_DIR/stuck-orgs"
@@ -229,7 +243,7 @@ stuck as (
 ),
 never as (
   select s.* from stuck s
-  where not exists (select 1 from tool_invocations t where t.organization_id = s.org_id and t.status = 'SUCCESS')
+  where not $(ever_ok s.org_id)
 ),
 errs as (
   select distinct on (org_id) org_id, e, n from (
@@ -298,10 +312,10 @@ ctx=$(q <<SQL
 select
   (select count(*) from organizations o
     where exists (select 1 from tool_invocations t where t.organization_id = o.id and t.created_at >= $WIN30)
-      and not exists (select 1 from tool_invocations t where t.organization_id = o.id and t.status = 'SUCCESS')),
+      and not $(ever_ok o.id)),
   (select count(*) from organizations o
     where exists (select 1 from tool_invocations t where t.organization_id = o.id)
-      and not exists (select 1 from tool_invocations t where t.organization_id = o.id and t.status = 'SUCCESS')),
+      and not $(ever_ok o.id)),
   (select count(*) from organizations o
     where o.id = any(string_to_array(nullif(:'prev', ''), ','))
       and exists (select 1 from tool_invocations t where t.organization_id = o.id and t.status = 'SUCCESS'));

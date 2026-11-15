@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { connectorPageUrl } from '../../common/url.util';
 import { EmailService } from '../../settings/email.service';
 import { parseCredentialKey } from '../../common/credential-key.util';
+import { CREDENTIAL_REFUSED_CODE } from './credential-refusal-tracker';
 
 /**
  * Credential health of a connector, kept on the connector row
@@ -285,7 +286,7 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
 
     const connector = await this.prisma.connector.findUnique({
       where: { id: connectorId },
-      select: { name: true, organizationId: true, authStatusMessage: true },
+      select: { name: true, organizationId: true, authStatusMessage: true, authStatusCode: true },
     });
     if (!connector) return;
     const owner = await this.prisma.organizationMember.findFirst({
@@ -301,6 +302,8 @@ export class ConnectorAuthStatusService implements OnModuleInit, OnModuleDestroy
         connectorName: connector.name,
         message: connector.authStatusMessage ?? '',
         connectorPath: `/connectors/${encodeURIComponent(connectorId)}`,
+        // A saved key the API keeps refusing reads differently from a sign-in to renew.
+        kind: connector.authStatusCode === CREDENTIAL_REFUSED_CODE ? 'credentials' : 'sign_in',
       },
       connector.organizationId,
     );

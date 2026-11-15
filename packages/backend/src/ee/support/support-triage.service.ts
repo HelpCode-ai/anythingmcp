@@ -74,7 +74,7 @@ const SYSTEM_PROMPT = `You triage support conversations for AnythingMCP, a produ
 
 Typical problems: OAuth apps whose redirect URI is not set to <instance URL>/api/mcp-oauth/callback; API keys pasted in the wrong field or with spaces; expired or revoked tokens ("needs_reauth"); the AI client not connected to the MCP URL; trial ended; plan or invoice questions; requests for a connector we do not have yet.
 
-You receive the customer's messages, a snapshot of their workspace (plan, trial end, connectors and their names, connector issues of the last 24 hours, last_tool_call: the day of the latest successful tool call or "never") and the catalog connectors the messages name. Return ONLY a JSON object:
+You receive the customer's messages, a snapshot of their workspace (plan, trial end, connectors and their names, connector issues of the last 24 hours, last_tool_call: the day of the latest successful tool call, "more than N days ago" or "not in the call history" when the workspace made successful calls that are no longer kept, or "never") and the catalog connectors the messages name. Return ONLY a JSON object:
 {
   "category": one of ${TRIAGE_CATEGORIES.map((c) => `"${c}"`).join(', ')}; "billing-question" is a how-to question the dashboard answers (where to find or download an invoice, getting invoices by email, changing the card, upgrading, downgrading or cancelling the plan), "billing" is a problem a person must handle (refund, double or unexpected charge, failed or disputed payment, discount or price, correcting an invoice),
   "priority": "Low" | "Medium" | "High",

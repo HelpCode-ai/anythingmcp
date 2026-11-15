@@ -953,14 +953,17 @@
     "pill": {
       "signInExpired": "Anmeldung abgelaufen",
       "tokenRefused": "Token abgelehnt",
+      "credentialsRefused": "Schlüssel abgelehnt",
       "expiresSoon": "Token läuft bald ab"
     },
     "banner": {
       "signInRefused": "Der Anbieter hat die Anmeldung abgelehnt. Tool-Aufrufe schlagen fehl, bis Sie erneut autorisieren.",
       "tokenRefused": "Der Anbieter hat das Zugriffstoken abgelehnt. Tool-Aufrufe schlagen fehl, bis Sie ein neues speichern.",
+      "credentialsRefused": "Jeder Tool-Aufruf dieses Connectors schlägt fehl, bis Sie gültige Zugangsdaten speichern.",
       "expiresOn": "Das Zugriffstoken läuft am {date} ab.",
       "expiresSoon": "Das Zugriffstoken läuft bald ab.",
-      "since": "Seit {date}"
+      "since": "Seit {date}",
+      "updateCredentials": "Zugangsdaten aktualisieren"
     }
   },
   "authTypes": {
@@ -1542,7 +1545,9 @@
       "keysMissing": "Speichere zuerst die Client-ID und das Secret deiner App und autorisiere danach. Der Anbieter braucht sie, um seine Anmeldeseite zu öffnen (bei Etsy: Keystring und Shared Secret).",
       "keysStillEmpty": "Noch leer: {names}",
       "enterKeys": "Schlüssel eingeben",
-      "clientId": "Client-ID"
+      "clientId": "Client-ID",
+      "signInStarting": "Die Anmeldung für {name} wird geöffnet…",
+      "signInManual": "Die Anmeldung konnte nicht automatisch starten. Starten Sie sie mit dieser Schaltfläche:"
     },
     "shopee": {
       "title": "Shopee-Shop-Autorisierung",

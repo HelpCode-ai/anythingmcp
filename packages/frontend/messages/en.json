@@ -953,14 +953,17 @@
     "pill": {
       "signInExpired": "Sign-in expired",
       "tokenRefused": "Token refused",
+      "credentialsRefused": "Key refused",
       "expiresSoon": "Token expires soon"
     },
     "banner": {
       "signInRefused": "The provider refused the sign-in, so tool calls stop here until you authorize again.",
       "tokenRefused": "The provider refused the access token, so tool calls stop here until you save a new one.",
+      "credentialsRefused": "Every tool call of this connector fails until you save valid credentials.",
       "expiresOn": "The access token stops working on {date}.",
       "expiresSoon": "The access token stops working soon.",
-      "since": "Since {date}"
+      "since": "Since {date}",
+      "updateCredentials": "Update credentials"
     }
   },
   "authTypes": {
@@ -1542,7 +1545,9 @@
       "keysMissing": "Save your app's client ID and secret first, then authorize. The provider needs them to open its sign-in page (for Etsy: the Keystring and the Shared Secret).",
       "keysStillEmpty": "Still empty: {names}",
       "enterKeys": "Enter the keys",
-      "clientId": "client ID"
+      "clientId": "client ID",
+      "signInStarting": "Opening the sign-in for {name}…",
+      "signInManual": "The sign-in could not start by itself. Start it with this button:"
     },
     "shopee": {
       "title": "Shopee shop authorization",

@@ -1,11 +1,18 @@
 import {
   APP_APPROVAL_ADAPTERS,
   FIRST_PROMPT,
+  REMIND_AFTER_MS,
+  REMIND_WINDOW_MS,
+  SWEEP_LOOKBACK_MS,
+  WATCH_FOR_MS,
+  appApprovalAnnounced,
   checkInterval,
   claudePromptUrl,
   isCheckDue,
+  isReminderDue,
   pendingEvidence,
   readWatch,
+  signInPath,
   watchFinished,
 } from './app-approval-watch';
 import { getAdapter } from './catalog';
@@ -32,6 +39,10 @@ describe('app-approval-watch', () => {
       expect(
         readWatch({ appApprovalWatch: { pendingSince: iso(H), notifiedAt: 'soon', lastCheckedAt: 5, x: iso(0) } }),
       ).toEqual({ pendingSince: iso(H) });
+      expect(readWatch({ appApprovalWatch: { notifiedAt: iso(3 * D), remindedAt: iso(D) } })).toEqual({
+        notifiedAt: iso(3 * D),
+        remindedAt: iso(D),
+      });
     });
   });
 
@@ -116,6 +127,72 @@ describe('app-approval-watch', () => {
         pendingEvidence(connector, [ev({ metadata: { adapterSlug: 'etsy', connectorId: 'c1' } })], 'etsy_app_pending_seen'),
       ).toEqual(ago(3 * H));
     });
+  });
+
+  describe('the reminder', () => {
+    const notified = (ms: number, more: Record<string, string> = {}) => ({
+      pendingSince: iso(ms + D),
+      approvedAt: iso(ms),
+      notifiedAt: iso(ms),
+      reminderAnnouncedAt: iso(ms),
+      ...more,
+    });
+
+    it('is due 48 hours after the approval email, not before', () => {
+      expect(REMIND_AFTER_MS).toBe(48 * H);
+      expect(isReminderDue(notified(47 * H), now)).toBe(false);
+      expect(isReminderDue(notified(48 * H), now)).toBe(true);
+      expect(isReminderDue(notified(60 * H), now)).toBe(true);
+    });
+
+    it('is never due without an approval email, after a reminder, or once the sign-in was seen', () => {
+      expect(isReminderDue({ pendingSince: iso(60 * H) }, now)).toBe(false);
+      expect(isReminderDue({ notPending: iso(60 * H) }, now)).toBe(false);
+      expect(isReminderDue(notified(60 * H, { remindedAt: iso(10 * H) }), now)).toBe(false);
+      expect(isReminderDue(notified(60 * H, { doneAt: iso(10 * H) }), now)).toBe(false);
+    });
+
+    it('does not follow an email that said it was the only one (sent before the reminder existed)', () => {
+      expect(isReminderDue({ pendingSince: iso(61 * H), approvedAt: iso(60 * H), notifiedAt: iso(60 * H) }, now)).toBe(false);
+    });
+
+    it('is dropped a day after it fell due, so an old approval is not reminded of', () => {
+      expect(REMIND_WINDOW_MS).toBe(24 * H);
+      expect(isReminderDue(notified(72 * H - 1), now)).toBe(true);
+      expect(isReminderDue(notified(72 * H), now)).toBe(false);
+      expect(isReminderDue(notified(20 * D), now)).toBe(false);
+    });
+
+    it('keeps the key checks at 14 days and reads three days further for a late approval', () => {
+      expect(WATCH_FOR_MS).toBe(14 * D);
+      expect(SWEEP_LOOKBACK_MS).toBe(17 * D);
+      // Approved on the last day of the watch: no more key checks, the reminder still due.
+      const late = notified(48 * H);
+      expect(isCheckDue(late, ago(16 * D), now)).toBe(false);
+      expect(isReminderDue(late, now)).toBe(true);
+    });
+  });
+
+  describe('what the AI client is told', () => {
+    it('counts an approval of a watched adapter until the sign-in was seen', () => {
+      const approved = { pendingSince: iso(2 * D), approvedAt: iso(D), notifiedAt: iso(D) };
+      expect(appApprovalAnnounced({ adapterSlug: 'etsy', appApprovalWatch: approved })).toBe(true);
+      expect(appApprovalAnnounced({ adapterSlug: 'etsy', appApprovalWatch: { ...approved, remindedAt: iso(H) } })).toBe(true);
+      expect(appApprovalAnnounced({ adapterSlug: 'etsy', appApprovalWatch: { ...approved, doneAt: iso(H) } })).toBe(false);
+    });
+
+    it('says nothing while the app is pending, when it never was, or for another adapter', () => {
+      expect(appApprovalAnnounced({ adapterSlug: 'etsy' })).toBe(false);
+      expect(appApprovalAnnounced({ adapterSlug: 'etsy', appApprovalWatch: { pendingSince: iso(D) } })).toBe(false);
+      expect(appApprovalAnnounced({ adapterSlug: 'etsy', appApprovalWatch: { notPending: iso(D) } })).toBe(false);
+      expect(appApprovalAnnounced({ adapterSlug: 'pinterest', appApprovalWatch: { approvedAt: iso(D) } })).toBe(false);
+      expect(appApprovalAnnounced(null)).toBe(false);
+    });
+  });
+
+  it('links to the connector page with the sign-in started, and to nothing else', () => {
+    expect(signInPath('c1')).toBe('/connectors/c1?signin=1');
+    expect(signInPath('a/b?x=1#y')).toBe('/connectors/a%2Fb%3Fx%3D1%23y?signin=1');
   });
 
   it('builds the claude.ai link with the request typed in', () => {

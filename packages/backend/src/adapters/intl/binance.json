@@ -86,7 +86,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           }
         },
@@ -133,12 +133,12 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           },
           "symbols": {
             "type": "string",
-            "pattern": "^\\[\"[A-Z0-9._-]{2,50}\"(,\"[A-Z0-9._-]{2,50}\"){0,99}\\]$",
+            "pattern": "^\\[\"[A-Z0-9._\\u0080-\\uFFFF-]{2,50}\"(,\"[A-Z0-9._\\u0080-\\uFFFF-]{2,50}\"){0,99}\\]$",
             "description": "Several symbols at once as a JSON array of strings with no spaces, e.g. [\"BTCUSDT\",\"ETHUSDT\"] (at most 100). Use either symbol or symbols, not both."
           }
         }
@@ -167,12 +167,12 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           },
           "symbols": {
             "type": "string",
-            "pattern": "^\\[\"[A-Z0-9._-]{2,50}\"(,\"[A-Z0-9._-]{2,50}\"){0,99}\\]$",
+            "pattern": "^\\[\"[A-Z0-9._\\u0080-\\uFFFF-]{2,50}\"(,\"[A-Z0-9._\\u0080-\\uFFFF-]{2,50}\"){0,99}\\]$",
             "description": "Several symbols at once as a JSON array of strings with no spaces, e.g. [\"BTCUSDT\",\"ETHUSDT\"] (at most 100). Use either symbol or symbols, not both."
           }
         }
@@ -201,12 +201,12 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           },
           "symbols": {
             "type": "string",
-            "pattern": "^\\[\"[A-Z0-9._-]{2,50}\"(,\"[A-Z0-9._-]{2,50}\"){0,99}\\]$",
+            "pattern": "^\\[\"[A-Z0-9._\\u0080-\\uFFFF-]{2,50}\"(,\"[A-Z0-9._\\u0080-\\uFFFF-]{2,50}\"){0,99}\\]$",
             "description": "Several symbols at once as a JSON array of strings with no spaces, e.g. [\"BTCUSDT\",\"ETHUSDT\"] (at most 100). Use either symbol or symbols, not both."
           },
           "windowSize": {
@@ -242,12 +242,12 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           },
           "symbols": {
             "type": "string",
-            "pattern": "^\\[\"[A-Z0-9._-]{2,50}\"(,\"[A-Z0-9._-]{2,50}\"){0,99}\\]$",
+            "pattern": "^\\[\"[A-Z0-9._\\u0080-\\uFFFF-]{2,50}\"(,\"[A-Z0-9._\\u0080-\\uFFFF-]{2,50}\"){0,99}\\]$",
             "description": "Several symbols at once as a JSON array of strings with no spaces, e.g. [\"BTCUSDT\",\"ETHUSDT\"] (at most 100). Use either symbol or symbols, not both."
           }
         }
@@ -276,7 +276,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           }
         },
@@ -309,7 +309,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           },
           "limit": {
@@ -351,7 +351,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           },
           "limit": {
@@ -390,7 +390,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "Binance symbol: base and quote asset in capitals with no separator, e.g. BTCUSDT, ETHBTC or BNBEUR. Find them with binance_list_symbols."
           },
           "interval": {
@@ -490,7 +490,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           }
         }
@@ -518,7 +518,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           }
         }
@@ -546,7 +546,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           },
           "interval": {
@@ -620,7 +620,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           }
         }
@@ -648,7 +648,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           },
           "startTime": {
@@ -699,7 +699,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           }
         },
@@ -732,7 +732,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           },
           "period": {
@@ -800,7 +800,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           },
           "period": {
@@ -868,7 +868,7 @@
         "properties": {
           "symbol": {
             "type": "string",
-            "pattern": "^[A-Z0-9._-]{2,50}$",
+            "pattern": "^[A-Z0-9._\\u0080-\\uFFFF-]{2,50}$",
             "description": "USD-M futures symbol in capitals, e.g. BTCUSDT or ETHUSDC for perpetuals, BTCUSDT_261225 for a quarterly contract. Find them with binance_futures_list_symbols."
           },
           "limit": {
