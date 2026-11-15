@@ -337,7 +337,7 @@ export default function OrganizationSettingsPage() {
           onToggle={() => updateFlag({ captureIntent: !kg?.captureIntent })}
         />
 
-        {kg?.llmAvailable && (
+        {kg?.llmAvailable && kg?.scheduledAvailable && (
           <FeatureToggle
             label={t('features.autoExtend.label')}
             description={t('features.autoExtend.description')}

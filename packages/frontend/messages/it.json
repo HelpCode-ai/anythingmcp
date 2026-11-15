@@ -2213,8 +2213,8 @@
         "description": "A intervalli regolari (circa una volta al giorno), lascia che l'AI estenda il grafo e generi skill dagli intenti degli utenti acquisiti, così la tua rete e le tue skill continuano a migliorare da sole. Attenta ai costi: gira solo ogni tanto, si salta quando non è cambiato nulla e resta disattivata finché non la attivi. Richiede Arricchimento con AI + Acquisisci l'intento dell'utente."
       },
       "skillAutoApply": {
-        "label": "Applica in automatico le skill più sicure",
-        "description": "Quando l'AI genera una skill con alta confidenza (≥ 0,90), la applica in automatico invece di lasciarla come suggerimento da rivedere. Le skill con confidenza più bassa attendono comunque l'approvazione manuale."
+        "label": "Applica in automatico le skill apprese dagli errori corretti",
+        "description": "Quando la stessa chiamata fallita è stata corretta allo stesso modo almeno 3 volte, la skill che ne deriva viene applicata in automatico. Le skill generate dall'AI attendono sempre la tua revisione."
       }
     },
     "security": {

@@ -77,10 +77,15 @@ export class KgService {
       enabled,
       llmEnabled,
       llmAvailable: this.llmSvc.globallyAvailable(),
+      // Whether the scheduled job that reads `autoExtend` runs on this
+      // instance (KG_LLM_CRON_ENABLED). Without it the switch does nothing,
+      // so the dashboard does not offer it.
+      scheduledAvailable: this.llmSvc.scheduledAvailable(),
       captureIntent,
       // Scheduled AI extension of graph + skills from captured intents.
       autoExtend,
-      // Auto-apply generated skills at/above the confidence threshold.
+      // Auto-apply skills learned from fixed errors once seen often enough.
+      // Skills a model generates always wait for review.
       skillAutoApply,
       // Auto-apply high-confidence AI-suggested graph connections (no extra AI cost —
       // it only changes the status of edges the enrichment pass already produced).
