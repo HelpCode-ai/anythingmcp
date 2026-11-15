@@ -1,5 +1,11 @@
 import {
   MANAGER_WEBHOOK_PATH,
+  TELEGRAM_CONNECTED_REQUEST,
+  claimLink,
+  claimParameter,
+  cleanClientName,
+  clientConnectedMessage,
+  codeFromClaimParameter,
   codeFromUsername,
   creationLink,
   hashSetupCode,
@@ -8,9 +14,11 @@ import {
   isOrganizationAllowed,
   managerWebhookUrl,
   newSetupCode,
+  parseStartCommand,
   readManagedBotSettings,
   readManagedBotState,
   suggestedUsername,
+  welcomeText,
 } from './telegram-managed-bot';
 
 const TOKEN = '7000000001:AAF4kq0ManagerBotTokenForTestsOnly00';
@@ -126,6 +134,22 @@ describe('one-tap Telegram bot: the state on the connector', () => {
     expect(readManagedBotState(null)).toBeNull();
   });
 
+  it('reads who asked to link the setup, and that a bot was found that way', () => {
+    const hash = 'b'.repeat(64);
+    expect(
+      readManagedBotState({
+        telegramManagedBot: {
+          claimHash: hash,
+          claimedAt: '2026-11-15T10:05:00.000Z',
+          claimOfferedAt: '2026-11-15T10:04:00.000Z',
+          matched: 'claim',
+        },
+      }),
+    ).toEqual({ claimHash: hash, claimedAt: '2026-11-15T10:05:00.000Z', claimOfferedAt: '2026-11-15T10:04:00.000Z', matched: 'claim' });
+    // A Telegram id is never a valid value: only its keyed hash.
+    expect(readManagedBotState({ telegramManagedBot: { claimHash: '555001', claimedAt: 'soon', matched: 'guess' } })).toEqual({});
+  });
+
   it('knows a Telegram connector without a token', () => {
     const placeholder = 'https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}';
     expect(isEmptyTelegramConnector({ baseUrl: placeholder, envVars: null })).toBe(true);
@@ -133,5 +157,109 @@ describe('one-tap Telegram bot: the state on the connector', () => {
     expect(isEmptyTelegramConnector({ baseUrl: placeholder, envVars: { TELEGRAM_BOT_TOKEN: '1:x' } })).toBe(false);
     // An address someone edited counts as set up: it is never written to.
     expect(isEmptyTelegramConnector({ baseUrl: 'https://api.telegram.org/bot1:x', envVars: {} })).toBe(false);
+  });
+});
+
+describe('one-tap Telegram bot: linking a bot whose username was changed', () => {
+  it('builds the link that opens the manager bot with the setup code and its keyed check', () => {
+    const link = claimLink('AnythingMCP_Setup_Bot', '1a2b3c4d', SECRET);
+    expect(link).toBe(`https://t.me/AnythingMCP_Setup_Bot?start=${claimParameter('1a2b3c4d', SECRET)}`);
+    // Within what Telegram allows in a start parameter: 64 of A-Z, a-z, 0-9, _ and -.
+    expect(link.split('?start=')[1]).toMatch(/^1a2b3c4d[0-9a-f]{16}$/);
+  });
+
+  it('takes back only a parameter signed with this webhook secret', () => {
+    const parameter = claimParameter('1a2b3c4d', SECRET);
+    expect(codeFromClaimParameter(parameter, SECRET)).toBe('1a2b3c4d');
+    expect(codeFromClaimParameter(parameter.toUpperCase(), SECRET)).toBe('1a2b3c4d');
+    expect(claimParameter('1A2B3C4D', SECRET)).toBe(parameter);
+    // Another secret, another code with this check, a changed check, the bare code.
+    expect(codeFromClaimParameter(parameter, `${SECRET}x`)).toBeNull();
+    expect(codeFromClaimParameter(`1a2b3c4e${parameter.slice(8)}`, SECRET)).toBeNull();
+    expect(codeFromClaimParameter(`1a2b3c4d${'0'.repeat(16)}`, SECRET)).toBeNull();
+    expect(codeFromClaimParameter('1a2b3c4d', SECRET)).toBeNull();
+    for (const other of [undefined, null, 42, '', 'hello', `${parameter}0`, parameter.slice(1), `${parameter.slice(0, 23)}g`]) {
+      expect(codeFromClaimParameter(other, SECRET)).toBeNull();
+    }
+    // The check says nothing about the stored hash of the code.
+    expect(hashSetupCode('1a2b3c4d', SECRET).startsWith(parameter.slice(8))).toBe(false);
+  });
+
+  it('reads the parameter of a /start, in the forms Telegram sends it', () => {
+    expect(parseStartCommand('/start 1a2b3c4d')).toEqual({ parameter: '1a2b3c4d' });
+    expect(parseStartCommand('/start@AnythingMCP_Setup_Bot 1A2B3C4D ')).toEqual({ parameter: '1A2B3C4D' });
+    expect(parseStartCommand('/start hello')).toEqual({ parameter: 'hello' });
+    expect(parseStartCommand('/start')).toEqual({ parameter: '' });
+    expect(parseStartCommand(' /start  ')).toEqual({ parameter: '' });
+  });
+
+  it.each([undefined, null, 42, '', 'hello', 'start 1a2b3c4d', '/started 1a2b3c4d', '/start 1a2b3c4d and more', '/help', `/start ${'a'.repeat(200)}`])(
+    'is not a /start: %p',
+    (text) => {
+      expect(parseStartCommand(text)).toBeNull();
+    },
+  );
+
+  it('keys a Telegram account with the webhook secret, apart from a setup code', () => {
+    const hash = hashTelegramUserId(555001, SECRET);
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(hash).not.toBe(hashTelegramUserId(555002, SECRET));
+    expect(hash).not.toBe(hashTelegramUserId(555001, `${SECRET}x`));
+    expect(hash).not.toBe(hashSetupCode('555001', SECRET));
+  });
+});
+
+describe('one-tap Telegram bot: what the bot tells its creator', () => {
+  it('sends them back to the page for the last step, by the name of the button', () => {
+    expect(welcomeText('Claude')).toBe(
+      'Your bot is connected to AnythingMCP. One step left: go back to the page you came from and tap "Continue to Claude".',
+    );
+    expect(welcomeText('ChatGPT')).toContain('tap "Continue to ChatGPT".');
+    expect(welcomeText()).toBe(
+      'Your bot is connected to AnythingMCP. One step left: go back to the page you came from and tap Continue.',
+    );
+    // The AI client is not connected yet: nothing sends the user to the chat.
+    for (const text of [welcomeText('Claude'), welcomeText(null)]) {
+      expect(text).not.toMatch(/ask/i);
+      expect(text).not.toContain('test message');
+    }
+  });
+
+  it('says the assistant is connected, with a link to a new chat for Claude only', () => {
+    expect(clientConnectedMessage('Claude', true)).toEqual({
+      text: 'Claude is now connected to AnythingMCP. Ask it: "Send me a test message on Telegram."',
+      link: {
+        label: 'Open a new chat in Claude',
+        url: 'https://claude.ai/new?q=Send%20me%20a%20test%20message%20on%20Telegram.',
+      },
+    });
+    expect(decodeURIComponent(clientConnectedMessage('Claude', true).link!.url.split('?q=')[1])).toBe(TELEGRAM_CONNECTED_REQUEST);
+    // The same sentence for any other client, without a link.
+    expect(clientConnectedMessage('ChatGPT', false)).toEqual({
+      text: 'ChatGPT is now connected to AnythingMCP. Ask it: "Send me a test message on Telegram."',
+    });
+    expect(clientConnectedMessage(null, false).text).toBe(
+      'Your AI assistant is now connected to AnythingMCP. Ask it: "Send me a test message on Telegram."',
+    );
+  });
+
+  it('quotes a client only by a short plain name', () => {
+    expect(cleanClientName('Claude')).toBe('Claude');
+    expect(cleanClientName('  Claude   Code ')).toBe('Claude Code');
+    expect(cleanClientName('Le Chat (Mistral)')).toBe('Le Chat (Mistral)');
+    for (const name of [undefined, null, 42, '', '   ', 'x'.repeat(41), 'Claude\u0000', 'see https://evil.example', 'a<b>', '"Claude"', '@Claude', 'Claude: free money']) {
+      expect(cleanClientName(name)).toBeNull();
+    }
+    // Two lines become one name or none: never a second line in a message.
+    expect(cleanClientName('Claude\nfree')).toBe('Claude free');
+  });
+
+  it('keeps the client and the announcement in the state, and nothing that is no name', () => {
+    expect(
+      readManagedBotState({
+        telegramManagedBot: { client: 'Claude', claude: true, clientNoticeAt: '2026-11-15T10:09:00.000Z' },
+      }),
+    ).toEqual({ client: 'Claude', claude: true, clientNoticeAt: '2026-11-15T10:09:00.000Z' });
+    expect(readManagedBotState({ telegramManagedBot: { client: 'see https://evil.example', claude: 'yes', clientNoticeAt: 'soon' } })).toEqual({});
   });
 });

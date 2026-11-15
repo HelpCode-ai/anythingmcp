@@ -705,13 +705,41 @@ Optional and off by default. Without it, a user who picks Telegram on the page a
 
 Set it up once per server:
 
-1. In Telegram, open @BotFather, send `/newbot` and create a bot for your server. This is the manager bot. It never talks to your users; it only receives the notice that a user created a bot.
+1. In Telegram, open @BotFather, send `/newbot` and create a bot for your server. This is the manager bot. It receives the notice that a user created a bot, and answers a `/start` in its own chat with one short line (see below); it sends nothing else.
 2. Open that bot's settings in @BotFather's mini app and turn on **Bot Management Mode**.
 3. Set `TELEGRAM_MANAGER_BOT_TOKEN` to its token and `TELEGRAM_MANAGER_WEBHOOK_SECRET` to a secret of your own (`openssl rand -hex 32`), then restart the backend.
 
 At start-up the backend asks Telegram whether the bot can manage bots and registers `<SERVER_URL>/api/telegram/manager-webhook` as its webhook, for the update types `managed_bot` and `message`. The log then says `One-tap Telegram bot is on`. It stays off, with a warning in the log and the page as before, when the token or the secret is missing or malformed, when Bot Management Mode is off, or when `SERVER_URL` is not a public https address (Telegram only delivers to https). Telegram being unreachable never stops the server from starting: the registration is tried again, at most once a minute, the next time the page is shown.
 
-How a new bot finds its connector: the username Telegram suggests carries a random code (`amcp_<8 hex>_bot`). The connector keeps a keyed hash of that code for 30 minutes, in its configuration; the token goes into the connector's variables, encrypted like every other credential. A user who changes the suggested username in Telegram cannot be matched: the page says so after a minute and takes the bot's token instead (**Already have a bot? Paste its token**).
+How a new bot finds its connector: the username Telegram suggests carries a random code (`amcp_<8 hex>_bot`). The connector keeps a keyed hash of that code for 30 minutes, in its configuration; the token goes into the connector's variables, encrypted like every other credential.
+
+The bot belongs to the user who created it: it appears in their own @BotFather list, and they can rename it, give it a picture, use it with their own customers, and revoke its token or delete it there. The page says so under the button.
+
+### A username the user changed
+
+A user who edits the suggested username in Telegram's creation screen creates a bot that carries no code. The page then offers **Changed the username? Link your bot** (as soon as the server sees such a bot, or 20 seconds after the click on the first button; a minute after Telegram was picked when only the QR code was used). It opens the manager bot's chat; pressing **Start** there sends `/start` with the setup's code and a check keyed with the webhook secret, from the user's own Telegram account. The server connects the setup to the bot that same account created through the manager bot:
+
+- **Bot first, then Start**: the bot is connected at that moment, and the manager bot answers "Your bot is connected".
+- **Start first, then the bot**: the setup now belongs to that Telegram account, and whatever bot the account creates through the manager bot in the setup's 30 minutes is connected, under any username.
+
+A bot is only ever connected to a setup by the account that created it: Telegram says who created a bot and who sent a message, and the two must match. The first account that sends a setup's code keeps the setup; a second one is refused. An account with two bots that carry no code gets the newest one connected (the older one can still be connected by pasting its token). Everything after that is the same as for a bot found by its username. Pasting the token (**Already have a bot? Paste its token**) stays the last resort.
+
+What is remembered between the two halves, without a schema change:
+
+- on the connector, in its configuration: a keyed hash (HMAC with the webhook secret) of the Telegram account that pressed Start;
+- in `site_settings`, for 30 minutes at most, one row per Telegram account under that same keyed hash: the id of the newest bot the account created that carries no code (`telegram_unmatched_bot:<hash>`), or the connector the account asked for (`telegram_claim:<hash>`); and the time of the last such bot (`telegram_unmatched_bot_at`), for the page's hint. Expired rows are deleted on a later write.
+
+No Telegram account id, username or name is stored or logged; a bot's id is kept for those 30 minutes because Telegram needs it to hand out the token. The rows are in the database, not in memory or Redis, so both orders survive a restart and work with several backend processes. Changing `TELEGRAM_MANAGER_WEBHOOK_SECRET` drops every pending setup and link.
+
+The manager bot answers a `/start` in its own chat with one line: connected (go back to the page and tap Continue), nothing to link yet, or the link is no longer valid (an unknown, expired or foreign code gets the same line whatever the reason). A plain `/start` from anyone gets one neutral line. It acts on at most 5 such messages a minute from one account and 120 a minute in all, per backend process; the rest get no answer.
+
+### After the bot is connected
+
+The AI client is not connected yet at that moment: its authorization is finished by **Continue** on the page. Three things say so and follow it up:
+
+- **The page** shows "Telegram is connected" with "Last step: tap Continue to Claude below", and scrolls the button into view. It never follows the button for the user. On a phone or another touch device, the tap on Continue also copies the example request to the clipboard ("Copied. Paste it in a new chat in Claude."), since no chat tab is opened there; a refused clipboard changes nothing, and the tap goes through as always.
+- **The welcome message** the new bot sends its creator says the same: go back to the page and tap "Continue to Claude" (the client's name as the page shows it).
+- **A second message** follows when the AI client really is connected: on the first `tools/list` that the user's client sends to the shared `/mcp` endpoint within 30 minutes of the bot being connected, the bot writes "Claude is now connected to AnythingMCP. Ask it: "Send me a test message on Telegram."". For Claude the message has a button that opens a new chat with that request typed in (`https://claude.ai/new?q=…`); for any other client it is the same sentence without a link. It is sent once per connector, only for a bot created in one tap by the user whose client it is, and only when the welcome could be delivered (the creator pressed **Start** in the bot's chat: a bot cannot write to someone who has not). It never delays or fails the MCP request: the endpoint only notes the request, and the check (one database read per workspace every five seconds at most, none while the feature is off) and the message happen in the background.
 
 What to know:
 
@@ -719,8 +747,9 @@ What to know:
 - **Trying it on one workspace.** Set `TELEGRAM_MANAGED_BOT_ORG_IDS` to a comma-separated list of organization ids: only those see the button.
 - **The creator becomes the default chat.** Telegram says who created the bot; that person's chat id is stored as the connector's `TELEGRAM_DEFAULT_CHAT_ID` (a variable of the connector, encrypted like the others, shown and editable in its settings). The send tools write there when a call names no chat, so "send me a test message" works without looking up a chat id. A connector set up with a pasted token has no default chat until its owner enters one.
 - **The user's bot gets no webhook.** The connector's own `telegram_bot_get_updates` keeps working. To greet the user once after they press **Start**, the server reads the new bot's updates without confirming any of them.
-- **Cloud and self-hosted.** The settings are read in both modes. The page that offers the button (shown after approving an AI client, to a workspace with no connectors) exists on Cloud only today, so a self-hosted instance sees no change yet.
-- **Outbound calls.** `api.telegram.org`, with the manager bot's token (start-up, and once per created bot) and with the user's new bot's token (the welcome message).
+- **Cloud and self-hosted.** The settings are read in both modes. The page that offers the button (shown after approving an AI client, to a workspace with no connectors) exists on Cloud only today, so a self-hosted instance sees no change yet: no setup is ever started there, so the manager bot has nothing to link and the second message has nobody to go to. Redis is not needed for any of it.
+- **Outbound calls.** `api.telegram.org`, with the manager bot's token (start-up, once per created bot, and one answer per `/start` in its chat) and with the user's new bot's token (the welcome message and the "assistant is connected" message).
+- **Events.** `telegram_bot_link_offered`, `telegram_bot_link_opened`, `telegram_bot_connected` (`kind: claim` when the bot was linked by its creator's Start), `telegram_bot_unmatched`, `telegram_bot_claim_offered`, `telegram_bot_claim` (`status`: `linked`, `waiting` or `refused`), `telegram_bot_client_notice` (`status`: `sent` or `failed`) and `telegram_bot_token_pasted`, in `product_events`. None holds a Telegram id, a username or a code.
 
 ## External Services
 

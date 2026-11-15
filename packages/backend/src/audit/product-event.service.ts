@@ -171,12 +171,38 @@ export const ProductEvents = {
    * - link_opened: the user clicked that link (once per setup; a scan of the
    *   QR code cannot be seen). metadata.device.
    * - connected: Telegram announced the new bot and its token was stored on
-   *   the connector. metadata.connectorId. Also written as setup_completed
-   *   with via 'telegram_one_tap'.
-   * - unmatched: a new bot could not be connected. metadata.kind = 'no_code'
-   *   (the user changed the suggested username), 'unknown_code', 'expired'
-   *   (created after the 30 minutes) or 'token_refused'. No workspace is
-   *   known for the first two.
+   *   the connector. metadata.connectorId. metadata.kind = 'claim' when the
+   *   bot was found through its creator's /start (see claim below) and not by
+   *   its username; absent otherwise. Also written as setup_completed with
+   *   via 'telegram_one_tap'.
+   * - unmatched: a new bot could not be connected when it was created.
+   *   metadata.kind = 'no_code' (the user changed the suggested username),
+   *   'unknown_code', 'expired' (created after the 30 minutes) or
+   *   'token_refused'. No workspace is known for the first two. Such a bot
+   *   can still be connected afterwards: then a claim with status 'linked'
+   *   and a connected with kind 'claim' follow.
+   * - claim_offered: the page showed "Changed the username? Link your bot"
+   *   (once per setup). metadata.kind = 'unmatched_bot' (a bot with another
+   *   username had just been created on this instance) or 'timeout' (no bot
+   *   arrived in time), metadata.device.
+   * - claim: the manager bot got `/start <code>` from a Telegram account.
+   *   metadata.status = 'linked' (that account's bot was connected),
+   *   'waiting' (the account is linked to the setup, its bot does not exist
+   *   yet) or 'refused' (then metadata.kind = 'unknown_code' (also a
+   *   parameter this server did not issue), 'expired', 'already_connected',
+   *   'connector_has_token', 'other_user' or 'token_refused').
+   *   metadata.connectorId when the setup is known. Never the code, never a
+   *   Telegram id.
+   * - client_notice: the AI client's first request arrived (a tools/list on
+   *   the shared endpoint, from the user who set the bot up) within 30
+   *   minutes of a one-tap bot being connected, and the bot told its creator
+   *   "your assistant is connected". Once per connector, and only after the
+   *   welcome was delivered. metadata.status = 'sent' or 'failed' (Telegram
+   *   refused the message), metadata.connectorId, metadata.client (the
+   *   client's name), metadata.kind = 'chat_link' when the message carried
+   *   the button that opens a new chat (Claude only). This is the first
+   *   event that says the authorization was really finished after a one-tap
+   *   bot: `connected` is written before "Continue".
    * - token_pasted: "Already have a bot? Paste its token" was used.
    *   metadata.status = 'saved' or 'refused' (then metadata.kind says why),
    *   metadata.connectorId. A saved one is also written as setup_completed
@@ -186,6 +212,9 @@ export const ProductEvents = {
   TELEGRAM_BOT_LINK_OPENED: 'telegram_bot_link_opened',
   TELEGRAM_BOT_CONNECTED: 'telegram_bot_connected',
   TELEGRAM_BOT_UNMATCHED: 'telegram_bot_unmatched',
+  TELEGRAM_BOT_CLAIM_OFFERED: 'telegram_bot_claim_offered',
+  TELEGRAM_BOT_CLAIM: 'telegram_bot_claim',
+  TELEGRAM_BOT_CLIENT_NOTICE: 'telegram_bot_client_notice',
   TELEGRAM_BOT_TOKEN_PASTED: 'telegram_bot_token_pasted',
   /**
    * A tool of the shared /mcp tool set was called (shared-tool-calls.ts):
@@ -488,6 +517,9 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.TELEGRAM_BOT_LINK_OPENED,
   ProductEvents.TELEGRAM_BOT_CONNECTED,
   ProductEvents.TELEGRAM_BOT_UNMATCHED,
+  ProductEvents.TELEGRAM_BOT_CLAIM_OFFERED,
+  ProductEvents.TELEGRAM_BOT_CLAIM,
+  ProductEvents.TELEGRAM_BOT_CLIENT_NOTICE,
   ProductEvents.TELEGRAM_BOT_TOKEN_PASTED,
   ProductEvents.SHARED_TOOL_CALLED,
   ProductEvents.ADS_ACTIVATION_REPORTED,

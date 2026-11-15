@@ -1188,9 +1188,13 @@ describe('LoginController', () => {
         const flush = () => new Promise((r) => setImmediate(r));
 
         /** Runs the page's scripts against a minimal DOM built from the page. */
-        const run = async (fetchAnswer: () => Promise<unknown>, touch = false) => {
+        const run = async (
+          fetchAnswer: () => Promise<unknown>,
+          touch = false,
+          opts: { userAgent?: string; navigator?: object; client?: string } = {},
+        ) => {
           arrange();
-          const page = (await showPage())._sent as string;
+          const page = (await showPage(picking, opts.userAgent))._sent as string;
           const script = page.slice(page.indexOf('<script>') + 8, page.indexOf('</script>'));
           const chips = [...page.matchAll(/data-adapter="([^"]+)" data-name="([^"]+)"/g)].map((m) =>
             el({ 'data-adapter': m[1], 'data-name': m[2], 'aria-pressed': 'false' }),
@@ -1204,20 +1208,26 @@ describe('LoginController', () => {
             'quick-apps': picker,
             'quick-status': el(),
             'other-app': el(),
-            continue: el({ 'data-client': 'Claude', 'data-open-chat': 'https://claude.ai/new' }),
+            // Continue and the "Copied" line as the page really has them.
+            continue: el({
+              'data-client': 'Claude',
+              ...(/id="continue"[^>]*data-open-chat=/.test(page) ? { 'data-open-chat': 'https://claude.ai/new' } : {}),
+            }),
+            'request-copied': el(/id="request-copied"[^>]*data-phone="1"/.test(page) ? { 'data-phone': '1' } : {}),
           };
+          nodes['request-copied'].hidden = /id="request-copied"[^>]*\shidden/.test(page);
           const fetch = jest.fn(async () => ({ json: async () => fetchAnswer() }));
           const open = jest.fn();
           const window = { fetch, JSON, open, matchMedia: (q: string) => ({ matches: touch && q === '(pointer: coarse)' }) };
           require('vm').runInNewContext(script, {
             document: { getElementById: (id: string) => nodes[id] ?? null },
-            navigator: {},
+            navigator: opts.navigator ?? {},
             window,
             fetch,
             JSON,
             encodeURIComponent,
           });
-          return { nodes, chips, fetch, open };
+          return { nodes, chips, fetch, open, page };
         };
 
         it('shows the picker, adds a picked app and changes the request', async () => {
@@ -1275,6 +1285,134 @@ describe('LoginController', () => {
           const { nodes, open } = await run(async () => ({}), true);
           expect(nodes.continue.listeners.click).toBeUndefined();
           expect(open).not.toHaveBeenCalled();
+        });
+
+        // A phone gets no chat tab, so the tap on Continue copies the request
+        // instead. Continue is where 60% of phone users were lost for two
+        // weeks: the copy must not be able to change what the tap does.
+        describe('on a phone, Continue also copies the request', () => {
+          const IPHONE =
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
+          const MAC =
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+          /** A click as the browser hands it over: the test fails if the page stops or redirects it. */
+          const tap = () => ({
+            preventDefault: jest.fn(),
+            stopPropagation: jest.fn(),
+            stopImmediatePropagation: jest.fn(),
+            defaultPrevented: false,
+            returnValue: true,
+          });
+          const untouched = (event: ReturnType<typeof tap>) => {
+            expect(event.preventDefault).not.toHaveBeenCalled();
+            expect(event.stopPropagation).not.toHaveBeenCalled();
+            expect(event.stopImmediatePropagation).not.toHaveBeenCalled();
+            expect(event.returnValue).toBe(true);
+          };
+
+          it('has the line for it near the request, empty and hidden, on every device', async () => {
+            arrange();
+            const phone = (await showPage(picking, IPHONE))._sent as string;
+            const desktop = (await showPage(picking, MAC))._sent as string;
+            expect(phone).toContain('<p class="copied" id="request-copied" role="status" aria-live="polite" data-phone="1" hidden></p>');
+            expect(desktop).toContain('<p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>');
+            for (const page of [phone, desktop]) {
+              expect(page.indexOf('id="example-request"')).toBeLessThan(page.indexOf('id="request-copied"'));
+              expect(page.indexOf('id="request-copied"')).toBeLessThan(page.indexOf('id="continue"'));
+            }
+            // Continue itself is the same link as before on a phone: no new attribute.
+            expect(phone).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
+          });
+
+          it('copies inside the tap and says so, without preventing the default action or opening a window', async () => {
+            let settle: () => void = () => undefined;
+            const writeText = jest.fn(() => new Promise<void>((resolve) => (settle = resolve)));
+            const { nodes, open } = await run(async () => ({}), true, { userAgent: IPHONE, navigator: { clipboard: { writeText } } });
+            nodes['example-request'].textContent = 'Send me a test message on Telegram.';
+            const event = tap();
+
+            // The listener returns before the clipboard answers: the browser follows the link at once.
+            expect(nodes.continue.listeners.click(event)).toBeUndefined();
+            expect(writeText).toHaveBeenCalledTimes(1);
+            expect(writeText).toHaveBeenCalledWith('Send me a test message on Telegram.');
+            expect(nodes['request-copied'].hidden).toBe(true);
+            untouched(event);
+            expect(open).not.toHaveBeenCalled();
+
+            settle();
+            await flush();
+            expect(nodes['request-copied'].textContent).toBe('Copied. Paste it in a new chat in Claude.');
+            expect(nodes['request-copied'].hidden).toBe(false);
+            untouched(event);
+            expect(open).not.toHaveBeenCalled();
+            // Nothing was changed on the link either.
+            expect(nodes.continue.attrs).toEqual({ 'data-client': 'Claude' });
+          });
+
+          it.each([
+            ['refuses', () => Promise.reject(new Error('NotAllowedError'))],
+            ['throws', () => {
+              throw new Error('SecurityError');
+            }],
+            ['never answers', () => new Promise<void>(() => undefined)],
+            ['answers with something that is no promise', () => undefined as unknown as Promise<void>],
+          ])('changes nothing when the clipboard %s', async (_what, writeText) => {
+            const { nodes, open } = await run(async () => ({}), true, {
+              userAgent: IPHONE,
+              navigator: { clipboard: { writeText: jest.fn(writeText) } },
+            });
+            const event = tap();
+            expect(() => nodes.continue.listeners.click(event)).not.toThrow();
+            await flush();
+            await flush();
+            untouched(event);
+            expect(open).not.toHaveBeenCalled();
+            expect(nodes['request-copied'].hidden).toBe(true);
+            expect(nodes['request-copied'].textContent).toBe('');
+          });
+
+          it('adds nothing to Continue where there is no clipboard', async () => {
+            for (const navigator of [{}, { clipboard: {} }]) {
+              const { nodes } = await run(async () => ({}), true, { userAgent: IPHONE, navigator });
+              expect(nodes.continue.listeners).toEqual({});
+            }
+          });
+
+          it('copies on a touch device that asked for the desktop site, where no chat tab opens either', async () => {
+            const writeText = jest.fn().mockResolvedValue(undefined);
+            const { nodes, open } = await run(async () => ({}), true, { userAgent: MAC, navigator: { clipboard: { writeText } } });
+            expect(Object.keys(nodes.continue.listeners)).toEqual(['click']);
+            nodes.continue.listeners.click(tap());
+            await flush();
+            expect(writeText).toHaveBeenCalledWith('Connect my Telegram bot to AnythingMCP.');
+            expect(open).not.toHaveBeenCalled();
+            expect(nodes['request-copied'].hidden).toBe(false);
+          });
+
+          it('leaves a desktop exactly as it was: the chat tab opens, and nothing is copied', async () => {
+            const writeText = jest.fn().mockResolvedValue(undefined);
+            const { nodes, open } = await run(async () => ({}), false, { userAgent: MAC, navigator: { clipboard: { writeText } } });
+            const event = tap();
+            nodes.continue.listeners.click(event);
+            await flush();
+            expect(open).toHaveBeenCalledTimes(1);
+            expect(open).toHaveBeenCalledWith('https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP.', '_blank', 'noopener');
+            expect(writeText).not.toHaveBeenCalled();
+            expect(nodes['request-copied'].hidden).toBe(true);
+            untouched(event);
+          });
+
+          it('is written so that it cannot stop, delay or redirect the tap', async () => {
+            const { page } = await run(async () => ({}), true, { userAgent: IPHONE });
+            const script = page.slice(page.indexOf('<script>') + 8, page.indexOf('</script>'));
+            const copy = script.slice(script.indexOf('// A phone gets no chat tab'));
+            expect(copy).toContain("cont.addEventListener('click'");
+            for (const forbidden of ['preventDefault', 'stopPropagation', 'window.open', 'location', 'await', 'return false', 'setTimeout', '.click(', 'href', 'setAttribute']) {
+              expect(copy).not.toContain(forbidden);
+            }
+            // One click listener on Continue in the whole page per device: this one, or the desktop's chat tab.
+            expect(script.match(/cont\.addEventListener\('click'/g)).toHaveLength(2);
+          });
         });
       });
 
@@ -1462,6 +1600,8 @@ describe('LoginController', () => {
 
       describe('the one-tap Telegram bot', () => {
         const LINK = 'https://t.me/newbot/AnythingMCPBot/amcp_1a2b3c4d_bot?name=My%20AnythingMCP%20bot';
+        /** Opens the manager bot's chat with the setup code: for a bot whose username was changed. */
+        const CLAIM = 'https://t.me/AnythingMCPBot?start=1a2b3c4d';
         const DESKTOP_UA =
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
         const PHONE_UA =
@@ -1490,7 +1630,7 @@ describe('LoginController', () => {
         beforeEach(() => {
           telegram = {
             isEnabledFor: jest.fn().mockReturnValue(true),
-            begin: jest.fn().mockResolvedValue({ link: LINK, username: 'amcp_1a2b3c4d_bot' }),
+            begin: jest.fn().mockResolvedValue({ link: LINK, username: 'amcp_1a2b3c4d_bot', claimLink: CLAIM }),
             status: jest.fn().mockResolvedValue({ state: 'waiting' }),
             saveToken: jest.fn().mockResolvedValue({ ok: true, bot: '@my_own_bot' }),
           };
@@ -1575,7 +1715,28 @@ describe('LoginController', () => {
             expect(page).toContain('<figure class="tg-qr" id="tg-qr" hidden>');
             expect(page).toContain('<figcaption>Scan with your phone</figcaption>');
             expect(page).toContain('<p class="tg-status" id="tg-status" role="status" aria-live="polite"></p>');
-            expect(page).toContain('<p class="tg-hint" id="tg-hint" hidden>Changed the username in Telegram? Then paste the bot’s token below.</p>');
+            // Whose bot this is, and where someone who has one goes.
+            expect(page).toContain(
+              '<p class="tg-help" id="tg-help">This creates a new bot that belongs to you: it appears in your own @BotFather list, and you can rename it, add a picture and use it with your customers. Already have a bot? Paste its token below.</p>',
+            );
+            // What is left to do once the bot is connected: empty and hidden until then.
+            expect(page).toContain('<p class="tg-next" id="tg-next" role="status" aria-live="polite" hidden></p>');
+            expect(page.indexOf('id="tg-status"')).toBeLessThan(page.indexOf('id="tg-next"'));
+            // The second way in, hidden until it is needed: an ordinary link on its own button.
+            expect(page).toContain('<div class="tg-link" id="tg-link" hidden>');
+            expect(page).toContain(
+              '<a class="tg-link-btn" id="tg-link-btn" href="https://t.me/" target="_blank" rel="noopener noreferrer">Changed the username? Link your bot</a>',
+            );
+            // With its own QR code beside it: on a desktop the bot was usually made on the phone.
+            expect(page).toContain(
+              '<p class="tg-hint" id="tg-hint">Telegram opens our setup bot: press Start there, then come back here. Bot made on your phone? Scan the code.</p>',
+            );
+            expect(page).toContain('<figure class="tg-qr" id="tg-link-qr" hidden>');
+            expect(page.indexOf('id="tg-link-qr"')).toBeGreaterThan(page.indexOf('id="tg-link"'));
+            expect(page.indexOf('id="tg-link-qr"')).toBeLessThan(page.indexOf('id="tg-paste"'));
+            expect(page).toContain('a.tg-link-btn:focus-visible');
+            expect(page.indexOf('id="tg-create"')).toBeLessThan(page.indexOf('id="tg-link"'));
+            expect(page.indexOf('id="tg-link"')).toBeLessThan(page.indexOf('id="tg-paste"'));
             // Collapsed until asked for; a labelled field and a real button.
             expect(page).toContain('<details class="tg-paste" id="tg-paste">');
             expect(page).toContain('<summary>Already have a bot? Paste its token</summary>');
@@ -1601,6 +1762,9 @@ describe('LoginController', () => {
               const page = (await showPage(oneTap, userAgent))._sent as string;
               expect(page).toContain('id="tg-setup" hidden');
               expect(page).toContain('Create your Telegram bot</a>');
+              expect(page).toContain('Changed the username? Link your bot</a>');
+              expect(page).toContain('<p class="tg-hint" id="tg-hint">Telegram opens our setup bot: press Start there, then come back here.</p>');
+              expect(page).not.toContain('Scan the code');
               expect(page).not.toContain('<figure');
               expect(page).not.toContain('Scan with your phone');
               // Continue as it is on a phone: straight to the callback, no chat tab.
@@ -1627,22 +1791,36 @@ describe('LoginController', () => {
         });
 
         describe('picking Telegram', () => {
-          it('starts a setup for the added connector and answers with the link and its QR code', async () => {
+          it('starts a setup for the added connector and answers with the two links and their QR codes', async () => {
             arrange();
             const res = makeRes();
             await oneTap.pickFirstApp(request(), { adapter: 'telegram-bot', csrf: 'pick-tok' }, res);
 
-            expect(telegram.begin).toHaveBeenCalledWith({ userId: 'u1', organizationId: 'org-1', connectorId: 'conn-1' });
+            expect(telegram.begin).toHaveBeenCalledWith({
+              userId: 'u1',
+              organizationId: 'org-1',
+              connectorId: 'conn-1',
+              // For the bot's own messages: the button's name, and the link to a new chat.
+              client: { name: 'Claude', claude: true },
+            });
             expect(res._json).toEqual({
               ok: true,
               adapter: 'telegram-bot',
               name: 'Telegram',
               request: 'Finish setting up my Telegram connector.',
-              telegram: { link: LINK, qr: expect.stringMatching(/^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/) },
+              telegram: {
+                link: LINK,
+                claim: CLAIM,
+                qr: expect.stringMatching(/^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/),
+                claimQr: expect.stringMatching(/^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/),
+              },
             });
-            const svg = Buffer.from(res._json.telegram.qr.split(',')[1], 'base64').toString('utf8');
-            expect(svg.startsWith('<svg')).toBe(true);
-            expect(svg).not.toContain('<script');
+            expect(res._json.telegram.claimQr).not.toBe(res._json.telegram.qr);
+            for (const qr of [res._json.telegram.qr, res._json.telegram.claimQr]) {
+              const svg = Buffer.from(qr.split(',')[1], 'base64').toString('utf8');
+              expect(svg.startsWith('<svg')).toBe(true);
+              expect(svg).not.toContain('<script');
+            }
             expect(productEvents.log).toHaveBeenCalledWith({
               event: 'telegram_bot_link_offered',
               userId: 'u1',
@@ -1655,7 +1833,7 @@ describe('LoginController', () => {
             arrange();
             const res = makeRes();
             await oneTap.pickFirstApp(request(COOKIES, PHONE_UA), { adapter: 'telegram-bot', csrf: 'pick-tok' }, res);
-            expect(res._json.telegram).toEqual({ link: LINK });
+            expect(res._json.telegram).toEqual({ link: LINK, claim: CLAIM });
             expect(productEvents.log).toHaveBeenCalledWith(
               expect.objectContaining({ event: 'telegram_bot_link_offered', metadata: expect.objectContaining({ device: 'mobile' }) }),
             );
@@ -1696,7 +1874,13 @@ describe('LoginController', () => {
             const res = await status({ csrf: 'pick-tok' });
             expect(res._status).toBe(200);
             expect(res._json).toEqual({ ok: true, state: 'waiting' });
-            expect(telegram.status).toHaveBeenCalledWith({ organizationId: 'org-1', userId: 'u1', opened: false, device: 'desktop' });
+            expect(telegram.status).toHaveBeenCalledWith({
+              organizationId: 'org-1',
+              userId: 'u1',
+              opened: false,
+              claimOffered: false,
+              device: 'desktop',
+            });
             expect(grants.resolve).toHaveBeenCalledWith('client-abc', 'u1');
           });
 
@@ -1715,9 +1899,27 @@ describe('LoginController', () => {
           it('passes on a click on the link only when the page says so, with the device', async () => {
             arrange();
             await status({ csrf: 'pick-tok', opened: true }, COOKIES, oneTap, PHONE_UA);
-            expect(telegram.status).toHaveBeenLastCalledWith({ organizationId: 'org-1', userId: 'u1', opened: true, device: 'mobile' });
+            expect(telegram.status).toHaveBeenLastCalledWith({
+              organizationId: 'org-1',
+              userId: 'u1',
+              opened: true,
+              claimOffered: false,
+              device: 'mobile',
+            });
             await status({ csrf: 'pick-tok', opened: 'yes' });
             expect(telegram.status).toHaveBeenLastCalledWith(expect.objectContaining({ opened: false }));
+          });
+
+          it('passes on that "Link your bot" is shown, and what the server knows about the wait', async () => {
+            arrange();
+            telegram.status.mockResolvedValue({ state: 'waiting', unmatched: true });
+            expect((await status({ csrf: 'pick-tok', offered: true }))._json).toEqual({ ok: true, state: 'waiting', unmatched: true });
+            expect(telegram.status).toHaveBeenLastCalledWith(expect.objectContaining({ claimOffered: true }));
+            await status({ csrf: 'pick-tok', offered: 1 });
+            expect(telegram.status).toHaveBeenLastCalledWith(expect.objectContaining({ claimOffered: false }));
+
+            telegram.status.mockResolvedValue({ state: 'waiting', claimed: true });
+            expect((await status({ csrf: 'pick-tok' }))._json).toEqual({ ok: true, state: 'waiting', claimed: true });
           });
 
           it.each([
@@ -1868,7 +2070,12 @@ describe('LoginController', () => {
             ok: true,
             name: 'Telegram',
             request: 'Finish setting up my Telegram connector.',
-            telegram: { link: LINK, qr: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' },
+            telegram: {
+              link: LINK,
+              claim: CLAIM,
+              qr: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+              claimQr: 'data:image/svg+xml;base64,PHN2Zz5jbGFpbTwvc3ZnPg==',
+            },
           };
 
           /**
@@ -2003,7 +2210,10 @@ describe('LoginController', () => {
             expect(t.nodes['tg-status'].textContent).toBe('Waiting for your bot…');
             expect(t.nodes['quick-status'].textContent).toBe('Telegram added. Create its bot now, or continue and finish it in Claude.');
             expect(t.nodes['quick-apps'].attrs['data-telegram']).toBe('on');
-            expect(t.nodes['tg-hint'].hidden).toBe(true);
+            // The second link is ready, and not shown yet.
+            expect(t.nodes['tg-link'].hidden).toBe(true);
+            expect(t.nodes['tg-link-btn'].attrs.href).toBe(CLAIM);
+            expect(t.nodes['tg-link-qr'].hidden).toBe(true);
             // Everything stays optional: the request for the chat is still there.
             expect(t.nodes['example-request'].textContent).toBe('Finish setting up my Telegram connector.');
           });
@@ -2072,12 +2282,52 @@ describe('LoginController', () => {
             expect(t.nodes['tg-create'].hidden).toBe(true);
             expect(t.nodes['tg-qr'].hidden).toBe(true);
             expect(t.nodes['tg-paste'].hidden).toBe(true);
-            expect(t.nodes['tg-hint'].hidden).toBe(true);
+            expect(t.nodes['tg-link'].hidden).toBe(true);
             expect(t.nodes['quick-status'].textContent).toBe('');
+            // One step is left, and the page says which.
+            expect(t.nodes['tg-next'].hidden).toBe(false);
+            expect(t.nodes['tg-next'].textContent).toBe('Last step: tap Continue to Claude below.');
+            expect(t.nodes['quick-apps'].attrs['data-telegram']).toBe('done');
 
             const asked = t.requests(STATUS).length;
             await t.advance(60_000);
             expect(t.requests(STATUS)).toHaveLength(asked);
+          });
+
+          it('brings Continue into view once the bot is connected, and never follows it for the user', async () => {
+            const t = await run();
+            const scrolled: unknown[] = [];
+            (t.nodes.continue as any).scrollIntoView = (how: unknown) => scrolled.push(how);
+            (t.nodes.continue as any).click = jest.fn();
+            const before = t.nodes.continue.listeners.click;
+            await t.pickTelegram();
+            expect(scrolled).toEqual([]);
+            t.answers.status = () => ({ ok: true, state: 'connected', bot: '@amcp_1a2b3c4d_bot', request: 'Send me a test message on Telegram.' });
+            await t.advance(2_100);
+
+            // Only as far as needed, and once: a later answer does not move the page again.
+            expect(scrolled).toEqual([{ block: 'nearest', behavior: 'smooth' }]);
+            t.windowListeners.focus();
+            await flush();
+            await t.advance(10_000);
+            expect(scrolled).toHaveLength(1);
+            // The tap stays the user's: nothing clicked, opened or added to Continue.
+            expect((t.nodes.continue as any).click).not.toHaveBeenCalled();
+            expect(t.open).not.toHaveBeenCalled();
+            expect(t.nodes.continue.listeners.click).toBe(before);
+            expect(t.nodes.continue.attrs).toEqual({ 'data-client': 'Claude', 'data-open-chat': 'https://claude.ai/new' });
+          });
+
+          it('still shows the bot as connected in a browser that cannot scroll that way', async () => {
+            const t = await run();
+            (t.nodes.continue as any).scrollIntoView = () => {
+              throw new TypeError('options are not supported');
+            };
+            await t.pickTelegram();
+            t.answers.status = () => ({ ok: true, state: 'connected', bot: '@b_bot', request: 'Send me a test message on Telegram.' });
+            await t.advance(2_100);
+            expect(t.nodes['tg-status'].textContent).toBe('Telegram is connected: @b_bot.');
+            expect(t.nodes['tg-next'].textContent).toBe('Last step: tap Continue to Claude below.');
           });
 
           it('points to the bot\'s chat until Start was pressed there, then is done', async () => {
@@ -2092,6 +2342,10 @@ describe('LoginController', () => {
             expect(t.nodes['tg-create'].hidden).toBe(false);
             expect(t.nodes['tg-create'].attrs.href).toBe('https://t.me/amcp_1a2b3c4d_bot');
             expect(t.nodes['tg-create'].textContent).toBe('Open your bot and press Start');
+            // Two things are left, in their order; Continue is not pointed at yet.
+            expect(t.nodes['tg-next'].hidden).toBe(false);
+            expect(t.nodes['tg-next'].textContent).toBe('Two steps left: press Start in your bot’s chat, then tap Continue to Claude below.');
+            expect(t.nodes['quick-apps'].attrs['data-telegram']).toBe('on');
 
             // Still asking: the server greets the user after their first /start.
             const asked = t.requests(STATUS).length;
@@ -2102,6 +2356,8 @@ describe('LoginController', () => {
             await t.advance(2_100);
             expect(t.nodes['tg-create'].hidden).toBe(true);
             expect(t.nodes['tg-setup'].attrs['data-state']).toBe('connected');
+            expect(t.nodes['tg-next'].textContent).toBe('Last step: tap Continue to Claude below.');
+            expect(t.nodes['quick-apps'].attrs['data-telegram']).toBe('done');
             const done = t.requests(STATUS).length;
             await t.advance(30_000);
             expect(t.requests(STATUS)).toHaveLength(done);
@@ -2117,36 +2373,148 @@ describe('LoginController', () => {
             expect(t.requests(STATUS)).toHaveLength(asked);
           });
 
-          it('after a minute without a bot, says what to do when the username was changed', async () => {
-            const t = await run();
-            await t.pickTelegram();
-            await t.advance(58_000);
-            expect(t.nodes['tg-hint'].hidden).toBe(true);
-            await t.advance(4_000);
-            expect(t.nodes['tg-hint'].hidden).toBe(false);
-            // The token option was there all along.
-            expect(t.nodes['tg-paste'].hidden).toBe(false);
-          });
+          describe('a bot whose username was changed', () => {
+            it('offers "Link your bot" a minute after the pick when the link was never clicked (the QR code)', async () => {
+              const t = await run();
+              await t.pickTelegram();
+              await t.advance(58_000);
+              expect(t.nodes['tg-link'].hidden).toBe(true);
+              await t.advance(4_000);
+              expect(t.nodes['tg-link'].hidden).toBe(false);
+              // On a desktop also as a QR code: the bot was made on the phone.
+              expect(t.nodes['tg-link-qr'].hidden).toBe(false);
+              expect(t.nodes['tg-link-qr-img'].attrs.src).toBe(PICKED.telegram.claimQr);
+              // The first QR code and the token option are still there.
+              expect(t.nodes['tg-qr'].hidden).toBe(false);
+              expect(t.nodes['tg-paste'].hidden).toBe(false);
+            });
 
-          it('counts the minute from the click on the link, and reports that click once', async () => {
-            const t = await run();
-            await t.pickTelegram();
-            await t.advance(50_000);
-            const before = t.requests(STATUS).length;
+            it('offers it 20 seconds after the click on the link, and reports that click once', async () => {
+              const t = await run();
+              await t.pickTelegram();
+              await t.advance(50_000);
+              const before = t.requests(STATUS).length;
 
-            t.nodes['tg-create'].listeners.click();
-            await flush();
-            // Sent at once, with the click.
-            expect(t.requests(STATUS)).toHaveLength(before + 1);
-            expect(t.requests(STATUS)[before]).toEqual({ csrf: expect.any(String), opened: true });
+              t.nodes['tg-create'].listeners.click();
+              await flush();
+              // Sent at once, with the click.
+              expect(t.requests(STATUS)).toHaveLength(before + 1);
+              expect(t.requests(STATUS)[before]).toEqual({ csrf: expect.any(String), opened: true });
 
-            await t.advance(20_000);
-            expect(t.nodes['tg-hint'].hidden).toBe(true);
-            await t.advance(42_000);
-            expect(t.nodes['tg-hint'].hidden).toBe(false);
-            expect(t.requests(STATUS).filter((body) => body.opened)).toHaveLength(1);
-            // The click opens nothing itself: the link does.
-            expect(t.open).not.toHaveBeenCalled();
+              // The click counts the wait anew: a bot with the suggested username arrives within seconds.
+              await t.advance(18_000);
+              expect(t.nodes['tg-link'].hidden).toBe(true);
+              await t.advance(4_000);
+              expect(t.nodes['tg-link'].hidden).toBe(false);
+              expect(t.requests(STATUS).filter((body) => body.opened)).toHaveLength(1);
+              // The click opens nothing itself: the link does.
+              expect(t.open).not.toHaveBeenCalled();
+            });
+
+            it('offers it at once when the server saw a bot with another username, and reports that once', async () => {
+              const t = await run({ userAgent: PHONE_UA, touch: true });
+              await t.pickTelegram();
+              t.nodes['tg-create'].listeners.click();
+              await flush();
+              expect(t.nodes['tg-link'].hidden).toBe(true);
+
+              // Back from Telegram, seconds later.
+              t.answers.status = () => ({ ok: true, state: 'waiting', unmatched: true });
+              await t.advance(2_100);
+              expect(t.nodes['tg-link'].hidden).toBe(false);
+              expect(t.nodes['tg-link-btn'].attrs.href).toBe(CLAIM);
+              expect(t.nodes['tg-link-btn'].attrs.target).toBeUndefined(); // set in the markup, never by the script
+              // No QR code on a phone: the button opens the Telegram app.
+              expect(t.nodes['tg-link-qr']).toBeUndefined();
+
+              await t.advance(6_000);
+              expect(t.requests(STATUS).filter((body) => body.offered)).toEqual([{ csrf: expect.any(String), offered: true }]);
+            });
+
+            it('says so again when the report did not arrive', async () => {
+              const t = await run();
+              await t.pickTelegram();
+              t.answers.status = () => ({ ok: true, state: 'waiting', unmatched: true });
+              await t.advance(2_100);
+              t.answers.status = () => ({ statusCode: 429, message: 'ThrottlerException: Too Many Requests' });
+              await t.advance(2_000);
+              t.answers.status = () => ({ ok: true, state: 'waiting' });
+              await t.advance(6_000);
+              expect(t.requests(STATUS).filter((body) => body.offered)).toHaveLength(2);
+              // Once shown it stays, whatever the server says next.
+              expect(t.nodes['tg-link'].hidden).toBe(false);
+            });
+
+            it('keeps its QR code hidden on a touch device, whatever its user agent says', async () => {
+              const t = await run({ touch: true });
+              await t.pickTelegram();
+              t.answers.status = () => ({ ok: true, state: 'waiting', unmatched: true });
+              await t.advance(2_100);
+              expect(t.nodes['tg-link'].hidden).toBe(false);
+              expect(t.nodes['tg-link-qr'].hidden).toBe(true);
+              expect(t.nodes['tg-link-qr-img'].attrs.src).toBeUndefined();
+            });
+
+            it('asks for the status at once on a click on it, and opens or navigates nothing itself', async () => {
+              const t = await run({ userAgent: PHONE_UA, touch: true });
+              await t.pickTelegram();
+              t.answers.status = () => ({ ok: true, state: 'waiting', unmatched: true });
+              await t.advance(2_100);
+              const before = t.requests(STATUS).length;
+
+              t.nodes['tg-link-btn'].listeners.click();
+              await flush();
+              expect(t.requests(STATUS)).toHaveLength(before + 1);
+              expect(t.open).not.toHaveBeenCalled();
+              // Continue is as it was: no listener, on a phone.
+              expect(t.nodes.continue.listeners).toEqual({});
+
+              // Start was pressed in the setup bot's chat: the bot is connected.
+              t.answers.status = () => ({ ok: true, state: 'connected', bot: '@my_shop_bot', request: 'Send me a test message on Telegram.' });
+              t.documentListeners.visibilitychange();
+              await flush();
+              expect(t.nodes['tg-status'].textContent).toBe('Telegram is connected: @my_shop_bot.');
+              expect(t.nodes['tg-link'].hidden).toBe(true);
+              expect(t.nodes['example-request'].textContent).toBe('Send me a test message on Telegram.');
+            });
+
+            it('says that the account is linked when Start was pressed before any bot existed', async () => {
+              const t = await run();
+              await t.pickTelegram();
+              t.answers.status = () => ({ ok: true, state: 'waiting', unmatched: true });
+              await t.advance(2_100);
+              expect(t.nodes['tg-link'].hidden).toBe(false);
+
+              t.answers.status = () => ({ ok: true, state: 'waiting', claimed: true });
+              await t.advance(2_100);
+              expect(t.nodes['tg-status'].textContent).toBe('Your Telegram account is linked. Now create your bot: any username works.');
+              // Nothing left to link: the button to create the bot is what matters now.
+              expect(t.nodes['tg-link'].hidden).toBe(true);
+              expect(t.nodes['tg-create'].hidden).toBe(false);
+              expect(t.nodes['tg-create'].attrs.href).toBe(LINK);
+              await t.advance(120_000);
+              expect(t.nodes['tg-link'].hidden).toBe(true);
+
+              t.answers.status = () => ({ ok: true, state: 'connected', bot: '@my_shop_bot', request: 'Send me a test message on Telegram.' });
+              await t.advance(2_100);
+              expect(t.nodes['tg-status'].textContent).toBe('Telegram is connected: @my_shop_bot.');
+            });
+
+            it('never shows a link it was not given', async () => {
+              const t = await run();
+              const picked = PICKED.telegram as { claim?: string };
+              const claim = picked.claim;
+              delete picked.claim;
+              try {
+                await t.pickTelegram();
+                t.answers.status = () => ({ ok: true, state: 'waiting', unmatched: true });
+                await t.advance(70_000);
+                expect(t.nodes['tg-link'].hidden).toBe(true);
+                expect(t.requests(STATUS).filter((body) => body.offered)).toHaveLength(0);
+              } finally {
+                picked.claim = claim;
+              }
+            });
           });
 
           it('says so and stops when the page has expired', async () => {
@@ -2155,6 +2523,7 @@ describe('LoginController', () => {
             t.answers.status = () => ({ ok: false, error: 'This page has expired.' });
             await t.advance(2_100);
             expect(t.nodes['tg-status'].textContent).toBe('This link has expired. Continue, and finish Telegram in Claude.');
+            expect(t.nodes['tg-link'].hidden).toBe(true);
             const asked = t.requests(STATUS).length;
             await t.advance(30_000);
             expect(t.requests(STATUS)).toHaveLength(asked);
@@ -2204,6 +2573,7 @@ describe('LoginController', () => {
               expect(event.preventDefault).toHaveBeenCalled();
               expect(t.requests(TOKEN_PATH)).toEqual([{ csrf: t.nodes['quick-apps'].attrs['data-csrf'], token: TOKEN }]);
               expect(t.nodes['tg-status'].textContent).toBe('Telegram is connected: @my_own_bot.');
+              expect(t.nodes['tg-next'].textContent).toBe('Last step: tap Continue to Claude below.');
               expect(t.nodes['example-request'].textContent).toBe('Send me a test message on Telegram.');
               expect(t.nodes['tg-token'].value).toBe('');
               expect(t.nodes['tg-create'].hidden).toBe(true);
@@ -2241,7 +2611,12 @@ describe('LoginController', () => {
             const before = desktop.nodes.continue.listeners.click;
             await desktop.pickTelegram();
             desktop.nodes['tg-create'].listeners.click();
+            await flush();
+            await desktop.advance(25_000);
+            desktop.nodes['tg-link-btn'].listeners.click();
+            await flush();
             await desktop.advance(5_000);
+            expect(desktop.nodes['tg-link'].hidden).toBe(false);
             expect(desktop.nodes.continue.listeners.click).toBe(before);
             expect(Object.keys(desktop.nodes.continue.listeners)).toEqual(['click']);
             expect(desktop.open).not.toHaveBeenCalled();
@@ -2253,7 +2628,12 @@ describe('LoginController', () => {
             const phone = await run({ userAgent: PHONE_UA, touch: true });
             await phone.pickTelegram();
             phone.nodes['tg-create'].listeners.click();
+            await flush();
+            await phone.advance(25_000);
+            phone.nodes['tg-link-btn'].listeners.click();
+            await flush();
             await phone.advance(5_000);
+            expect(phone.nodes['tg-link'].hidden).toBe(false);
             expect(phone.nodes.continue.listeners).toEqual({});
             expect(phone.open).not.toHaveBeenCalled();
           });
