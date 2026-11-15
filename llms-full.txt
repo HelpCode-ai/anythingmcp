@@ -705,7 +705,7 @@ Optional and off by default. Without it, a user who picks Telegram on the page a
 Set it up once per server:
 
 1. In Telegram, open @BotFather, send `/newbot` and create a bot for your server. This is the manager bot. It never talks to your users; it only receives the notice that a user created a bot.
-2. In @BotFather, open that bot's settings and turn on **Bot Management Mode**.
+2. Open that bot's settings in @BotFather's mini app and turn on **Bot Management Mode**.
 3. Set `TELEGRAM_MANAGER_BOT_TOKEN` to its token and `TELEGRAM_MANAGER_WEBHOOK_SECRET` to a secret of your own (`openssl rand -hex 32`), then restart the backend.
 
 At start-up the backend asks Telegram whether the bot can manage bots and registers `<SERVER_URL>/api/telegram/manager-webhook` as its webhook, for the update types `managed_bot` and `message`. The log then says `One-tap Telegram bot is on`. It stays off, with a warning in the log and the page as before, when the token or the secret is missing or malformed, when Bot Management Mode is off, or when `SERVER_URL` is not a public https address (Telegram only delivers to https). Telegram being unreachable never stops the server from starting: the registration is tried again, at most once a minute, the next time the page is shown.
