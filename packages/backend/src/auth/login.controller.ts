@@ -328,6 +328,24 @@ export class LoginController {
     // session that @rekog/mcp-nest's /authorize handler stored (keyed by the
     // httpOnly `oauth_session` cookie) so the user gives INFORMED consent.
     const consent = await this.loadConsentContext(req);
+    // Only inside a pending authorization: a bookmark or a crawler on this
+    // address is not somebody connecting an AI client.
+    if (consent) {
+      void this.productEvents
+        ?.log({
+          event: ProductEvents.AUTHORIZE_PAGE_VIEWED,
+          metadata: {
+            client: consent.clientName,
+            device: isPhoneUserAgent(req.headers['user-agent']) ? 'phone' : 'desktop',
+            // Reloads and the return from a social sign-in show the page
+            // again: the same attempt, counted once by this value. It is
+            // the moment the pending authorization expires, set once when
+            // it starts; nothing of the session itself is stored.
+            ...(consent.expiresAt ? { attempt: consent.expiresAt.toString(36) } : {}),
+          },
+        })
+        .catch(() => undefined);
+    }
 
     // Issue a CSRF token bound to this render (double-submit, HMAC-signed
     // cookie + matching hidden field). Prevents login CSRF / silent

@@ -1,4 +1,4 @@
-import { DailyKeySet, SharedToolCallRecorder, utcDay } from './shared-tool-calls';
+import { DailyKeySet, SharedToolCallRecorder, ToolsListedRecorder, utcDay } from './shared-tool-calls';
 
 function build(rows: Array<{ metadata: unknown }> = []) {
   const prisma = {
@@ -91,5 +91,54 @@ describe('shared_tool_called', () => {
 
   it('names the UTC day', () => {
     expect(utcDay(Date.UTC(2026, 10, 2, 23, 59))).toBe('2026-11-02');
+  });
+});
+
+describe('mcp_tools_listed', () => {
+  const build2 = (rows: Array<{ id: string }> = []) => {
+    const prisma = {
+      productEvent: { findMany: jest.fn().mockResolvedValue(rows) },
+      oAuthClient: { findUnique: jest.fn().mockResolvedValue({ clientName: 'Claude' }) },
+    };
+    const productEvents = { log: jest.fn().mockResolvedValue(undefined) };
+    return { prisma, productEvents, recorder: new ToolsListedRecorder(prisma as any, productEvents as any) };
+  };
+  const DAY = Date.UTC(2026, 10, 15, 9, 0);
+
+  it('writes one row per workspace and UTC day, with the client name', async () => {
+    const { prisma, productEvents, recorder } = build2();
+    await recorder.record({ organizationId: 'org-1', userId: 'u1', oauthClientId: 'c1' }, DAY);
+    await recorder.record({ organizationId: 'org-1', userId: 'u1', oauthClientId: 'c1' }, DAY + 3_600_000);
+    await recorder.record({ organizationId: 'org-2', userId: 'u2' }, DAY);
+    await recorder.record({ organizationId: 'org-1', userId: 'u1', oauthClientId: 'c1' }, DAY + 24 * 3_600_000);
+
+    expect(productEvents.log.mock.calls.map((c) => [c[0].organizationId, c[0].metadata])).toEqual([
+      ['org-1', { client: 'Claude' }],
+      ['org-2', {}],
+      ['org-1', { client: 'Claude' }],
+    ]);
+    expect(productEvents.log.mock.calls[0][0]).toEqual({
+      event: 'mcp_tools_listed',
+      organizationId: 'org-1',
+      userId: 'u1',
+      metadata: { client: 'Claude' },
+    });
+    expect(prisma.productEvent.findMany.mock.calls[0][0].where).toEqual({
+      event: 'mcp_tools_listed',
+      organizationId: 'org-1',
+      createdAt: { gte: new Date('2026-11-15T00:00:00.000Z') },
+    });
+  });
+
+  it('writes nothing when today already has a row (another process, or before a restart)', async () => {
+    const { productEvents, recorder } = build2([{ id: 'e1' }]);
+    await recorder.record({ organizationId: 'org-1' }, DAY);
+    expect(productEvents.log).not.toHaveBeenCalled();
+  });
+
+  it('never throws', async () => {
+    const { prisma, recorder } = build2();
+    prisma.productEvent.findMany.mockRejectedValue(new Error('db down'));
+    await expect(recorder.record({ organizationId: 'org-1' }, DAY)).resolves.toBeUndefined();
   });
 });
