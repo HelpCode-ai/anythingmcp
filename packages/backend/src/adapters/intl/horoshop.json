@@ -1,0 +1,563 @@
+{
+  "slug": "horoshop",
+  "name": "Horoshop",
+  "description": "Horoshop online stores (Ukraine): orders with status and payment updates, catalog export and import of prices, stock and texts, catalog sections, customers, delivery and payment options, currencies. API administrator login and password.",
+  "instructions": "## Horoshop\nThis connector works with the **Horoshop API** of a Ukrainian Horoshop online store, at `https://<your store domain>/api/`: orders and their statuses, the product catalog (export and import of prices, stock and texts), catalog sections, registered customers, delivery and payment options, currencies and stickers.\n\n**Setup (about 3 minutes)**\n1. In the store's admin panel open **Settings, Admins** (Налаштування, Адміністратори) and add an administrator for the API with a login and a password; give it only the rights the tools need.\n2. Enter the login in `HOROSHOP_LOGIN` and the password in `HOROSHOP_PASSWORD`.\n3. Enter the store domain without https:// in `HOROSHOP_DOMAIN`, for example `shop123456.horoshop.ua` or your own domain. The store must be reachable over https.\n\nThe connector calls `api/auth/` with the login and password, receives a token valid for 600 seconds, puts it into the body of every call as `token` and logs in again when Horoshop answers UNAUTHORIZED.\n\n**Where to start**: `horoshop_list_orders` with a `from` date (and `additional_data` true for waybills), then `horoshop_update_order` to move an order on. For products use `horoshop_export_products` with an `expr` filter on articles or a section.\n\n**Orders**: `horoshop_list_orders`, `horoshop_list_order_statuses` (Horoshop 4 and later), `horoshop_update_order` (status, paid flag, Ukrposhta tracking code). `horoshop_cancel_order` is installed switched off. Standard status ids: 1 new, 2 processing, 3 delivered, 4 not delivered (Canceled), 6 shipping; stores can add their own.\n\n**Catalog**: `horoshop_export_products` (up to 500 per call), `horoshop_import_products` (create or update by article: price, presence, residues per warehouse, texts, images), `horoshop_list_categories`, `horoshop_list_stickers`. Products with modifications share a `parent_article`. Texts can be per language (`ua`, `ru`, `en`) or one value for all. Stock: `presence` is accepted only while warehouse stock accounting is off; with it on, send `residues`.\n\n**Customers**: `horoshop_list_customers` and `horoshop_import_customers` (by email).\n\n**Shop settings**: `horoshop_list_delivery_options`, `horoshop_list_delivery_types`, `horoshop_list_payment_options`, `horoshop_list_payment_methods`, `horoshop_list_currencies`.\n\n**Answers**: every answer has `status` and `response`. OK is success, EMPTY means no results, WARNING means some rows of an import or update failed (see `response.log`), ERROR, EXCEPTION and HTTP_ERROR are failures that the connector reports with `response.message`. Calls and answers can be checked at `https://<your store domain>/api/logs/` after signing in to the admin. Prices are in the store currency, usually UAH. Horoshop publishes no fixed rate limit; avoid many calls per second.",
+  "aliases": [
+    "Хорошоп",
+    "Horoshop API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "horoshop",
+  "docsUrl": "https://horoshop.notion.site/API-1b6cc289707981faa189c3513d66646a",
+  "requiredEnvVars": [
+    "HOROSHOP_DOMAIN",
+    "HOROSHOP_LOGIN",
+    "HOROSHOP_PASSWORD"
+  ],
+  "envVarMeta": {
+    "HOROSHOP_DOMAIN": {
+      "label": "Store domain",
+      "kind": "address",
+      "help": "The domain of your Horoshop store without https://, e.g. shop123456.horoshop.ua or mystore.com.ua.",
+      "example": "shop123456.horoshop.ua",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
+      "patternMessage": "Enter only the domain in lower case, e.g. shop123456.horoshop.ua, without https:// and without a path."
+    },
+    "HOROSHOP_LOGIN": {
+      "label": "API login",
+      "kind": "credential",
+      "help": "The login of the administrator you created for the API in Settings, Admins.",
+      "link": "https://horoshop.notion.site/1b6cc28970798152a324f79cd220cc21",
+      "pattern": "^\\S{2,100}$",
+      "patternMessage": "Enter the login without spaces."
+    },
+    "HOROSHOP_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that administrator.",
+      "link": "https://horoshop.notion.site/1b6cc28970798152a324f79cd220cc21"
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Horoshop refused the login or the token (UNAUTHORIZED or AUTHORIZATION_ERROR). Check the API administrator's login and password in Settings, Admins.",
+      "field": "HOROSHOP_PASSWORD"
+    },
+    "403": "Horoshop refused the call: the API administrator lacks the rights for this function.",
+    "404": {
+      "hint": "Horoshop does not know this function here (UNDEFINED_FUNCTION or no API at this domain). Check the store domain; some functions need Horoshop 4.",
+      "field": "HOROSHOP_DOMAIN"
+    },
+    "rate_limited": "Horoshop throttled the calls. Wait a moment and try again.",
+    "unreachable": {
+      "hint": "No Horoshop store answers at this domain over https. Check the domain.",
+      "field": "HOROSHOP_DOMAIN"
+    }
+  },
+  "probe": {
+    "tool": "horoshop_list_currencies",
+    "params": {}
+  },
+  "prerequisites": "A Horoshop store and an admin account that may add administrators (for the API login and password). About 3 minutes.",
+  "connector": {
+    "name": "Horoshop API",
+    "type": "REST",
+    "baseUrl": "https://{{HOROSHOP_DOMAIN}}/api",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://{{HOROSHOP_DOMAIN}}/api/auth/",
+      "loginMethod": "POST",
+      "loginBody": {
+        "login": "${username}",
+        "password": "${password}"
+      },
+      "loginHeaders": {
+        "Content-Type": "application/json"
+      },
+      "username": "{{HOROSHOP_LOGIN}}",
+      "password": "{{HOROSHOP_PASSWORD}}",
+      "tokenJsonPath": "response.token",
+      "tokenTTLSeconds": 600,
+      "proactiveRefreshSeconds": 60,
+      "refreshOn401": true,
+      "refreshOnBody401": true,
+      "tokenPlacement": "body"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "in": [
+            "UNAUTHORIZED",
+            "AUTHORIZATION_ERROR"
+          ],
+          "messagePath": "response.message",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "equals": "UNDEFINED_FUNCTION",
+          "messagePath": "status",
+          "status": 404
+        },
+        {
+          "path": "status",
+          "equals": "EXCEPTION",
+          "messagePath": "response.message",
+          "status": 502
+        },
+        {
+          "path": "status",
+          "in": [
+            "ERROR",
+            "HTTP_ERROR"
+          ],
+          "messagePath": "response.message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "horoshop_list_orders",
+      "description": "List orders: order_id, stat_status (1 new, 2 processing, 3 delivered, 4 not delivered or canceled, 6 shipping, plus custom statuses), stat_created, delivery name, email, phone, city and address, delivery_type, payment_type, payed (1 or 0), total_sum, currency, discounts, coupon, manager comment and products (title, article, price, quantity, total_price). With additional_data also delivery_data (Nova Poshta or Ukrposhta waybill number and status). EMPTY means nothing matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Orders placed from this date: YYYY-MM-DD, DD.MM.YYYY or with time YYYY-MM-DD HH:mm:ss (inclusive)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Orders placed up to this date: YYYY-MM-DD, DD.MM.YYYY or with time YYYY-MM-DD HH:mm:ss (inclusive)."
+          },
+          "ids": {
+            "type": "array",
+            "description": "Order numbers to read, e.g. [5, 6].",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "status": {
+            "type": "array",
+            "description": "Order status ids, e.g. [1, 2]; list them with horoshop_list_order_statuses.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "additional_data": {
+            "type": "boolean",
+            "description": "true: include additional_data and delivery_data (waybill, warehouses, recipient).",
+            "default": false
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many rows to skip, from 0. Works together with limit.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders to return.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/get/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"from\": ${from}, \"to\": ${to}, \"ids\": ${ids}, \"status\": ${status}, \"additionalData\": ${additional_data}, \"offset\": ${offset}, \"limit\": ${limit}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_list_order_statuses",
+      "description": "List the order statuses of the shop (Horoshop 4 and later): id, title per language (ua, en) and is_successful (whether the status counts as delivered).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/get_available_statuses/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\"}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_update_order",
+      "description": "Change one order: set its status (any status id except 4, which cancels and is a separate tool), mark it paid or unpaid, and add a Ukrposhta tracking code. The answer's log says per order whether it was UPDATED.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order number (order_id of horoshop_list_orders).",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "description": "New status id as text: 1 new, 2 processing, 3 delivered, 6 shipping, or a custom status id from horoshop_list_order_statuses. 4 (cancel) is refused here.",
+            "pattern": "^([0-35-9]|[1-9][0-9]+)$"
+          },
+          "payed": {
+            "type": "integer",
+            "description": "1 paid, 0 not paid.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Ukrposhta tracking code shown to the customer."
+          }
+        },
+        "required": [
+          "order_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/update/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"orders\": [{\"order_id\": ${order_id}, \"status\": ${status}, \"payed\": ${payed}, \"tracking_code\": ${tracking_code}}]}"
+      }
+    },
+    {
+      "name": "horoshop_cancel_order",
+      "description": "Set an order to status 4 (not delivered, shown as Canceled). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order number to cancel.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/update/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"orders\": [{\"order_id\": ${order_id}, \"status\": 4}]}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "horoshop_export_products",
+      "description": "Export catalog products: article, parent_article (groups modifications), title per language, price, price_old, discount, presence (stock status), residues per warehouse, brand, parent (category path), display_in_showcase, images, link, gtin, mpn, characteristics and more. At most 500 per call; page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expr": {
+            "type": "object",
+            "description": "Filter, any of: `parent` (category path such as `Toys / Baby toys`), `parent` as `{\"id\": [1, 2]}` (category ids), `article` (one article or a list, Horoshop 3.21.1 and later), `display_in_showcase` (1 shown, 0 hidden). Example: `{\"article\": [\"SKU-1-BLACK\", \"MF-2010\"]}`."
+          },
+          "included_params": {
+            "type": "array",
+            "description": "Return only these fields (plus article, parent_article and parent), e.g. [\"price\", \"price_old\", \"title\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_params": {
+            "type": "array",
+            "description": "Leave these fields out, e.g. [\"description\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many rows to skip, from 0. Works together with limit.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products to return, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/catalog/export/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"expr\": ${expr}, \"offset\": ${offset}, \"limit\": ${limit}, \"includedParams\": ${included_params}, \"excludedParams\": ${excluded_params}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_import_products",
+      "description": "Create or update products by article: price, price_old, presence, residues per warehouse (when stock accounting is on), title, descriptions, category (parent), brand, display_in_showcase, images and other fields as in Horoshop's catalog/import. Fields left out keep their value. The log reports per article what was done; WARNING means some rows failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "description": "Products, at most 100 per call. Each needs article; a new product also needs title and parent (category path or `{\"id\": 12}`). Example: `[{\"article\": \"SKU-1\", \"price\": 499, \"presence\": \"в наявності\", \"residues\": [{\"warehouse\": \"office\", \"quantity\": 5}]}]`. Caution: images with links replace the gallery unless override is false.",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "article": {
+                  "type": "string",
+                  "description": "Product article (SKU), required."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Price in the product currency."
+                },
+                "price_old": {
+                  "type": "number",
+                  "description": "Old price, shown crossed out."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/catalog/import/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"products\": ${products}}"
+      }
+    },
+    {
+      "name": "horoshop_list_categories",
+      "description": "List catalog sections (pages) under a parent: id, parent, title per language, discount and image. Use the ids in product filters and imports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": "integer",
+            "description": "Parent section id; 0 is the root.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pages/export/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"parent\": ${parent}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_list_customers",
+      "description": "Export registered customers: id, title (name), email, phone, country, city, address, registered, newsletter_subscription and manager note (B2B shops also group, balance and manager). EMPTY means none matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Customers registered from this date: YYYY-MM-DD, DD.MM.YYYY or with time YYYY-MM-DD HH:mm:ss (inclusive)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Customers registered before this date: YYYY-MM-DD, DD.MM.YYYY or with time YYYY-MM-DD HH:mm:ss (inclusive)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many rows to skip, from 0. Works together with limit.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Customers to return.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/export/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"from\": ${from}, \"to\": ${to}, \"offset\": ${offset}, \"limit\": ${limit}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_import_customers",
+      "description": "Create or update customers by email: title (full name, required), email (required, unique), phone, country, city, address, newsletter_subscription, a personal discount card and the manager note. The log has a code per customer: 0 done, 1 missing fields, 2 invalid fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "description": "Customers, at most 100 per call. Example: `[{\"title\": \"Ivan Petrenko\", \"email\": \"ivan@example.com\", \"phone\": \"+380501234567\"}]`.",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Full name, required."
+                },
+                "email": {
+                  "type": "string",
+                  "description": "Email, required and unique."
+                },
+                "phone": {
+                  "type": "string",
+                  "description": "Phone with country code."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "users"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/import/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"users\": ${users}}"
+      }
+    },
+    {
+      "name": "horoshop_list_delivery_options",
+      "description": "List delivery options: id, title per language, type (delivery type id), enabled, by_carrier (price by carrier tariffs), payment (allowed payment option ids) and price_options (order total thresholds and prices).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/delivery/export/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\"}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_list_delivery_types",
+      "description": "List delivery types (for example Nova Poshta, Ukrposhta, pickup): id and title per language.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/delivery/exportTypes/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\"}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_list_payment_options",
+      "description": "List payment options: id, title and description per language, payment_method id, enabled, icon, payment link and payment instruction.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment/export/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\"}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_list_payment_methods",
+      "description": "List payment methods: id, title and is_simple (true: the buyer goes to the thank-you page, false: to a payment gateway).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment/exportMethods/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\"}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_list_currencies",
+      "description": "List currencies and exchange rates: id, iso, title and exchangeRates (relatedIso, exchangeCourse). A cheap call to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "iso": {
+            "type": "array",
+            "description": "ISO codes to read, e.g. [\"UAH\", \"USD\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled_only": {
+            "type": "boolean",
+            "description": "true: only currencies enabled on the storefront (then iso is ignored).",
+            "default": false
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/currency/export/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\", \"iso\": ${iso}, \"enabledOnly\": ${enabled_only}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "horoshop_list_stickers",
+      "description": "List product stickers (icons such as New or Sale) of a Horoshop 4 shop: id, title and enabled.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/icons/export/",
+        "bodyTemplate": "{\"token\": \"${loginToken}\"}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

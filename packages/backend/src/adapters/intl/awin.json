@@ -1,0 +1,1418 @@
+{
+  "slug": "awin",
+  "name": "Awin",
+  "description": "Awin affiliate network API for publishers and advertisers: accounts, programmes and commission groups, transactions and transaction queries, offers and vouchers, tracking links, and advertiser, publisher, campaign and creative performance reports. Validating transactions installed switched off. API token.",
+  "instructions": "## Awin\nThis connector works with the **Awin API** at `https://api.awin.com` for both sides of the affiliate network: **publishers** (affiliates) read programmes, commission groups, transactions, transaction queries, offers and performance reports, and build tracking links; **advertisers** read transactions, publishers and performance reports. Validating transactions is possible but installed switched off.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://ui.awin.com with a user that has admin access to the publisher or advertiser account (publishers: Account, User Permissions; advertisers: Account, Account Permissions).\n2. Open **API Credentials** in the user menu (top right) or go to https://ui.awin.com/awin-api, enter your password and click **Show my API token**.\n3. Copy the token into `AWIN_API_TOKEN`.\n\nThe token belongs to your user, not to one account: it reaches every publisher and advertiser account your user can open. Advertiser APIs are only available on the Awin Accelerate and Advanced plans. A new or removed account access takes up to 10 minutes to reach the API.\n\n**Where to start**: `awin_list_accounts` lists your accounts. Pass the `accountId` of a publisher account as `publisher_id`, of an advertiser account as `advertiser_id`. Publishers then use `awin_list_programmes` (relationship joined) and `awin_list_publisher_transactions`; advertisers use `awin_list_advertiser_transactions` and `awin_get_publisher_performance_report`.\n\n**Publishers**: programmes with `awin_list_programmes`, `awin_get_programme_details` (EPC, conversion and approval rate, validation days, commission range) and `awin_list_commission_groups`. Sales with `awin_list_publisher_transactions`, `awin_get_publisher_transactions` (by id) and `awin_list_transaction_queries`. Reports: `awin_get_advertiser_performance_report`, `awin_get_publisher_campaign_report`, `awin_get_publisher_creative_report` (all need a `region`). Offers and vouchers: `awin_list_offers`. Links: `awin_generate_tracking_link` (pass `clickref` to recognise the sale later) and `awin_get_link_builder_quota`.\n\n**Advertisers**: `awin_list_advertiser_transactions`, `awin_get_advertiser_transactions`, `awin_get_publisher_performance_report`, `awin_get_advertiser_campaign_report`, `awin_list_publishers` and `awin_list_validation_jobs`.\n\n**Validating transactions (installed switched off)**: `awin_validate_transactions` approves, declines or amends sales. Approving releases commission that the advertiser pays, so turn it on only for workspaces that run validation, and confirm every batch with the user. It answers a job id; `awin_list_validation_jobs` shows the result.\n\n**Dates and limits**: transaction lists take `yyyy-MM-ddThh:mm:ss` (no time zone suffix) plus `timezone`, and at most 31 days per call: split longer periods. Reports take `YYYY-MM-DD`. `commissionStatus` is pending until the advertiser validates, then approved or declined; approved commission is paid out later. Awin allows **20 calls per minute per user**: avoid loops over many accounts or days. Ids are numbers; several ids in one filter are comma-separated.",
+  "aliases": [
+    "Awin affiliate",
+    "Affiliate Window",
+    "Awin Publisher API",
+    "Awin Advertiser API"
+  ],
+  "region": "intl",
+  "category": "advertising",
+  "icon": "awin",
+  "docsUrl": "https://help.awin.com/apidocs/introduction-to-awins-apis",
+  "requiredEnvVars": [
+    "AWIN_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "AWIN_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "ui.awin.com, user menu (top right), API Credentials: enter your password and click Show my API token. The token covers every Awin account your user can open.",
+      "link": "https://ui.awin.com/awin-api",
+      "pattern": "^\\S{20,2000}$",
+      "patternMessage": "Paste the API token only, without spaces or the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Awin refused the API token. Show it again at https://ui.awin.com/awin-api and paste it without the word Bearer; a token stops working when it is revoked there.",
+    "403": "Your Awin user has no access to this account, or the account's plan has no API access (advertiser APIs need Accelerate or Advanced). Check the id with awin_list_accounts.",
+    "404": "Awin found nothing at that id: check the publisher or advertiser id with awin_list_accounts and the transaction or advertiser ids.",
+    "rate_limited": "Awin allows 20 API calls per minute per user. Wait a minute and try again with fewer calls."
+  },
+  "probe": {
+    "tool": "awin_list_accounts",
+    "params": {}
+  },
+  "prerequisites": "An Awin publisher account, or an advertiser account on the Accelerate or Advanced plan, and a user with admin access to it who can show the API token at ui.awin.com/awin-api. About 2 minutes.",
+  "connector": {
+    "name": "Awin API",
+    "type": "REST",
+    "baseUrl": "https://api.awin.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{AWIN_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "awin_list_accounts",
+      "description": "List the Awin accounts your user can reach with this token: accountId, accountName (programme name for an advertiser, company name for a publisher), accountType (publisher or advertiser) and userRole. Use the accountId as publisher_id or advertiser_id in the other tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "publisher",
+              "advertiser"
+            ],
+            "description": "Only publisher or only advertiser accounts. Default: both."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts",
+        "queryParams": {
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_list_programmes",
+      "description": "Publisher: list advertiser programmes with your relationship to them: id (advertiser id), name, description, displayUrl, clickThroughUrl, logoUrl, currencyCode, primaryRegion, primarySector, linkStatus and validDomains. Filter by relationship and country. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "relationship": {
+            "type": "string",
+            "enum": [
+              "joined",
+              "pending",
+              "suspended",
+              "rejected",
+              "notjoined"
+            ],
+            "description": "Only programmes with this relationship (joined = you are a member). Default: all."
+          },
+          "country_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{2}$",
+            "description": "Only programmes of this country, ISO alpha-2 (GB, DE, FR...)."
+          },
+          "include_hidden": {
+            "type": "boolean",
+            "description": "true: also hidden programmes. Only works without relationship."
+          }
+        },
+        "required": [
+          "publisher_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/programmes",
+        "queryParams": {
+          "relationship": "$relationship",
+          "countryCode": "$country_code",
+          "includeHidden": "$include_hidden"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_get_programme_details",
+      "description": "Publisher: one programme's details and KPIs: programmeInfo (name, description, deeplinkEnabled, membershipStatus, validDomains), kpi (averagePaymentTime, approvalPercentage, epc, conversionRate, validationDays, awinIndex) and commissionRange (min, max, type percentage or amount). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Advertiser id of the programme (id from awin_list_programmes)."
+          },
+          "relationship": {
+            "type": "string",
+            "enum": [
+              "joined",
+              "pending",
+              "suspended",
+              "rejected",
+              "notjoined",
+              "any"
+            ],
+            "default": "joined",
+            "description": "Your relationship to the programme (default joined; use any for a programme you have not joined)."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/programmedetails",
+        "queryParams": {
+          "advertiserId": "$advertiser_id",
+          "relationship": "$relationship"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_list_commission_groups",
+      "description": "Publisher: the commission groups of one programme you are joined to, with what you earn in each: groupId, groupCode, groupName, type (percentage or fix), percentage, or amount and currency for fix, ratesStart, ratesEnd and conditions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Advertiser id of the programme."
+          },
+          "effective_date": {
+            "type": "string",
+            "description": "ISO 8601 date-time to read the groups valid at that moment, e.g. 2026-03-15T23:59:59Z. Default: now."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/commissiongroups",
+        "queryParams": {
+          "advertiserId": "$advertiser_id",
+          "effectiveDate": "$effective_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_list_publisher_transactions",
+      "description": "Publisher: transactions (sales and leads) in a date range of at most 31 days: id, advertiserId, commissionStatus (pending, approved, declined, deleted), commissionAmount and saleAmount (amount, currency), clickRef, orderRef, transactionDate, validationDate, type, clickDate, customerCountry, commissionSharingPublisherId and custom parameters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "Start, yyyy-MM-ddThh:mm:ss in the chosen time zone, e.g. 2026-11-01T00:00:00. At most 31 days before end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "End, yyyy-MM-ddThh:mm:ss, e.g. 2026-11-30T23:59:59."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "transaction",
+              "validation",
+              "amendment"
+            ],
+            "default": "transaction",
+            "description": "Which date the range applies to: transaction (default, when the sale happened), validation (when it was approved or declined) or amendment."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "declined",
+              "deleted"
+            ],
+            "description": "Only transactions in this status. Default: all."
+          },
+          "advertiser_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}( *, *[0-9]{1,15})*$",
+            "description": "Only transactions of these advertiser ids, comma-separated."
+          },
+          "show_basket_products": {
+            "type": "boolean",
+            "description": "true: include the basket products of each transaction when the advertiser sends them."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/transactions/",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "timezone": "$timezone",
+          "dateType": "$date_type",
+          "status": "$status",
+          "advertiserId": "$advertiser_ids",
+          "showBasketProducts": "$show_basket_products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_get_publisher_transactions",
+      "description": "Publisher: read transactions by their Awin ids (same fields as awin_list_publisher_transactions). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}( *, *[0-9]{1,15})*$",
+            "description": "Awin transaction ids, comma-separated."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "show_basket_products": {
+            "type": "boolean",
+            "description": "true: include the basket products of each transaction when the advertiser sends them."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/transactions",
+        "queryParams": {
+          "ids": "$ids",
+          "timezone": "$timezone",
+          "showBasketProducts": "$show_basket_products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_list_transaction_queries",
+      "description": "Publisher: transaction queries (claims for untracked or wrongly declined sales) in a range of at most 31 days: id, advertiserId, status (pending, approved, declined), clickRef, orderRef, amounts, transaction and enquiry dates. Paged: page_number from 1, up to 500 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "Start, yyyy-MM-ddThh:mm:ss in the chosen time zone, e.g. 2026-11-01T00:00:00. At most 31 days before end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "End, yyyy-MM-ddThh:mm:ss, e.g. 2026-11-30T23:59:59."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "transactionDate",
+              "enquiryDate",
+              "validationDate"
+            ],
+            "description": "Which date the range applies to (default transactionDate)."
+          },
+          "statuses": {
+            "type": "string",
+            "pattern": "^(pending|approved|declined)( *, *(pending|approved|declined))*$",
+            "description": "Only these statuses, comma-separated: pending, approved, declined."
+          },
+          "advertiser_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}( *, *[0-9]{1,15})*$",
+            "description": "Only these advertiser ids, comma-separated."
+          },
+          "click_refs": {
+            "type": "string",
+            "description": "Only these click references, comma-separated."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100,
+            "description": "Rows per page, at most 500 (default 100)."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publisher/{publisher_id}/transactionqueries",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "timezone": "$timezone",
+          "dateType": "$date_type",
+          "statuses": "$statuses",
+          "advertiserIds": "$advertiser_ids",
+          "clickRefs": "$click_refs",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_get_advertiser_performance_report",
+      "description": "Publisher: performance per advertiser for a period and region: advertiserId, advertiserName, impressions, clicks, pending, approved, declined and total counts, sale values and commission (in the region currency). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "region": {
+            "type": "string",
+            "enum": [
+              "AT",
+              "AU",
+              "BE",
+              "BR",
+              "BU",
+              "CA",
+              "CH",
+              "DE",
+              "DK",
+              "ES",
+              "FI",
+              "FR",
+              "GB",
+              "IE",
+              "IT",
+              "NL",
+              "NO",
+              "PL",
+              "SE",
+              "US"
+            ],
+            "description": "Awin region of the programmes to report on (two letters, e.g. GB, DE, FR, US). Required by Awin; one region per call."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "transaction",
+              "validation"
+            ],
+            "default": "transaction",
+            "description": "Which date the range applies to: transaction (default) or validation."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "start_date",
+          "end_date",
+          "region"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/reports/advertiser",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "region": "$region",
+          "timezone": "$timezone",
+          "dateType": "$date_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_get_publisher_campaign_report",
+      "description": "Publisher: clicks, transactions, commission and sale amounts per campaign (the campaign= click parameter) and advertiser, by commission status, optionally per day, month or year. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "region": {
+            "type": "string",
+            "enum": [
+              "AT",
+              "AU",
+              "BE",
+              "BR",
+              "BU",
+              "CA",
+              "CH",
+              "DE",
+              "DK",
+              "ES",
+              "FI",
+              "FR",
+              "GB",
+              "IE",
+              "IT",
+              "NL",
+              "NO",
+              "PL",
+              "SE",
+              "US"
+            ],
+            "description": "Awin region of the programmes to report on (two letters, e.g. GB, DE, FR, US). Required by Awin; one region per call."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "advertiser_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}( *, *[0-9]{1,15})*$",
+            "description": "Only these advertiser ids (from the same region), comma-separated."
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Only this campaign value."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "day",
+              "month",
+              "year"
+            ],
+            "description": "Sum per day, month or year. Default: one row per campaign for the whole period."
+          },
+          "include_numbers_without_campaign": {
+            "type": "boolean",
+            "description": "true: also clicks and sales without a campaign value."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "start_date",
+          "end_date",
+          "region"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/reports/campaign",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "region": "$region",
+          "timezone": "$timezone",
+          "advertiserIds": "$advertiser_ids",
+          "campaign": "$campaign",
+          "interval": "$interval",
+          "includeNumbersWithoutCampaign": "$include_numbers_without_campaign"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_get_publisher_creative_report",
+      "description": "Publisher: performance per creative (banner, text link, product link) for a period and region: creativeId, creativeName, advertiser, tagName, impressions, clicks, transactions and commission by status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "region": {
+            "type": "string",
+            "enum": [
+              "AT",
+              "AU",
+              "BE",
+              "BR",
+              "BU",
+              "CA",
+              "CH",
+              "DE",
+              "DK",
+              "ES",
+              "FI",
+              "FR",
+              "GB",
+              "IE",
+              "IT",
+              "NL",
+              "NO",
+              "PL",
+              "SE",
+              "US"
+            ],
+            "description": "Awin region of the programmes to report on (two letters, e.g. GB, DE, FR, US). Required by Awin; one region per call."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "transaction",
+              "validation"
+            ],
+            "default": "transaction",
+            "description": "Which date the range applies to: transaction (default) or validation."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "start_date",
+          "end_date",
+          "region"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/reports/creative",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "region": "$region",
+          "timezone": "$timezone",
+          "dateType": "$date_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_list_offers",
+      "description": "Publisher: published offers (promotions and voucher codes): promotionId, type, advertiser, title, description, terms, voucher code, url and urlTracking, startDate, endDate, regions and whether it is exclusive to you. Filter by membership, type, status, region and advertiser. Paged (page from 1, page_size at least 10). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "membership": {
+            "type": "string",
+            "enum": [
+              "joined",
+              "notJoined",
+              "all"
+            ],
+            "default": "joined",
+            "description": "Offers of programmes you joined (default), have not joined, or all."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "promotion",
+              "voucher",
+              "all"
+            ],
+            "default": "all",
+            "description": "Promotions, voucher codes or both (default)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expiringSoon",
+              "upcoming"
+            ],
+            "default": "active",
+            "description": "active (default), expiringSoon or upcoming."
+          },
+          "region_codes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z]{2}$"
+            },
+            "description": "Only these regions, e.g. [\"GB\", \"DE\"]."
+          },
+          "advertiser_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only offers of these advertiser ids."
+          },
+          "exclusive_only": {
+            "type": "boolean",
+            "description": "true: only offers exclusive to you."
+          },
+          "updated_since": {
+            "type": "string",
+            "format": "date",
+            "description": "Only offers changed since this day, YYYY-MM-DD."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 200,
+            "default": 50,
+            "description": "Offers per page (at least 10, default 50)."
+          }
+        },
+        "required": [
+          "publisher_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/publisher/{publisher_id}/promotions",
+        "bodyMapping": {
+          "filters": {
+            "membership": "$membership",
+            "type": "$type",
+            "status": "$status",
+            "regionCodes": "$region_codes",
+            "advertiserIds": "$advertiser_ids",
+            "exclusiveOnly": "$exclusive_only",
+            "updatedSince": "$updated_since"
+          },
+          "pagination": {
+            "page": "$page",
+            "pageSize": "$page_size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_generate_tracking_link",
+      "description": "Publisher: build an Awin tracking link (deeplink) to an advertiser page you may promote: url, and shortUrl when shorten is true. Nothing is published; the link counts against your link builder quota (awin_get_link_builder_quota).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          },
+          "advertiser_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Advertiser id of a programme you joined."
+          },
+          "destination_url": {
+            "type": "string",
+            "description": "Page on the advertiser's site to link to. Default: the programme's landing page. Must be on one of its valid domains."
+          },
+          "clickref": {
+            "type": "string",
+            "description": "Your click reference, returned on the transactions (clickRef)."
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Campaign value for awin_get_publisher_campaign_report."
+          },
+          "shorten": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: also return a short link."
+          }
+        },
+        "required": [
+          "publisher_id",
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/publishers/{publisher_id}/linkbuilder/generate",
+        "bodyMapping": {
+          "advertiserId": "$advertiser_id",
+          "destinationUrl": "$destination_url",
+          "parameters": {
+            "clickref": "$clickref",
+            "campaign": "$campaign"
+          },
+          "shorten": "$shorten"
+        }
+      }
+    },
+    {
+      "name": "awin_get_link_builder_quota",
+      "description": "Publisher: the link builder quota Awin applies to your publisher account (links you may still generate). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin publisher id (accountId of a publisher account in awin_list_accounts)."
+          }
+        },
+        "required": [
+          "publisher_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/publishers/{publisher_id}/linkbuilder/quota"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_list_advertiser_transactions",
+      "description": "Advertiser: transactions in a date range of at most 31 days: id, publisherId, commissionStatus, commissionAmount, saleAmount, orderRef, clickRef, transactionDate, validationDate, type, customerCountry, voucherCode, transactionParts by commission group and custom parameters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin advertiser id (accountId of an advertiser account in awin_list_accounts)."
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "Start, yyyy-MM-ddThh:mm:ss in the chosen time zone, e.g. 2026-11-01T00:00:00. At most 31 days before end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "End, yyyy-MM-ddThh:mm:ss, e.g. 2026-11-30T23:59:59."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "transaction",
+              "validation",
+              "amendment"
+            ],
+            "default": "transaction",
+            "description": "Which date the range applies to: transaction (default, when the sale happened), validation (when it was approved or declined) or amendment."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "declined",
+              "deleted"
+            ],
+            "description": "Only transactions in this status. Default: all."
+          },
+          "publisher_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}( *, *[0-9]{1,15})*$",
+            "description": "Only transactions of these publisher ids, comma-separated."
+          },
+          "show_basket_products": {
+            "type": "boolean",
+            "description": "true: include the basket products of each transaction when the advertiser sends them."
+          }
+        },
+        "required": [
+          "advertiser_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertisers/{advertiser_id}/transactions/",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "timezone": "$timezone",
+          "dateType": "$date_type",
+          "status": "$status",
+          "publisherId": "$publisher_ids",
+          "showBasketProducts": "$show_basket_products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_get_advertiser_transactions",
+      "description": "Advertiser: read transactions by their Awin ids (same fields as awin_list_advertiser_transactions). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin advertiser id (accountId of an advertiser account in awin_list_accounts)."
+          },
+          "ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}( *, *[0-9]{1,15})*$",
+            "description": "Awin transaction ids, comma-separated."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "show_basket_products": {
+            "type": "boolean",
+            "description": "true: include the basket products of each transaction when the advertiser sends them."
+          }
+        },
+        "required": [
+          "advertiser_id",
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertisers/{advertiser_id}/transactions",
+        "queryParams": {
+          "ids": "$ids",
+          "timezone": "$timezone",
+          "showBasketProducts": "$show_basket_products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_get_publisher_performance_report",
+      "description": "Advertiser: performance per publisher for a period: publisherId, publisherName, impressions, clicks, pending, approved, declined and total counts, sale values and commission, in your programme currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin advertiser id (accountId of an advertiser account in awin_list_accounts)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "transaction",
+              "validation"
+            ],
+            "default": "transaction",
+            "description": "Which date the range applies to: transaction (default) or validation."
+          }
+        },
+        "required": [
+          "advertiser_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertisers/{advertiser_id}/reports/publisher",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "timezone": "$timezone",
+          "dateType": "$date_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_get_advertiser_campaign_report",
+      "description": "Advertiser: clicks, transactions, commission and sale amounts per publisher campaign value, by commission status, optionally per day, month or year. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin advertiser id (accountId of an advertiser account in awin_list_accounts)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC",
+              "Europe/London",
+              "Europe/Paris",
+              "Europe/Berlin",
+              "Europe/Dublin",
+              "Europe/Helsinki",
+              "America/Sao_Paulo",
+              "Australia/Sydney",
+              "Canada/Central",
+              "Canada/Eastern",
+              "Canada/Mountain",
+              "Canada/Pacific",
+              "US/Central",
+              "US/Eastern",
+              "US/Mountain",
+              "US/Pacific"
+            ],
+            "default": "UTC",
+            "description": "Time zone of the dates (default UTC)."
+          },
+          "publisher_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}( *, *[0-9]{1,15})*$",
+            "description": "Only these publisher ids, comma-separated."
+          },
+          "campaign": {
+            "type": "string",
+            "description": "Only this campaign value."
+          },
+          "interval": {
+            "type": "string",
+            "enum": [
+              "day",
+              "month",
+              "year"
+            ],
+            "description": "Sum per day, month or year."
+          },
+          "include_numbers_without_campaign": {
+            "type": "boolean",
+            "description": "true: also clicks and sales without a campaign value."
+          }
+        },
+        "required": [
+          "advertiser_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertisers/{advertiser_id}/reports/campaign",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "timezone": "$timezone",
+          "publisherIds": "$publisher_ids",
+          "campaign": "$campaign",
+          "interval": "$interval",
+          "includeNumbersWithoutCampaign": "$include_numbers_without_campaign"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_list_publishers",
+      "description": "Advertiser: the publishers in your programme: id, name, primaryRegion, salesRegions and primaryType (promotion type such as cashback, content, voucher). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin advertiser id (accountId of an advertiser account in awin_list_accounts)."
+          }
+        },
+        "required": [
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertisers/{advertiser_id}/publishers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_list_validation_jobs",
+      "description": "Advertiser: your transaction validation batch jobs (from awin_validate_transactions) with their status and per-transaction outcome. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin advertiser id (accountId of an advertiser account in awin_list_accounts)."
+          }
+        },
+        "required": [
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/advertisers/{advertiser_id}/transactions/jobs"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "awin_validate_transactions",
+      "description": "Advertiser: approve, decline or amend transactions in one batch. Approving releases the publisher's commission, which your account pays; a declined or amended sale changes what publishers earn. Installed switched off. Each item: action (approve, decline, amend, amendTrackingParameters) and transaction (transactionId, or orderRef with transactionDate and timezone; declineReason or amendReason, saleAmount, currency, transactionParts). Answers a batch job id: read the outcome with awin_list_validation_jobs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Your Awin advertiser id (accountId of an advertiser account in awin_list_accounts)."
+          },
+          "transactions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "approve",
+                    "decline",
+                    "amend",
+                    "amendTrackingParameters"
+                  ],
+                  "description": "What to do with the transaction."
+                },
+                "approve": {
+                  "type": "boolean",
+                  "description": "With amend: true approves right after amending."
+                },
+                "transaction": {
+                  "type": "object",
+                  "description": "transactionId (or orderRef, transactionDate and timezone) plus declineReason, amendReason, currency, saleAmount and transactionParts (amount, commissionGroupCode) as the action needs."
+                }
+              },
+              "required": [
+                "action",
+                "transaction"
+              ]
+            },
+            "description": "The validation items, e.g. `[{\"action\": \"decline\", \"transaction\": {\"transactionId\": 1234567, \"declineReason\": \"order returned\"}}]`."
+          }
+        },
+        "required": [
+          "advertiser_id",
+          "transactions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/advertisers/{advertiser_id}/transactions/batch",
+        "bodyMapping": {
+          "__raw": "$transactions"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

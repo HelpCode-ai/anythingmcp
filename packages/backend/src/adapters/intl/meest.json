@@ -1,0 +1,762 @@
+{
+  "slug": "meest",
+  "name": "Meest",
+  "description": "Meest Open API for business customers in Ukraine (Meest Пошта, Meest Express): parcel tracking, your parcels and registers, PDF labels, price and delivery date, branches and parcel lockers, localities and streets. Creating and deleting parcels installed switched off. Contract login and password.",
+  "instructions": "## Meest\nThis connector works with the **Meest Open API** v3.0 (Meest Пошта / Meest Express) at `https://api.meest.com/v3.0/openAPI` for business customers in Ukraine: tracking, the parcels and registers of your contract, PDF labels, price and delivery date estimates, branches and parcel lockers, localities and streets. Creating and deleting parcels is installed switched off.\n\n**Setup**\n1. Sign a contract with Meest (business customers, https://meest.com). Your Meest manager sends the API **login** and **password**, and your **contract id** (a GUID).\n2. Paste the login into `MEEST_USERNAME` and the password into `MEEST_PASSWORD`. Optionally paste the contract id into `MEEST_CONTRACT_ID`: the price, label and contract tools then use it by default.\n\nThe connector signs in at `POST /auth`, keeps the token (valid 24 hours) and sends it in the `token` header; it signs in again when the token expires.\n\n**Where to start**: `meest_track_parcel` with a barcode such as `711-2550636`. For your own parcels, `meest_list_parcels_by_date` (one creation day) and `meest_get_parcel`.\n\n**Parcels and tracking**: `meest_track_parcel`, `meest_get_parcel_status`, `meest_get_parcel`, `meest_list_parcels_by_date`, `meest_list_tracking_by_date`, `meest_list_delivered_parcels` (150 per page), `meest_list_registers_by_date`, and `meest_get_sticker` for the PDF label. Only parcels of your contract are visible, except in public tracking.\n\n**Before shipping**: `meest_calculate` gives the price in UAH and the delivery date. Branch service needs a `branchID` (`meest_search_branches`, `meest_find_nearest_branches`, `meest_list_branch_types` for weight limits of branches and lockers), Door service an address (`meest_search_cities`, `meest_search_cities_by_zip`, `meest_search_addresses`). `meest_list_special_conditions` lists extra services; `meest_get_contract` shows whether cash on delivery is allowed.\n\n**Writing (installed switched off)**: `meest_create_parcel` creates a parcel that your contract pays once Meest accepts it; `meest_delete_parcel` removes one that was not handed over yet. Turn them on only for workspaces that ship with Meest, and confirm each call with the user.\n\n**Formats and pitfalls**: the search tools accept `%` as a wildcard (`Льв%` starts with, `%Зелена%` contains). Names come in `descrUA`, `descrRU` and `descrEN`. Dates differ per method: `DD.MM.YYYY` for parcel and register lists, `YYYY-MM-DD` for tracking by day, `YYYY-MM-DD hh:mm:ss` for delivered parcels. Weight in kg, sizes in cm, money in UAH. Every answer has `status` (`OK` or `Error`) and `info.message`; an error with HTTP 200 is reported as a failed call. Meest allows 500 requests per minute per user.",
+  "aliases": [
+    "Meest Express",
+    "Meest Post",
+    "Meest Пошта",
+    "Міст Експрес"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "meest",
+  "docsUrl": "https://wiki.meest-group.com/api/ua/v3.0/openAPI",
+  "requiredEnvVars": [
+    "MEEST_USERNAME",
+    "MEEST_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "MEEST_CONTRACT_ID"
+  ],
+  "instructionFacts": [
+    "The Meest contract id of this connector is {{MEEST_CONTRACT_ID}}: meest_calculate, meest_get_sticker and meest_get_contract use it when contract_id is left out, and meest_create_parcel needs it as contractID."
+  ],
+  "envVarMeta": {
+    "MEEST_USERNAME": {
+      "label": "API login",
+      "kind": "credential",
+      "help": "The Open API login your Meest manager sent with the contract.",
+      "link": "https://wiki.meest-group.com/api/ua/v3.0/openAPI",
+      "pattern": "^\\S{2,100}$",
+      "patternMessage": "Paste the login without spaces."
+    },
+    "MEEST_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Open API password sent with the login.",
+      "link": "https://wiki.meest-group.com/api/ua/v3.0/openAPI",
+      "pattern": "^\\S{2,200}$",
+      "patternMessage": "Paste the password without spaces."
+    },
+    "MEEST_CONTRACT_ID": {
+      "label": "Contract id",
+      "kind": "setting",
+      "help": "Optional. Your Meest contract id (a GUID such as a123b4c5-6d78-90e1-23f4-5a67bc890123), used by default for prices, labels and contract details.",
+      "link": "https://wiki.meest-group.com/api/ua/v3.0/openAPI",
+      "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+      "patternMessage": "Paste the contract id as a GUID (8-4-4-4-12 characters)."
+    }
+  },
+  "verifyHints": {
+    "401": "Meest refused the login or password. Copy both again from your Meest manager's message, or ask support.openapi@meest.com to check the account.",
+    "403": "Meest refused the call for this account: the parcel or contract does not belong to your counterparty.",
+    "404": "Meest found no parcel, branch or contract with that id.",
+    "rate_limited": "Meest allows 500 requests per minute per user. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "meest_list_branch_types",
+    "params": {}
+  },
+  "prerequisites": "A business contract with Meest and the Open API login and password from your Meest manager. Partner-only: there is no open sign-up.",
+  "connector": {
+    "name": "Meest Open API",
+    "type": "REST",
+    "baseUrl": "https://api.meest.com/v3.0/openAPI",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api.meest.com/v3.0/openAPI/auth",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "username": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{MEEST_USERNAME}}",
+      "password": "{{MEEST_PASSWORD}}",
+      "tokenJsonPath": "result.token",
+      "tokenTTLSeconds": 86400,
+      "proactiveRefreshSeconds": 3600,
+      "refreshOn401": true,
+      "headerName": "token",
+      "headerTemplate": "${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "matches": "^error$",
+          "messagePath": "info.message",
+          "messageMatches": "token|auth|login|password|unauthori",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "matches": "^error$",
+          "messagePath": "info.message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "meest_track_parcel",
+      "description": "Tracking history of one parcel by barcode or parcel number: per event eventDateTime, eventCode, eventCodeUPU, eventDescr and eventDetailDescr (UA, RU, EN), eventCountryDescr and eventCityDescr. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "track_number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{4,40}$",
+            "description": "Barcode or parcel number, e.g. 711-2550636."
+          }
+        },
+        "required": [
+          "track_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tracking/{track_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_get_parcel_status",
+      "description": "Current status of one parcel of your account: status (Created, Sent, Delivered, Received, Refused, Return, Customs, Deleted...), statusCode and date. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{4,40}$",
+            "description": "Parcel id (GUID) or barcode."
+          }
+        },
+        "required": [
+          "parcel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcelStatus/{parcel_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_get_parcel",
+      "description": "Read one parcel of your account: parcelNumber, payType, receiverPay, COD, weight, expected delivery date, sender and receiver (name, phone, zipCode, branch or address, service Branch or Door), places, special conditions and return flag. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{4,40}$",
+            "description": "Parcel id (GUID), barcode (e.g. 711-2550636) or parcel number."
+          },
+          "search_mode": {
+            "type": "string",
+            "enum": [
+              "barCode",
+              "parcelID",
+              "parcelNumber"
+            ],
+            "default": "barCode",
+            "description": "What parcel contains: barCode (default), parcelID or parcelNumber."
+          }
+        },
+        "required": [
+          "parcel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getParcel/{parcel}/{search_mode}/objectData"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_list_parcels_by_date",
+      "description": "List the parcels your account created on one day: parcelID, parcelNumber, barcode, registerID and registerType. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^[0-9]{2}\\.[0-9]{2}\\.[0-9]{4}$",
+            "description": "Creation day, DD.MM.YYYY, e.g. 25.11.2026."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parcelsList/{date}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_list_tracking_by_date",
+      "description": "All status changes of your parcels on one day: parcelNumber, barCode, eventDateTime, eventCode, eventDescr and city. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/trackingByDate/{date}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_list_delivered_parcels",
+      "description": "Your parcels delivered in a period: parcelNumber, barCode, eventDateTime and place of delivery. Up to 150 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "Start, YYYY-MM-DD hh:mm:ss, e.g. 2026-11-01 00:00:00."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$",
+            "description": "End, YYYY-MM-DD hh:mm:ss."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1 (150 rows per page)."
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/trackingDelivered/{date_from}/{date_to}/{page}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_list_registers_by_date",
+      "description": "List the parcel registers (branch drop-off or courier pickup) created on one day: registerID, registerType and parcelQty. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^[0-9]{2}\\.[0-9]{2}\\.[0-9]{4}$",
+            "description": "Creation day, DD.MM.YYYY."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/registersList/{date}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_search_branches",
+      "description": "Find Meest branches and parcel lockers: branchID, branchNo, branchType and branchTypeDescr (weight limit), ShortName, FullName, address, coordinates, working hours, payment options, city, district and region, open or closed. Filters can use % as a wildcard (Льв% = starts with Льв). No filter returns all branches. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "City name (Ukrainian), % as wildcard, e.g. Львів or Льв%."
+          },
+          "city_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "cityID from meest_search_cities."
+          },
+          "branch_number": {
+            "type": "string",
+            "description": "Branch number within the city, e.g. 01."
+          },
+          "branch_no": {
+            "type": "integer",
+            "description": "Global branch number, e.g. 5158."
+          },
+          "branch_type_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "branchTypeID from meest_list_branch_types."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region name (Ukrainian), % as wildcard."
+          },
+          "description": {
+            "type": "string",
+            "description": "Text in the branch name or address, % as wildcard, e.g. %Зелена%."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/branchSearch",
+        "bodyMapping": {
+          "filters": {
+            "cityDescr": "$city",
+            "cityID": "$city_id",
+            "branchNumber": "$branch_number",
+            "branchNo": "$branch_no",
+            "branchTypeID": "$branch_type_id",
+            "regionDescr": "$region",
+            "branchDescr": "$description"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_find_nearest_branches",
+      "description": "Branches and parcel lockers within a radius of a point: branchID, branchNo, type, address, coordinates, availability and distance. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Latitude, e.g. 49.9671."
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "description": "Longitude, e.g. 36.2205."
+          },
+          "radius": {
+            "type": "integer",
+            "minimum": 50,
+            "maximum": 20000,
+            "default": 1000,
+            "description": "Radius in metres (default 1000)."
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branchSearchGeo/{latitude}/{longitude}/{radius}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_list_branch_types",
+      "description": "The branch and locker types with their limits: branchTypeID, description, weightTotalMax, weightPlaceMax, volumeTotalMax, quantityPlacesMax, insuranceTotalMax, storageDays and maximum dimensions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/branchTypes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_search_cities",
+      "description": "Find localities: cityID, type (city, village), names in UA, RU and EN, KATUU code, district, region, country, whether there is a branch or door delivery, deliveryZone and deliveryDays. At least one filter; % works as a wildcard. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "Locality name, % as wildcard, e.g. Львів or Льв%."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region name, % as wildcard."
+          },
+          "district": {
+            "type": "string",
+            "description": "District name, % as wildcard."
+          },
+          "country_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "default": "c35b6195-4ea3-11de-8591-001d600938f8",
+            "description": "countryID to search in. Default: Ukraine (c35b6195-4ea3-11de-8591-001d600938f8)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/citySearch",
+        "bodyMapping": {
+          "filters": {
+            "cityDescr": "$city",
+            "regionDescr": "$region",
+            "districtDescr": "$district",
+            "countryID": "$country_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_search_cities_by_zip",
+      "description": "Localities that use a postcode: zipCode, cityID, names, district, region, deliveryZone and deliveryDays. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zip_code": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Postcode, 5 digits, e.g. 79035."
+          }
+        },
+        "required": [
+          "zip_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/zipCodeSearch/{zip_code}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_search_addresses",
+      "description": "Find streets of a locality for door delivery: addressID, street names in UA, RU and EN, coordinates and city. % works as a wildcard (Сум% = starts with Сум). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "cityID from meest_search_cities."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street name, % as wildcard, e.g. %Зелена."
+          }
+        },
+        "required": [
+          "city_id",
+          "street"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addressSearch",
+        "bodyMapping": {
+          "filters": {
+            "cityID": "$city_id",
+            "addressDescr": "$street"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_calculate",
+      "description": "Price and delivery date for a parcel before creating it: costServices (UAH), estimatedDeliveryDate and possible delivery dates. Branch service needs a branch id, Door service a city id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "Your Meest contract id (GUID). Leave it out to use MEEST_CONTRACT_ID of the connector."
+          },
+          "sender_service": {
+            "type": "string",
+            "enum": [
+              "Branch",
+              "Door"
+            ],
+            "default": "Branch",
+            "description": "Branch (hand in at a branch, default) or Door (courier pickup)."
+          },
+          "sender_branch_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "Sender branchID (for Branch)."
+          },
+          "sender_city_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "Sender cityID (for Door)."
+          },
+          "receiver_service": {
+            "type": "string",
+            "enum": [
+              "Branch",
+              "Door"
+            ],
+            "default": "Branch",
+            "description": "Branch (collect at a branch or locker, default) or Door (delivery to the address)."
+          },
+          "receiver_branch_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "Receiver branchID (for Branch)."
+          },
+          "receiver_city_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "Receiver cityID (for Door)."
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0.01,
+            "description": "Weight in kg."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Length in cm."
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Width in cm."
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Height in cm."
+          },
+          "insurance": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Declared value in UAH."
+          },
+          "cod": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Cash on delivery amount in UAH."
+          },
+          "sending_date": {
+            "type": "string",
+            "pattern": "^[0-9]{2}\\.[0-9]{2}\\.[0-9]{4}$",
+            "description": "Day of sending, DD.MM.YYYY. Default: today."
+          }
+        },
+        "required": [
+          "weight"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/calculate",
+        "envDefaults": {
+          "contract_id": "MEEST_CONTRACT_ID"
+        },
+        "bodyMapping": {
+          "contractID": "$contract_id",
+          "sendingDate": "$sending_date",
+          "COD": "$cod",
+          "sender": {
+            "service": "$sender_service",
+            "branchID": "$sender_branch_id",
+            "cityID": "$sender_city_id"
+          },
+          "receiver": {
+            "service": "$receiver_service",
+            "branchID": "$receiver_branch_id",
+            "cityID": "$receiver_city_id"
+          },
+          "placesItems": [
+            {
+              "quantity": 1,
+              "weight": "$weight",
+              "length": "$length",
+              "width": "$width",
+              "height": "$height",
+              "insurance": "$insurance"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_get_sticker",
+      "description": "Download the 100 x 100 mm label of one or more parcels of your account as a PDF file. Printing costs nothing. With a barcode or parcel number the contract id is needed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "print_value": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{4,40}( *, *[0-9A-Za-z-]{4,40})*$",
+            "description": "Parcel id, barcode or parcel number; several separated by commas."
+          },
+          "contract_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "Your Meest contract id (GUID). Leave it out to use MEEST_CONTRACT_ID of the connector."
+          }
+        },
+        "required": [
+          "print_value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/print/sticker100/{print_value}",
+        "queryParams": {
+          "agent": "$contract_id"
+        },
+        "envDefaults": {
+          "contract_id": "MEEST_CONTRACT_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_get_contract",
+      "description": "Read your Meest contract: contract name and number, client name and EDRPOU, allowedCOD, validity dates, phone, email and address. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "Your Meest contract id (GUID). Leave it out to use MEEST_CONTRACT_ID of the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contractClientInfo/{contract_id}",
+        "envDefaults": {
+          "contract_id": "MEEST_CONTRACT_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_list_special_conditions",
+      "description": "The additional services you can order on a parcel (conditionID and name), e.g. delivery to a shopping centre or return of documents. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/specConditions"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "meest_create_parcel",
+      "description": "Create a parcel with sender, receiver, places and payment: it gets a barcode and a price that your contract is charged once Meest accepts it. Installed switched off. The parcel object follows Meest's POST /parcel model: contractID, payType (cash or noncash), receiverPay, COD, sendingDate (DD.MM.YYYY), sender and receiver (name, phone, service Branch with branchID or Door with addressID and building), placesItems (quantity, weight, length, width, height, insurance). Check the price with meest_calculate first. Answers parcelID, barCode, costServices and estimatedDeliveryDate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel": {
+            "type": "object",
+            "description": "The parcel as in Meest's POST /parcel model, e.g. `{\"contractID\": \"...\", \"payType\": \"cash\", \"receiverPay\": true, \"sender\": {\"name\": \"...\", \"phone\": \"+380...\", \"service\": \"Branch\", \"branchID\": \"...\"}, \"receiver\": {...}, \"placesItems\": [{\"quantity\": 1, \"weight\": 2.5}]}`."
+          }
+        },
+        "required": [
+          "parcel"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/parcel",
+        "bodyMapping": {
+          "__raw": "$parcel"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "meest_delete_parcel",
+      "description": "Delete a parcel of your account that was created but not handed over yet. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{4}-[0-9A-Za-z]{12}$",
+            "description": "Parcel id (GUID) from meest_create_parcel or meest_list_parcels_by_date."
+          }
+        },
+        "required": [
+          "parcel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/parcel/{parcel_id}"
+      },
+      "enabled": false
+    }
+  ]
+}

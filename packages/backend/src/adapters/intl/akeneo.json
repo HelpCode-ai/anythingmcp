@@ -1,0 +1,1244 @@
+{
+  "slug": "akeneo",
+  "name": "Akeneo PIM",
+  "description": "Akeneo PIM REST API for your own PIM (Serenity SaaS, Growth, Community or Enterprise): products and product models, families and variants, attributes and options, categories, channels, locales and media files. Connection client ID, secret, API user and password.",
+  "instructions": "## Akeneo PIM\nThis connector works with the **Akeneo PIM REST API** (`/api/rest/v1`) of your own PIM: Akeneo Serenity (SaaS, `*.cloud.akeneo.com`), Growth Edition, or a self-hosted Community or Enterprise Edition. It reads and edits products, product models, families and family variants, attributes and their options, attribute groups, categories, channels, locales, currencies, association types and product media files.\n\n**Setup (about 5 minutes, needs the right to manage connections)**\n1. In the PIM open **Connect, Connection settings** and click **Create**. Give it a label, flow type **Other** (or Data destination for read-only use) and save.\n2. Akeneo shows the **Client ID**, **Secret**, **Username** and **Password** of the connection's API user once: copy all four. Lost the password? Use **Regenerate** on the connection page.\n3. Give the connection's user group and role the permissions it needs (Enterprise and SaaS: the categories, locales and attribute groups it may see and edit). A missing permission answers 403 or hides products.\n4. Enter your PIM host (for example `acme.cloud.akeneo.com`) in `AKENEO_HOST` and the four values in `AKENEO_CLIENT_ID`, `AKENEO_CLIENT_SECRET`, `AKENEO_USERNAME` and `AKENEO_PASSWORD`.\n\nThe connector asks `/api/oauth/v1/token` for a token with the password grant (client ID and secret in a Basic header) and reuses it for its lifetime of one hour.\n\n**Where to start**: `akeneo_list_channels` and `akeneo_list_locales` give the scope and locale codes values use; `akeneo_list_families` and `akeneo_list_attributes` give the data model. Then `akeneo_list_products` with a search filter, `akeneo_get_product` for one product, or `akeneo_get_product_by_identifier` when you only have the SKU.\n\n**Products**: `akeneo_list_products`, `akeneo_get_product`, `akeneo_get_product_by_identifier`, `akeneo_create_product`, `akeneo_update_product`. Products are addressed by UUID; the SKU lives in the identifier attribute (often `sku`). The UUID endpoints need PIM 7.0 or Serenity; on older versions only `akeneo_get_product_by_identifier` works for products. `akeneo_delete_product` is installed switched off.\n\n**Product models (variants)**: `akeneo_list_product_models`, `akeneo_get_product_model`, `akeneo_create_product_model`, `akeneo_update_product_model`. A variant product points at its model with `parent`; values common to all variants sit on the model. `akeneo_delete_product_model` is installed switched off: it removes the model's variants too.\n\n**Data model**: `akeneo_list_families`, `akeneo_get_family`, `akeneo_list_family_variants`, `akeneo_list_attributes`, `akeneo_get_attribute`, `akeneo_list_attribute_options`, `akeneo_upsert_attribute_option`, `akeneo_list_attribute_groups`, `akeneo_list_association_types`, `akeneo_list_currencies`.\n\n**Categories and channels**: `akeneo_list_categories`, `akeneo_get_category`, `akeneo_upsert_category`, `akeneo_list_channels`, `akeneo_list_locales`.\n\n**Media**: `akeneo_list_media_files`, `akeneo_get_media_file` and `akeneo_download_media_file`. The code is a path with slashes, taken from a product value of an image or file attribute. Uploading files (multipart) and the Asset Manager are not covered.\n\n**Values**: every attribute value is a list of objects with `locale`, `scope` and `data`. `locale` is null unless the attribute is localizable, `scope` is null unless it is scopable (the scope is a channel code). Prices are a list of `amount` and `currency`; metrics have `amount` and `unit`. On update, a value replaces only the same attribute, locale and scope; lists such as categories are replaced whole. PATCH creates the record when the code does not exist yet, so check the code first.\n\n**Search**: the `search` parameter is JSON text: `{\"updated\":[{\"operator\":\">\",\"value\":\"2026-01-01 00:00:00\"}]}`, `{\"categories\":[{\"operator\":\"IN\",\"value\":[\"shoes\"]}]}`, `{\"completeness\":[{\"operator\":\">=\",\"value\":100,\"scope\":\"ecommerce\"}]}`. Combine properties in one object (AND).\n\n**Paging**: pages hold up to 100 rows (`limit`). Follow `_links.next.href`; it is missing on the last page. Page paging stops at 10,000 products: beyond that use `pagination_type` search_after and the search_after value from the next link. `with_count` adds the total but slows big catalogs.\n\n**Errors and limits**: 422 lists the invalid fields in `errors`; 404 means no record with that code or UUID (or no permission to see it); 401 means the token expired or the credentials are wrong. Akeneo allows about 4 parallel calls per connection and 100 requests per second per PIM (3 per second for attribute option writes); above that it answers 429 with Retry-After. Avoid tight loops over thousands of products and prefer search filters.",
+  "aliases": [
+    "Akeneo Serenity",
+    "Akeneo PXM"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "akeneo",
+  "docsUrl": "https://api.akeneo.com/api-reference-index.html",
+  "requiredEnvVars": [
+    "AKENEO_HOST",
+    "AKENEO_CLIENT_ID",
+    "AKENEO_CLIENT_SECRET",
+    "AKENEO_USERNAME",
+    "AKENEO_PASSWORD"
+  ],
+  "envVarMeta": {
+    "AKENEO_HOST": {
+      "label": "PIM host",
+      "kind": "address",
+      "help": "The host name of your PIM, without https:// and path, for example acme.cloud.akeneo.com or pim.example.org.",
+      "link": "https://api.akeneo.com/documentation/authentication.html",
+      "pattern": "^[A-Za-z0-9.-]+(:[0-9]{1,5})?$",
+      "patternMessage": "Enter the host only, for example acme.cloud.akeneo.com, without https:// or a path."
+    },
+    "AKENEO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Connect, Connection settings, your connection: the Client ID.",
+      "link": "https://help.akeneo.com/serenity-connect-your-pim/serenity-manage-your-connections",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the client ID without spaces."
+    },
+    "AKENEO_CLIENT_SECRET": {
+      "label": "Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Secret shown next to the client ID on the connection page.",
+      "link": "https://help.akeneo.com/serenity-connect-your-pim/serenity-manage-your-connections",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the secret without spaces."
+    },
+    "AKENEO_USERNAME": {
+      "label": "API username",
+      "kind": "credential",
+      "help": "The username of the connection (it usually ends in a number, for example my_connection_1234).",
+      "link": "https://help.akeneo.com/serenity-connect-your-pim/serenity-manage-your-connections",
+      "pattern": "^\\S{2,200}$",
+      "patternMessage": "Paste the username without spaces."
+    },
+    "AKENEO_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the connection is created; use Regenerate on the connection page if it was lost.",
+      "link": "https://help.akeneo.com/serenity-connect-your-pim/serenity-manage-your-connections"
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Akeneo issued no token. Check the client ID, secret, username and password of the connection (Connect, Connection settings); regenerate the password if unsure.",
+      "field": "AKENEO_PASSWORD"
+    },
+    "403": "The connection user lacks the permission for this call. Give its user group and role access to the categories, locales and attribute groups it needs.",
+    "404": "No record with that code or UUID, or the connection may not see it. If every call answers 404, check the PIM host.",
+    "unreachable": {
+      "hint": "The PIM host did not answer. Enter only the host name, for example acme.cloud.akeneo.com.",
+      "field": "AKENEO_HOST"
+    },
+    "rate_limited": "Akeneo throttled the connection. Wait a minute and slow down the calls."
+  },
+  "probe": {
+    "tool": "akeneo_list_channels",
+    "params": {
+      "limit": 1
+    }
+  },
+  "prerequisites": "An Akeneo PIM (Serenity SaaS, Growth, Community or Enterprise Edition) and a user who may create connections under Connect, Connection settings. About 5 minutes.",
+  "connector": {
+    "name": "Akeneo PIM REST API",
+    "type": "REST",
+    "baseUrl": "https://{{AKENEO_HOST}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "password",
+      "clientId": "{{AKENEO_CLIENT_ID}}",
+      "clientSecret": "{{AKENEO_CLIENT_SECRET}}",
+      "username": "{{AKENEO_USERNAME}}",
+      "password": "{{AKENEO_PASSWORD}}",
+      "tokenUrl": "https://{{AKENEO_HOST}}/api/oauth/v1/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "akeneo_list_products",
+      "description": "List or search products (UUID endpoints): uuid, identifier, enabled, family, categories, groups, parent (product model code), values per attribute (locale, scope, data), associations, created and updated. Paged: up to 100 per page; follow `_links.next.href` or use search_after paging for more than 10,000 products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Akeneo search filter as JSON text: property name mapped to a list of operator and value objects, for example `{\"enabled\":[{\"operator\":\"=\",\"value\":true}],\"family\":[{\"operator\":\"IN\",\"value\":[\"shoes\"]}]}`. Leave it out for no filter."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Channel code: keep only values of this channel (and non-scopable ones), and evaluate completeness filters on it."
+          },
+          "locales": {
+            "type": "string",
+            "description": "Comma-separated locale codes to keep, for example `en_US,de_DE`."
+          },
+          "attributes": {
+            "type": "string",
+            "description": "Comma-separated attribute codes to keep in `values`, to shrink the answer."
+          },
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "with_quality_scores": {
+            "type": "boolean",
+            "description": "true adds the quality scores per channel and locale (Enterprise and SaaS)."
+          },
+          "with_completenesses": {
+            "type": "boolean",
+            "description": "true adds the completeness per channel and locale."
+          },
+          "pagination_type": {
+            "type": "string",
+            "description": "page (default) or search_after (faster and needed beyond 10,000 products; then follow `_links.next.href` and pass its search_after value).",
+            "enum": [
+              "page",
+              "search_after"
+            ]
+          },
+          "search_after": {
+            "type": "string",
+            "description": "Cursor from `_links.next.href` when pagination_type is search_after."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/products-uuid",
+        "queryParams": {
+          "search": "$search",
+          "scope": "$scope",
+          "locales": "$locales",
+          "attributes": "$attributes",
+          "with_count": "$with_count",
+          "with_quality_scores": "$with_quality_scores",
+          "with_completenesses": "$with_completenesses",
+          "pagination_type": "$pagination_type",
+          "search_after": "$search_after",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_get_product",
+      "description": "Get one product by its UUID: identifier, enabled, family, categories, parent, all attribute values (locale, scope, data), associations, quantified associations, created and updated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Product UUID, from the product list."
+          },
+          "with_quality_scores": {
+            "type": "boolean",
+            "description": "true adds the quality scores (Enterprise and SaaS)."
+          },
+          "with_completenesses": {
+            "type": "boolean",
+            "description": "true adds the completeness per channel and locale."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/products-uuid/{uuid}",
+        "queryParams": {
+          "with_quality_scores": "$with_quality_scores",
+          "with_completenesses": "$with_completenesses"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_get_product_by_identifier",
+      "description": "Get one product by its identifier (the SKU in the identifier attribute) with the identifier endpoint: identifier, uuid where returned, family, categories, parent and all values. Use it when you have a SKU and no UUID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "Product identifier (SKU), exactly as stored."
+          }
+        },
+        "required": [
+          "identifier"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/products/{identifier}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_create_product",
+      "description": "Create a product. Pass the identifier as a value of the identifier attribute (for example `sku`) in values, plus family, categories and other values. Answers 201 with the new product URL in the Location header; 422 names the invalid field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object",
+            "description": "Attribute values: attribute code mapped to a list of objects with locale, scope and data, for example `{\"sku\":[{\"locale\":null,\"scope\":null,\"data\":\"SKU-1\"}],\"name\":[{\"locale\":\"en_US\",\"scope\":null,\"data\":\"Blue shirt\"}]}`."
+          },
+          "family": {
+            "type": "string",
+            "description": "Family code."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Category codes.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the product is enabled (default true)."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Product model code, to create the product as a variant of that model."
+          },
+          "groups": {
+            "type": "array",
+            "description": "Group codes.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "associations": {
+            "type": "object",
+            "description": "Associations: association type code mapped to products, product_models and groups lists."
+          }
+        },
+        "required": [
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/rest/v1/products-uuid",
+        "bodyMapping": {
+          "values": "$values",
+          "family": "$family",
+          "categories": "$categories",
+          "enabled": "$enabled",
+          "parent": "$parent",
+          "groups": "$groups",
+          "associations": "$associations"
+        }
+      }
+    },
+    {
+      "name": "akeneo_update_product",
+      "description": "Update a product by UUID with a partial body: only the fields sent change. A values entry replaces the value for that attribute, locale and scope; arrays such as categories are replaced whole. If no product has this UUID, Akeneo creates it. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Product UUID."
+          },
+          "values": {
+            "type": "object",
+            "description": "Attribute values to set: attribute code mapped to a list of objects with locale, scope and data. Use data null to empty a value."
+          },
+          "family": {
+            "type": "string",
+            "description": "New family code."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Full list of category codes (replaces the current list).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Enable or disable the product."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Product model code (move the variant to another model)."
+          },
+          "groups": {
+            "type": "array",
+            "description": "Full list of group codes.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "associations": {
+            "type": "object",
+            "description": "Associations to set, by association type code."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/rest/v1/products-uuid/{uuid}",
+        "bodyMapping": {
+          "values": "$values",
+          "family": "$family",
+          "categories": "$categories",
+          "enabled": "$enabled",
+          "parent": "$parent",
+          "groups": "$groups",
+          "associations": "$associations"
+        }
+      }
+    },
+    {
+      "name": "akeneo_delete_product",
+      "description": "Delete a product by UUID, permanently, with its values. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Product UUID to delete."
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/rest/v1/products-uuid/{uuid}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "akeneo_list_product_models",
+      "description": "List or search product models (the common part of a product with variants): code, family, family_variant, parent, categories, values, associations, created and updated. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Akeneo search filter as JSON text: property name mapped to a list of operator and value objects, for example `{\"enabled\":[{\"operator\":\"=\",\"value\":true}],\"family\":[{\"operator\":\"IN\",\"value\":[\"shoes\"]}]}`. Leave it out for no filter."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Channel code: keep only values of this channel."
+          },
+          "locales": {
+            "type": "string",
+            "description": "Comma-separated locale codes to keep."
+          },
+          "attributes": {
+            "type": "string",
+            "description": "Comma-separated attribute codes to keep in values."
+          },
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "pagination_type": {
+            "type": "string",
+            "description": "page (default) or search_after.",
+            "enum": [
+              "page",
+              "search_after"
+            ]
+          },
+          "search_after": {
+            "type": "string",
+            "description": "Cursor from `_links.next.href` when pagination_type is search_after."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/product-models",
+        "queryParams": {
+          "search": "$search",
+          "scope": "$scope",
+          "locales": "$locales",
+          "attributes": "$attributes",
+          "with_count": "$with_count",
+          "pagination_type": "$pagination_type",
+          "search_after": "$search_after",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_get_product_model",
+      "description": "Get one product model by code: family, family_variant, parent (for a sub-model), categories, the values set at this level, associations, created and updated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Product model code."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/product-models/{code}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_create_product_model",
+      "description": "Create a product model with a code, its family variant (and parent for a sub-model), categories and values. Answers 201; 422 names the invalid field.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "New product model code."
+          },
+          "family_variant": {
+            "type": "string",
+            "description": "Family variant code (defines which attributes vary)."
+          },
+          "family": {
+            "type": "string",
+            "description": "Family code (optional, implied by the family variant)."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent product model code, for a second-level sub-model."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Category codes.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "values": {
+            "type": "object",
+            "description": "Common attribute values: attribute code mapped to a list of objects with locale, scope and data."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Associations, by association type code."
+          }
+        },
+        "required": [
+          "code",
+          "family_variant"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/rest/v1/product-models",
+        "bodyMapping": {
+          "code": "$code",
+          "family_variant": "$family_variant",
+          "family": "$family",
+          "parent": "$parent",
+          "categories": "$categories",
+          "values": "$values",
+          "associations": "$associations"
+        }
+      }
+    },
+    {
+      "name": "akeneo_update_product_model",
+      "description": "Update a product model by code with a partial body (only the fields sent change; arrays are replaced whole). Creates it when the code does not exist. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Product model code."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Full list of category codes.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "values": {
+            "type": "object",
+            "description": "Values to set at this level: attribute code mapped to a list of objects with locale, scope and data."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent product model code."
+          },
+          "family_variant": {
+            "type": "string",
+            "description": "Family variant code (only when creating)."
+          },
+          "associations": {
+            "type": "object",
+            "description": "Associations to set."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/rest/v1/product-models/{code}",
+        "bodyMapping": {
+          "categories": "$categories",
+          "values": "$values",
+          "parent": "$parent",
+          "family_variant": "$family_variant",
+          "associations": "$associations"
+        }
+      }
+    },
+    {
+      "name": "akeneo_delete_product_model",
+      "description": "Delete a product model by code, with its sub-models and variant products. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Product model code to delete."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/rest/v1/product-models/{code}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "akeneo_list_families",
+      "description": "List families: code, attribute_as_label, attribute_as_image, attributes, attribute_requirements per channel and labels per locale. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Filter as JSON text, for example `{\"code\":[{\"operator\":\"IN\",\"value\":[\"a\",\"b\"]}]}`. Leave it out for no filter."
+          },
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/families",
+        "queryParams": {
+          "search": "$search",
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_get_family",
+      "description": "Get one family by code: its attributes, the attribute used as label and image, required attributes per channel and labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Family code."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/families/{code}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_list_family_variants",
+      "description": "List the family variants of a family: code, labels and variant_attribute_sets (level, axes, attributes). Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "family_code": {
+            "type": "string",
+            "description": "Family code."
+          },
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        },
+        "required": [
+          "family_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/families/{family_code}/variants",
+        "queryParams": {
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_list_attributes",
+      "description": "List attributes: code, type (pim_catalog_text, pim_catalog_simpleselect, pim_catalog_price_collection, pim_catalog_metric and others), group, localizable, scopable, unique, labels and validation settings. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Filter as JSON text on code, type or updated, for example `{\"type\":[{\"operator\":\"IN\",\"value\":[\"pim_catalog_simpleselect\"]}]}`."
+          },
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/attributes",
+        "queryParams": {
+          "search": "$search",
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_get_attribute",
+      "description": "Get one attribute by code: type, group, localizable, scopable, unique, labels, allowed extensions, metric family and other validation settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Attribute code."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/attributes/{code}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_list_attribute_options",
+      "description": "List the options of a simple or multi select attribute: code, attribute, sort_order and labels per locale. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_code": {
+            "type": "string",
+            "description": "Attribute code (a select attribute)."
+          },
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        },
+        "required": [
+          "attribute_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/attributes/{attribute_code}/options",
+        "queryParams": {
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_upsert_attribute_option",
+      "description": "Create or update one option of a select attribute (partial body: labels per locale and sort_order). Answers 201 when created, 204 when updated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_code": {
+            "type": "string",
+            "description": "Attribute code."
+          },
+          "code": {
+            "type": "string",
+            "description": "Option code."
+          },
+          "labels": {
+            "type": "object",
+            "description": "Labels per locale, for example `{\"en_US\":\"Blue\",\"de_DE\":\"Blau\"}`."
+          },
+          "sort_order": {
+            "type": "integer",
+            "description": "Position in the option list."
+          }
+        },
+        "required": [
+          "attribute_code",
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/rest/v1/attributes/{attribute_code}/options/{code}",
+        "bodyMapping": {
+          "code": "$code",
+          "labels": "$labels",
+          "sort_order": "$sort_order"
+        }
+      }
+    },
+    {
+      "name": "akeneo_list_attribute_groups",
+      "description": "List attribute groups: code, sort_order, attributes and labels. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/attribute-groups",
+        "queryParams": {
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_list_categories",
+      "description": "List categories of all category trees: code, parent (null for a tree root), labels per locale, updated, and position when asked. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Filter as JSON text, for example `{\"parent\":[{\"operator\":\"=\",\"value\":\"master\"}]}` or `{\"is_root\":[{\"operator\":\"=\",\"value\":true}]}`."
+          },
+          "with_position": {
+            "type": "boolean",
+            "description": "true adds the position of each category among its siblings."
+          },
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/categories",
+        "queryParams": {
+          "search": "$search",
+          "with_position": "$with_position",
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_get_category",
+      "description": "Get one category by code: parent, labels per locale and updated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Category code."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/categories/{code}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_upsert_category",
+      "description": "Create or update a category (partial body: parent and labels). Moving a category with parent moves its subtree. Answers 201 when created, 204 when updated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Category code."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent category code; leave it out to keep the current parent."
+          },
+          "labels": {
+            "type": "object",
+            "description": "Labels per locale, for example `{\"en_US\":\"Shoes\"}`."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/rest/v1/categories/{code}",
+        "bodyMapping": {
+          "code": "$code",
+          "parent": "$parent",
+          "labels": "$labels"
+        }
+      }
+    },
+    {
+      "name": "akeneo_list_channels",
+      "description": "List channels (scopes): code, locales, currencies, category_tree, conversion_units and labels. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/channels",
+        "queryParams": {
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_list_locales",
+      "description": "List locales: code and enabled. Filter on enabled to see the locales in use. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Filter as JSON text, for example `{\"enabled\":[{\"operator\":\"=\",\"value\":true}]}`."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/locales",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_list_currencies",
+      "description": "List currencies: code and enabled. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/currencies",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_list_association_types",
+      "description": "List association types (for example cross sell, upsell): code, labels, is_quantified and is_two_way. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/association-types",
+        "queryParams": {
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_list_media_files",
+      "description": "List product media files (images and files stored in product attributes): code (a path such as `a/b/c/d/abc_photo.jpg`), original_filename, mime_type, size, extension and the download link. Paged, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with_count": {
+            "type": "boolean",
+            "description": "true adds `items_count` (the total) to the answer. Costs extra time on large catalogs; leave it out when paging."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1, for page pagination. Follow `_links.next.href` when it is present; it is missing on the last page.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100 (default 10 at Akeneo).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/media-files",
+        "queryParams": {
+          "with_count": "$with_count",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_get_media_file",
+      "description": "Get the metadata of one product media file: code, original_filename, mime_type, size, extension and `_links.download.href`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Media file code, the path from a product value or the media file list, for example `a/b/c/d/abc_photo.jpg`. Pass it as is, slashes included."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/media-files/{code}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "akeneo_download_media_file",
+      "description": "Download a product media file. Images come back as an image, other files as an attached file (up to 4 MB).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Media file code, slashes included, for example `a/b/c/d/abc_photo.jpg`."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rest/v1/media-files/{code}/download"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

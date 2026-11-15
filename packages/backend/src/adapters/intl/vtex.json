@@ -1,0 +1,1390 @@
+{
+  "slug": "vtex",
+  "name": "VTEX",
+  "description": "VTEX commerce platform: orders (OMS) with handling and tracking, catalog products and SKUs, storefront search, prices, inventory per warehouse, docks and shipping policies, and customer profiles in Master Data. App key and app token.",
+  "instructions": "## VTEX\nThis connector works with the **VTEX** commerce platform through its REST APIs: orders (OMS), the catalog, the Pricing API, logistics (inventory, warehouses, docks, shipping policies) and Master Data (customer profiles and addresses). Calls go to `https://<account>.<environment>.com.br`; prices go to `https://api.vtex.com/<account>/pricing`.\n\n**Setup (about 5 minutes)**\n1. In the VTEX Admin open **Account settings, Account, Security, API keys** (older admins: **Account settings, Account management, Application keys**) and click **Generate key**. Give it a name.\n2. Assign roles to the key in **Roles** (License Manager): for read and write use the predefined roles **OMS - Full access**, **Logistics full access**, **Catalog**, **Pricing** and a Master Data role, or a custom role with the resources you need. A read-only key works for the read tools.\n3. Copy the **App key** into `VTEX_APP_KEY` and the **App token** into `VTEX_APP_TOKEN` (the token is shown only once).\n4. Enter the **account name** (the first part of `https://<account>.myvtex.com`) in `VTEX_ACCOUNT_NAME` and keep the environment `vtexcommercestable`.\n\nThe connector sends the key and token in the headers `X-VTEX-API-AppKey` and `X-VTEX-API-AppToken` on every call.\n\n**Where to start**: `vtex_list_orders` (filter with `f_status`, for example `ready-for-handling`), then `vtex_get_order` for items, address and payment. For a product start at `vtex_search_products` or `vtex_get_sku_by_ref_id`, then `vtex_get_sku`, `vtex_get_price` and `vtex_get_sku_inventory`.\n\n**Orders**: `vtex_list_orders` (no items in the list; at most 30 pages of up to 100, only the last two years), `vtex_get_order`, `vtex_get_order_group`, `vtex_get_order_conversation`, `vtex_get_payment_transaction`. Move a paid order on with `vtex_start_handling_order`, log a note with `vtex_add_order_interaction` and send delivery events with `vtex_update_tracking_status`. Three tools are installed switched off: `vtex_cancel_order` (cannot be undone, refunds a paid order), `vtex_invoice_order` (invoicing makes VTEX capture the payment and freezes the order) and `vtex_update_invoice_tracking` (changes an invoice). Money values in orders are integers in cents (`totalValue` 12990 is 129.90).\n\n**Catalog**: `vtex_list_product_and_sku_ids`, `vtex_get_product`, `vtex_get_product_by_ref_id`, `vtex_list_product_skus`, `vtex_get_sku`, `vtex_get_sku_by_ref_id`, `vtex_get_sku_by_ean`, `vtex_search_products` (storefront search with live price and available quantity), `vtex_get_category_tree`, `vtex_list_brands`. Product and SKU ids are numbers; RefId is the merchant's own code.\n\n**Prices**: `vtex_get_price`, `vtex_get_computed_price`, `vtex_list_price_tables`, `vtex_update_price`. Pricing values are decimals (49.9), unlike order values.\n\n**Stock and logistics**: `vtex_get_sku_inventory`, `vtex_update_sku_inventory` (sets the total in one warehouse), `vtex_list_warehouses`, `vtex_list_docks`, `vtex_list_shipping_policies`.\n\n**Customers (Master Data v1)**: `vtex_search_customers`, `vtex_get_customer`, `vtex_update_customer`, and `vtex_search_documents` for any entity (AD holds addresses, linked by `userId` to the CL id). Searches return at most 100 rows per call, chosen with range_start and range_end; ask only for the fields you need, because a key without rights on a field gets 403 when `_all` is used.\n\n**Limits and pitfalls**: VTEX allows about 6,000 order reads per minute per account and answers 429 when an API is overloaded. Dates in filters are UTC. A 403 means the key's role lacks the resource the call needs; a 404 on an order older than two years is expected.",
+  "aliases": [
+    "VTEX IO",
+    "VTEX Commerce",
+    "VTEX OMS"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "vtex",
+  "docsUrl": "https://developers.vtex.com/docs/api-reference",
+  "requiredEnvVars": [
+    "VTEX_ACCOUNT_NAME",
+    "VTEX_ENVIRONMENT",
+    "VTEX_APP_KEY",
+    "VTEX_APP_TOKEN"
+  ],
+  "envVarMeta": {
+    "VTEX_ACCOUNT_NAME": {
+      "label": "Account name",
+      "kind": "setting",
+      "help": "The VTEX account name, the first part of your admin address: for https://mystore.myvtex.com/admin enter mystore.",
+      "example": "mystore",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$",
+      "patternMessage": "Enter only the account name in lower case, e.g. mystore, without https:// or .myvtex.com."
+    },
+    "VTEX_ENVIRONMENT": {
+      "label": "Environment",
+      "kind": "setting",
+      "help": "Keep vtexcommercestable (production) unless VTEX told you to use the beta environment.",
+      "options": [
+        {
+          "value": "vtexcommercestable",
+          "label": "Production (vtexcommercestable)"
+        },
+        {
+          "value": "vtexcommercebeta",
+          "label": "Beta (vtexcommercebeta)"
+        }
+      ]
+    },
+    "VTEX_APP_KEY": {
+      "label": "App key",
+      "kind": "credential",
+      "help": "Account settings, Account, Security, API keys: generate a key and copy the App key. It starts with vtexappkey-.",
+      "link": "https://developers.vtex.com/docs/guides/api-authentication-using-api-keys",
+      "pattern": "^vtexappkey-[A-Za-z0-9-]+$",
+      "patternMessage": "The app key starts with vtexappkey- and has no spaces."
+    },
+    "VTEX_APP_TOKEN": {
+      "label": "App token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the key is generated. Generate a new token for the key if it was lost.",
+      "link": "https://developers.vtex.com/docs/guides/api-authentication-using-api-keys",
+      "pattern": "^[A-Za-z0-9]{20,512}$",
+      "patternMessage": "Paste only the app token: letters and digits, no spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "VTEX did not accept the app key and token. Copy both again from Account settings, Account, Security, API keys, and check the account name.",
+      "field": "VTEX_APP_TOKEN"
+    },
+    "403": "The key works but its role lacks this resource. In the VTEX Admin, Roles, give the key's role the OMS, Catalog, Pricing, Logistics or Master Data resource the tool needs.",
+    "404": {
+      "hint": "VTEX found no account, order, SKU or document with that name or id. Check the account name; orders older than two years are not returned.",
+      "field": "VTEX_ACCOUNT_NAME"
+    },
+    "rate_limited": "VTEX throttled the call (429). Wait a few seconds and try again; order reads are limited to about 6,000 per minute per account.",
+    "unreachable": {
+      "hint": "No VTEX store answers at this account name and environment. Check the account name.",
+      "field": "VTEX_ACCOUNT_NAME"
+    }
+  },
+  "probe": {
+    "tool": "vtex_list_orders",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "prerequisites": "A VTEX account and an admin user who may create API keys and assign roles in License Manager. About 5 minutes.",
+  "connector": {
+    "name": "VTEX REST APIs",
+    "type": "REST",
+    "baseUrl": "https://{{VTEX_ACCOUNT_NAME}}.{{VTEX_ENVIRONMENT}}.com.br",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-VTEX-API-AppKey",
+      "apiKey": "{{VTEX_APP_KEY}}",
+      "extraHeaders": {
+        "X-VTEX-API-AppToken": "{{VTEX_APP_TOKEN}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "vtex_list_orders",
+      "description": "List orders of the last two years, newest first by default: orderId, creationDate, clientName, totalValue in cents, status and statusDescription, paymentNames, salesChannel, sequence and lastChange. Items are not included: read them with vtex_get_order. 15 rows per page by default, at most 100, and at most 30 pages per query.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Full-text search on order id, customer email, customer document or customer name. The plus sign is not allowed."
+          },
+          "f_status": {
+            "type": "string",
+            "description": "Comma-separated order statuses, e.g. ready-for-handling or handling,invoiced. Common values: waiting-for-sellers-confirmation, payment-pending, payment-approved, ready-for-handling, handling, invoiced, canceled, cancellation-requested, window-to-cancel."
+          },
+          "f_creationDate": {
+            "type": "string",
+            "description": "Creation date range in UTC, written as `creationDate:[2026-01-01T00:00:00.000Z TO 2026-01-31T23:59:59.999Z]`."
+          },
+          "f_invoicedDate": {
+            "type": "string",
+            "description": "Invoiced date range in UTC, written as `invoicedDate:[2026-01-01T00:00:00.000Z TO 2026-01-31T23:59:59.999Z]`."
+          },
+          "f_authorizedDate": {
+            "type": "string",
+            "description": "Payment authorization date range in UTC, written as `authorizedDate:[2026-01-01T00:00:00.000Z TO 2026-01-31T23:59:59.999Z]`."
+          },
+          "f_shippingEstimate": {
+            "type": "string",
+            "description": "Shipping estimate in days with the suffix .days: 0.days (today), 1.days (tomorrow), 7.days (next 7 days), -1.days (late)."
+          },
+          "f_salesChannel": {
+            "type": "string",
+            "description": "Trade policy (sales channel) name, e.g. Main."
+          },
+          "salesChannelId": {
+            "type": "string",
+            "description": "Trade policy (sales channel) id, e.g. 1."
+          },
+          "f_sellerNames": {
+            "type": "string",
+            "description": "Seller name."
+          },
+          "f_affiliateId": {
+            "type": "string",
+            "description": "Affiliate id of an external marketplace, e.g. WLM."
+          },
+          "f_paymentNames": {
+            "type": "string",
+            "description": "Payment method name, e.g. Visa or Boleto Bancario."
+          },
+          "f_UtmSource": {
+            "type": "string",
+            "description": "UTM source of the order."
+          },
+          "f_hasInputInvoice": {
+            "type": "boolean",
+            "description": "true: only orders with an input (return) invoice."
+          },
+          "incompleteOrders": {
+            "type": "boolean",
+            "description": "true: only incomplete orders (payment not finished); false: only complete ones."
+          },
+          "orderBy": {
+            "type": "string",
+            "description": "Sort as field,direction. Fields: creationDate, orderId, items, totalValue, origin; direction asc or desc. Example: creationDate,desc."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1 to 30.",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100 (VTEX default 15).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 15
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oms/pvt/orders",
+        "queryParams": {
+          "q": "$q",
+          "f_status": "$f_status",
+          "f_creationDate": "$f_creationDate",
+          "f_invoicedDate": "$f_invoicedDate",
+          "f_authorizedDate": "$f_authorizedDate",
+          "f_shippingEstimate": "$f_shippingEstimate",
+          "f_salesChannel": "$f_salesChannel",
+          "salesChannelId": "$salesChannelId",
+          "f_sellerNames": "$f_sellerNames",
+          "f_affiliateId": "$f_affiliateId",
+          "f_paymentNames": "$f_paymentNames",
+          "f_UtmSource": "$f_UtmSource",
+          "f_hasInputInvoice": "$f_hasInputInvoice",
+          "incompleteOrders": "$incompleteOrders",
+          "orderBy": "$orderBy",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_order",
+      "description": "Read one order: status, value and totals in cents, items (SKU id, refId, name, quantity, price, sellingPrice), clientProfileData, shippingData (address, logisticsInfo with carrier and delivery window), paymentData, packageAttachment (invoices and tracking), sellers, marketplace and changesAttachment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oms/pvt/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_order_group",
+      "description": "Read all orders of one checkout (an order group splits into one order per seller): the same fields as vtex_get_order for each order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_group": {
+            "type": "string",
+            "description": "Order group id, the part of an order id before the dash: for 1172452900788-01 it is 1172452900788.",
+            "pattern": "^[A-Za-z0-9_.-]{3,60}$"
+          }
+        },
+        "required": [
+          "order_group"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oms/pvt/orders/order-group/{order_group}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_start_handling_order",
+      "description": "Move an order from ready-for-handling to handling, which tells VTEX the seller started to prepare it. VTEX answers 204 with no body; anything else should be retried.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oms/pvt/orders/{order_id}/start-handling"
+      }
+    },
+    {
+      "name": "vtex_add_order_interaction",
+      "description": "Write a line into the order's interaction log (shown in the order's history in the admin), e.g. a note from the warehouse. Does not change the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          },
+          "source": {
+            "type": "string",
+            "description": "Who writes the entry, e.g. Warehouse or AnythingMCP.",
+            "default": "AnythingMCP"
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the log entry."
+          }
+        },
+        "required": [
+          "order_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oms/pvt/orders/{order_id}/interactions",
+        "bodyMapping": {
+          "source": "$source",
+          "message": "$message"
+        }
+      }
+    },
+    {
+      "name": "vtex_get_order_conversation",
+      "description": "Read the email conversation of an order: messages VTEX and the store sent to the customer (subject, from, to, date, body).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oms/pvt/orders/{order_id}/conversation-message"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_payment_transaction",
+      "description": "Read the payment transaction of an order: transaction id, status, payments with method, value in cents, installments and the event history. Read-only; marketplace orders only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/oms/pvt/orders/{order_id}/payment-transaction"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_update_tracking_status",
+      "description": "Send tracking events to an invoice that already has a tracking number (isDelivered, deliveredDate and the list of events with city, state, description and date). Use it to mark an order as delivered.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Invoice number of the order (packageAttachment.packages[].invoiceNumber of vtex_get_order).",
+            "pattern": "^[A-Za-z0-9_./-]{1,60}$"
+          },
+          "is_delivered": {
+            "type": "boolean",
+            "description": "true when the package reached the customer or was picked up."
+          },
+          "delivered_date": {
+            "type": "string",
+            "description": "Delivery date and time as yyyy-mm-dd hh:mm when is_delivered is true."
+          },
+          "events": {
+            "type": "array",
+            "description": "Tracking events in order, each with city, state, description and date (yyyy-mm-dd).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string",
+                  "description": "City of the event."
+                },
+                "state": {
+                  "type": "string",
+                  "description": "State or region of the event."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "What happened, e.g. Collected by the carrier."
+                },
+                "date": {
+                  "type": "string",
+                  "description": "Date of the event, yyyy-mm-dd."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "invoice_number",
+          "is_delivered",
+          "events"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/oms/pvt/orders/{order_id}/invoice/{invoice_number}/tracking",
+        "bodyMapping": {
+          "isDelivered": "$is_delivered",
+          "deliveredDate": "$delivered_date",
+          "events": "$events"
+        }
+      }
+    },
+    {
+      "name": "vtex_cancel_order",
+      "description": "Cancel an order that is not invoiced yet, with a reason. Cannot be undone; paid orders are refunded by VTEX. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the cancellation, e.g. Unexpected stock shortage."
+          }
+        },
+        "required": [
+          "order_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oms/pvt/orders/{order_id}/cancel",
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "vtex_invoice_order",
+      "description": "Send the invoice of an order (type Output for a sale), which moves it to invoiced and makes VTEX settle (capture) the payment. invoiceValue is in cents. An invoiced order cannot change status again. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          },
+          "type": {
+            "type": "string",
+            "description": "Output for a sales invoice, Input for a return invoice.",
+            "enum": [
+              "Output",
+              "Input"
+            ],
+            "default": "Output"
+          },
+          "issuance_date": {
+            "type": "string",
+            "description": "Date the invoice was issued, ISO 8601, e.g. 2026-01-31T18:25:43-05:00."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Unique invoice number."
+          },
+          "invoice_value": {
+            "type": "string",
+            "description": "Total invoiced in cents without separators: 24.99 is 2499."
+          },
+          "invoice_key": {
+            "type": "string",
+            "description": "Invoice key (Brazil NF-e access key) when there is one."
+          },
+          "invoice_url": {
+            "type": "string",
+            "description": "Link to the invoice document."
+          },
+          "courier": {
+            "type": "string",
+            "description": "Carrier name, when known."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number, when known."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking link, when known."
+          },
+          "items": {
+            "type": "array",
+            "description": "Invoiced items, each with id (SKU id), quantity and price in cents.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "SKU id of the order item."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity invoiced."
+                },
+                "price": {
+                  "type": "integer",
+                  "description": "Unit price in cents."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "issuance_date",
+          "invoice_number",
+          "invoice_value",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/oms/pvt/orders/{order_id}/invoice",
+        "bodyMapping": {
+          "type": "$type",
+          "issuanceDate": "$issuance_date",
+          "invoiceNumber": "$invoice_number",
+          "invoiceValue": "$invoice_value",
+          "invoiceKey": "$invoice_key",
+          "invoiceUrl": "$invoice_url",
+          "courier": "$courier",
+          "trackingNumber": "$tracking_number",
+          "trackingUrl": "$tracking_url",
+          "items": "$items"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "vtex_update_invoice_tracking",
+      "description": "Add a tracking number, tracking link, carrier and dispatch date to an existing invoice of an order. Changes the invoice; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "VTEX order id such as 1172452900788-01 (orderId from vtex_list_orders). The sequence form seq501456 also works on vtex_get_order.",
+            "pattern": "^[A-Za-z0-9_.-]{3,80}$"
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Invoice number of the order.",
+            "pattern": "^[A-Za-z0-9_./-]{1,60}$"
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the package."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking link."
+          },
+          "courier": {
+            "type": "string",
+            "description": "Carrier name."
+          },
+          "dispatched_date": {
+            "type": "string",
+            "description": "Dispatch date and time, ISO 8601."
+          }
+        },
+        "required": [
+          "order_id",
+          "invoice_number",
+          "tracking_number",
+          "tracking_url",
+          "courier",
+          "dispatched_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/oms/pvt/orders/{order_id}/invoice/{invoice_number}",
+        "bodyMapping": {
+          "trackingNumber": "$tracking_number",
+          "trackingUrl": "$tracking_url",
+          "courier": "$courier",
+          "dispatchedDate": "$dispatched_date"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "vtex_list_product_and_sku_ids",
+      "description": "List product ids with their SKU ids, optionally in one category: data maps each productId to its SKU ids, range.total gives the total. Page with from and to (at most 250 apart).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Only products of this category id (from vtex_get_category_tree)."
+          },
+          "from": {
+            "type": "integer",
+            "description": "Index of the first record, from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "to": {
+            "type": "integer",
+            "description": "Index of the last record; at most 250 more than from.",
+            "minimum": 1,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog_system/pvt/products/GetProductAndSkuIds",
+        "queryParams": {
+          "categoryId": "$category_id",
+          "_from": "$from",
+          "_to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_product",
+      "description": "Read one product: Id, Name, DepartmentId, CategoryId, BrandId, LinkId (URL slug), RefId, IsVisible, IsActive, Description, Title, MetaTagDescription, ReleaseDate and TaxCode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Numeric product id, e.g. 1 (productId of vtex_list_product_and_sku_ids or vtex_get_sku).",
+            "pattern": "^[0-9]{1,18}$"
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog/pvt/product/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_product_by_ref_id",
+      "description": "Find a product by its reference code (RefId) and read the same fields as vtex_get_product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ref_id": {
+            "type": "string",
+            "description": "Product reference code (RefId) as set in the catalog.",
+            "pattern": "^[^/?#]{1,100}$"
+          }
+        },
+        "required": [
+          "ref_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog_system/pvt/products/productgetbyrefid/{ref_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_list_product_skus",
+      "description": "List the SKUs of a product: Id, ProductId, IsActive, Name, RefId, EAN-related fields, dimensions, weight and measurement unit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Numeric product id, e.g. 1 (productId of vtex_list_product_and_sku_ids or vtex_get_sku).",
+            "pattern": "^[0-9]{1,18}$"
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog_system/pvt/sku/stockkeepingunitByProductId/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_sku",
+      "description": "Read one SKU with its context: Id, ProductId, NameComplete, ProductName, SkuName, AlternateIds (EAN, RefId), images, dimensions, sellers, SkuSpecifications, ProductCategories, BrandName, IsActive and the commercial condition.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "description": "Numeric SKU id (id of vtex_get_sku or vtex_list_product_skus), e.g. 2001773.",
+            "pattern": "^[0-9]{1,18}$"
+          },
+          "sales_channel": {
+            "type": "integer",
+            "description": "Trade policy id to read the SKU in, e.g. 1."
+          }
+        },
+        "required": [
+          "sku_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog_system/pvt/sku/stockkeepingunitbyid/{sku_id}",
+        "queryParams": {
+          "sc": "$sales_channel"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_sku_by_ref_id",
+      "description": "Find a SKU by its reference code (RefId): Id, ProductId, IsActive, Name, RefId, dimensions and weight.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ref_id": {
+            "type": "string",
+            "description": "SKU reference code (RefId)."
+          }
+        },
+        "required": [
+          "ref_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog/pvt/stockkeepingunit",
+        "queryParams": {
+          "RefId": "$ref_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_sku_by_ean",
+      "description": "Find a SKU by its EAN barcode and read the same fields as vtex_get_sku.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ean": {
+            "type": "string",
+            "description": "EAN, UPC or GTIN barcode of the SKU.",
+            "pattern": "^[0-9A-Za-z-]{4,40}$"
+          }
+        },
+        "required": [
+          "ean"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog_system/pvt/sku/stockkeepingunitbyean/{ean}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_search_products",
+      "description": "Search the published catalog as the storefront does: productId, productName, brand, link, categories and items (SKUs) with sellers and commertialOffer (Price, ListPrice, AvailableQuantity). Up to 50 products per call; page with from and to (0-based, at most 2500).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ft": {
+            "type": "string",
+            "description": "Full-text search words, e.g. television."
+          },
+          "fq": {
+            "type": "string",
+            "description": "Filter, e.g. `C:/1/2/` for a category path, `productId:123`, `skuId:456`, `brandId:2000000`, `P:[10 TO 50]` for a price range, `productClusterIds:137` for a collection."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "OrderByPriceASC",
+              "OrderByPriceDESC",
+              "OrderByTopSaleDESC",
+              "OrderByReviewRateDESC",
+              "OrderByNameASC",
+              "OrderByNameDESC",
+              "OrderByReleaseDateDESC",
+              "OrderByBestDiscountDESC",
+              "OrderByScoreDESC"
+            ]
+          },
+          "from": {
+            "type": "integer",
+            "description": "First result index, from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "to": {
+            "type": "integer",
+            "description": "Last result index; at most 49 more than from.",
+            "minimum": 0,
+            "default": 19
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog_system/pub/products/search",
+        "queryParams": {
+          "ft": "$ft",
+          "fq": "$fq",
+          "O": "$order",
+          "_from": "$from",
+          "_to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_category_tree",
+      "description": "Read the category tree down to the given depth: id, name, hasChildren, url and children for each category.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "levels": {
+            "type": "integer",
+            "description": "How many levels to return, from 1.",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3
+          }
+        },
+        "required": [
+          "levels"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog_system/pub/category/tree/{levels}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_list_brands",
+      "description": "List all brands: id, name, isActive, title, metaTagDescription and imageUrl.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/catalog_system/pvt/brand/list"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_price",
+      "description": "Read the prices of a SKU from the Pricing API: itemId, listPrice, costPrice, markup, basePrice and fixedPrices per trade policy (tradePolicyId, value, listPrice, minQuantity, dateRange). Prices are decimals in the store currency. 404 when the SKU has no price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "description": "Numeric SKU id (id of vtex_get_sku or vtex_list_product_skus), e.g. 2001773.",
+            "pattern": "^[0-9]{1,18}$"
+          }
+        },
+        "required": [
+          "sku_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.vtex.com/{{VTEX_ACCOUNT_NAME}}/pricing/prices/{sku_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_computed_price",
+      "description": "Read the price a price table (trade policy) actually charges for a SKU after the pricing rules: tradePolicyId, listPrice, costPrice, sellingPrice and priceValidUntil.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "description": "Numeric SKU id (id of vtex_get_sku or vtex_list_product_skus), e.g. 2001773.",
+            "pattern": "^[0-9]{1,18}$"
+          },
+          "price_table_id": {
+            "type": "string",
+            "description": "Price table or trade policy id, e.g. 1 (from vtex_list_price_tables).",
+            "pattern": "^[A-Za-z0-9_-]{1,60}$"
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Quantity, for quantity-based prices.",
+            "minimum": 1,
+            "default": 1
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Category id of the SKU, for category rules."
+          },
+          "brand_id": {
+            "type": "integer",
+            "description": "Brand id of the SKU, for brand rules."
+          }
+        },
+        "required": [
+          "sku_id",
+          "price_table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.vtex.com/{{VTEX_ACCOUNT_NAME}}/pricing/prices/{sku_id}/computed/{price_table_id}",
+        "queryParams": {
+          "quantity": "$quantity",
+          "categoryIds": "$category_id",
+          "brandId": "$brand_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_list_price_tables",
+      "description": "List the price table ids of the account (for example 1 for the main trade policy, or names like gold).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.vtex.com/{{VTEX_ACCOUNT_NAME}}/pricing/tables"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_update_price",
+      "description": "Create or update the base price of a SKU: give base_price alone (markup and cost are then derived), or cost_price with markup in percent (base price is then derived). list_price is the suggested price shown crossed out. fixed_prices, when given, set prices per trade policy. Decimals in the store currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "description": "Numeric SKU id (id of vtex_get_sku or vtex_list_product_skus), e.g. 2001773.",
+            "pattern": "^[0-9]{1,18}$"
+          },
+          "base_price": {
+            "type": "number",
+            "description": "Selling base price, e.g. 49.9."
+          },
+          "list_price": {
+            "type": "number",
+            "description": "Suggested (list) price, e.g. 59.9."
+          },
+          "cost_price": {
+            "type": "number",
+            "description": "Cost price; needs markup."
+          },
+          "markup": {
+            "type": "integer",
+            "description": "Profit in percent on the cost price; needs cost_price."
+          },
+          "fixed_prices": {
+            "type": "array",
+            "description": "Fixed prices per trade policy, each with tradePolicyId, value, listPrice, minQuantity and an optional dateRange with from and to.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tradePolicyId": {
+                  "type": "string",
+                  "description": "Trade policy id, e.g. 1."
+                },
+                "value": {
+                  "type": "number",
+                  "description": "Fixed selling price."
+                },
+                "listPrice": {
+                  "type": "number",
+                  "description": "Fixed list price."
+                },
+                "minQuantity": {
+                  "type": "integer",
+                  "description": "Minimum quantity for this price."
+                },
+                "dateRange": {
+                  "type": "object",
+                  "description": "Validity with from and to, ISO 8601.",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "description": "Start, ISO 8601."
+                    },
+                    "to": {
+                      "type": "string",
+                      "description": "End, ISO 8601."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "sku_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "https://api.vtex.com/{{VTEX_ACCOUNT_NAME}}/pricing/prices/{sku_id}",
+        "bodyMapping": {
+          "basePrice": "$base_price",
+          "listPrice": "$list_price",
+          "costPrice": "$cost_price",
+          "markup": "$markup",
+          "fixedPrices": "$fixed_prices"
+        }
+      }
+    },
+    {
+      "name": "vtex_get_sku_inventory",
+      "description": "Read the stock of a SKU in every warehouse: warehouseId, warehouseName, totalQuantity, reservedQuantity, hasUnlimitedQuantity, timeToRefill and leadTime. Available = total minus reserved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "description": "Numeric SKU id (id of vtex_get_sku or vtex_list_product_skus), e.g. 2001773.",
+            "pattern": "^[0-9]{1,18}$"
+          }
+        },
+        "required": [
+          "sku_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/logistics/pvt/inventory/skus/{sku_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_update_sku_inventory",
+      "description": "Set the stock of a SKU in one warehouse: quantity replaces the total quantity (reservations are kept apart); unlimited_quantity true keeps it always available. lead_time adds a preparation time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "description": "Numeric SKU id (id of vtex_get_sku or vtex_list_product_skus), e.g. 2001773.",
+            "pattern": "^[0-9]{1,18}$"
+          },
+          "warehouse_id": {
+            "type": "string",
+            "description": "Warehouse id (id of vtex_list_warehouses), e.g. 1_1 or store-warehouse.",
+            "pattern": "^[A-Za-z0-9_.-]{1,60}$"
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "New total quantity in this warehouse.",
+            "minimum": 0
+          },
+          "unlimited_quantity": {
+            "type": "boolean",
+            "description": "true: always available, the quantity is ignored.",
+            "default": false
+          },
+          "lead_time": {
+            "type": "string",
+            "description": "Lead time as dd.hh:mm:ss, e.g. 00.00:00:00 for none or 01.00:00:00 for one day.",
+            "default": "00.00:00:00"
+          },
+          "date_utc_on_balance_system": {
+            "type": "string",
+            "description": "Time the stock was counted in your system, UTC (2026-06-13T00:52:16); reservations made after it are kept."
+          }
+        },
+        "required": [
+          "sku_id",
+          "warehouse_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/logistics/pvt/inventory/skus/{sku_id}/warehouses/{warehouse_id}",
+        "bodyMapping": {
+          "quantity": "$quantity",
+          "unlimitedQuantity": "$unlimited_quantity",
+          "leadTime": "$lead_time",
+          "dateUtcOnBalanceSystem": "$date_utc_on_balance_system"
+        }
+      }
+    },
+    {
+      "name": "vtex_list_warehouses",
+      "description": "List warehouses: id, name, warehouseDocks (dock ids with time and cost) and isActive.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/logistics/pvt/configuration/warehouses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_list_docks",
+      "description": "List loading docks: id, name, priority, dockTimeFake, salesChannels, freightTableIds and the pickup store info.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/logistics/pvt/configuration/docks"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_list_shipping_policies",
+      "description": "List shipping policies (carriers and freight tables): id, name, shippingMethod, isActive, deliveryOnWeekends, maxDimension and business hours. Paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Policies per page.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 15
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/logistics/pvt/shipping-policies",
+        "queryParams": {
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_search_customers",
+      "description": "Search customer profiles (Master Data entity CL): email, firstName, lastName, document, phone, isCorporate, corporateName, createdIn and the id used by vtex_get_customer. Rows from range_start to range_end (end exclusive), at most 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact email address of the customer."
+          },
+          "where": {
+            "type": "string",
+            "description": "Filter in Master Data syntax, e.g. `firstName=Jon OR lastName=Smith` or `createdIn between 2026-01-01 AND 2026-01-31`."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return; `_all` returns every field the key may read.",
+            "default": "id,email,firstName,lastName,document,documentType,phone,isCorporate,corporateName,createdIn"
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field and ASC or DESC, e.g. `createdIn DESC`."
+          },
+          "range_start": {
+            "type": "integer",
+            "description": "Index of the first row, from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "range_end": {
+            "type": "integer",
+            "description": "Index after the last row; at most 100 more than range_start.",
+            "minimum": 1,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/dataentities/CL/search",
+        "queryParams": {
+          "email": "$email",
+          "_where": "$where",
+          "_fields": "$fields",
+          "_sort": "$sort"
+        },
+        "headers": {
+          "REST-Range": "resources=${range_start}-${range_end}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_get_customer",
+      "description": "Read one customer profile (entity CL) by document id: the fields named in fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Document id of the customer profile (id of vtex_search_customers).",
+            "pattern": "^[A-Za-z0-9-]{8,80}$"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, or `_all`.",
+            "default": "_all"
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/dataentities/CL/documents/{customer_id}",
+        "queryParams": {
+          "_fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vtex_update_customer",
+      "description": "Change fields of a customer profile (entity CL); only the fields given are changed, e.g. phone or isNewsletterOptIn.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Document id of the customer profile.",
+            "pattern": "^[A-Za-z0-9-]{8,80}$"
+          },
+          "fields": {
+            "type": "object",
+            "description": "Fields to change and their new values, e.g. `{\"phone\": \"+12025550195\", \"isNewsletterOptIn\": false}`."
+          }
+        },
+        "required": [
+          "customer_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/dataentities/CL/documents/{customer_id}",
+        "bodyMapping": {
+          "__merge": "$fields"
+        }
+      }
+    },
+    {
+      "name": "vtex_search_documents",
+      "description": "Search any Master Data v1 entity by its two-letter acronym, e.g. AD for customer addresses (filter on userId), or a custom entity: the fields named in fields. Rows from range_start to range_end (end exclusive), at most 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "acronym": {
+            "type": "string",
+            "description": "Two-letter data entity acronym, e.g. AD (addresses) or CL (customers).",
+            "pattern": "^[A-Za-z0-9]{2,10}$"
+          },
+          "where": {
+            "type": "string",
+            "description": "Filter in Master Data syntax, e.g. `userId=7ab5b1b8-0000-0000-0000-000000000000`."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, or `_all`.",
+            "default": "_all"
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field and ASC or DESC."
+          },
+          "range_start": {
+            "type": "integer",
+            "description": "Index of the first row, from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "range_end": {
+            "type": "integer",
+            "description": "Index after the last row; at most 100 more than range_start.",
+            "minimum": 1,
+            "default": 50
+          }
+        },
+        "required": [
+          "acronym"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/dataentities/{acronym}/search",
+        "queryParams": {
+          "_where": "$where",
+          "_fields": "$fields",
+          "_sort": "$sort"
+        },
+        "headers": {
+          "REST-Range": "resources=${range_start}-${range_end}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

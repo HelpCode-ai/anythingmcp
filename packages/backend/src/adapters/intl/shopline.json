@@ -1,0 +1,1281 @@
+{
+  "slug": "shopline",
+  "name": "SHOPLINE",
+  "description": "SHOPLINE stores (myshopline.com) through the Admin REST API: orders, fulfillments and tracking, transactions and refunds, products and variants, customers, locations and inventory levels. Private app access token.",
+  "instructions": "## SHOPLINE\nThis connector works with the **SHOPLINE Admin REST API** (the Open API of stores at `<handle>.myshopline.com`, version v20260901): orders, fulfillments and tracking, transactions and refunds (read-only), products and variants, customers, locations and inventory. It is not for the older SHOPLINE platform at shoplineapp.com, which has a different API.\n\n**Setup (about 5 minutes)**\n1. Log in to the SHOPLINE Admin at `https://admin.myshopline.com` and open **Apps**, then **Develop Apps** (top right), and create a private app.\n2. Give it the access scopes the tools need: `read_orders`, `write_orders`, `read_products`, `write_products`, `read_customers`, `read_inventory`, `write_inventory`, `read_location`, `read_assigned_fulfillment_orders` and `write_assigned_fulfillment_orders` (read scopes alone are enough for the read tools).\n3. Open the app's **API certificate** and copy the **access token** into `SHOPLINE_ACCESS_TOKEN`. A private app token is valid for 3 years and can be refreshed there; deleting the app revokes it.\n4. Enter the store handle, the first part of `<handle>.myshopline.com`, in `SHOPLINE_HANDLE`.\n\n**Where to start**: `shopline_list_orders` with `status` any (and `fulfillment_status` when you look for shipped orders), then `shopline_list_order_fulfillments`. For products `shopline_list_products`, `shopline_get_product` and `shopline_list_product_variants`.\n\n**Orders**: `shopline_list_orders`, `shopline_count_orders`, `shopline_update_order` (tags, contact, notes, shipping address), `shopline_list_order_transactions`, `shopline_list_order_refunds`. The `id` is the order id; `name` is the order number the customer sees (1001 and up, with an optional prefix). Cancelling and refunding are not included, because they return money.\n\n**Shipping**: `shopline_create_fulfillment` ships an order with a tracking number, `shopline_list_order_fulfillments` lists shipments, `shopline_update_fulfillment_tracking` replaces the tracking list of one shipment (send all entries, the rest is cleared).\n\n**Products**: `shopline_list_products`, `shopline_get_product`, `shopline_count_products`, `shopline_update_product` (status active publishes, draft hides), `shopline_list_product_variants`, `shopline_update_variant` (price, compare-at price, SKU, barcode). Tags go in as a list and come back as a comma-separated string. Products have up to five options per variant.\n\n**Customers**: `shopline_list_customers`, `shopline_get_customer`, `shopline_search_customers`, `shopline_list_customer_orders`.\n\n**Stock**: each variant has an `inventory_item_id`. `shopline_list_locations`, `shopline_get_inventory_items`, `shopline_get_inventory_levels`, then `shopline_set_inventory` (absolute) or `shopline_adjust_inventory` (delta).\n\n**Paging**: lists use a cursor. When there is another page, the answer carries `_pagination.nextUrl`; pass its `page_info` value with the same limit. `_pagination` is missing on the last page.\n\n**Ids and formats**: ids are long digit strings (26 digits): always pass them as text. Times are ISO 8601; prices are decimal strings in the store currency.\n\n**Rate limit**: 4 requests per second per app and store, with bursts up to 40 queued; above that SHOPLINE answers 429 `Too many request`. Answers are capped at 8 MB, so use `fields` and smaller limits for big stores.",
+  "aliases": [
+    "SHOPLINE Open API",
+    "myshopline"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "shopline",
+  "docsUrl": "https://developer.shopline.com/docs/apps/api-instructions-for-use/rest-admin-api/overview",
+  "requiredEnvVars": [
+    "SHOPLINE_HANDLE",
+    "SHOPLINE_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "SHOPLINE_HANDLE": {
+      "label": "Store handle",
+      "kind": "setting",
+      "help": "The first part of your store address: for open001.myshopline.com enter open001.",
+      "example": "open001",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "patternMessage": "Enter only the handle in lower case, e.g. open001, without https:// and without .myshopline.com."
+    },
+    "SHOPLINE_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "SHOPLINE Admin, Apps, Develop Apps: open your private app, API certificate, and copy the access token.",
+      "link": "https://developer.shopline.com/docs/apps/api-instructions-for-use/rest-admin-api/overview",
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+      "patternMessage": "Paste only the access token (three parts separated by dots), without Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "SHOPLINE refused the access token. Copy it again from Apps, Develop Apps, API certificate, or refresh it there if it expired.",
+      "field": "SHOPLINE_ACCESS_TOKEN"
+    },
+    "403": "The token works but the private app lacks the access scope for this call (for example read_orders or write_inventory). Add the scope to the app and copy the new token.",
+    "404": {
+      "hint": "SHOPLINE found no store, order, product or customer here. Check the store handle and the id.",
+      "field": "SHOPLINE_HANDLE"
+    },
+    "rate_limited": "SHOPLINE allows 4 requests per second per app and store (429 Too many request). Wait a moment and try again.",
+    "unreachable": {
+      "hint": "No SHOPLINE store answers at this handle. Check the first part of your myshopline.com address.",
+      "field": "SHOPLINE_HANDLE"
+    }
+  },
+  "probe": {
+    "tool": "shopline_count_products",
+    "params": {}
+  },
+  "prerequisites": "A SHOPLINE store (myshopline.com) and an admin account that may create private apps under Apps, Develop Apps. About 5 minutes.",
+  "connector": {
+    "name": "SHOPLINE Admin REST API",
+    "type": "REST",
+    "baseUrl": "https://{{SHOPLINE_HANDLE}}.myshopline.com/admin/openapi/v20260901",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SHOPLINE_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json; charset=utf-8",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "shopline_list_orders",
+      "description": "List orders: id, name (order number such as 1001), order_at, financial_status, fulfillment_status, status, currency, current_total_price, customer, line_items (product_id, variant_id, sku, title, quantity, price), shipping and billing address, fulfillments and refunds. Up to 100 per page; the next page is in `_pagination.nextUrl` (page_info cursor) and is missing on the last page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "open (in process), cancelled, or any (all, including archived).",
+            "enum": [
+              "open",
+              "cancelled",
+              "any"
+            ],
+            "default": "any"
+          },
+          "financial_status": {
+            "type": "string",
+            "description": "Payment status.",
+            "enum": [
+              "unpaid",
+              "authorized",
+              "pending",
+              "partially_paid",
+              "paid",
+              "partially_refunded",
+              "refunded"
+            ]
+          },
+          "fulfillment_status": {
+            "type": "string",
+            "description": "Shipment status: unshipped, partial or shipped. SHOPLINE documents unshipped as the default, so pass shipped or partial explicitly to see those orders.",
+            "enum": [
+              "unshipped",
+              "partial",
+              "shipped"
+            ]
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only orders created at or after this time, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only orders created at or before this time, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only orders updated at or after this time, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only orders updated at or before this time, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated order ids, at most 100."
+          },
+          "name": {
+            "type": "string",
+            "description": "Order number as shown to the customer, with any custom prefix, e.g. 1001."
+          },
+          "email": {
+            "type": "string",
+            "description": "Buyer email."
+          },
+          "search_content": {
+            "type": "string",
+            "description": "Free text: order number, payment serial number, tracking number, product name, SKU or amount."
+          },
+          "sort_condition": {
+            "type": "string",
+            "description": "Sort by order_at or id, asc or desc, comma-separated, e.g. `order_at:desc`."
+          },
+          "hidden_order": {
+            "type": "boolean",
+            "description": "true: query archived orders instead."
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only orders after this order id."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,name,financial_status,current_total_price."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "page_info": {
+            "type": "string",
+            "description": "Cursor of the next or previous page: the page_info value of the URL in `_pagination.nextUrl` (or the `link` header) of the previous answer. Send it with limit only; other filters are ignored on a cursor page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders.json",
+        "queryParams": {
+          "status": "$status",
+          "financial_status": "$financial_status",
+          "fulfillment_status": "$fulfillment_status",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "ids": "$ids",
+          "name": "$name",
+          "email": "$email",
+          "search_content": "$search_content",
+          "sort_condition": "$sort_condition",
+          "hidden_order": "$hidden_order",
+          "since_id": "$since_id",
+          "fields": "$fields",
+          "limit": "$limit",
+          "page_info": "$page_info"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_count_orders",
+      "description": "Count the orders that match the filters (status, payment, shipment, dates): answers with count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "open, cancelled or any.",
+            "enum": [
+              "open",
+              "cancelled",
+              "any"
+            ]
+          },
+          "financial_status": {
+            "type": "string",
+            "description": "Payment status, e.g. paid or unpaid."
+          },
+          "fulfillment_status": {
+            "type": "string",
+            "description": "Shipment status, e.g. unshipped or shipped."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Created at or before, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Updated at or after, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Updated at or before, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/count.json",
+        "queryParams": {
+          "status": "$status",
+          "financial_status": "$financial_status",
+          "fulfillment_status": "$fulfillment_status",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_update_order",
+      "description": "Change an order's tags, buyer email or phone, merchant notes (note_attributes) or shipping address. Only the fields given are sent; tags replace the existing tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (id of shopline_list_orders, not the order number name), e.g. 21057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "tags": {
+            "type": "string",
+            "description": "Order tags separated by commas; replaces the current tags."
+          },
+          "email": {
+            "type": "string",
+            "description": "New buyer email."
+          },
+          "phone": {
+            "type": "string",
+            "description": "New buyer phone."
+          },
+          "note_attributes": {
+            "type": "array",
+            "description": "Merchant notes, each with name and value.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Note source or label."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Note text."
+                }
+              }
+            }
+          },
+          "shipping_address": {
+            "type": "object",
+            "description": "New shipping address with first_name, last_name, address1, address2, city, province, province_code, country_code (ISO 3166-1 alpha-2), zip, phone and company."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}.json",
+        "bodyMapping": {
+          "order": {
+            "tags": "$tags",
+            "email": "$email",
+            "phone": "$phone",
+            "note_attributes": "$note_attributes",
+            "shipping_address": "$shipping_address"
+          }
+        }
+      }
+    },
+    {
+      "name": "shopline_list_order_fulfillments",
+      "description": "List the fulfillments (shipments) of an order: id, status, tracking_company, tracking_number, tracking_url, line_items and created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (id of shopline_list_orders, not the order number name), e.g. 21057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/fulfillments.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_create_fulfillment",
+      "description": "Ship an order (all of it, or the line items given) with a tracking number and carrier. notify_customer sends the shipping email. Answers with the new fulfillment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (id of shopline_list_orders, not the order number name), e.g. 21057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number from the carrier."
+          },
+          "tracking_company": {
+            "type": "string",
+            "description": "Carrier name as in SHOPLINE's logistics company list, e.g. DHL or UPS."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking link of the carrier."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Items to ship, each with id (the line item id of the order) and quantity. Leave out to ship everything open.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Line item id (line_items[].id of the order)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity to ship."
+                }
+              }
+            }
+          },
+          "notify_customer": {
+            "type": "boolean",
+            "description": "true: email the customer about the shipment.",
+            "default": false
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/fulfillments.json",
+        "bodyMapping": {
+          "fulfillment": {
+            "tracking_number": "$tracking_number",
+            "tracking_company": "$tracking_company",
+            "tracking_url": "$tracking_url",
+            "line_items": "$line_items",
+            "notify_customer": "$notify_customer"
+          }
+        }
+      }
+    },
+    {
+      "name": "shopline_update_fulfillment_tracking",
+      "description": "Replace the tracking information of a fulfillment. The list replaces what is stored: tracking entries left out are removed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (id of shopline_list_orders, not the order number name), e.g. 21057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "fulfillment_id": {
+            "type": "string",
+            "description": "Fulfillment id (from shopline_list_order_fulfillments), e.g. 4200000001. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "tracking_info_list": {
+            "type": "array",
+            "description": "Tracking entries, each with tracking_number, tracking_company and tracking_url.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tracking_number": {
+                  "type": "string",
+                  "description": "Tracking number."
+                },
+                "tracking_company": {
+                  "type": "string",
+                  "description": "Carrier name."
+                },
+                "tracking_url": {
+                  "type": "string",
+                  "description": "Tracking link."
+                }
+              }
+            }
+          },
+          "notify_customer": {
+            "type": "boolean",
+            "description": "true: email the customer about the change.",
+            "default": false
+          }
+        },
+        "required": [
+          "order_id",
+          "fulfillment_id",
+          "tracking_info_list"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/fulfillments/{order_id}/{fulfillment_id}/update_tracking.json",
+        "bodyMapping": {
+          "fulfillment": {
+            "tracking_info_list": "$tracking_info_list",
+            "notify_customer": "$notify_customer"
+          }
+        }
+      }
+    },
+    {
+      "name": "shopline_list_order_transactions",
+      "description": "List the payment transactions of an order: id, kind (sale, refund and so on), status, amount, currency, gateway and processed_at. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (id of shopline_list_orders, not the order number name), e.g. 21057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "transaction_id": {
+            "type": "string",
+            "description": "Only this transaction id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/query.json",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "transaction_id": "$transaction_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_list_order_refunds",
+      "description": "List the refunds of an order: id, created_at, note, refund_line_items and transactions with amounts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (id of shopline_list_orders, not the order number name), e.g. 21057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Refunds to return, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/refunds.json",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_list_products",
+      "description": "List products: id, title, handle, status (active, draft, archived), vendor, tags, product_category, created_at, updated_at, options and variants (id, sku, price, compare_at_price, inventory_quantity, inventory_item_id). Up to 50 per page; the next page is in `_pagination.nextUrl` (page_info cursor).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Product status.",
+            "enum": [
+              "active",
+              "draft",
+              "archived"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Product title."
+          },
+          "handle": {
+            "type": "string",
+            "description": "Product handle (URL slug)."
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Brand or vendor."
+          },
+          "product_category": {
+            "type": "string",
+            "description": "The merchant's product category."
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "Only products of this collection id."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated product ids."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Created at or before, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Updated at or after, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Updated at or before, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort by creation time.",
+            "enum": [
+              "created_at_asc",
+              "created_at_desc"
+            ]
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only products after this product id."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return, e.g. id,title,status,variants."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          },
+          "page_info": {
+            "type": "string",
+            "description": "Cursor of the next or previous page: the page_info value of the URL in `_pagination.nextUrl` (or the `link` header) of the previous answer. Send it with limit only; other filters are ignored on a cursor page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/products.json",
+        "queryParams": {
+          "status": "$status",
+          "title": "$title",
+          "handle": "$handle",
+          "vendor": "$vendor",
+          "product_category": "$product_category",
+          "collection_id": "$collection_id",
+          "ids": "$ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "order_by": "$order_by",
+          "since_id": "$since_id",
+          "fields": "$fields",
+          "limit": "$limit",
+          "page_info": "$page_info"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_get_product",
+      "description": "Read one product: title, body_html, status, vendor, tags, handle, options, images, media and variants with price, sku, barcode, weight, inventory_quantity and inventory_item_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, e.g. 16057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}.json",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_count_products",
+      "description": "Count the products that match the filters (status, collection, dates): answers with count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Comma-separated statuses: active, draft, archived."
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "Only products of this collection id."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Created before, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Updated at or after, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Updated before, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/count.json",
+        "queryParams": {
+          "status": "$status",
+          "collection_id": "$collection_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_update_product",
+      "description": "Change a product: title, subtitle, description (body_html), status (active publishes, draft hides, archived archives), vendor, tags, category or unlisted. Only the fields given change. Prices and SKUs are on the variants: use shopline_update_variant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, e.g. 16057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "title": {
+            "type": "string",
+            "description": "Product title."
+          },
+          "subtitle": {
+            "type": "string",
+            "description": "Product subtitle."
+          },
+          "body_html": {
+            "type": "string",
+            "description": "Product description as HTML."
+          },
+          "status": {
+            "type": "string",
+            "description": "active, draft or archived.",
+            "enum": [
+              "active",
+              "draft",
+              "archived"
+            ]
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Brand or vendor."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags; replace the current tags.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "product_category": {
+            "type": "string",
+            "description": "The merchant's product category."
+          },
+          "unlisted": {
+            "type": "boolean",
+            "description": "true: hidden from search and collections but reachable by link."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}.json",
+        "bodyMapping": {
+          "product": {
+            "title": "$title",
+            "subtitle": "$subtitle",
+            "body_html": "$body_html",
+            "status": "$status",
+            "vendor": "$vendor",
+            "tags": "$tags",
+            "product_category": "$product_category",
+            "unlisted": "$unlisted"
+          }
+        }
+      }
+    },
+    {
+      "name": "shopline_list_product_variants",
+      "description": "List the variants of a product: id, sku, barcode, price, compare_at_price, option1 to option5, weight, inventory_quantity, inventory_policy and inventory_item_id. Up to 250 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, e.g. 16057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Variants per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page_info": {
+            "type": "string",
+            "description": "Cursor of the next or previous page: the page_info value of the URL in `_pagination.nextUrl` (or the `link` header) of the previous answer. Send it with limit only; other filters are ignored on a cursor page."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/variants.json",
+        "queryParams": {
+          "limit": "$limit",
+          "page_info": "$page_info"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_update_variant",
+      "description": "Change a variant: price and compare_at_price (decimal strings in the store currency), sku, barcode, weight with weight_unit, inventory_policy (whether it can be oversold) and inventory_tracker. Stock quantities change with shopline_set_inventory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "string",
+            "description": "Variant id, e.g. 18057850264845250791280282. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "price": {
+            "type": "string",
+            "description": "Selling price, e.g. 19.90."
+          },
+          "compare_at_price": {
+            "type": "string",
+            "description": "Original price shown crossed out, e.g. 24.90."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU code."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Barcode (EAN, UPC)."
+          },
+          "weight": {
+            "type": "string",
+            "description": "Weight, greater than 0."
+          },
+          "weight_unit": {
+            "type": "string",
+            "description": "Weight unit.",
+            "enum": [
+              "kg",
+              "g",
+              "lb",
+              "oz"
+            ]
+          },
+          "inventory_policy": {
+            "type": "string",
+            "description": "continue allows overselling, deny stops at 0.",
+            "enum": [
+              "continue",
+              "deny"
+            ]
+          },
+          "inventory_tracker": {
+            "type": "boolean",
+            "description": "true: track stock for this variant."
+          }
+        },
+        "required": [
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/variants/{variant_id}.json",
+        "bodyMapping": {
+          "variant": {
+            "price": "$price",
+            "compare_at_price": "$compare_at_price",
+            "sku": "$sku",
+            "barcode": "$barcode",
+            "weight": "$weight",
+            "weight_unit": "$weight_unit",
+            "inventory_policy": "$inventory_policy",
+            "inventory_tracker": "$inventory_tracker"
+          }
+        }
+      }
+    },
+    {
+      "name": "shopline_list_customers",
+      "description": "List customers: id, email, phone, first_name, last_name, state, tags, orders_count, total_spent, accepts_marketing, addresses and created_at. Up to 250 per page; next page in `_pagination.nextUrl`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated customer ids."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Created at or after, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Created at or before, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Updated at or after, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Updated at or before, ISO 8601 with offset, e.g. 2026-09-03T14:11:54+00:00."
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only customers after this id."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Customers per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page_info": {
+            "type": "string",
+            "description": "Cursor of the next or previous page: the page_info value of the URL in `_pagination.nextUrl` (or the `link` header) of the previous answer. Send it with limit only; other filters are ignored on a cursor page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/customers.json",
+        "queryParams": {
+          "ids": "$ids",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "since_id": "$since_id",
+          "fields": "$fields",
+          "limit": "$limit",
+          "page_info": "$page_info"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_get_customer",
+      "description": "Read one customer: email, phone, names, state, tags, note, orders_count, total_spent, marketing consent and addresses.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, e.g. 4201825024. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/v2/{customer_id}.json",
+        "queryParams": {
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_search_customers",
+      "description": "Search customers by name, email, phone or address text (query_param), or by exact criteria such as tags or orders_count (query). Same fields as shopline_list_customers; up to 250 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query_param": {
+            "type": "string",
+            "description": "Fuzzy text matched against phone, email, first_name, last_name, address1 and address2, e.g. smith."
+          },
+          "query": {
+            "type": "string",
+            "description": "Exact criteria as field:value separated by semicolons, e.g. `tags:vip;orders_count:3`. Fields: accepts_marketing, email_subscribe_flag, customer_date, customer_first_name, customer_id, tags, orders_count, order_date, state, total_spent, updated_at, verified_email."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort: 0 by creation time, 1 then by last order time, 2 then by order count, 3 then by id (all newest first).",
+            "enum": [
+              "0",
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated top-level fields to return."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Customers per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page_info": {
+            "type": "string",
+            "description": "Cursor of the next or previous page: the page_info value of the URL in `_pagination.nextUrl` (or the `link` header) of the previous answer. Send it with limit only; other filters are ignored on a cursor page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/v2/search.json",
+        "queryParams": {
+          "query_param": "$query_param",
+          "query": "$query",
+          "order": "$order",
+          "fields": "$fields",
+          "limit": "$limit",
+          "page_info": "$page_info"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_list_customer_orders",
+      "description": "List the orders of one customer, with the same order fields as shopline_list_orders. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id, e.g. 4201825024. SHOPLINE ids are long digit strings: pass them as text.",
+            "pattern": "^[0-9]{1,40}$"
+          },
+          "status": {
+            "type": "string",
+            "description": "open (in process), cancelled or any.",
+            "enum": [
+              "open",
+              "cancelled",
+              "any"
+            ],
+            "default": "any"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "since_id": {
+            "type": "string",
+            "description": "Only orders after this order id."
+          },
+          "page_info": {
+            "type": "string",
+            "description": "Cursor of the next or previous page: the page_info value of the URL in `_pagination.nextUrl` (or the `link` header) of the previous answer. Send it with limit only; other filters are ignored on a cursor page."
+          }
+        },
+        "required": [
+          "customer_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}/orders.json",
+        "queryParams": {
+          "status": "$status",
+          "limit": "$limit",
+          "since_id": "$since_id",
+          "page_info": "$page_info"
+        },
+        "exposeHeaders": [
+          "link"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_list_locations",
+      "description": "List inventory locations (warehouses and stores): id, name, address, active and whether it is the default location.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/list.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_get_inventory_items",
+      "description": "Read inventory items (one per variant): id, sku, tracked, cost and country of origin. The inventory_item_id is on every variant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated inventory item ids (inventory_item_id of the variants)."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory_items.json",
+        "queryParams": {
+          "ids": "$ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_get_inventory_levels",
+      "description": "Read available stock per inventory item and location: inventory_item_id, location_id, available and updated_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_item_ids": {
+            "type": "string",
+            "description": "Comma-separated inventory item ids (inventory_item_id of the variants)."
+          },
+          "location_ids": {
+            "type": "string",
+            "description": "Comma-separated location ids (from shopline_list_locations); all locations when left out."
+          }
+        },
+        "required": [
+          "inventory_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory_levels.json",
+        "queryParams": {
+          "inventory_item_ids": "$inventory_item_ids",
+          "location_ids": "$location_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shopline_set_inventory",
+      "description": "Set the available stock of an inventory item at a location to an absolute number (replaces the current quantity).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_item_id": {
+            "type": "string",
+            "description": "Inventory item id (inventory_item_id of the variant)."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Location id (from shopline_list_locations)."
+          },
+          "available": {
+            "type": "integer",
+            "description": "New available quantity."
+          }
+        },
+        "required": [
+          "inventory_item_id",
+          "location_id",
+          "available"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory_levels/set.json",
+        "bodyMapping": {
+          "inventory_item_id": "$inventory_item_id",
+          "location_id": "$location_id",
+          "available": "$available"
+        }
+      }
+    },
+    {
+      "name": "shopline_adjust_inventory",
+      "description": "Change the available stock of an inventory item at a location by a delta: positive adds, negative removes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inventory_item_id": {
+            "type": "string",
+            "description": "Inventory item id (inventory_item_id of the variant)."
+          },
+          "location_id": {
+            "type": "string",
+            "description": "Location id (from shopline_list_locations)."
+          },
+          "available_adjustment": {
+            "type": "integer",
+            "description": "Change in available quantity, e.g. 5 or -2."
+          }
+        },
+        "required": [
+          "inventory_item_id",
+          "location_id",
+          "available_adjustment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory_levels/adjust.json",
+        "bodyMapping": {
+          "inventory_item_id": "$inventory_item_id",
+          "location_id": "$location_id",
+          "available_adjustment": "$available_adjustment"
+        }
+      }
+    }
+  ]
+}
