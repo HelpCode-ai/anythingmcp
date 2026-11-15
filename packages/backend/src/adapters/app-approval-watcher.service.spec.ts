@@ -214,7 +214,11 @@ describe('AppApprovalWatcherService', () => {
         'o1',
       );
       expect(rows[0].config.appApprovalWatch).toEqual(
-        expect.objectContaining({ approvedAt: now.toISOString(), notifiedAt: now.toISOString() }),
+        expect.objectContaining({
+          approvedAt: now.toISOString(),
+          notifiedAt: now.toISOString(),
+          reminderAnnouncedAt: now.toISOString(),
+        }),
       );
       expect(logged(productEvents, 'etsy_app_approved_notified')).toEqual([
         expect.objectContaining({ organizationId: 'o1', metadata: { connectorId: 'c1', adapterSlug: 'etsy', kind: 'emailed' } }),
@@ -350,6 +354,7 @@ describe('AppApprovalWatcherService', () => {
             lastCheckedAt: notifiedAt.toISOString(),
             approvedAt: notifiedAt.toISOString(),
             notifiedAt: notifiedAt.toISOString(),
+            reminderAnnouncedAt: notifiedAt.toISOString(),
           },
         },
         ...over,
@@ -384,6 +389,14 @@ describe('AppApprovalWatcherService', () => {
       // No call to the provider and no second approval email for it.
       expect(adapters.recheckAppKeys).not.toHaveBeenCalled();
       expect(email.sendAppApprovedEmail).not.toHaveBeenCalled();
+    });
+
+    it('does not follow an approval email sent before the reminder existed: that one said it was the only email', async () => {
+      const row = notified();
+      delete (row.config as any).appApprovalWatch.reminderAnnouncedAt;
+      const { service, email } = build({ rows: [row] });
+      expect(await service.sweep(later(50 * H))).toEqual({ checked: 0, notified: 0, reminded: 0 });
+      expect(email.sendAppApprovedReminderEmail).not.toHaveBeenCalled();
     });
 
     it('is never sent twice: not on later sweeps, not after a restart, not by two processes at once', async () => {

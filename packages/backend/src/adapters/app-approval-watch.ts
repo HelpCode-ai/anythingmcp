@@ -72,6 +72,9 @@ export const WATCH_CONFIG_KEY = 'appApprovalWatch';
  *   refused: the user simply has not signed in yet, nothing to tell them
  * - approvedAt: the provider accepted the keys after refusing them
  * - notifiedAt: the email was claimed (sent, or tried once); never again
+ * - reminderAnnouncedAt: set with notifiedAt since the email announces the
+ *   reminder. An email claimed before that said it was the only one, so no
+ *   reminder follows it
  * - remindedAt: the reminder was claimed (sent, tried once, or withheld
  *   because the owner opted out of such emails); never again
  * - doneAt: the connector got its sign-in while watched; nothing to tell
@@ -82,6 +85,7 @@ export interface AppApprovalWatch {
   notPending?: string;
   approvedAt?: string;
   notifiedAt?: string;
+  reminderAnnouncedAt?: string;
   remindedAt?: string;
   doneAt?: string;
 }
@@ -90,7 +94,7 @@ export function readWatch(config: unknown): AppApprovalWatch {
   const raw = (config as Record<string, unknown> | null | undefined)?.[WATCH_CONFIG_KEY];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const out: AppApprovalWatch = {};
-  for (const key of ['pendingSince', 'lastCheckedAt', 'notPending', 'approvedAt', 'notifiedAt', 'remindedAt', 'doneAt'] as const) {
+  for (const key of ['pendingSince', 'lastCheckedAt', 'notPending', 'approvedAt', 'notifiedAt', 'reminderAnnouncedAt', 'remindedAt', 'doneAt'] as const) {
     const v = (raw as Record<string, unknown>)[key];
     if (typeof v === 'string' && !Number.isNaN(Date.parse(v))) out[key] = v;
   }
@@ -133,12 +137,12 @@ export function isCheckDue(
 
 /**
  * Whether the one reminder is due on this sweep: the approval email was
- * claimed 48 hours ago or more, no reminder was claimed, the connector was
+ * claimed 48 hours ago or more and announced it, no reminder was claimed, the connector was
  * not seen signed in, and the reminder's own window has not passed. Whether
  * the sign-in is still missing is read from the connector by the caller.
  */
 export function isReminderDue(watch: AppApprovalWatch, now: Date): boolean {
-  if (!watch.notifiedAt || watch.remindedAt || watch.doneAt) return false;
+  if (!watch.notifiedAt || !watch.reminderAnnouncedAt || watch.remindedAt || watch.doneAt) return false;
   const since = now.getTime() - Date.parse(watch.notifiedAt);
   return since >= REMIND_AFTER_MS && since < REMIND_AFTER_MS + REMIND_WINDOW_MS;
 }

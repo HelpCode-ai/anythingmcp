@@ -246,7 +246,11 @@ export class AppApprovalWatcherService implements OnModuleInit, OnModuleDestroy 
    * process sent it or tried to.
    */
   private async notifyOnce(row: Candidate, slug: string, patch: AppApprovalWatch, now: Date): Promise<boolean> {
-    const claimed = await this.writeWatch(row.id, { ...patch, notifiedAt: now.toISOString() }, { claim: 'notifiedAt' });
+    const claimed = await this.writeWatch(
+      row.id,
+      { ...patch, notifiedAt: now.toISOString(), reminderAnnouncedAt: now.toISOString() },
+      { claim: 'notifiedAt' },
+    );
     if (claimed !== 1) return false;
     const earlier = await this.prisma.productEvent.findFirst({
       where: {

@@ -134,6 +134,7 @@ describe('app-approval-watch', () => {
       pendingSince: iso(ms + D),
       approvedAt: iso(ms),
       notifiedAt: iso(ms),
+      reminderAnnouncedAt: iso(ms),
       ...more,
     });
 
@@ -149,6 +150,10 @@ describe('app-approval-watch', () => {
       expect(isReminderDue({ notPending: iso(60 * H) }, now)).toBe(false);
       expect(isReminderDue(notified(60 * H, { remindedAt: iso(10 * H) }), now)).toBe(false);
       expect(isReminderDue(notified(60 * H, { doneAt: iso(10 * H) }), now)).toBe(false);
+    });
+
+    it('does not follow an email that said it was the only one (sent before the reminder existed)', () => {
+      expect(isReminderDue({ pendingSince: iso(61 * H), approvedAt: iso(60 * H), notifiedAt: iso(60 * H) }, now)).toBe(false);
     });
 
     it('is dropped a day after it fell due, so an old approval is not reminded of', () => {
