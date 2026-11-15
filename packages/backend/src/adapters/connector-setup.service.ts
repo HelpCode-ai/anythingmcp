@@ -29,6 +29,7 @@ import { fileSearchSetupPath } from './file-search-setup';
 import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
 import { inspectOdooAddress } from './odoo-database-hint';
 import { WOOCOMMERCE_SLUG, WOOCOMMERCE_URL_VAR } from './woocommerce-setup';
+import { appApprovalAnnounced, signInPath } from './app-approval-watch';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -348,7 +349,8 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       metadata: {
         ...(/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug) ? { adapterSlug: slug } : {}),
         via: opts.via ?? 'mcp',
-        reason: installRefusalReason(out.body),
+        // `kind`: the key the event store keeps for why a setup failed.
+        kind: installRefusalReason(out.body),
       },
     });
   }
@@ -712,8 +714,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     const out = [];
     let unfinished = 0;
     let refused = 0;
+    let approved = 0;
     for (const { row: r, state } of states) {
       const check = checks.get(r.id);
+      // The provider approved the user's app (Etsy: it left Pending) and only
+      // the sign-in is left: said first, with the link of the approval email.
+      const appApproved = state.status === 'needs_authorization' && appApprovalAnnounced(r.config);
+      if (appApproved) approved++;
       // A catalog connector added (mostly from a chat) whose values were never
       // entered: 28 of the 41 WooCommerce connectors never called in Oct-Nov
       // 2026 still held {{WOOCOMMERCE_URL}}, their link long expired. After a
@@ -731,6 +738,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         name: r.name,
         status: state.status,
         ...(state.status !== 'ready' ? { finishSetupUrl: await this.createLink(ctx, r.id) } : {}),
+        ...(appApproved ? { appApproved: true, finishSignInUrl: `${ctx.dashboardBase}${signInPath(r.id)}` } : {}),
         ...(waiting ? { unfinishedSince: r.createdAt.toISOString() } : {}),
         ...(credentialRefused
           ? {
@@ -749,6 +757,12 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     const trial = await this.trialAnswer(ctx);
     return {
       body: {
+        ...(approved
+          ? {
+              appApprovedHint:
+                "appApproved: the provider approved the user's app for that connector; only the sign-in is left. Before anything else, tell the user and show them its finishSignInUrl as a clickable link: it starts the provider's sign-in.",
+            }
+          : {}),
         connectors: out,
         ...(out.length === 0 ? { hint: 'No connectors yet: use setup_find_connectors.' } : {}),
         ...([...checks.values()].some((c) => c.check?.ok === false)

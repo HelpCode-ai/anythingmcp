@@ -2,6 +2,7 @@ import { ConnectorSetupService, SETUP_LINK_RETENTION_MS, installRefusalReason } 
 import { AdaptersService } from './adapters.service';
 import { describeAdapterEnvVars } from './env-var-meta';
 import { encrypt } from '../common/crypto/encryption.util';
+import { getAdapter } from './catalog';
 import { outboundRequest } from '../common/outbound-http';
 
 // The chat install asks an Odoo address about itself: no real request here.
@@ -395,10 +396,10 @@ describe('ConnectorSetupService — install', () => {
     await service.install(ctx, { adapter: 'openplz' }, { via: 'post_approve' });
     await service.install(ctx, { adapter: 'Not A Slug!!' });
     expect(failed()).toEqual([
-      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'no-such-app', via: 'mcp', reason: 'unknown_app' } },
-      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'openplz', via: 'post_approve', reason: 'plan_limit' } },
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'no-such-app', via: 'mcp', kind: 'unknown_app' } },
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'openplz', via: 'post_approve', kind: 'plan_limit' } },
       // An id that is not a catalog id is not stored.
-      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { via: 'mcp', reason: 'unknown_app' } },
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { via: 'mcp', kind: 'unknown_app' } },
     ]);
 
     productEvents.log.mockClear();
@@ -730,6 +731,55 @@ describe('ConnectorSetupService — status of ready connectors', () => {
     expect(out.connectors[0]).toMatchObject({ check: { ok: false, message: 'The provider refused the key.' } });
     expect(out.connectors[0].fixUrl).toMatch(/\/s\//);
     expect(out.checkHint).toMatch(/fixUrl/);
+  });
+
+  describe('an app the provider approved, with the sign-in still missing', () => {
+    const etsy = getAdapter('etsy')!;
+    const etsyRow = (watch: Record<string, string> | undefined, envVars: Record<string, string> = {}) => ({
+      id: 'c-etsy',
+      name: 'Etsy',
+      organizationId: 'org-1',
+      authType: 'OAUTH2',
+      authConfig: encrypt(JSON.stringify(etsy.connector.authConfig), KEY),
+      baseUrl: etsy.connector.baseUrl,
+      headers: null,
+      envVars: { ETSY_CLIENT_ID: 'abcdefghijklmnopqrstuvwx', ETSY_CLIENT_SECRET: 'secret1234', ...envVars },
+      config: { adapterSlug: 'etsy', ...(watch ? { appApprovalWatch: watch } : {}) },
+      createdAt: new Date(Date.now() - 2 * 86_400_000),
+      updatedAt: new Date(),
+      tools: [],
+    });
+    const approved = { pendingSince: '2026-11-01T10:00:00.000Z', approvedAt: '2026-11-02T10:00:00.000Z', notifiedAt: '2026-11-02T10:00:00.000Z' };
+
+    it('is said first, with the link that starts the sign-in', async () => {
+      const { service, ctx } = build({ connectors: [etsyRow(approved)] });
+      const out: any = (await service.status(ctx)).body;
+      expect(Object.keys(out)[0]).toBe('appApprovedHint');
+      expect(out.appApprovedHint).toBe(
+        "appApproved: the provider approved the user's app for that connector; only the sign-in is left. Before anything else, tell the user and show them its finishSignInUrl as a clickable link: it starts the provider's sign-in.",
+      );
+      expect(out.connectors[0]).toMatchObject({
+        name: 'Etsy',
+        status: 'needs_authorization',
+        appApproved: true,
+        finishSignInUrl: 'https://cloud.example.com/connectors/c-etsy?signin=1',
+      });
+    });
+
+    it('is absent while the app is pending, and once the user signed in', async () => {
+      const pending = build({ connectors: [etsyRow({ pendingSince: '2026-11-01T10:00:00.000Z' })] });
+      const waiting: any = (await pending.service.status(pending.ctx)).body;
+      expect(waiting.appApprovedHint).toBeUndefined();
+      expect(waiting.connectors[0].status).toBe('needs_authorization');
+      expect(waiting.connectors[0].appApproved).toBeUndefined();
+      expect(waiting.connectors[0].finishSignInUrl).toBeUndefined();
+
+      const signedIn = build({ connectors: [etsyRow(approved, { ETSY_REFRESH_TOKEN: 'rt-1' })] });
+      const done: any = (await signedIn.service.status(signedIn.ctx)).body;
+      expect(done.connectors[0].status).toBe('ready');
+      expect(done.appApprovedHint).toBeUndefined();
+      expect(JSON.stringify(done)).not.toContain('signin=1');
+    });
   });
 
   it('leaves an old unused connector unchecked', async () => {
