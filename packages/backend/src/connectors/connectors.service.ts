@@ -41,7 +41,7 @@ import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { connectorPageUrl, normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
 import { envVarsForMcpTool, mcpPathOf, resolveMcpFixedArguments } from './mcp-connector-config.util';
-import { applySchemaDefaults } from '../common/schema-defaults.util';
+import { applyEnvDefaults, applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
 import { EmailEngine } from './engines/email.engine';
@@ -969,7 +969,8 @@ export class ConnectorsService {
           Object.entries(injected).filter(([k]) => params[k] === undefined),
         ) }
       : params;
-    const mergedParams = applySchemaDefaults(parameters, withEnv);
+    // A parameter left out takes the variable the tool names for it (envDefaults).
+    const mergedParams = applySchemaDefaults(parameters, applyEnvDefaults(endpointMapping, withEnv, envVars));
 
     // Static response tools — return text immediately without engine dispatch.
     //
