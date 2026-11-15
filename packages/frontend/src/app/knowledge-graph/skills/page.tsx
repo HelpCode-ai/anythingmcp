@@ -683,6 +683,16 @@ function SkillCard({
             <Badge tone={statusMeta.tone} className="rounded-full px-2 py-[2px]">
               {statusMeta.label}
             </Badge>
+            {s.audienceUserId && (
+              <Badge tone="warn" className="rounded-full px-2 py-[2px]" data-testid="skill-draft-only">
+                {t('card.draftOnly')}
+              </Badge>
+            )}
+            {(s.tags ?? []).map((tag) => (
+              <Badge key={tag} tone="neutral" className="rounded-full px-2 py-[2px]">
+                {tag}
+              </Badge>
+            ))}
           </div>
           <p className="text-[11.5px] text-[var(--text-3)]">
             {folderPath ? `${folderPath} · ` : ''}
@@ -807,6 +817,7 @@ function useSourceLabel() {
     if (source === 'consolidation') return status === 'pending' ? t('mergeProposal') : t('mergedByAi');
     if (source === 'errors') return t('errors');
     if (source === 'finder') return t('finder');
+    if (source === 'learning') return t('learning');
     return t('manual');
   };
 }

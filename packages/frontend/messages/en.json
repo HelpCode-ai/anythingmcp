@@ -32,7 +32,8 @@
       "knowledgeGraph": "Knowledge Graph",
       "aiSkills": "AI Skills",
       "memory": "Memory",
-      "setup": "Setup & onboarding"
+      "setup": "Setup & onboarding",
+      "learning": "Learning projects"
     },
     "settings": "Settings",
     "switchWorkspace": "Switch workspace",
@@ -3116,7 +3117,8 @@
       "hideHistory": "Hide history",
       "history": "History ({count, plural, one {# earlier version} other {# earlier versions}})",
       "replaced": "replaced {date}",
-      "historyProcedure": "Procedure: {count, number} characters"
+      "historyProcedure": "Procedure: {count, number} characters",
+      "draftOnly": "Draft: served to its member only"
     },
     "sources": {
       "llm": "AI-generated",
@@ -3124,7 +3126,8 @@
       "mergedByAi": "merged by AI",
       "errors": "learned from fixed errors",
       "finder": "from Skills Finder",
-      "manual": "written by hand"
+      "manual": "written by hand",
+      "learning": "from a learning project"
     },
     "form": {
       "titlePlaceholder": "Title",
@@ -3934,5 +3937,166 @@
     "addPaymentBefore": "Add a payment method: no charge before {date}",
     "addPayment": "Add a payment method",
     "upgrade": "Upgrade now"
+  },
+  "learning": {
+    "title": "Learning projects",
+    "intro": "A learning project keeps what one colleague teaches the AI on one MCP server: their corrections and explanations become skills for everyone. Nothing is kept before they accept, and they can stop at any time.",
+    "loading": "Loading…",
+    "loadFailed": "Could not load the learning projects",
+    "allowance": {
+      "unlimited": "Your plan includes learning projects without a limit.",
+      "some": "{used} of {max} learning projects in use."
+    },
+    "upsell": {
+      "cloudTitle": "Learning projects are part of the Team and Enterprise plans",
+      "cloudBody": "Keep what an experienced colleague teaches the AI before they leave: their corrections become skills the whole team's AI assistants use. Team includes one project, Enterprise has no limit.",
+      "cloudCta": "See plans",
+      "selfTitle": "Learning projects are part of AnythingMCP Enterprise",
+      "selfBody": "Keep what an experienced colleague teaches the AI before they leave: their corrections become skills the whole team's AI assistants use. The 30-day evaluation includes one project.",
+      "contact": "Contact us about Enterprise",
+      "key": "Enter a license key"
+    },
+    "new": {
+      "button": "New learning project",
+      "title": "New learning project",
+      "name": "Name",
+      "namePlaceholder": "e.g. Hardware for old windows",
+      "member": "Learn from",
+      "memberPlaceholder": "Choose a member",
+      "server": "On the MCP server",
+      "serverPlaceholder": "Choose an MCP server",
+      "folder": "File the skills in",
+      "noFolder": "No folder",
+      "endsAt": "Ends on (optional)",
+      "tags": "Labels (optional)",
+      "tagsHint": "Separated by commas, e.g. windows, hardware",
+      "publishMode": "Publishing",
+      "publishManual": "A person publishes each topic",
+      "publishConfirmed": "Lessons the member confirms are published",
+      "showName": "Show the member's name to everyone, not to admins only",
+      "create": "Start and ask the member",
+      "creating": "Starting…",
+      "cancel": "Cancel",
+      "created": "Started. The member accepts it under Settings → Profile; nothing is kept before that.",
+      "limitReached": "Your plan's learning projects are all in use. End or pause one to start another."
+    },
+    "status": {
+      "draft": "Waiting for the member",
+      "active": "Active",
+      "paused": "Paused",
+      "ended": "Ended",
+      "overPlan": "Not in your plan"
+    },
+    "card": {
+      "expert": "Learning from {name}",
+      "expertHidden": "Member shown to admins only",
+      "server": "on {name}",
+      "noServer": "its MCP server was deleted",
+      "lessons": "{confirmed} confirmed · {draft} to confirm",
+      "topics": "{count} topic(s)",
+      "open": "Open",
+      "ends": "ends {date}"
+    },
+    "empty": "No learning project yet.",
+    "detail": {
+      "back": "All learning projects",
+      "notFound": "Learning project not found",
+      "tabs": {
+        "topics": "Topics",
+        "lessons": "Lessons",
+        "settings": "Settings"
+      },
+      "pause": "Pause",
+      "resume": "Resume",
+      "end": "End",
+      "delete": "Delete",
+      "confirmEnd": "End this learning project? Its lessons and published skills are kept; it cannot be started again.",
+      "confirmDelete": "Delete this learning project and all its lessons? Published skills are kept.",
+      "waiting": "Waiting for {name} to accept under Settings → Profile. Nothing is kept before that.",
+      "waitingHidden": "Waiting for the member to accept under Settings → Profile. Nothing is kept before that.",
+      "overPlan": "This project is beyond the number your plan includes, so nothing is captured. End another project or upgrade the plan."
+    },
+    "topics": {
+      "empty": "No lessons yet. They appear when the member corrects the AI or explains something on this server.",
+      "when": "When:",
+      "published": "Published {date}",
+      "notPublished": "Not published",
+      "changes": "Confirmed changes to publish",
+      "counts": "{confirmed} confirmed · {draft} to confirm",
+      "preview": "Preview",
+      "hidePreview": "Hide preview",
+      "publish": "Publish",
+      "publishing": "Publishing…",
+      "publishedMsg": "Published: {count} lesson(s) are now a skill for everyone on this server.",
+      "nothing": "Nothing confirmed to publish yet.",
+      "dropped": "{count} older lesson(s) did not fit in the text and were left out.",
+      "viewSkill": "Open AI Skills"
+    },
+    "lessons": {
+      "filter": {
+        "all": "All",
+        "draft": "To confirm",
+        "confirmed": "Confirmed",
+        "rejected": "Rejected"
+      },
+      "empty": "No lessons here.",
+      "kind": {
+        "rule": "Rule",
+        "fact": "Fact",
+        "correction": "Correction",
+        "example": "Example"
+      },
+      "source": {
+        "model": "reported by the AI",
+        "diff": "seen in the work",
+        "interview": "from an interview",
+        "manual": "edited by a curator"
+      },
+      "status": {
+        "draft": "To confirm",
+        "confirmed": "Confirmed",
+        "rejected": "Rejected",
+        "superseded": "Replaced"
+      },
+      "before": "Instead of:",
+      "after": "Use:",
+      "reason": "Why:",
+      "askWhy": "No reason given yet",
+      "seen": "said {count}×",
+      "confirm": "Confirm",
+      "reject": "Reject",
+      "reopen": "Reopen",
+      "edit": "Reword",
+      "save": "Save",
+      "cancel": "Cancel",
+      "more": "Show more"
+    },
+    "settings": {
+      "name": "Name",
+      "folder": "File the skills in",
+      "folderHint": "Applies to topics started from now on.",
+      "endsAt": "Ends on",
+      "tags": "Labels",
+      "publishMode": "Publishing",
+      "showName": "Show the member's name to everyone, not to admins only",
+      "save": "Save",
+      "saved": "Saved."
+    },
+    "profile": {
+      "title": "Learning projects",
+      "ask": "Your admin asks to keep what you teach the AI on the MCP server “{server}”, for the learning project “{name}”.",
+      "notice": "On the MCP server “{server}”, when you correct the AI or explain how the work is done, the AI saves that as a lesson for the learning project “{name}”. Lessons become skills your colleagues' AI assistants can use. Kept: the lessons. Not kept: the conversation itself, your work on other servers, and any figures about your work. You confirm each lesson before it is shared. Workspace admins and editors can read the lessons. You can stop at any time on this page and erase everything that was not published.",
+      "nameHidden": "Your name is shown to admins only.",
+      "nameShown": "Your name is shown with the skills learned from you.",
+      "accept": "Accept",
+      "decline": "Decline",
+      "accepted": "Accepted. Refresh the tools list of this connector in your AI client to get the learning tools.",
+      "active": "“{name}” is active on “{server}” since {date}.",
+      "paused": "“{name}” is paused by your admin.",
+      "stop": "Stop",
+      "erase": "Also erase my lessons that were not published",
+      "stopped": "Stopped.",
+      "failed": "Could not save your answer"
+    }
   }
 }
