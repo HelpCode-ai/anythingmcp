@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="HORNBACH Shop connector">
+  <rect width="128" height="128" rx="24" fill="#F7911A"/>
+  <path d="M34 28h15v28h30V28h15v62H79V69H49v21H34Z" fill="#fff"/>
+  <path d="M34 98h60v8H34Z" fill="#fff"/>
+</svg>
