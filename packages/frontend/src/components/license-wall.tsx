@@ -24,6 +24,7 @@ import {
   type WorkspaceUsage,
 } from '@/lib/card-trial';
 import { PlanPicker } from '@/components/plan-picker';
+import { PaywallIntl } from '@/components/paywall-intl';
 import { LogoIcon } from '@/components/logo-icon';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -37,7 +38,16 @@ import { cn } from '@/lib/utils';
 // a new purchase would bill a second subscription.
 type BlockReason = 'no-license' | 'trial-ended' | 'expired' | 'lapsed' | 'payment-failed';
 
+/** The licence wall, in the visitor's language among the website's seven. */
 export function LicenseWall() {
+  return (
+    <PaywallIntl>
+      <LicenseWallContent />
+    </PaywallIntl>
+  );
+}
+
+function LicenseWallContent() {
   const { token, user, deploymentMode, orgName, orgs, switchOrg } = useAuth();
   const managePlan = useManagePlan();
   const [reason, setReason] = useState<BlockReason | null>(null);
@@ -186,7 +196,7 @@ export function LicenseWall() {
       await license.activateTrial(token);
       setReason(null);
     } catch (e: any) {
-      setStartErr(e?.message || 'Could not start the trial. Please try again or contact support.');
+      setStartErr(e?.message || tw('startTrial.failed'));
     } finally {
       setStarting(false);
     }
@@ -203,7 +213,7 @@ export function LicenseWall() {
       const { url } = await license.billingPortal(token, window.location.href, 'payment_method_update');
       window.location.href = url;
     } catch (e: any) {
-      setCardErr(e?.message || 'Could not open the payment page. Please try again or contact support.');
+      setCardErr(e?.message || tw('payment.openFailed'));
       setUpdatingCard(false);
     }
   };
@@ -240,10 +250,10 @@ export function LicenseWall() {
       const next = reasonFor(await license.getStatus(token));
       setReason(next);
       if (next === 'payment-failed') {
-        setCheckNote('The payment has not come through yet. If you just updated your payment method, try again in a minute.');
+        setCheckNote(tw('payment.notYet'));
       }
     } catch {
-      setCheckNote('Could not check right now. Please try again in a minute.');
+      setCheckNote(tw('payment.checkFailed'));
     } finally {
       setChecking(false);
     }
@@ -328,35 +338,34 @@ export function LicenseWall() {
   const title = trustWall
     ? tw('title')
     : reason === 'payment-failed'
-      ? 'Your payment didn’t go through'
+      ? tw('reasons.paymentFailed.title')
       : reason === 'no-license'
-      ? 'License Required'
-      : reason === 'trial-ended'
-        ? 'Your Trial Has Expired'
-        : reason === 'lapsed'
-          ? 'Your Subscription Is Not Active'
-          : 'Your License Has Expired';
+        ? tw('reasons.noLicense.title')
+        : reason === 'trial-ended'
+          ? tw('reasons.trialEnded.title')
+          : reason === 'lapsed'
+            ? tw('reasons.lapsed.title')
+            : tw('reasons.expired.title');
 
   const body = trustWall
     ? tw('body', { client: wallClient ?? tw('yourAi') })
     : reason === 'payment-failed'
-      ? isAdmin
-        ? 'Your last payment didn’t go through, so your subscription is on hold. Update your payment method and it resumes right away: the open payment is taken as soon as the new one is saved. Your connectors and configurations are preserved.'
-        : 'The last payment for this workspace’s subscription didn’t go through, so the subscription is on hold. Ask a workspace admin to update the payment method. Your connectors and configurations are preserved.'
+      ? tw(isAdmin ? 'reasons.paymentFailed.bodyAdmin' : 'reasons.paymentFailed.bodyMember')
       : reason === 'no-license'
-      ? 'This workspace doesn’t have an active license. Start a trial or purchase a plan to continue.'
-      : reason === 'trial-ended'
-        ? 'Your 7-day trial period has ended. Purchase a license to continue using AnythingMCP Cloud. Your connectors and configurations are preserved.'
-        : reason === 'lapsed'
-          ? 'Your subscription is not active — usually a renewal payment that did not go through. Update your payment method in the billing portal and it resumes; buying a new plan would start a second subscription beside this one. Your connectors and configurations are preserved.'
-          : 'Your license is no longer active. Purchase or renew a license to continue using AnythingMCP. Your connectors and configurations are preserved.';
+        ? tw('reasons.noLicense.body')
+        : reason === 'trial-ended'
+          ? tw('reasons.trialEnded.body')
+          : reason === 'lapsed'
+            ? tw('reasons.lapsed.body')
+            : tw('reasons.expired.body');
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
         className={cn(
           'bg-[var(--surface)] border border-[var(--border)] rounded-[14px] max-w-md w-full mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto text-center shadow-[var(--shadow)]',
-          trustWall ? 'px-8 py-6' : 'p-8',
+          // Less side padding on a phone: the plan rows need the width.
+          trustWall ? 'px-5 py-6 sm:px-8' : 'p-5 sm:p-8',
         )}
       >
         <div className={cn('flex justify-center', trustWall ? 'mb-3' : 'mb-4')}>
@@ -367,7 +376,7 @@ export function LicenseWall() {
 
         {otherOrgs.length > 0 && orgName && (
           <p className="text-xs text-[var(--text-3)] mb-2">
-            Workspace: <span className="font-medium text-[var(--text-2)]">{orgName}</span>
+            {tw('workspaceLabel')} <span className="font-medium text-[var(--text-2)]">{orgName}</span>
           </p>
         )}
 
@@ -387,7 +396,7 @@ export function LicenseWall() {
                 disabled={starting}
                 className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
               >
-                {starting ? 'Starting…' : 'Start 7-Day Free Trial'}
+                {starting ? tw('startTrial.starting') : tw('startTrial.start')}
               </button>
               {startErr && <p className="text-xs text-[var(--danger)]">{startErr}</p>}
               <a
@@ -396,7 +405,7 @@ export function LicenseWall() {
                 rel="noopener noreferrer"
                 className={cn(buttonVariants({ variant: 'secondary', size: 'lg' }), 'w-full')}
               >
-                View Plans &amp; Purchase License
+                {tw('viewPlans')}
               </a>
             </>
           ) : wallLoading ? null : buyInPlace ? (
@@ -419,7 +428,7 @@ export function LicenseWall() {
                 disabled={checkout.loading}
                 className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
               >
-                {checkout.loading ? 'Opening checkout…' : `Subscribe to ${planById(selection.plan).name}`}
+                {checkout.loading ? tw('openingCheckout') : tw('subscribeTo', { plan: planById(selection.plan).name })}
               </button>
               {checkout.error && <p role="alert" className="text-xs text-[var(--danger)]">{checkout.error}</p>}
               <PlanFitNotice
@@ -450,7 +459,7 @@ export function LicenseWall() {
                       .map((item, i) => (
                         <span key={item}>
                           {i > 0 && ' · '}
-                          <span className="whitespace-nowrap">{item}</span>
+                          <span className="min-[360px]:whitespace-nowrap">{item}</span>
                         </span>
                       ))}
                   </p>
@@ -463,7 +472,7 @@ export function LicenseWall() {
                 onClick={() => trackWall('compare_plans_clicked')}
                 className="block text-xs text-[var(--brand)] hover:underline"
               >
-                Compare plans
+                {tw('comparePlans')}
               </a>
             </>
           ) : reason === 'payment-failed' ? (
@@ -474,7 +483,7 @@ export function LicenseWall() {
                   disabled={updatingCard}
                   className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
                 >
-                  {updatingCard ? 'Opening…' : 'Update payment method'}
+                  {updatingCard ? tw('opening') : tw('payment.update')}
                 </button>
                 {cardErr && <p role="alert" className="text-xs text-[var(--danger)]">{cardErr}</p>}
                 <button
@@ -482,7 +491,7 @@ export function LicenseWall() {
                   disabled={checking}
                   className={cn(buttonVariants({ variant: 'secondary', size: 'lg' }), 'w-full')}
                 >
-                  {checking ? 'Checking…' : 'I’ve updated my payment method'}
+                  {checking ? tw('payment.checking') : tw('payment.updated')}
                 </button>
                 {checkNote && <p className="text-xs text-[var(--text-2)]">{checkNote}</p>}
               </>
@@ -495,7 +504,7 @@ export function LicenseWall() {
               rel="noopener noreferrer"
               className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
             >
-              Update Billing
+              {tw('updateBilling')}
             </a>
           ) : (
             <a
@@ -504,13 +513,13 @@ export function LicenseWall() {
               rel="noopener noreferrer"
               className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
             >
-              View Plans &amp; Purchase License
+              {tw('viewPlans')}
             </a>
           )}
 
           {otherOrgs.length > 0 && (
             <div className="border-t border-[var(--border)] pt-3 text-left">
-              <p className="mb-1.5 text-center text-xs text-[var(--text-3)]">Switch to another workspace</p>
+              <p className="mb-1.5 text-center text-xs text-[var(--text-3)]">{tw('switchWorkspace')}</p>
               <div className="max-h-40 space-y-1 overflow-y-auto">
                 {otherOrgs.map((org) => (
                   <button
@@ -528,7 +537,7 @@ export function LicenseWall() {
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--text)]">{org.name}</span>
                     <span className="text-[11px] text-[var(--text-3)]">
-                      {switchingTo === org.id ? 'Opening…' : org.role}
+                      {switchingTo === org.id ? tw('opening') : org.role}
                     </span>
                   </button>
                 ))}
@@ -538,24 +547,24 @@ export function LicenseWall() {
 
           {reason !== 'payment-failed' && (
             <p className="text-xs text-[var(--text-3)]">
-              Already purchased?{' '}
+              {tw('alreadyPurchased')}{' '}
               <Link
                 href="/settings/license"
                 onClick={() => trackWall('license_key_clicked')}
                 className="text-[var(--brand)] hover:underline"
               >
-                Enter your license key
+                {tw('enterKey')}
               </Link>
             </p>
           )}
           <p className={cn('text-[var(--text-3)]', trustWall ? 'pt-2 text-[11px]' : 'text-xs')}>
-            Not continuing?{' '}
+            {tw('notContinuing')}{' '}
             <Link
               href="/settings"
               onClick={() => trackWall('delete_account_clicked')}
               className={trustWall ? 'underline hover:text-[var(--text-2)]' : 'text-[var(--brand)] hover:underline'}
             >
-              Delete your account
+              {tw('deleteAccount')}
             </Link>
           </p>
         </div>

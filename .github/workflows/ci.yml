@@ -99,6 +99,12 @@ jobs:
       - name: Verify generated AI documentation is up to date
         run: node scripts/generate-llms-txt.mjs --check
 
+      # The retailer marketplace adapters (Decathlon, Carrefour, MediaMarkt...)
+      # are generated from intl/mirakl.json and scripts/retailer-marketplaces.json.
+      # A change to either must not leave the generated adapters behind.
+      - name: Verify generated retailer adapters are up to date
+        run: node scripts/generate-retailer-adapters.mjs --check
+
       # The amcp CLI's catalogue of management operations is generated from the
       # controllers guarded by JwtOrManagementKeyGuard. A new management route
       # must not ship without the CLI (and `amcp api --list`) knowing about it.

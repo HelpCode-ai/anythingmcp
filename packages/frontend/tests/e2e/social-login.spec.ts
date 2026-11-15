@@ -250,4 +250,35 @@ test.describe('sign-in methods in Settings', () => {
     await expect(dialog.getByRole('button', { name: 'Sign in again with Google' })).toBeVisible();
     expect(deleteBody).toEqual({ confirm: 'DELETE' });
   });
+
+  test('cloud never asks for the self-hosted SSO providers; self-hosted still does', async ({ page }) => {
+    for (const cloud of [true, false]) {
+      const asked: string[] = [];
+      page.on('request', (r) => {
+        if (new URL(r.url()).pathname === '/api/auth/sso/providers') asked.push(r.url());
+      });
+      await mockApi(page, {
+        cloud,
+        extra: (p) =>
+          p === '/api/auth/social/identities'
+            ? { hasPassword: true, providers: [] }
+            : p === '/api/users/me'
+              ? USER
+              : p === '/api/auth/sso/providers'
+                ? []
+                : null,
+      });
+      await page.goto('/settings');
+      await expect(page.getByRole('button', { name: 'Delete my account' })).toBeVisible();
+      if (cloud) {
+        // Give any late effect time to fire before asserting it did not.
+        await page.waitForTimeout(500);
+        expect(asked).toHaveLength(0);
+      } else {
+        await expect.poll(() => asked.length).toBeGreaterThan(0);
+      }
+      page.removeAllListeners('request');
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
+  });
 });

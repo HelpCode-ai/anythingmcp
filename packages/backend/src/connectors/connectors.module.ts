@@ -22,6 +22,7 @@ import { McpOAuthCallbackController } from './mcp-oauth-callback.controller';
 import { ShopeeAuthController } from './shopee-auth.controller';
 import { WooCommerceAuthController } from './woocommerce-auth.controller';
 import { TikTokShopAuthController } from './tiktok-shop-auth.controller';
+import { IopAuthController } from './iop-auth.controller';
 import { MetaAuthController } from './meta-auth.controller';
 import { MetaLoginService } from './engines/meta-login.service';
 import { WebhookIngestController } from './webhook-ingest.controller';
@@ -64,7 +65,7 @@ const PARSERS = [OpenApiParser, WsdlParser, GraphqlParser, PostmanParser, CurlPa
     FileSearchCoreModule,
     MemberVisibilityModule,
   ],
-  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, TikTokShopAuthController, MetaAuthController, WooCommerceAuthController, ToolsController, WebhookIngestController],
+  controllers: [ConnectorsController, McpOAuthCallbackController, ShopeeAuthController, TikTokShopAuthController, IopAuthController, MetaAuthController, WooCommerceAuthController, ToolsController, WebhookIngestController],
   providers: [
     ConnectorsService,
     McpOAuthService,

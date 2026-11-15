@@ -1,12 +1,11 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { ApiError, license } from './api';
 import { useAuth } from './auth-context';
 import { readPromoCode, type PlanSelection } from './card-trial';
 import type { CheckoutSource } from './checkout-source';
-
-const GENERIC_ERROR = 'We could not open the checkout. Please try again in a moment.';
 
 /**
  * What became of a checkout request:
@@ -26,6 +25,7 @@ export type CheckoutOutcome = 'redirected' | 'charges_today' | 'failed';
  */
 export function useCardCheckout() {
   const { token } = useAuth();
+  const t = useTranslations('cardCheckout');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chargesTodayUrl, setChargesTodayUrl] = useState<string | null>(null);
@@ -56,12 +56,12 @@ export function useCardCheckout() {
         return 'redirected';
       } catch (err) {
         // A 409 says why (the workspace already pays); anything else is ours.
-        setError(err instanceof ApiError && err.status === 409 ? err.message : GENERIC_ERROR);
+        setError(err instanceof ApiError && err.status === 409 ? err.message : t('failed'));
         setLoading(false);
         return 'failed';
       }
     },
-    [token],
+    [token, t],
   );
 
   return { start, loading, error, chargesTodayUrl };

@@ -1,0 +1,2492 @@
+{
+  "slug": "fedex",
+  "name": "FedEx",
+  "description": "FedEx APIs for shippers: track shipments by number or reference, get proof of delivery, quote rates and transit times, check services and special options, validate addresses, find drop-off locations and check pickup availability. Shipment creation, cancellation and pickups are included but switched off. API key and secret key of a FedEx Developer Portal project.",
+  "instructions": "## FedEx\nThis connector works with the **FedEx APIs** at `https://apis.fedex.com` for a company that ships with its own FedEx account: tracking and proof of delivery, rate quotes, transit times, service and packaging options, address validation, location search and pickup availability. Creating shipments and booking pickups are included but installed switched off.\n\n**Setup (about 15 minutes)**\n1. Sign in at https://developer.fedex.com with your FedEx user ID. Under **My Projects** create an organization as a company that ships with FedEx and integrates FedEx APIs into its own applications.\n2. **My Projects**, tab **APIs**, **+ Create API Project**. Select the APIs the connector uses: **Track**, **Rates and Transit Times**, **Service Availability**, **Address Validation**, **FedEx Locations Search**, **Pickup Request** and, for the switched-off tools, **Ship**. Name the project and accept the terms.\n3. Add your FedEx shipping account to the project (**Add shipping accounts**, **+ Add Account**: account number, a nickname and the billing address of the account).\n4. Open the project and its **Production key** tab. Copy the **API Key** into `FEDEX_CLIENT_ID` and the **Secret Key** into `FEDEX_CLIENT_SECRET`. FedEx shows the production secret key only once. The **Test Key** does not work here: it belongs to the sandbox host.\n5. Put your 9-digit FedEx account number into `FEDEX_ACCOUNT_NUMBER`.\n\nThe connector sends the API key and secret key to `https://apis.fedex.com/oauth/token` (client credentials) and gets a bearer token valid for one hour, which it reuses and renews by itself.\n\n**Label validation before shipping**: FedEx lists the Ship API under \"APIs Requiring Validation\". Before `fedex_create_shipment` works with production keys, you generate test labels in the FedEx test environment, print and scan them at 600 DPI or more, and email the scans with the Label Cover Sheet (account number and production key) to label@fedex.com. The Bar Code Analysis group answers within about three business days and then enables your production credentials for shipping labels. Tracking, rates, transit times, address validation, locations and pickup availability need no such step.\n\n**Where to start**: `fedex_track_by_tracking_number` with a tracking number. For a price, `fedex_get_rates` without a service type compares every service; `fedex_get_transit_times` gives delivery dates without prices.\n\n**Tracking**: `fedex_track_by_tracking_number`, `fedex_track_by_reference` (your own order or invoice number, searched within your account and a ship date range), `fedex_track_multi_piece_shipment` (all packages under a master tracking number) and `fedex_get_tracking_document` (signature proof of delivery as PDF or PNG, base64). FedEx reuses tracking numbers over time: when a number matches more than one shipment, call again with the `trackingNumberUniqueId` of the one you want or with a ship date range. Dates are ISO 8601 with the local offset.\n\n**Rates and options**: `fedex_get_rates` returns ACCOUNT rates (your contract) and LIST rates (published); amounts are numbers with the currency next to them. `fedex_get_package_and_service_options` and `fedex_get_special_service_options` tell which services, packaging and extras are valid on a lane. Weights are LB or KG, dimensions IN or CM, in whole numbers for dimensions.\n\n**Addresses and locations**: `fedex_validate_address` corrects one address and classifies it as business or residential (a residential surcharge applies to Ground and Express). `fedex_find_locations` finds drop-off places around an address.\n\n**Shipments and pickups**: `fedex_validate_shipment` checks a full shipment request without creating anything. `fedex_create_shipment` and `fedex_cancel_shipment` create and cancel real shipments, `fedex_create_pickup` and `fedex_cancel_pickup` book and cancel a courier; these four are installed switched off, and `fedex_check_pickup_availability` stays on because it books nothing. The FedEx account number of the connector is filled in for you on every call that needs one.\n\n**Errors**: FedEx answers failures with `errors`, a list of `code` and `message`, e.g. `NOT.AUTHORIZED.ERROR` (401), `FORBIDDEN.ERROR` (403: the project is not allowed to use this API, or the Ship API is not validated yet) and `NOT.FOUND.ERROR` (404). A tracking number FedEx cannot find is reported inside a 200 answer, as `error` on the track result. Every answer carries a `transactionId` to quote to FedEx support.\n\n**Limits**: 1,400 calls per 10 seconds per project across all APIs, a daily quota per organization and per API (Track: 100,000 a day by default); a 429 says which one was hit and when to retry. The token endpoint blocks an address for 10 minutes after bursts of token requests, which the connector avoids by reusing the token.",
+  "aliases": [
+    "Federal Express",
+    "FedEx Tracking",
+    "FedEx Ship"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "fedex",
+  "docsUrl": "https://developer.fedex.com/api/en-us/catalog.html",
+  "requiredEnvVars": [
+    "FEDEX_CLIENT_ID",
+    "FEDEX_CLIENT_SECRET",
+    "FEDEX_ACCOUNT_NUMBER"
+  ],
+  "envVarMeta": {
+    "FEDEX_CLIENT_ID": {
+      "label": "API Key",
+      "kind": "credential",
+      "help": "FedEx Developer Portal, My Projects, your project, Production key tab: the API Key (the client ID).",
+      "link": "https://developer.fedex.com/api/en-us/project.html#/myprojects",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste the production API Key only: letters and digits, no spaces."
+    },
+    "FEDEX_CLIENT_SECRET": {
+      "label": "Secret Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Secret Key of the same project, Production key tab. FedEx shows it only once; create a new key if it was lost.",
+      "link": "https://developer.fedex.com/api/en-us/project.html#/myprojects",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste the production Secret Key without spaces."
+    },
+    "FEDEX_ACCOUNT_NUMBER": {
+      "label": "FedEx account number",
+      "kind": "setting",
+      "help": "Your 9-digit FedEx shipping account number, the one added to the project.",
+      "example": "740561073",
+      "pattern": "^\\d{9}$",
+      "patternMessage": "The FedEx account number has 9 digits, without spaces or dashes."
+    }
+  },
+  "instructionFacts": [
+    "The FedEx account number of this connector is {{FEDEX_ACCOUNT_NUMBER}}: pass it as account_number where a tool offers that parameter, and as the payor account inside a requested_shipment when needed."
+  ],
+  "verifyHints": {
+    "401": "FedEx did not accept the API Key and Secret Key. Copy both again from the Production key tab of your project in the FedEx Developer Portal; the Test Key belongs to the sandbox and does not work here.",
+    "403": "FedEx refused the call: the project is not allowed to use this API. Add the API to the project in the FedEx Developer Portal; for the Ship API, finish the label validation with FedEx first.",
+    "404": "FedEx has no such resource. Check the tracking number, confirmation code or path for typos.",
+    "rate_limited": "A FedEx limit was hit (1,400 calls per 10 seconds per project, or the daily quota). The message says which one; wait the time it names and try again."
+  },
+  "probe": {
+    "tool": "fedex_track_by_tracking_number",
+    "params": {
+      "tracking_number": "123456789012",
+      "include_detailed_scans": false
+    }
+  },
+  "prerequisites": "A FedEx shipping account (9-digit account number) and a FedEx user ID, to create an organization and an API project in the FedEx Developer Portal. About 15 minutes; creating shipments needs a separate label validation by FedEx.",
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 15,
+    "examples": [
+      "Where is FedEx shipment 794953555571?",
+      "What does FedEx charge for a 5 lb box from Memphis to Seattle?",
+      "Is this delivery address residential or a business?",
+      "Find the FedEx drop-off points near 10001 New York that are still open"
+    ],
+    "needs": [
+      "Your 9-digit FedEx account number",
+      "A FedEx user ID (fedex.com login)",
+      "About 15 minutes"
+    ],
+    "why": "FedEx gives API access to a shipper through a project the shipper creates in the FedEx Developer Portal. The project is free and tied to your FedEx account: AnythingMCP uses its API Key and Secret Key to ask FedEx for a one-hour token.\n\nAnythingMCP never sees your fedex.com password. Tools that create shipments or book pickups are installed switched off, so nothing is billed unless you switch them on.",
+    "steps": [
+      {
+        "id": "create-project",
+        "title": "Create your FedEx API project",
+        "body": "Sign in to the **FedEx Developer Portal**. Under **My Projects** create an organization (choose the company that ships with FedEx and integrates FedEx APIs into its own applications), then on the **APIs** tab click **+ Create API Project** and select the APIs below. Add your shipping account to the project with **Add shipping accounts**.",
+        "action": {
+          "label": "Open My Projects at FedEx",
+          "url": "https://developer.fedex.com/api/en-us/project.html#/myprojects"
+        },
+        "values": [
+          {
+            "label": "API",
+            "value": "Track API",
+            "pick": true
+          },
+          {
+            "label": "API",
+            "value": "Rates and Transit Times API",
+            "pick": true
+          },
+          {
+            "label": "API",
+            "value": "Service Availability API",
+            "pick": true
+          },
+          {
+            "label": "API",
+            "value": "Address Validation API",
+            "pick": true
+          },
+          {
+            "label": "API",
+            "value": "FedEx Locations Search API",
+            "pick": true
+          },
+          {
+            "label": "API",
+            "value": "Pickup Request API",
+            "pick": true
+          },
+          {
+            "label": "API",
+            "value": "Ship API",
+            "pick": true,
+            "note": "Only for the switched-off shipment tools; see the next step."
+          }
+        ],
+        "confirm": "I created the project and added my shipping account",
+        "problems": [
+          {
+            "q": "I do not see My Projects",
+            "a": "Sign up for a FedEx user ID first, then sign in at developer.fedex.com. My Projects is in the main menu."
+          },
+          {
+            "q": "FedEx asks which kind of company I am",
+            "a": "Choose the shipper option: a company that ships with FedEx and integrates FedEx APIs into its own applications. The integrator option is for software vendors."
+          }
+        ]
+      },
+      {
+        "id": "label-validation",
+        "title": "Know what needs FedEx validation",
+        "body": "Tracking, rates, transit times, address validation, locations and pickup availability work as soon as the keys are in.\n\nCreating shipments is different: FedEx lists the **Ship API** under *APIs Requiring Validation*. You generate test labels in the FedEx test environment, print and scan them at 600 DPI or more, and email the scans with the Label Cover Sheet to label@fedex.com. FedEx answers within about three business days and then enables your production keys for labels. Until then leave the shipment tools switched off.",
+        "action": {
+          "label": "Read the FedEx validation steps",
+          "url": "https://developer.fedex.com/api/en-us/certification/shipper.html"
+        },
+        "confirm": "I understand that the shipment tools stay off until FedEx has validated my labels"
+      },
+      {
+        "id": "keys",
+        "title": "Paste your production keys",
+        "body": "Open your project and its **Production key** tab. Copy the **API Key** and the **Secret Key** (FedEx shows the secret only once), and enter your 9-digit **FedEx account number**. AnythingMCP then checks them with one tracking call.",
+        "action": {
+          "label": "Open My Projects at FedEx",
+          "url": "https://developer.fedex.com/api/en-us/project.html#/myprojects"
+        },
+        "fields": [
+          "FEDEX_CLIENT_ID",
+          "FEDEX_CLIENT_SECRET",
+          "FEDEX_ACCOUNT_NUMBER"
+        ],
+        "problems": [
+          {
+            "q": "The check answers 401",
+            "a": "These are probably the keys of the **Test Key** tab, which only work on the FedEx sandbox. Use the keys of the **Production key** tab."
+          },
+          {
+            "q": "The check answers 403",
+            "a": "The project does not include the **Track API**. Add it to the project and try again."
+          },
+          {
+            "q": "I lost the Secret Key",
+            "a": "FedEx shows it once. Create a new secret key on the Production key tab and paste the new one."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "FedEx API",
+    "type": "REST",
+    "baseUrl": "https://apis.fedex.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{FEDEX_CLIENT_ID}}",
+      "clientSecret": "{{FEDEX_CLIENT_SECRET}}",
+      "tokenUrl": "https://apis.fedex.com/oauth/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "X-locale": "en_US"
+    }
+  },
+  "tools": [
+    {
+      "name": "fedex_track_by_tracking_number",
+      "description": "Track one FedEx shipment by tracking number. Returns `output.completeTrackResults` with, per match, `latestStatusDetail` (code such as PU picked up, IT in transit, OD out for delivery, DL delivered, DE exception; description and location), `dateAndTimes` (ship, estimated and actual delivery, ISO 8601 with offset), `scanEvents`, service, package weight and dimensions, origin and destination, and delivery details with who signed. A number FedEx cannot find comes back as HTTP 200 with an `error` (code and message) inside the result. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "FedEx tracking number, usually 12, 15 or 20 digits.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "include_detailed_scans": {
+            "type": "boolean",
+            "description": "true (default) returns every scan event; false only the latest status.",
+            "default": true
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "Optional FedEx operating company to narrow the lookup: FDXE Express, FDXG Ground, FXSP Ground Economy (SmartPost), FXFR Freight, FDXC Cargo, FXCC Custom Critical.",
+            "enum": [
+              "FDXE",
+              "FDXG",
+              "FXSP",
+              "FXFR",
+              "FDXC",
+              "FXCC"
+            ]
+          },
+          "tracking_number_unique_id": {
+            "type": "string",
+            "description": "Optional `trackingNumberUniqueId` from an earlier answer, to tell apart two shipments that share a recycled tracking number."
+          },
+          "ship_date_begin": {
+            "type": "string",
+            "description": "Optional start of the ship date range, YYYY-MM-DD. Narrows the search and avoids duplicates.",
+            "format": "date"
+          },
+          "ship_date_end": {
+            "type": "string",
+            "description": "Optional end of the ship date range, YYYY-MM-DD.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/track/v1/trackingnumbers",
+        "bodyMapping": {
+          "includeDetailedScans": "$include_detailed_scans",
+          "trackingInfo": [
+            {
+              "shipDateBegin": "$ship_date_begin",
+              "shipDateEnd": "$ship_date_end",
+              "trackingNumberInfo": {
+                "trackingNumber": "$tracking_number",
+                "carrierCode": "$carrier_code",
+                "trackingNumberUniqueId": "$tracking_number_unique_id"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_track_by_reference",
+      "description": "Find and track shipments of your FedEx account by a reference you gave them: customer reference, purchase order number, invoice number, bill of lading and others. Your account number is sent with the request. Returns `output.completeTrackResults` in the same shape as fedex_track_by_tracking_number. A ship date range is required; keep it short. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The reference value, e.g. your order number."
+          },
+          "type": {
+            "type": "string",
+            "description": "Kind of reference. Leave out to search every kind.",
+            "enum": [
+              "BILL_OF_LADING",
+              "COD_RETURN_TRACKING_NUMBER",
+              "CUSTOMER_AUTHORIZATION_NUMBER",
+              "CUSTOMER_REFERENCE",
+              "DEPARTMENT",
+              "DOCUMENT_AIRWAY_BILL",
+              "EXPRESS_ALTERNATE_REFERENCE",
+              "FEDEX_OFFICE_JOB_ORDER_NUMBER",
+              "FREE_FORM_REFERENCE",
+              "GROUND_INTERNATIONAL",
+              "GROUND_SHIPMENT_ID",
+              "INTERNATIONAL_DISTRIBUTION",
+              "INVOICE",
+              "JOB_GLOBAL_TRACKING_NUMBER",
+              "ORDER_GLOBAL_TRACKING_NUMBER",
+              "ORDER_TO_PAY_NUMBER",
+              "PART_NUMBER",
+              "PARTNER_CARRIER_NUMBER",
+              "PURCHASE_ORDER",
+              "REROUTE_TRACKING_NUMBER",
+              "RETURN_MATERIALS_AUTHORIZATION",
+              "RETURNED_TO_SHIPPER_TRACKING_NUMBER",
+              "SHIPPER_REFERENCE",
+              "TRANSBORDER_DISTRIBUTION",
+              "TRANSPORTATION_CONTROL_NUMBER",
+              "VIRTUAL_CONSOLIDATION"
+            ]
+          },
+          "ship_date_begin": {
+            "type": "string",
+            "description": "Start of the ship date range, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "ship_date_end": {
+            "type": "string",
+            "description": "End of the ship date range, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "Optional FedEx operating company to narrow the lookup: FDXE Express, FDXG Ground, FXSP Ground Economy (SmartPost), FXFR Freight, FDXC Cargo, FXCC Custom Critical.",
+            "enum": [
+              "FDXE",
+              "FDXG",
+              "FXSP",
+              "FXFR",
+              "FDXC",
+              "FXCC"
+            ]
+          },
+          "destination_country_code": {
+            "type": "string",
+            "description": "Optional destination country (2 letters) to narrow the search."
+          },
+          "destination_postal_code": {
+            "type": "string",
+            "description": "Optional destination postal code to narrow the search."
+          },
+          "include_detailed_scans": {
+            "type": "boolean",
+            "description": "true (default) returns every scan event.",
+            "default": true
+          }
+        },
+        "required": [
+          "value",
+          "ship_date_begin",
+          "ship_date_end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/track/v1/referencenumbers",
+        "bodyMapping": {
+          "referencesInformation": {
+            "type": "$type",
+            "value": "$value",
+            "accountNumber": "{{FEDEX_ACCOUNT_NUMBER}}",
+            "carrierCode": "$carrier_code",
+            "shipDateBegin": "$ship_date_begin",
+            "shipDateEnd": "$ship_date_end",
+            "destinationCountryCode": "$destination_country_code",
+            "destinationPostalCode": "$destination_postal_code"
+          },
+          "includeDetailedScans": "$include_detailed_scans"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_track_multi_piece_shipment",
+      "description": "Track all packages of a multi-piece FedEx shipment from its master tracking number, or the outbound shipment linked to a return. Returns `output.completeTrackResults` with one result per package, and `output.pagingToken` when there are more: pass it as paging_token to read the next page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "master_tracking_number": {
+            "type": "string",
+            "description": "Master tracking number of the shipment.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "associated_type": {
+            "type": "string",
+            "description": "STANDARD_MPS multi-piece shipment (default), GROUP_MPS grouped shipment, OUTBOUND_LINK_TO_RETURN the outbound shipment of a return.",
+            "enum": [
+              "STANDARD_MPS",
+              "GROUP_MPS",
+              "OUTBOUND_LINK_TO_RETURN"
+            ],
+            "default": "STANDARD_MPS"
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "Optional FedEx operating company to narrow the lookup: FDXE Express, FDXG Ground, FXSP Ground Economy (SmartPost), FXFR Freight, FDXC Cargo, FXCC Custom Critical.",
+            "enum": [
+              "FDXE",
+              "FDXG",
+              "FXSP",
+              "FXFR",
+              "FDXC",
+              "FXCC"
+            ]
+          },
+          "tracking_number_unique_id": {
+            "type": "string",
+            "description": "Optional `trackingNumberUniqueId` from an earlier answer, to tell apart two shipments that share a recycled tracking number."
+          },
+          "ship_date_begin": {
+            "type": "string",
+            "description": "Optional start of the ship date range, YYYY-MM-DD. Narrows the search and avoids duplicates.",
+            "format": "date"
+          },
+          "ship_date_end": {
+            "type": "string",
+            "description": "Optional end of the ship date range, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "include_detailed_scans": {
+            "type": "boolean",
+            "description": "true returns every scan event of every package; false (default) the latest status only.",
+            "default": false
+          },
+          "results_per_page": {
+            "type": "integer",
+            "description": "Packages per page.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "paging_token": {
+            "type": "string",
+            "description": "`output.pagingToken` of the previous page."
+          }
+        },
+        "required": [
+          "master_tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/track/v1/associatedshipments",
+        "bodyMapping": {
+          "includeDetailedScans": "$include_detailed_scans",
+          "associatedType": "$associated_type",
+          "masterTrackingNumberInfo": {
+            "shipDateBegin": "$ship_date_begin",
+            "shipDateEnd": "$ship_date_end",
+            "trackingNumberInfo": {
+              "trackingNumber": "$master_tracking_number",
+              "carrierCode": "$carrier_code",
+              "trackingNumberUniqueId": "$tracking_number_unique_id"
+            }
+          },
+          "pagingDetails": {
+            "resultsPerPage": "$results_per_page",
+            "pagingToken": "$paging_token"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_get_tracking_document",
+      "description": "Get the proof of delivery of a delivered FedEx shipment (signature proof of delivery letter), or a freight bill of lading. Returns `output.documentType`, `output.documentFormat` and `output.document`, a list of base64 strings holding the PDF or PNG, plus `output.alerts` when the signature is not available. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "FedEx tracking number, usually 12, 15 or 20 digits.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "document_type": {
+            "type": "string",
+            "description": "SIGNATURE_PROOF_OF_DELIVERY (default), BILL_OF_LADING or FREIGHT_BILLING_DOCUMENT (freight only, PDF only).",
+            "enum": [
+              "SIGNATURE_PROOF_OF_DELIVERY",
+              "BILL_OF_LADING",
+              "FREIGHT_BILLING_DOCUMENT"
+            ],
+            "default": "SIGNATURE_PROOF_OF_DELIVERY"
+          },
+          "document_format": {
+            "type": "string",
+            "description": "PDF (default) or PNG.",
+            "enum": [
+              "PDF",
+              "PNG"
+            ],
+            "default": "PDF"
+          },
+          "account_number": {
+            "type": "string",
+            "description": "Your 9-digit FedEx account number. Give it for shipments of your own account to get the full letter with the signature image and the recipient details; required for the two freight documents.",
+            "pattern": "^\\d{9}$"
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "Optional FedEx operating company to narrow the lookup: FDXE Express, FDXG Ground, FXSP Ground Economy (SmartPost), FXFR Freight, FDXC Cargo, FXCC Custom Critical.",
+            "enum": [
+              "FDXE",
+              "FDXG",
+              "FXSP",
+              "FXFR",
+              "FDXC",
+              "FXCC"
+            ]
+          },
+          "tracking_number_unique_id": {
+            "type": "string",
+            "description": "Optional `trackingNumberUniqueId` from an earlier answer, to tell apart two shipments that share a recycled tracking number."
+          },
+          "ship_date_begin": {
+            "type": "string",
+            "description": "Optional start of the ship date range, YYYY-MM-DD. Narrows the search and avoids duplicates.",
+            "format": "date"
+          },
+          "ship_date_end": {
+            "type": "string",
+            "description": "Optional end of the ship date range, YYYY-MM-DD.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/track/v1/trackingdocuments",
+        "bodyMapping": {
+          "trackDocumentDetail": {
+            "documentType": "$document_type",
+            "documentFormat": "$document_format"
+          },
+          "trackDocumentSpecification": [
+            {
+              "trackingNumberInfo": {
+                "trackingNumber": "$tracking_number",
+                "carrierCode": "$carrier_code",
+                "trackingNumberUniqueId": "$tracking_number_unique_id"
+              },
+              "shipDateBegin": "$ship_date_begin",
+              "shipDateEnd": "$ship_date_end",
+              "accountNumber": "$account_number"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_get_rates",
+      "description": "Quote FedEx rates for a shipment between two addresses. Returns `output.rateReplyDetails`, one entry per service, with `serviceType`, `serviceName`, `ratedShipmentDetails` (per rate type ACCOUNT or LIST: `totalBaseCharge`, `totalNetCharge`, surcharges, `currency`) and, with return_transit_times, `commit` with the delivery date and `operationalDetail` with the transit time. Leave service_type out to compare every available service. Rates use your account number. Nothing is booked. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipper_address": {
+            "type": "object",
+            "description": "The sender's address in FedEx field names.",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "recipient_address": {
+            "type": "object",
+            "description": "The recipient's address in FedEx field names.",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages, one entry per parcel or per group of identical parcels, in FedEx field names.",
+            "items": {
+              "type": "object",
+              "description": "One package line.",
+              "properties": {
+                "weight": {
+                  "type": "object",
+                  "description": "Weight of the package.",
+                  "properties": {
+                    "units": {
+                      "type": "string",
+                      "description": "LB or KG.",
+                      "enum": [
+                        "LB",
+                        "KG"
+                      ]
+                    },
+                    "value": {
+                      "type": "number",
+                      "description": "Weight in that unit."
+                    }
+                  },
+                  "required": [
+                    "units",
+                    "value"
+                  ]
+                },
+                "dimensions": {
+                  "type": "object",
+                  "description": "Optional outer dimensions as whole numbers; they drive dimensional weight.",
+                  "properties": {
+                    "length": {
+                      "type": "integer",
+                      "description": "Length."
+                    },
+                    "width": {
+                      "type": "integer",
+                      "description": "Width."
+                    },
+                    "height": {
+                      "type": "integer",
+                      "description": "Height."
+                    },
+                    "units": {
+                      "type": "string",
+                      "description": "IN or CM.",
+                      "enum": [
+                        "IN",
+                        "CM"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "length",
+                    "width",
+                    "height",
+                    "units"
+                  ]
+                },
+                "groupPackageCount": {
+                  "type": "integer",
+                  "description": "Number of identical packages this line stands for. Default 1."
+                },
+                "declaredValue": {
+                  "type": "object",
+                  "description": "Optional declared value.",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "ISO 4217 currency, e.g. USD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "subPackagingType": {
+                  "type": "string",
+                  "description": "Optional physical packaging, e.g. BAG, BOX, TUBE."
+                },
+                "packageSpecialServices": {
+                  "type": "object",
+                  "description": "Optional package level special services, e.g. `specialServiceTypes` with SIGNATURE_OPTION and `signatureOptionType`."
+                }
+              },
+              "required": [
+                "weight"
+              ]
+            },
+            "minItems": 1
+          },
+          "service_type": {
+            "type": "string",
+            "description": "Optional FedEx service to price alone, e.g. FEDEX_GROUND, GROUND_HOME_DELIVERY, FEDEX_EXPRESS_SAVER, FEDEX_2_DAY, FEDEX_2_DAY_AM, STANDARD_OVERNIGHT, PRIORITY_OVERNIGHT, FIRST_OVERNIGHT, FEDEX_INTERNATIONAL_PRIORITY, INTERNATIONAL_ECONOMY, FEDEX_INTERNATIONAL_CONNECT_PLUS, FEDEX_REGIONAL_ECONOMY, SMART_POST."
+          },
+          "packaging_type": {
+            "type": "string",
+            "description": "YOUR_PACKAGING (default), FEDEX_ENVELOPE, FEDEX_PAK, FEDEX_BOX, FEDEX_SMALL_BOX, FEDEX_MEDIUM_BOX, FEDEX_LARGE_BOX, FEDEX_TUBE.",
+            "default": "YOUR_PACKAGING"
+          },
+          "pickup_type": {
+            "type": "string",
+            "description": "How the shipment reaches FedEx: DROPOFF_AT_FEDEX_LOCATION (default), USE_SCHEDULED_PICKUP for a regular pickup, CONTACT_FEDEX_TO_SCHEDULE for an on-call pickup.",
+            "enum": [
+              "DROPOFF_AT_FEDEX_LOCATION",
+              "USE_SCHEDULED_PICKUP",
+              "CONTACT_FEDEX_TO_SCHEDULE"
+            ],
+            "default": "DROPOFF_AT_FEDEX_LOCATION"
+          },
+          "rate_request_types": {
+            "type": "array",
+            "description": "Which rates to return: ACCOUNT (your contract rates), LIST (published list rates), INCENTIVE, PREFERRED (in preferred_currency).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ACCOUNT",
+                "LIST",
+                "INCENTIVE",
+                "PREFERRED"
+              ]
+            },
+            "default": [
+              "ACCOUNT",
+              "LIST"
+            ]
+          },
+          "return_transit_times": {
+            "type": "boolean",
+            "description": "true (default) adds delivery commitments and transit times.",
+            "default": true
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Ship date, YYYY-MM-DD. Default: today.",
+            "format": "date"
+          },
+          "preferred_currency": {
+            "type": "string",
+            "description": "ISO 4217 currency for PREFERRED rates, e.g. EUR."
+          },
+          "customs_clearance_detail": {
+            "type": "object",
+            "description": "International shipments: FedEx `customsClearanceDetail`, at least `commodities` (a list with `description`, `quantity`, `quantityUnits`, `weight`, `customsValue` with `amount` and `currency`) and `dutiesPayment` with `paymentType`.",
+            "properties": {
+              "commodities": {
+                "type": "array",
+                "description": "The goods.",
+                "items": {
+                  "type": "object",
+                  "description": "One commodity."
+                }
+              },
+              "dutiesPayment": {
+                "type": "object",
+                "description": "Who pays duties: paymentType SENDER or RECIPIENT."
+              }
+            }
+          },
+          "shipment_special_services": {
+            "type": "object",
+            "description": "Optional shipment level special services, e.g. `specialServiceTypes` with SATURDAY_DELIVERY or FEDEX_ONE_RATE."
+          },
+          "carrier_codes": {
+            "type": "array",
+            "description": "Optional FedEx operating companies to limit the answer to, e.g. FDXE Express, FDXG Ground.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FDXE",
+                "FDXG",
+                "FXSP",
+                "FXFR",
+                "FDXC",
+                "FXCC"
+              ]
+            }
+          }
+        },
+        "required": [
+          "shipper_address",
+          "recipient_address",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/rate/v1/rates/quotes",
+        "bodyMapping": {
+          "accountNumber": {
+            "value": "{{FEDEX_ACCOUNT_NUMBER}}"
+          },
+          "rateRequestControlParameters": {
+            "returnTransitTimes": "$return_transit_times"
+          },
+          "requestedShipment": {
+            "shipper": {
+              "address": "$shipper_address"
+            },
+            "recipient": {
+              "address": "$recipient_address"
+            },
+            "serviceType": "$service_type",
+            "packagingType": "$packaging_type",
+            "pickupType": "$pickup_type",
+            "rateRequestType": "$rate_request_types",
+            "shipDateStamp": "$ship_date",
+            "preferredCurrency": "$preferred_currency",
+            "requestedPackageLineItems": "$packages",
+            "customsClearanceDetail": "$customs_clearance_detail",
+            "shipmentSpecialServices": "$shipment_special_services"
+          },
+          "carrierCodes": "$carrier_codes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_get_transit_times",
+      "description": "List the FedEx services available between two addresses with their delivery commitments, without prices. Returns `output.transitTimes` with `transitTimeDetails` per service: `serviceType`, `serviceName`, and `commit` with the committed delivery date and time, the day of the week and the transit days. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipper_address": {
+            "type": "object",
+            "description": "The sender's address in FedEx field names.",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "recipient_address": {
+            "type": "object",
+            "description": "The recipient's address in FedEx field names.",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages, one entry per parcel or per group of identical parcels, in FedEx field names.",
+            "items": {
+              "type": "object",
+              "description": "One package line.",
+              "properties": {
+                "weight": {
+                  "type": "object",
+                  "description": "Weight of the package.",
+                  "properties": {
+                    "units": {
+                      "type": "string",
+                      "description": "LB or KG.",
+                      "enum": [
+                        "LB",
+                        "KG"
+                      ]
+                    },
+                    "value": {
+                      "type": "number",
+                      "description": "Weight in that unit."
+                    }
+                  },
+                  "required": [
+                    "units",
+                    "value"
+                  ]
+                },
+                "dimensions": {
+                  "type": "object",
+                  "description": "Optional outer dimensions as whole numbers; they drive dimensional weight.",
+                  "properties": {
+                    "length": {
+                      "type": "integer",
+                      "description": "Length."
+                    },
+                    "width": {
+                      "type": "integer",
+                      "description": "Width."
+                    },
+                    "height": {
+                      "type": "integer",
+                      "description": "Height."
+                    },
+                    "units": {
+                      "type": "string",
+                      "description": "IN or CM.",
+                      "enum": [
+                        "IN",
+                        "CM"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "length",
+                    "width",
+                    "height",
+                    "units"
+                  ]
+                },
+                "groupPackageCount": {
+                  "type": "integer",
+                  "description": "Number of identical packages this line stands for. Default 1."
+                },
+                "declaredValue": {
+                  "type": "object",
+                  "description": "Optional declared value.",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "ISO 4217 currency, e.g. USD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "subPackagingType": {
+                  "type": "string",
+                  "description": "Optional physical packaging, e.g. BAG, BOX, TUBE."
+                },
+                "packageSpecialServices": {
+                  "type": "object",
+                  "description": "Optional package level special services, e.g. `specialServiceTypes` with SIGNATURE_OPTION and `signatureOptionType`."
+                }
+              },
+              "required": [
+                "weight"
+              ]
+            },
+            "minItems": 1
+          },
+          "packaging_type": {
+            "type": "string",
+            "description": "YOUR_PACKAGING (default), FEDEX_ENVELOPE, FEDEX_PAK, FEDEX_BOX, FEDEX_TUBE.",
+            "default": "YOUR_PACKAGING"
+          },
+          "service_type": {
+            "type": "string",
+            "description": "Optional FedEx service to check alone, e.g. FEDEX_GROUND, GROUND_HOME_DELIVERY, FEDEX_EXPRESS_SAVER, FEDEX_2_DAY, FEDEX_2_DAY_AM, STANDARD_OVERNIGHT, PRIORITY_OVERNIGHT, FIRST_OVERNIGHT, FEDEX_INTERNATIONAL_PRIORITY, INTERNATIONAL_ECONOMY, FEDEX_INTERNATIONAL_CONNECT_PLUS, FEDEX_REGIONAL_ECONOMY, SMART_POST."
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Ship date, YYYY-MM-DD. Default: today.",
+            "format": "date"
+          },
+          "pickup_type": {
+            "type": "string",
+            "description": "How the shipment reaches FedEx: DROPOFF_AT_FEDEX_LOCATION (default), USE_SCHEDULED_PICKUP for a regular pickup, CONTACT_FEDEX_TO_SCHEDULE for an on-call pickup.",
+            "enum": [
+              "DROPOFF_AT_FEDEX_LOCATION",
+              "USE_SCHEDULED_PICKUP",
+              "CONTACT_FEDEX_TO_SCHEDULE"
+            ],
+            "default": "DROPOFF_AT_FEDEX_LOCATION"
+          },
+          "customs_clearance_detail": {
+            "type": "object",
+            "description": "International shipments: FedEx `customsClearanceDetail` with `commodities` (description, `customsValue` with amount and currency, numberOfPieces).",
+            "properties": {
+              "commodities": {
+                "type": "array",
+                "description": "The goods.",
+                "items": {
+                  "type": "object",
+                  "description": "One commodity."
+                }
+              }
+            }
+          },
+          "carrier_codes": {
+            "type": "array",
+            "description": "Optional operating companies: FDXE Express, FDXG Ground, FXSP Ground Economy.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FDXE",
+                "FDXG",
+                "FXSP"
+              ]
+            }
+          }
+        },
+        "required": [
+          "shipper_address",
+          "recipient_address",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/availability/v1/transittimes",
+        "bodyMapping": {
+          "requestedShipment": {
+            "shipper": {
+              "address": "$shipper_address"
+            },
+            "recipients": [
+              {
+                "address": "$recipient_address"
+              }
+            ],
+            "serviceType": "$service_type",
+            "packagingType": "$packaging_type",
+            "shipDatestamp": "$ship_date",
+            "pickupType": "$pickup_type",
+            "requestedPackageLineItems": "$packages",
+            "customsClearanceDetail": "$customs_clearance_detail"
+          },
+          "carrierCodes": "$carrier_codes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_get_package_and_service_options",
+      "description": "List which FedEx services and packaging types are valid between two addresses, e.g. before offering shipping choices. Returns `output.packageOptions`, each with `serviceType`, `packageType` (key and display text), and the maximum weight, declared value and dimensions allowed for that combination. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipper_address": {
+            "type": "object",
+            "description": "The sender's address in FedEx field names.",
+            "properties": {
+              "streetLines": {
+                "type": "array",
+                "description": "Street lines, e.g. \"10 FedEx Parkway\", \"Suite 302\". Up to 3.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "countryCode"
+            ]
+          },
+          "recipient_address": {
+            "type": "object",
+            "description": "The recipient's address in FedEx field names.",
+            "properties": {
+              "streetLines": {
+                "type": "array",
+                "description": "Street lines, e.g. \"10 FedEx Parkway\", \"Suite 302\". Up to 3.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "countryCode"
+            ]
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Ship date, YYYY-MM-DD. Default: today.",
+            "format": "date"
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages, one entry per parcel or per group of identical parcels, in FedEx field names. Optional here.",
+            "items": {
+              "type": "object",
+              "description": "One package line.",
+              "properties": {
+                "weight": {
+                  "type": "object",
+                  "description": "Weight of the package.",
+                  "properties": {
+                    "units": {
+                      "type": "string",
+                      "description": "LB or KG.",
+                      "enum": [
+                        "LB",
+                        "KG"
+                      ]
+                    },
+                    "value": {
+                      "type": "number",
+                      "description": "Weight in that unit."
+                    }
+                  },
+                  "required": [
+                    "units",
+                    "value"
+                  ]
+                },
+                "dimensions": {
+                  "type": "object",
+                  "description": "Optional outer dimensions as whole numbers; they drive dimensional weight.",
+                  "properties": {
+                    "length": {
+                      "type": "integer",
+                      "description": "Length."
+                    },
+                    "width": {
+                      "type": "integer",
+                      "description": "Width."
+                    },
+                    "height": {
+                      "type": "integer",
+                      "description": "Height."
+                    },
+                    "units": {
+                      "type": "string",
+                      "description": "IN or CM.",
+                      "enum": [
+                        "IN",
+                        "CM"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "length",
+                    "width",
+                    "height",
+                    "units"
+                  ]
+                },
+                "groupPackageCount": {
+                  "type": "integer",
+                  "description": "Number of identical packages this line stands for. Default 1."
+                },
+                "declaredValue": {
+                  "type": "object",
+                  "description": "Optional declared value.",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "ISO 4217 currency, e.g. USD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "subPackagingType": {
+                  "type": "string",
+                  "description": "Optional physical packaging, e.g. BAG, BOX, TUBE."
+                },
+                "packageSpecialServices": {
+                  "type": "object",
+                  "description": "Optional package level special services, e.g. `specialServiceTypes` with SIGNATURE_OPTION and `signatureOptionType`."
+                }
+              },
+              "required": [
+                "weight"
+              ]
+            },
+            "minItems": 1
+          },
+          "pickup_type": {
+            "type": "string",
+            "description": "How the shipment reaches FedEx: DROPOFF_AT_FEDEX_LOCATION (default), USE_SCHEDULED_PICKUP for a regular pickup, CONTACT_FEDEX_TO_SCHEDULE for an on-call pickup.",
+            "enum": [
+              "DROPOFF_AT_FEDEX_LOCATION",
+              "USE_SCHEDULED_PICKUP",
+              "CONTACT_FEDEX_TO_SCHEDULE"
+            ],
+            "default": "DROPOFF_AT_FEDEX_LOCATION"
+          },
+          "carrier_codes": {
+            "type": "array",
+            "description": "Optional operating companies: FDXE Express, FDXG Ground, FXFR Freight, FXSP Ground Economy.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FDXE",
+                "FDXG",
+                "FXFR",
+                "FXSP"
+              ]
+            }
+          },
+          "system_of_measure": {
+            "type": "string",
+            "description": "IMPERIAL or METRIC for the limits in the answer.",
+            "enum": [
+              "IMPERIAL",
+              "METRIC"
+            ]
+          }
+        },
+        "required": [
+          "shipper_address",
+          "recipient_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/availability/v1/packageandserviceoptions",
+        "bodyMapping": {
+          "requestedShipment": {
+            "shipper": {
+              "address": "$shipper_address"
+            },
+            "recipients": [
+              {
+                "address": "$recipient_address"
+              }
+            ],
+            "shipDateStamp": "$ship_date",
+            "requestedPackageLineItems": "$packages",
+            "pickupType": "$pickup_type"
+          },
+          "carrierCodes": "$carrier_codes",
+          "accountNumber": {
+            "value": "{{FEDEX_ACCOUNT_NUMBER}}"
+          },
+          "systemOfMeasureType": "$system_of_measure"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_get_special_service_options",
+      "description": "List the special services FedEx offers for a shipment between two addresses: signature options, Saturday delivery, hold at location, dangerous goods, dry ice, COD and others. Returns `output.serviceOptionsList` with, per `serviceType`, the `signatureOptionsList`, the `packageSpecialServicesList`, the return shipment types and the battery options allowed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipper_address": {
+            "type": "object",
+            "description": "The sender's address in FedEx field names.",
+            "properties": {
+              "streetLines": {
+                "type": "array",
+                "description": "Street lines, e.g. \"10 FedEx Parkway\", \"Suite 302\". Up to 3.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "countryCode"
+            ]
+          },
+          "recipient_address": {
+            "type": "object",
+            "description": "The recipient's address in FedEx field names.",
+            "properties": {
+              "streetLines": {
+                "type": "array",
+                "description": "Street lines, e.g. \"10 FedEx Parkway\", \"Suite 302\". Up to 3.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "countryCode"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages, one entry per parcel or per group of identical parcels, in FedEx field names.",
+            "items": {
+              "type": "object",
+              "description": "One package line.",
+              "properties": {
+                "weight": {
+                  "type": "object",
+                  "description": "Weight of the package.",
+                  "properties": {
+                    "units": {
+                      "type": "string",
+                      "description": "LB or KG.",
+                      "enum": [
+                        "LB",
+                        "KG"
+                      ]
+                    },
+                    "value": {
+                      "type": "number",
+                      "description": "Weight in that unit."
+                    }
+                  },
+                  "required": [
+                    "units",
+                    "value"
+                  ]
+                },
+                "dimensions": {
+                  "type": "object",
+                  "description": "Optional outer dimensions as whole numbers; they drive dimensional weight.",
+                  "properties": {
+                    "length": {
+                      "type": "integer",
+                      "description": "Length."
+                    },
+                    "width": {
+                      "type": "integer",
+                      "description": "Width."
+                    },
+                    "height": {
+                      "type": "integer",
+                      "description": "Height."
+                    },
+                    "units": {
+                      "type": "string",
+                      "description": "IN or CM.",
+                      "enum": [
+                        "IN",
+                        "CM"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "length",
+                    "width",
+                    "height",
+                    "units"
+                  ]
+                },
+                "groupPackageCount": {
+                  "type": "integer",
+                  "description": "Number of identical packages this line stands for. Default 1."
+                },
+                "declaredValue": {
+                  "type": "object",
+                  "description": "Optional declared value.",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "ISO 4217 currency, e.g. USD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "subPackagingType": {
+                  "type": "string",
+                  "description": "Optional physical packaging, e.g. BAG, BOX, TUBE."
+                },
+                "packageSpecialServices": {
+                  "type": "object",
+                  "description": "Optional package level special services, e.g. `specialServiceTypes` with SIGNATURE_OPTION and `signatureOptionType`."
+                }
+              },
+              "required": [
+                "weight"
+              ]
+            },
+            "minItems": 1
+          },
+          "packaging_type": {
+            "type": "string",
+            "description": "YOUR_PACKAGING (default), FEDEX_ENVELOPE, FEDEX_PAK, FEDEX_BOX, FEDEX_TUBE.",
+            "default": "YOUR_PACKAGING"
+          },
+          "service_type": {
+            "type": "string",
+            "description": "Optional FedEx service to check alone, e.g. FEDEX_GROUND, GROUND_HOME_DELIVERY, FEDEX_EXPRESS_SAVER, FEDEX_2_DAY, FEDEX_2_DAY_AM, STANDARD_OVERNIGHT, PRIORITY_OVERNIGHT, FIRST_OVERNIGHT, FEDEX_INTERNATIONAL_PRIORITY, INTERNATIONAL_ECONOMY, FEDEX_INTERNATIONAL_CONNECT_PLUS, FEDEX_REGIONAL_ECONOMY, SMART_POST."
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Ship date, YYYY-MM-DD. Default: today.",
+            "format": "date"
+          },
+          "pickup_type": {
+            "type": "string",
+            "description": "How the shipment reaches FedEx: DROPOFF_AT_FEDEX_LOCATION (default), USE_SCHEDULED_PICKUP for a regular pickup, CONTACT_FEDEX_TO_SCHEDULE for an on-call pickup.",
+            "enum": [
+              "DROPOFF_AT_FEDEX_LOCATION",
+              "USE_SCHEDULED_PICKUP",
+              "CONTACT_FEDEX_TO_SCHEDULE"
+            ],
+            "default": "DROPOFF_AT_FEDEX_LOCATION"
+          },
+          "carrier_codes": {
+            "type": "array",
+            "description": "Optional operating companies: FDXE Express, FDXG Ground, FXSP Ground Economy, FXFR Freight.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FDXE",
+                "FDXG",
+                "FXSP",
+                "FXFR"
+              ]
+            }
+          }
+        },
+        "required": [
+          "shipper_address",
+          "recipient_address",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/availability/v1/specialserviceoptions",
+        "bodyMapping": {
+          "requestedShipment": {
+            "shipper": {
+              "address": "$shipper_address"
+            },
+            "recipient": {
+              "address": "$recipient_address"
+            },
+            "serviceType": "$service_type",
+            "packagingType": "$packaging_type",
+            "shipDateStamp": "$ship_date",
+            "requestedPackageLineItems": "$packages",
+            "pickupType": "$pickup_type"
+          },
+          "accountNumber": {
+            "value": "{{FEDEX_ACCOUNT_NUMBER}}"
+          },
+          "carrierCodes": "$carrier_codes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_validate_address",
+      "description": "Check and complete one postal address with FedEx Address Validation. Returns `output.resolvedAddresses` with the corrected `streetLinesToken`, `city`, `stateOrProvinceCode`, `postalCode` and `countryCode`, the `classification` (BUSINESS, RESIDENTIAL, MIXED or UNKNOWN), and `attributes` such as `DPV` (deliverable), `Resolved` and `SuiteRequiredButMissing`. FedEx gives informational results, not a guarantee of delivery. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "street_lines": {
+            "type": "array",
+            "description": "Street lines, e.g. \"7372 PARKRIDGE BLVD\", \"APT 286\".",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 3
+          },
+          "city": {
+            "type": "string",
+            "description": "City or town. Needed when no postal code is given."
+          },
+          "state_or_province_code": {
+            "type": "string",
+            "description": "State or province code, e.g. TX."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "Postal code, e.g. 75063-8659."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country code, e.g. US.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "include_resolution_tokens": {
+            "type": "boolean",
+            "description": "true (default) marks which parts of the address FedEx changed.",
+            "default": true
+          },
+          "in_effect_as_of": {
+            "type": "string",
+            "description": "Optional date, YYYY-MM-DD, to validate the address as it was on that day.",
+            "format": "date"
+          },
+          "client_reference_id": {
+            "type": "string",
+            "description": "Optional id of yours, echoed in the answer."
+          }
+        },
+        "required": [
+          "street_lines",
+          "country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/address/v1/addresses/resolve",
+        "bodyMapping": {
+          "inEffectAsOfTimestamp": "$in_effect_as_of",
+          "validateAddressControlParameters": {
+            "includeResolutionTokens": "$include_resolution_tokens"
+          },
+          "addressesToValidate": [
+            {
+              "address": {
+                "streetLines": "$street_lines",
+                "city": "$city",
+                "stateOrProvinceCode": "$state_or_province_code",
+                "postalCode": "$postal_code",
+                "countryCode": "$country_code"
+              },
+              "clientReferenceId": "$client_reference_id"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_find_locations",
+      "description": "Find FedEx drop-off and pickup places near an address: FedEx Office, ship centers, authorized ship centers, self-service lockers and drop boxes. Returns `output.locationDetailList` with the location id and type, name, address and phone, `distance`, opening hours per day (`storeHours`), the latest drop-off times per carrier, and the services and packaging the location accepts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "object",
+            "description": "The search address in FedEx field names.",
+            "properties": {
+              "streetLines": {
+                "type": "array",
+                "description": "Street lines, e.g. \"10 FedEx Parkway\", \"Suite 302\". Up to 3.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "countryCode"
+            ]
+          },
+          "max_results": {
+            "type": "integer",
+            "description": "How many locations to return.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10
+          },
+          "distance": {
+            "type": "number",
+            "description": "Search radius in distance_unit.",
+            "minimum": 1,
+            "default": 25
+          },
+          "distance_unit": {
+            "type": "string",
+            "description": "KM or MI.",
+            "enum": [
+              "KM",
+              "MI"
+            ],
+            "default": "KM"
+          },
+          "location_types": {
+            "type": "array",
+            "description": "Optional kinds of location to keep.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FEDEX_AUTHORIZED_SHIP_CENTER",
+                "FEDEX_OFFICE",
+                "FEDEX_SELF_SERVICE_LOCATION",
+                "FEDEX_ONSITE",
+                "FEDEX_EXPRESS_STATION",
+                "FEDEX_SHIPSITE",
+                "FEDEX_SHIP_AND_GET"
+              ]
+            }
+          },
+          "sort_criteria": {
+            "type": "string",
+            "description": "Sort by DISTANCE (default), LATEST_EXPRESS_DROPOFF_TIME, LATEST_GROUND_DROPOFF_TIME or LOCATION_TYPE.",
+            "enum": [
+              "DISTANCE",
+              "LATEST_EXPRESS_DROPOFF_TIME",
+              "LATEST_GROUND_DROPOFF_TIME",
+              "LOCATION_TYPE"
+            ],
+            "default": "DISTANCE"
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "ASCENDING (default) or DESCENDING.",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ],
+            "default": "ASCENDING"
+          },
+          "same_country": {
+            "type": "boolean",
+            "description": "true keeps only locations in the same country as the address."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/location/v1/locations",
+        "bodyMapping": {
+          "locationsSummaryRequestControlParameters": {
+            "distance": {
+              "units": "$distance_unit",
+              "value": "$distance"
+            },
+            "maxResults": "$max_results"
+          },
+          "locationSearchCriterion": "ADDRESS",
+          "location": {
+            "address": "$address"
+          },
+          "multipleMatchesAction": "RETURN_ALL",
+          "sort": {
+            "criteria": "$sort_criteria",
+            "order": "$sort_order"
+          },
+          "locationTypes": "$location_types",
+          "sameCountry": "$same_country"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_check_pickup_availability",
+      "description": "Check whether and when FedEx can collect at an address, without booking anything. Returns `output.options` with, per carrier and day, `available`, the `pickupDate`, the `cutOffTime` to request by, the `accessTime` the driver needs, and whether residential pickup is offered. Use it before fedex_create_pickup. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_address": {
+            "type": "object",
+            "description": "The pickup address in FedEx field names.",
+            "properties": {
+              "streetLines": {
+                "type": "array",
+                "description": "Street lines, e.g. \"10 FedEx Parkway\", \"Suite 302\". Up to 3.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "city": {
+                "type": "string",
+                "description": "City or town."
+              },
+              "stateOrProvinceCode": {
+                "type": "string",
+                "description": "State or province code, e.g. TN. Required for US, Canada and Puerto Rico."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "Postal code, e.g. 38116. Required for countries that use postal codes."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. US or DE."
+              },
+              "residential": {
+                "type": "boolean",
+                "description": "true for a residence, false for a business address."
+              }
+            },
+            "required": [
+              "postalCode",
+              "countryCode"
+            ]
+          },
+          "carriers": {
+            "type": "array",
+            "description": "FedEx operating companies to check: FDXE Express, FDXG Ground.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FDXE",
+                "FDXG"
+              ]
+            },
+            "default": [
+              "FDXE"
+            ]
+          },
+          "country_relationship": {
+            "type": "string",
+            "description": "DOMESTIC (default) when the parcels stay in the country, INTERNATIONAL otherwise.",
+            "enum": [
+              "DOMESTIC",
+              "INTERNATIONAL"
+            ],
+            "default": "DOMESTIC"
+          },
+          "pickup_request_types": {
+            "type": "array",
+            "description": "SAME_DAY, FUTURE_DAY or both.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "SAME_DAY",
+                "FUTURE_DAY"
+              ]
+            },
+            "default": [
+              "FUTURE_DAY"
+            ]
+          },
+          "dispatch_date": {
+            "type": "string",
+            "description": "Day of the pickup, YYYY-MM-DD. Default: today.",
+            "format": "date"
+          },
+          "package_ready_time": {
+            "type": "string",
+            "description": "Local time the parcels are ready, HH:MM:SS."
+          },
+          "customer_close_time": {
+            "type": "string",
+            "description": "Latest local time the driver can get in, HH:MM:SS."
+          },
+          "number_of_business_days": {
+            "type": "integer",
+            "description": "How many business days ahead to check.",
+            "minimum": 1
+          },
+          "shipment_attributes": {
+            "type": "object",
+            "description": "Optional details of the shipment: `serviceType`, `packagingType`, `weight` (units KG or LB, value) and `dimensions`.",
+            "properties": {
+              "serviceType": {
+                "type": "string",
+                "description": "FedEx service type."
+              },
+              "packagingType": {
+                "type": "string",
+                "description": "Packaging type."
+              },
+              "weight": {
+                "type": "object",
+                "description": "Weight of the package.",
+                "properties": {
+                  "units": {
+                    "type": "string",
+                    "description": "LB or KG.",
+                    "enum": [
+                      "LB",
+                      "KG"
+                    ]
+                  },
+                  "value": {
+                    "type": "number",
+                    "description": "Weight in that unit."
+                  }
+                },
+                "required": [
+                  "units",
+                  "value"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "pickup_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pickup/v1/pickups/availabilities",
+        "bodyMapping": {
+          "pickupAddress": "$pickup_address",
+          "dispatchDate": "$dispatch_date",
+          "packageReadyTime": "$package_ready_time",
+          "customerCloseTime": "$customer_close_time",
+          "pickupRequestType": "$pickup_request_types",
+          "shipmentAttributes": "$shipment_attributes",
+          "numberOfBusinessDays": "$number_of_business_days",
+          "carriers": "$carriers",
+          "countryRelationship": "$country_relationship"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_validate_shipment",
+      "description": "Check a complete FedEx shipment request for errors without creating the shipment or a label: FedEx validates addresses, service, packaging, weights and customs data. Returns `output.alerts` with the problems found, or an empty success. Nothing is created and nothing is billed. Use it to prepare a shipment before fedex_create_shipment. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requested_shipment": {
+            "type": "object",
+            "description": "The FedEx `requestedShipment` object in FedEx field names. Required parts: `shipper` and `recipients` (a list), each with `contact` (`personName` or `companyName`, `phoneNumber`) and `address` (`streetLines`, `city`, `stateOrProvinceCode`, `postalCode`, `countryCode`); `pickupType`; `serviceType`; `packagingType`; `shippingChargesPayment` with `paymentType` SENDER; `labelSpecification` with `imageType` (PDF, PNG, ZPLII, EPL2) and `labelStockType` (e.g. PAPER_85X11_TOP_HALF_LABEL or STOCK_4X6); and `requestedPackageLineItems` (a list, each with `weight.units` and `weight.value`). International shipments also need `customsClearanceDetail`.",
+            "properties": {
+              "shipper": {
+                "type": "object",
+                "description": "The sender: contact and address."
+              },
+              "recipients": {
+                "type": "array",
+                "description": "The recipients; one entry for a normal shipment.",
+                "items": {
+                  "type": "object",
+                  "description": "A recipient: contact and address."
+                }
+              },
+              "pickupType": {
+                "type": "string",
+                "description": "DROPOFF_AT_FEDEX_LOCATION, USE_SCHEDULED_PICKUP or CONTACT_FEDEX_TO_SCHEDULE."
+              },
+              "serviceType": {
+                "type": "string",
+                "description": "FedEx service, e.g. FEDEX_GROUND, GROUND_HOME_DELIVERY, FEDEX_EXPRESS_SAVER, FEDEX_2_DAY, FEDEX_2_DAY_AM, STANDARD_OVERNIGHT, PRIORITY_OVERNIGHT, FIRST_OVERNIGHT, FEDEX_INTERNATIONAL_PRIORITY, INTERNATIONAL_ECONOMY, FEDEX_INTERNATIONAL_CONNECT_PLUS, FEDEX_REGIONAL_ECONOMY, SMART_POST."
+              },
+              "packagingType": {
+                "type": "string",
+                "description": "YOUR_PACKAGING, FEDEX_ENVELOPE, FEDEX_PAK, FEDEX_BOX, FEDEX_TUBE and others."
+              },
+              "shipDatestamp": {
+                "type": "string",
+                "description": "Ship date, YYYY-MM-DD. Default: today."
+              },
+              "shippingChargesPayment": {
+                "type": "object",
+                "description": "Who pays the transport: paymentType SENDER, RECIPIENT, THIRD_PARTY or COLLECT, with payor for the last three."
+              },
+              "labelSpecification": {
+                "type": "object",
+                "description": "Label format: imageType and labelStockType."
+              },
+              "requestedPackageLineItems": {
+                "type": "array",
+                "description": "The packages.",
+                "items": {
+                  "type": "object",
+                  "description": "One package: weight, optional dimensions, declaredValue, customerReferences."
+                }
+              },
+              "customsClearanceDetail": {
+                "type": "object",
+                "description": "International shipments: dutiesPayment, commodities, commercialInvoice."
+              },
+              "shipmentSpecialServices": {
+                "type": "object",
+                "description": "Optional shipment level special services."
+              }
+            },
+            "required": [
+              "shipper",
+              "recipients",
+              "pickupType",
+              "serviceType",
+              "packagingType",
+              "shippingChargesPayment",
+              "labelSpecification",
+              "requestedPackageLineItems"
+            ]
+          }
+        },
+        "required": [
+          "requested_shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ship/v1/shipments/packages/validate",
+        "bodyMapping": {
+          "requestedShipment": "$requested_shipment",
+          "accountNumber": {
+            "value": "{{FEDEX_ACCOUNT_NUMBER}}"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fedex_create_shipment",
+      "description": "Create a FedEx shipment and its label. FedEx bills the shipment to your account once the label is used, and the Ship API only works after FedEx has validated your labels, so the tool is installed switched off. Returns `output.transactionShipments` with the `masterTrackingNumber`, the service, and per package the tracking number and the label as a link (`url`) or base64 (`encodedLabel`), plus the rating of the shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "requested_shipment": {
+            "type": "object",
+            "description": "The FedEx `requestedShipment` object in FedEx field names. Required parts: `shipper` and `recipients` (a list), each with `contact` (`personName` or `companyName`, `phoneNumber`) and `address` (`streetLines`, `city`, `stateOrProvinceCode`, `postalCode`, `countryCode`); `pickupType`; `serviceType`; `packagingType`; `shippingChargesPayment` with `paymentType` SENDER; `labelSpecification` with `imageType` (PDF, PNG, ZPLII, EPL2) and `labelStockType` (e.g. PAPER_85X11_TOP_HALF_LABEL or STOCK_4X6); and `requestedPackageLineItems` (a list, each with `weight.units` and `weight.value`). International shipments also need `customsClearanceDetail`.",
+            "properties": {
+              "shipper": {
+                "type": "object",
+                "description": "The sender: contact and address."
+              },
+              "recipients": {
+                "type": "array",
+                "description": "The recipients; one entry for a normal shipment.",
+                "items": {
+                  "type": "object",
+                  "description": "A recipient: contact and address."
+                }
+              },
+              "pickupType": {
+                "type": "string",
+                "description": "DROPOFF_AT_FEDEX_LOCATION, USE_SCHEDULED_PICKUP or CONTACT_FEDEX_TO_SCHEDULE."
+              },
+              "serviceType": {
+                "type": "string",
+                "description": "FedEx service, e.g. FEDEX_GROUND, GROUND_HOME_DELIVERY, FEDEX_EXPRESS_SAVER, FEDEX_2_DAY, FEDEX_2_DAY_AM, STANDARD_OVERNIGHT, PRIORITY_OVERNIGHT, FIRST_OVERNIGHT, FEDEX_INTERNATIONAL_PRIORITY, INTERNATIONAL_ECONOMY, FEDEX_INTERNATIONAL_CONNECT_PLUS, FEDEX_REGIONAL_ECONOMY, SMART_POST."
+              },
+              "packagingType": {
+                "type": "string",
+                "description": "YOUR_PACKAGING, FEDEX_ENVELOPE, FEDEX_PAK, FEDEX_BOX, FEDEX_TUBE and others."
+              },
+              "shipDatestamp": {
+                "type": "string",
+                "description": "Ship date, YYYY-MM-DD. Default: today."
+              },
+              "shippingChargesPayment": {
+                "type": "object",
+                "description": "Who pays the transport: paymentType SENDER, RECIPIENT, THIRD_PARTY or COLLECT, with payor for the last three."
+              },
+              "labelSpecification": {
+                "type": "object",
+                "description": "Label format: imageType and labelStockType."
+              },
+              "requestedPackageLineItems": {
+                "type": "array",
+                "description": "The packages.",
+                "items": {
+                  "type": "object",
+                  "description": "One package: weight, optional dimensions, declaredValue, customerReferences."
+                }
+              },
+              "customsClearanceDetail": {
+                "type": "object",
+                "description": "International shipments: dutiesPayment, commodities, commercialInvoice."
+              },
+              "shipmentSpecialServices": {
+                "type": "object",
+                "description": "Optional shipment level special services."
+              }
+            },
+            "required": [
+              "shipper",
+              "recipients",
+              "pickupType",
+              "serviceType",
+              "packagingType",
+              "shippingChargesPayment",
+              "labelSpecification",
+              "requestedPackageLineItems"
+            ]
+          },
+          "label_response_options": {
+            "type": "string",
+            "description": "URL_ONLY returns a link to each label (default); LABEL returns the label as base64 in the answer.",
+            "enum": [
+              "URL_ONLY",
+              "LABEL"
+            ],
+            "default": "URL_ONLY"
+          },
+          "ship_action": {
+            "type": "string",
+            "description": "CONFIRM creates the shipment (default); TRANSFER hands a pending shipment over.",
+            "enum": [
+              "CONFIRM",
+              "TRANSFER"
+            ],
+            "default": "CONFIRM"
+          },
+          "merge_label_doc_option": {
+            "type": "string",
+            "description": "For URL_ONLY: LABELS_AND_DOCS, LABELS_ONLY or NONE, what the merged PDF link contains.",
+            "enum": [
+              "NONE",
+              "LABELS_AND_DOCS",
+              "LABELS_ONLY"
+            ]
+          }
+        },
+        "required": [
+          "requested_shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ship/v1/shipments",
+        "bodyMapping": {
+          "mergeLabelDocOption": "$merge_label_doc_option",
+          "requestedShipment": "$requested_shipment",
+          "labelResponseOptions": "$label_response_options",
+          "accountNumber": {
+            "value": "{{FEDEX_ACCOUNT_NUMBER}}"
+          },
+          "shipAction": "$ship_action"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fedex_cancel_shipment",
+      "description": "Cancel a FedEx shipment that has not been handed to FedEx yet, by tracking number. It cannot be undone: the label becomes invalid. Returns `output.cancelledShipment` (true or false) and a message. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the shipment to cancel.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "sender_country_code": {
+            "type": "string",
+            "description": "Country of the sender, ISO 3166-1 alpha-2, e.g. US.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "deletion_control": {
+            "type": "string",
+            "description": "DELETE_ALL_PACKAGES cancels every package of the shipment (default and only value).",
+            "enum": [
+              "DELETE_ALL_PACKAGES"
+            ],
+            "default": "DELETE_ALL_PACKAGES"
+          },
+          "email_shipment": {
+            "type": "boolean",
+            "description": "true when the shipment is a pending email label shipment."
+          }
+        },
+        "required": [
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ship/v1/shipments/cancel",
+        "bodyMapping": {
+          "accountNumber": {
+            "value": "{{FEDEX_ACCOUNT_NUMBER}}"
+          },
+          "emailShipment": "$email_shipment",
+          "senderCountryCode": "$sender_country_code",
+          "deletionControl": "$deletion_control",
+          "trackingNumber": "$tracking_number"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fedex_create_pickup",
+      "description": "Book a FedEx pickup: a courier comes to the address in the given time window. FedEx may charge a pickup fee to your account, so the tool is installed switched off; check fedex_check_pickup_availability first. Returns `output.pickupConfirmationCode` and `output.location`, both needed to cancel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_detail": {
+            "type": "object",
+            "description": "Where and when to collect, in FedEx field names.",
+            "properties": {
+              "pickupLocation": {
+                "type": "object",
+                "description": "The pickup place.",
+                "properties": {
+                  "contact": {
+                    "type": "object",
+                    "description": "Contact on site.",
+                    "properties": {
+                      "companyName": {
+                        "type": "string",
+                        "description": "Company."
+                      },
+                      "personName": {
+                        "type": "string",
+                        "description": "Contact person."
+                      },
+                      "phoneNumber": {
+                        "type": "string",
+                        "description": "Phone number, digits only."
+                      }
+                    },
+                    "required": [
+                      "personName",
+                      "phoneNumber"
+                    ]
+                  },
+                  "address": {
+                    "type": "object",
+                    "description": "Pickup address.",
+                    "properties": {
+                      "streetLines": {
+                        "type": "array",
+                        "description": "Street lines.",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "city": {
+                        "type": "string",
+                        "description": "City."
+                      },
+                      "stateOrProvinceCode": {
+                        "type": "string",
+                        "description": "State or province code."
+                      },
+                      "postalCode": {
+                        "type": "string",
+                        "description": "Postal code."
+                      },
+                      "countryCode": {
+                        "type": "string",
+                        "description": "ISO 3166-1 alpha-2 country code."
+                      }
+                    },
+                    "required": [
+                      "streetLines",
+                      "city",
+                      "postalCode",
+                      "countryCode"
+                    ]
+                  }
+                },
+                "required": [
+                  "contact",
+                  "address"
+                ]
+              },
+              "readyDateTimestamp": {
+                "type": "string",
+                "description": "When the parcels are ready, ISO 8601, e.g. 2026-04-02T11:00:00Z. The date part is the pickup day."
+              },
+              "customerCloseTime": {
+                "type": "string",
+                "description": "Latest local time the driver can get in, HH:MM:SS, e.g. 18:00:00."
+              },
+              "pickupDateType": {
+                "type": "string",
+                "description": "SAME_DAY or FUTURE_DAY.",
+                "enum": [
+                  "SAME_DAY",
+                  "FUTURE_DAY"
+                ]
+              },
+              "packageLocation": {
+                "type": "string",
+                "description": "Where the parcels wait: FRONT, REAR, SIDE or NONE.",
+                "enum": [
+                  "FRONT",
+                  "NONE",
+                  "REAR",
+                  "SIDE"
+                ]
+              },
+              "buildingPart": {
+                "type": "string",
+                "description": "Optional APARTMENT, BUILDING, DEPARTMENT, FLOOR, ROOM or SUITE."
+              },
+              "buildingPartDescription": {
+                "type": "string",
+                "description": "Optional number or name of that building part."
+              }
+            },
+            "required": [
+              "pickupLocation",
+              "readyDateTimestamp",
+              "customerCloseTime"
+            ]
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "FDXE for Express or FDXG for Ground.",
+            "enum": [
+              "FDXE",
+              "FDXG"
+            ]
+          },
+          "package_count": {
+            "type": "integer",
+            "description": "Number of packages to collect.",
+            "minimum": 1
+          },
+          "total_weight": {
+            "type": "object",
+            "description": "Total weight of the packages.",
+            "properties": {
+              "units": {
+                "type": "string",
+                "description": "KG or LB.",
+                "enum": [
+                  "KG",
+                  "LB"
+                ]
+              },
+              "value": {
+                "type": "number",
+                "description": "Weight."
+              }
+            },
+            "required": [
+              "units",
+              "value"
+            ]
+          },
+          "country_relationships": {
+            "type": "string",
+            "description": "DOMESTIC or INTERNATIONAL.",
+            "enum": [
+              "DOMESTIC",
+              "INTERNATIONAL"
+            ]
+          },
+          "pickup_type": {
+            "type": "string",
+            "description": "ON_CALL (default), PACKAGE_RETURN_PROGRAM or REGULAR_STOP.",
+            "enum": [
+              "ON_CALL",
+              "PACKAGE_RETURN_PROGRAM",
+              "REGULAR_STOP"
+            ],
+            "default": "ON_CALL"
+          },
+          "remarks": {
+            "type": "string",
+            "description": "Optional note for the courier, up to 60 characters."
+          },
+          "commodity_description": {
+            "type": "string",
+            "description": "Optional description of the goods."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Optional tracking number of a shipment the pickup is for."
+          },
+          "oversize_package_count": {
+            "type": "integer",
+            "description": "Ground only: number of oversize packages.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "origin_detail",
+          "carrier_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pickup/v1/pickups",
+        "bodyMapping": {
+          "associatedAccountNumber": {
+            "value": "{{FEDEX_ACCOUNT_NUMBER}}"
+          },
+          "originDetail": "$origin_detail",
+          "totalWeight": "$total_weight",
+          "packageCount": "$package_count",
+          "carrierCode": "$carrier_code",
+          "remarks": "$remarks",
+          "countryRelationships": "$country_relationships",
+          "pickupType": "$pickup_type",
+          "trackingNumber": "$tracking_number",
+          "commodityDescription": "$commodity_description",
+          "oversizePackageCount": "$oversize_package_count"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fedex_cancel_pickup",
+      "description": "Cancel a booked FedEx pickup by its confirmation code and date. It cannot be undone; a new pickup has to be booked. Returns `output.pickupConfirmationCode` and `output.cancelConfirmationMessage`. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_confirmation_code": {
+            "type": "string",
+            "description": "Confirmation code returned when the pickup was booked."
+          },
+          "scheduled_date": {
+            "type": "string",
+            "description": "Day of the pickup, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "FDXE for Express or FDXG for Ground.",
+            "enum": [
+              "FDXE",
+              "FDXG"
+            ]
+          },
+          "location": {
+            "type": "string",
+            "description": "Express only: the FedEx location id returned when the pickup was booked, e.g. LOSA."
+          },
+          "remarks": {
+            "type": "string",
+            "description": "Optional note, up to 60 characters."
+          }
+        },
+        "required": [
+          "pickup_confirmation_code",
+          "scheduled_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/pickup/v1/pickups/cancel",
+        "bodyMapping": {
+          "associatedAccountNumber": {
+            "value": "{{FEDEX_ACCOUNT_NUMBER}}"
+          },
+          "pickupConfirmationCode": "$pickup_confirmation_code",
+          "remarks": "$remarks",
+          "carrierCode": "$carrier_code",
+          "scheduledDate": "$scheduled_date",
+          "location": "$location"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

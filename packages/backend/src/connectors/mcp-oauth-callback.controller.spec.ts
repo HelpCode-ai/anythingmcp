@@ -180,6 +180,20 @@ describe('McpOAuthCallbackController — completion by the dashboard', () => {
     );
   });
 
+  it("passes the flow's tokenResponsePath to the code exchange (a token answer inside a wrapper)", async () => {
+    const { controller, mcpOAuthService } = makeController({ flow: { tokenResponsePath: 'data' } });
+    await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
+    expect(mcpOAuthService.exchangeCodeForTokens).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'the-code', tokenResponsePath: 'data' }),
+    );
+  });
+
+  it('adds no tokenResponsePath to the code exchange of a flow that has none', async () => {
+    const { controller, mcpOAuthService } = makeController();
+    await controller.complete(asUser('user-1'), { state: 'the-state', code: 'the-code' });
+    expect(mcpOAuthService.exchangeCodeForTokens.mock.calls[0][0]).not.toHaveProperty('tokenResponsePath');
+  });
+
   it('refuses a user other than the one who started the flow, and kills the attempt', async () => {
     const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
     await expect(

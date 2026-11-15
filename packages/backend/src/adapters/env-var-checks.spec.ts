@@ -1,4 +1,11 @@
-import { checkAdapterEnvValues, isRepeatedPaste, normalizeAdapterEnvValues, placeholderReason } from './env-var-checks';
+import {
+  checkAdapterEnvValues,
+  isRepeatedPaste,
+  normalizeAdapterEnvValues,
+  optionProblem,
+  placeholderReason,
+  type CheckedAdapter,
+} from './env-var-checks';
 import { getAdapter } from './catalog';
 import { normalizeAddressVariables } from '../common/base-url-variable.util';
 
@@ -217,5 +224,84 @@ describe('checkAdapterEnvValues', () => {
     expect(
       checkAdapterEnvValues(adapter('mysql'), { MYSQL_HOST: 'host', MYSQL_DATABASE: 'shop' }, ['MYSQL_DATABASE']),
     ).toEqual({});
+  });
+});
+
+describe('checkAdapterEnvValues — a variable with a fixed list of choices (envVarMeta.options)', () => {
+  const market = {
+    slug: 'acme-market',
+    connector: { type: 'REST', authType: 'API_KEY', baseUrl: '{{ACME_MARKET_URL}}/api' },
+    requiredEnvVars: ['ACME_MARKET_URL', 'ACME_MARKET_API_KEY'],
+    optionalEnvVars: ['ACME_MARKET_LOCALE'],
+    envVarMeta: {
+      ACME_MARKET_URL: {
+        label: 'Country',
+        kind: 'address',
+        pattern: '^https://[a-z]+\\.market\\.example\\.test$',
+        patternMessage: 'Never shown: the choices are named instead.',
+        options: [
+          { value: 'https://fr.market.example.test', label: 'France' },
+          { value: 'https://es.market.example.test', label: 'Spain' },
+        ],
+      },
+      ACME_MARKET_LOCALE: {
+        label: 'Language',
+        options: [
+          { value: 'fr_FR', label: 'French' },
+          { value: 'es_ES', label: 'Spanish' },
+        ],
+      },
+    },
+  } as unknown as CheckedAdapter;
+  const key = 'not-a-real-key-123';
+
+  it('accepts a listed value', () => {
+    for (const url of ['https://fr.market.example.test', 'https://es.market.example.test']) {
+      expect(checkAdapterEnvValues(market, { ACME_MARKET_URL: url, ACME_MARKET_API_KEY: key, ACME_MARKET_LOCALE: 'es_ES' })).toEqual({});
+    }
+  });
+
+  it('refuses any other value, naming the labels and values to choose from', () => {
+    const fields = checkAdapterEnvValues(market, {
+      ACME_MARKET_URL: 'https://de.market.example.test',
+      ACME_MARKET_API_KEY: key,
+      ACME_MARKET_LOCALE: 'French',
+    });
+    expect(fields).toEqual({
+      ACME_MARKET_URL: 'Country must be one of: France (https://fr.market.example.test), Spain (https://es.market.example.test).',
+      ACME_MARKET_LOCALE: 'Language must be one of: French (fr_FR), Spanish (es_ES).',
+    });
+    // Compared exactly: no other case, no path after a listed address.
+    expect(Object.keys(checkAdapterEnvValues(market, { ACME_MARKET_LOCALE: 'FR_fr' }))).toEqual(['ACME_MARKET_LOCALE']);
+    expect(Object.keys(checkAdapterEnvValues(market, { ACME_MARKET_URL: 'https://fr.market.example.test/api' }))).toEqual(['ACME_MARKET_URL']);
+  });
+
+  it('leaves an optional variable empty, and skips a value still a {{VARIABLE}}', () => {
+    expect(
+      checkAdapterEnvValues(market, { ACME_MARKET_URL: 'https://fr.market.example.test', ACME_MARKET_API_KEY: key, ACME_MARKET_LOCALE: '' }),
+    ).toEqual({});
+    expect(checkAdapterEnvValues(market, { ACME_MARKET_URL: 'https://fr.market.example.test', ACME_MARKET_LOCALE: '  ' })).toEqual({});
+    expect(checkAdapterEnvValues(market, { ACME_MARKET_URL: '{{ACME_MARKET_URL}}' })).toEqual({});
+  });
+
+  it('accepts a listed address typed without https://, once the install has added it', () => {
+    const typed = { ACME_MARKET_URL: 'fr.market.example.test', ACME_MARKET_API_KEY: key };
+    const stored = normalizeAddressVariables(
+      (market as any).connector.baseUrl,
+      normalizeAdapterEnvValues(market, typed),
+      'REST',
+      { singleLabel: true },
+    );
+    expect(stored.ACME_MARKET_URL).toBe('https://fr.market.example.test');
+    expect(checkAdapterEnvValues(market, stored)).toEqual({});
+  });
+
+  it('only checks the names it is asked about (an edit of another variable)', () => {
+    expect(checkAdapterEnvValues(market, { ACME_MARKET_URL: 'https://old.example.test', ACME_MARKET_API_KEY: key }, ['ACME_MARKET_API_KEY'])).toEqual({});
+  });
+
+  it('says nothing for a variable without choices', () => {
+    expect(optionProblem({ label: 'Tenant' }, 'anything')).toBeUndefined();
+    expect(optionProblem({ label: 'Tenant', options: [] }, 'anything')).toBeUndefined();
   });
 });

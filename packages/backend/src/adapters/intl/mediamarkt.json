@@ -1,0 +1,1639 @@
+{
+  "slug": "mediamarkt",
+  "name": "MediaMarkt Marketplace",
+  "aliases": [
+    "MediaMarkt seller API",
+    "MediaMarkt Mirakl",
+    "MediaMarktSaturn",
+    "Media Markt",
+    "Saturn Marketplace",
+    "MediaWorld"
+  ],
+  "description": "Run your shop on the MediaMarkt marketplace from an AI agent: orders, acceptance, tracking and shipping, incidents, offers with prices and stock, imports, messages, returns, invoices and transactions. The marketplace sells in Germany, Austria, Spain, the Netherlands, Italy, Belgium, Switzerland, Poland and Hungary; sign in with the shop API key from your MediaMarkt seller back office.",
+  "instructions": "## MediaMarkt Marketplace\nRun your shop on the MediaMarkt marketplace from an AI agent: orders, acceptance, tracking and shipping, incidents, offers with prices and stock, offer and product imports, messages with customers and MediaMarkt, returns, order documents, invoices and transactions. The connector calls the MediaMarkt seller platform at `https://mediamarktsaturn.mirakl.net` with the API key of your shop, so it can see and do what your seller user can.\n\n**Countries**: Germany, Austria, Spain, the Netherlands, Italy, Belgium, Switzerland, Poland and Hungary. In Italy the marketplace trades as MediaWorld. All countries share one seller platform.\n\n**Who can sell**: MediaMarkt takes applications through a form per country, followed by a business verification (KYC). The connector needs a seller account that MediaMarkt has already opened.\n\n**Setup (about 5 minutes)**\n1. Sign in to the MediaMarkt seller back office: `https://mediamarktsaturn.mirakl.net/login`.\n2. In the back office open your login name (top right) > **My user settings** > **API key** and click **Generate a new key** (or copy the existing key). Paste it into `MEDIAMARKT_API_KEY`. The key is sent as is in the `Authorization` header, without `Bearer`. Generating a new key invalidates the old one, so any other tool using it stops working.\n3. MediaMarkt usually opens one shop per country, so most sellers have several shops under one user. If your user has more than one shop, set `MEDIAMARKT_SHOP_ID` to the numeric id of the shop this connector should work on (shown on the dashboard of the back office next to **Identifier** or **Shop ID**, and returned as `shop_id` by `mediamarkt_get_account`); to work on several shops, install the connector once per shop. Without it your default shop is used.\n4. Install and run `mediamarkt_get_account`: it returns the shop the key belongs to.\n\n**Platform**: the MediaMarkt seller back office runs on Mirakl software, so the operation codes in the tool descriptions (OR11, OF24 and so on) and the error names are those of that software.\n\n**Where to start**: `mediamarkt_get_account` shows the shop behind the key (id, name, state, currency and channels). For the daily work use `mediamarkt_list_orders` with `order_state_codes=WAITING_ACCEPTANCE`, `mediamarkt_list_offers` for prices and stock and `mediamarkt_list_threads` for messages that wait for a reply.\n\n**Products and competing offers**: `mediamarkt_get_products` looks products up in the MediaMarkt catalog by EAN or another reference and returns the marketplace product SKU; `mediamarkt_list_product_offers` lists the offers of every shop for given products, best price first, at about 5 calls a minute.\n\n**Order workflow**: a new order waits in `WAITING_ACCEPTANCE`. `mediamarkt_accept_order` accepts (or refuses) every line; after the customer is debited the order moves to `SHIPPING`. Then `mediamarkt_update_tracking` stores the carrier and tracking number (carrier codes come from `mediamarkt_list_carriers`) and `mediamarkt_ship_order` confirms the shipment (`SHIPPED`). Later states are `TO_COLLECT`, `RECEIVED`, `CLOSED`, `REFUSED` and `CANCELED`. Use `mediamarkt_list_orders` with `order_state_codes=WAITING_ACCEPTANCE` for the daily to-do list and `has_incident=true` for open incidents; `mediamarkt_resolve_incident` closes an incident on one order line once it is solved. Documents attached to orders (delivery notes, labels, customer invoices) are listed by `mediamarkt_list_order_documents`.\n\n**Writes: confirm first.** `mediamarkt_accept_order`, `mediamarkt_update_tracking`, `mediamarkt_ship_order`, `mediamarkt_resolve_incident`, `mediamarkt_accept_return`, `mediamarkt_receive_return`, `mediamarkt_update_offers`, `mediamarkt_reply_thread`, `mediamarkt_create_order_thread` and `mediamarkt_import_products` act on the live marketplace. Before each call, show the user what will change (order id and lines, tracking number, offer SKU with the old and new price or stock, the message text and recipients) and wait for a yes. Refusing an order line cancels it for good. No tool here refunds, cancels orders or moves money; do that in the back office. `mediamarkt_import_offers` can delete offers (REPLACE mode deletes every offer missing from the file), so it is installed switched off.\n\n**Updating offers (prices and stock)**: `mediamarkt_update_offers` (OF24) replaces the whole offer. Every field you leave out is reset: a missing `quantity` becomes 0, a missing `discount` or `description` is deleted. Always read the offer first (`mediamarkt_get_offer` or `mediamarkt_list_offers` with `sku`) and send it back complete with only the intended change: `shop_sku`, `product_id` and `product_id_type` (from `product_references`), `state_code`, `price`, `quantity`, `leadtime_to_ship`, `logistic_class` (its code), `min_quantity_alert`, `description`, `discount`, `all_prices`, `available_started` / `available_ended` (read as `available_start_date` / `available_end_date`) and any `offer_additional_fields`. Leave `update_delete` empty or `update`. The call returns an `import_id`; the change is applied asynchronously, so check it with `mediamarkt_get_offer_import` before reading the offer again. Condition codes for `state_code` come from `mediamarkt_list_offer_conditions`, logistic class codes from `mediamarkt_list_logistic_classes`.\n\n**File imports**: `mediamarkt_import_products` (P41) and `mediamarkt_import_offers` (OF01) take the URL of a CSV, XLSX or XML file in the file format MediaMarkt asks for; the connector downloads it and uploads it to MediaMarkt. Track them with `mediamarkt_list_product_imports` / `mediamarkt_get_product_import` and `mediamarkt_list_offer_imports` / `mediamarkt_get_offer_import`.\n\n**Returns**: `mediamarkt_list_returns` (RT11) lists return requests. Where MediaMarkt lets the shop decide, `mediamarkt_accept_return` accepts or refuses one in `WAITING_ACCEPTANCE` and `mediamarkt_receive_return` confirms the goods arrived. Refunds stay in the back office.\n\n**Messages**: `mediamarkt_list_threads` lists conversations (filter with `entity_type=MMP_ORDER` and `entity_id=<order id>` for one order; `entity_id` without `entity_type` is refused), `mediamarkt_get_thread` reads one with its messages, `mediamarkt_reply_thread` answers (recipient `CUSTOMER` or `OPERATOR`, which is MediaMarkt) and `mediamarkt_create_order_thread` opens a new conversation on an order. Reason codes for topics come from `mediamarkt_list_reasons`; leave its `locale` empty unless you know the marketplace has that language (an inactive locale answers 400).\n\n**Money**: `mediamarkt_list_invoices` (IV01) lists the accounting documents MediaMarkt issues to the shop and `mediamarkt_list_transactions` (TL02) the transaction lines (sales, commissions, refunds, payouts). If MediaMarkt uses Enhanced Seller Invoicing, IV01 returns no new documents; use `mediamarkt_list_document_requests` (DR11) and the transactions then.\n\n**Reference lists**: `mediamarkt_list_channels` (country sites), `mediamarkt_list_carriers`, `mediamarkt_list_shipping_zones`, `mediamarkt_list_shipping_methods` and `mediamarkt_list_logistic_classes` change rarely; read them once per conversation.\n\n**Pagination**: orders, offers, invoices and product imports page with `max` (at most 100) and `offset`. Threads, returns, transactions, document requests and offer imports return a `next_page_token`; pass it as `page_token` to get the next page (all other filters are then ignored) until it is missing.\n\n**Dates** are ISO 8601, e.g. `2026-10-01T00:00:00Z`; answers are in UTC.\n\n**Rate limits**: Each API has its own limit and MediaMarkt can tighten them. Listing offers and orders is meant for interactive use, product and offer imports at most every 15 minutes, `mediamarkt_get_account` and the reference lists about once a day. A 429 carries a `Retry-After` header with the seconds to wait; do not retry in a loop.\n\n**Errors**: 401 means the key is wrong or was replaced by a newer one, 403 that your user lacks the right for this action, 404 that the order, offer or thread does not exist for this shop, 400 a wrong parameter or an order in the wrong state (the message names it, e.g. `ORDER_INVALID_STATE`).",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "mediamarkt",
+  "docsUrl": "https://sell.mediamarktsaturn.com/en-ES/faqs",
+  "requiredEnvVars": [
+    "MEDIAMARKT_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "MEDIAMARKT_SHOP_ID"
+  ],
+  "prerequisites": "An open seller account with MediaMarkt and access to its seller back office to generate the shop API key. MediaMarkt takes applications through a form per country, followed by a business verification (KYC).",
+  "envVarMeta": {
+    "MEDIAMARKT_API_KEY": {
+      "label": "Shop API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "MediaMarkt seller back office: your login name (top right) > My user settings > API key > Generate a new key. Generating a new key invalidates the previous one.",
+      "link": "https://mediamarktsaturn.mirakl.net/login",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the API key alone, without Bearer, quotes or spaces."
+    },
+    "MEDIAMARKT_SHOP_ID": {
+      "label": "Shop ID (optional)",
+      "kind": "setting",
+      "help": "MediaMarkt usually opens one shop per country, so most sellers have several shops under one user. With more than one shop, enter the numeric id of the shop to use (on the back office dashboard, next to Identifier or Shop ID). Leave empty to use your default shop.",
+      "example": "2001",
+      "pattern": "^[0-9]+$",
+      "patternMessage": "The shop id is a number."
+    }
+  },
+  "verifyHints": {
+    "401": "MediaMarkt refused the API key. Check that MEDIAMARKT_API_KEY is the shop key from your MediaMarkt seller back office, under your login name (top right) > My user settings > API key, and that it was not replaced by a newer key there.",
+    "403": "The key works, but your user is not allowed to do this on the shop. Ask the shop administrator for the role, or set MEDIAMARKT_SHOP_ID to a shop you manage.",
+    "404": "The MediaMarkt seller platform did not find this for your shop. If every call answers this way, compare the address you sign in at with https://mediamarktsaturn.mirakl.net: MediaMarkt may have moved its seller back office.",
+    "rate_limited": "MediaMarkt is rate limiting this API for your shop. Wait for the seconds in the Retry-After header before trying again."
+  },
+  "probe": {
+    "tool": "mediamarkt_get_account"
+  },
+  "setupGuide": {
+    "effort": "api_key",
+    "minutes": 5,
+    "examples": [
+      "Which orders are waiting for my acceptance?",
+      "Which customer messages still need a reply?",
+      "Show the price and stock of my offer for SKU 4711"
+    ],
+    "needs": [
+      "A MediaMarkt seller account that is already open",
+      "A user who can open **My user settings** in the seller back office"
+    ],
+    "steps": [
+      {
+        "id": "open-account",
+        "title": "Open your MediaMarkt seller account",
+        "body": "Sign in to the MediaMarkt seller back office. Then open the menu below and create a key, or copy the one that is already there.",
+        "action": {
+          "label": "Open the MediaMarkt seller back office",
+          "url": "https://mediamarktsaturn.mirakl.net/login"
+        },
+        "values": [
+          {
+            "label": "Menu",
+            "value": "Your login name (top right) > My user settings > API key",
+            "pick": true
+          },
+          {
+            "label": "Button",
+            "value": "Generate a new key",
+            "pick": true,
+            "note": "Replaces the previous key: anything else that uses the old key stops working."
+          }
+        ],
+        "problems": [
+          {
+            "q": "I do not see an API key tab",
+            "a": "API access is switched on per shop. Ask MediaMarkt (your marketplace contact or the seller support) to enable it for your user."
+          },
+          {
+            "q": "I manage several shops",
+            "a": "The key belongs to your user, not to one shop. Note the id of the shop to use, shown on the dashboard next to **Identifier** or **Shop ID**: you enter it in the next step."
+          },
+          {
+            "q": "I do not have a seller account yet",
+            "a": "MediaMarkt takes applications through a form per country, followed by a business verification (KYC). See [the MediaMarkt seller page](https://sell.mediamarktsaturn.com/en-ES/faqs)."
+          }
+        ]
+      },
+      {
+        "id": "api-key",
+        "title": "Paste the key",
+        "body": "Paste the key alone, without `Bearer`, quotes or spaces. MediaMarkt usually opens one shop per country, so most sellers have several shops under one user. If your user has more than one shop, also enter the id of the shop to use.",
+        "fields": [
+          "MEDIAMARKT_API_KEY",
+          "MEDIAMARKT_SHOP_ID"
+        ],
+        "problems": [
+          {
+            "q": "MediaMarkt refused the key",
+            "a": "Copy it again from the back office. If a newer key was generated, only the newest one works."
+          },
+          {
+            "q": "Which shop ID do I enter?",
+            "a": "The numeric id on the dashboard of the back office, next to **Identifier** or **Shop ID**. With a single shop, leave the field empty. To work on several shops, set the connector up once per shop."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "MediaMarkt Marketplace",
+    "type": "REST",
+    "baseUrl": "https://mediamarktsaturn.mirakl.net/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{MEDIAMARKT_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "mediamarkt_get_account",
+      "description": "Read the shop behind the API key on this marketplace (A01): shop id and name, state, channels, currency, grade and approval rate, contact and shipping settings. The quickest check that the key works. Meant to be called about once a day, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_orders",
+      "description": "List orders (OR11) with their lines, customer, shipping address, prices, state and incidents. Filter by state (e.g. WAITING_ACCEPTANCE for orders to accept, SHIPPING for orders to ship), by creation or update date, by order id or channel. Pages with max (at most 100) and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_state_codes": {
+            "type": "string",
+            "description": "Comma-separated order states: STAGING, WAITING_ACCEPTANCE, WAITING_DEBIT, WAITING_DEBIT_PAYMENT, SHIPPING, SHIPPED, TO_COLLECT, RECEIVED, CLOSED, REFUSED, CANCELED."
+          },
+          "order_ids": {
+            "type": "string",
+            "description": "Comma-separated order ids (e.g. 1234567-A), up to 100."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Orders created at or after this time, ISO 8601 (e.g. 2026-10-01T00:00:00Z)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Orders created before this time, ISO 8601."
+          },
+          "start_update_date": {
+            "type": "string",
+            "description": "Orders updated at or after this time, ISO 8601. Best filter for polling changes."
+          },
+          "end_update_date": {
+            "type": "string",
+            "description": "Orders updated before this time, ISO 8601."
+          },
+          "has_incident": {
+            "type": "boolean",
+            "description": "true: only orders with an open incident; false: only orders without one."
+          },
+          "customer_debited": {
+            "type": "boolean",
+            "description": "true: only orders the customer has paid."
+          },
+          "channel_codes": {
+            "type": "string",
+            "description": "Comma-separated sales channel codes (country sites of the marketplace)."
+          },
+          "order_references_for_seller": {
+            "type": "string",
+            "description": "Comma-separated order references you set for yourself."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of orders to skip, for paging."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction by creation date (default asc). desc lists the newest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "order_state_codes": "$order_state_codes",
+          "order_ids": "$order_ids",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "start_update_date": "$start_update_date",
+          "end_update_date": "$end_update_date",
+          "has_incident": "$has_incident",
+          "customer_debited": "$customer_debited",
+          "channel_codes": "$channel_codes",
+          "order_references_for_seller": "$order_references_for_seller",
+          "max": "$max",
+          "offset": "$offset",
+          "order": "$order",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_offers",
+      "description": "List the shop's offers (OF21): SKU, product, price and discount, all channel prices, quantity in stock, condition, lead time and whether the offer is active (with the inactivity reasons). Filter by sku or product. Pages with max (at most 100) and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your offer SKU (shop_sku)."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "The marketplace's product SKU."
+          },
+          "offer_state_codes": {
+            "type": "string",
+            "description": "Comma-separated offer condition codes (see mediamarkt_list_offer_conditions)."
+          },
+          "pricing_channel_code": {
+            "type": "string",
+            "description": "Channel whose prices should be returned as the applicable price."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Offers per page, 1 to 100.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of offers to skip, for paging."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "totalPrice",
+              "price",
+              "productTitle"
+            ],
+            "description": "Sort field (default totalPrice)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction (default asc)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers",
+        "queryParams": {
+          "sku": "$sku",
+          "product_id": "$product_id",
+          "offer_state_codes": "$offer_state_codes",
+          "pricing_channel_code": "$pricing_channel_code",
+          "max": "$max",
+          "offset": "$offset",
+          "sort": "$sort",
+          "order": "$order",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_get_offer",
+      "description": "Read one offer in full by its offer id (OF22): every price field, discount, quantity, condition, logistic class, lead time and custom fields. Read it before mediamarkt_update_offers, which needs the complete offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "integer",
+            "description": "Offer id on the marketplace (offer_id in mediamarkt_list_offers), not your SKU."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/{offer_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_offer_conditions",
+      "description": "List the offer conditions (OF61) the marketplace accepts, e.g. new or used, with the code to put in state_code when updating offers.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/states",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_offer_imports",
+      "description": "List offer imports and updates (OF04), from files and from mediamarkt_update_offers: status (WAITING, RUNNING, COMPLETE, FAILED), lines read, in success and in error, offers inserted, updated and deleted. Newest first. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "WAITING_SYNCHRONIZATION_PRODUCT",
+              "WAITING",
+              "RUNNING",
+              "COMPLETE",
+              "FAILED"
+            ],
+            "description": "Only imports in this status."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "REPLACE"
+            ],
+            "description": "Only imports in this mode."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Imports created at or after this time, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Imports created before this time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Imports per page, 1 to 100 (default 10)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/imports",
+        "queryParams": {
+          "status": "$status",
+          "mode": "$mode",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_get_offer_import",
+      "description": "Read the status of one offer import or offer update (OF02) by its import_id, as returned by mediamarkt_update_offers or mediamarkt_import_offers: status, lines in success and in error, offers inserted, updated and deleted, and whether an error report exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "import_id": {
+            "type": "integer",
+            "description": "The import_id returned by mediamarkt_update_offers or mediamarkt_import_offers."
+          }
+        },
+        "required": [
+          "import_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/imports/{import_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_product_imports",
+      "description": "List product imports (P51) with their status (WAITING, RUNNING, SENT, COMPLETE, FAILED, CANCELLED), the transformation counts and the integration result (products synchronized, rejected, invalid). Pages with max and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "CANCELLED",
+              "WAITING",
+              "RUNNING",
+              "SENT",
+              "COMPLETE",
+              "FAILED"
+            ],
+            "description": "Only imports in this status."
+          },
+          "last_request_date": {
+            "type": "string",
+            "description": "Only imports that changed since this time, ISO 8601. Without it every product import is returned."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Imports per page, 1 to 100.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of imports to skip, for paging."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction by creation date (default asc). desc lists the newest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/imports",
+        "queryParams": {
+          "status": "$status",
+          "last_request_date": "$last_request_date",
+          "max": "$max",
+          "offset": "$offset",
+          "order": "$order",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_get_product_import",
+      "description": "Read the status of one product import (P42) by its import_id: import status, reason, transformation counts and the integration details (synchronized, rejected, invalid, wrong identifiers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "import_id": {
+            "type": "integer",
+            "description": "The import_id returned by mediamarkt_import_products."
+          }
+        },
+        "required": [
+          "import_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/imports/{import_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_get_products",
+      "description": "Look up products in the marketplace catalog by their identifiers (P31), e.g. EAN, and get the marketplace product SKU, title and category. Up to 100 products per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_references": {
+            "type": "string",
+            "description": "Comma-separated <type>|<value> pairs, e.g. EAN|3276000000000,EAN|4000000000000. The types are the product references MediaMarkt uses (EAN, UPC...); SKU and SHOP_SKU are not accepted."
+          }
+        },
+        "required": [
+          "product_references"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "product_references": "$product_references",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_product_offers",
+      "description": "List the offers of every shop for given products (P11), sorted by best price, to compare your price with the competition. Give product_ids or product_references (up to 100). The limit is about 5 calls a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "string",
+            "description": "Comma-separated marketplace product SKUs."
+          },
+          "product_references": {
+            "type": "string",
+            "description": "Comma-separated <type>|<value> pairs, e.g. EAN|3276000000000."
+          },
+          "all_offers": {
+            "type": "boolean",
+            "description": "true to include inactive offers (default: active offers only)."
+          },
+          "channel_codes": {
+            "type": "string",
+            "description": "Comma-separated channel codes: only offers sold on these channels."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Products per page, 1 to 100."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of products to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/offers",
+        "queryParams": {
+          "product_ids": "$product_ids",
+          "product_references": "$product_references",
+          "all_offers": "$all_offers",
+          "channel_codes": "$channel_codes",
+          "max": "$max",
+          "offset": "$offset",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_threads",
+      "description": "List message threads (M11) with customers and MediaMarkt: topic, linked order or offer, participants, last message date and since when a shop reply is needed. Filter with entity_type and entity_id for one order. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "MMP_ORDER",
+              "MMP_OFFER",
+              "MPS_ORDER",
+              "MPS_SERVICE",
+              "SELLER_OPERATOR"
+            ],
+            "description": "Only threads on this kind of entity: MMP_ORDER (orders), MMP_OFFER (offers), SELLER_OPERATOR (with MediaMarkt)."
+          },
+          "entity_id": {
+            "type": "string",
+            "description": "Comma-separated entity ids, e.g. order ids. Needs entity_type."
+          },
+          "updated_since": {
+            "type": "string",
+            "description": "Only threads changed at or after this time, ISO 8601."
+          },
+          "with_messages": {
+            "type": "boolean",
+            "description": "true to include the messages (the last 100 of each thread)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Threads per page, 1 to 100 (default 50)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inbox/threads",
+        "queryParams": {
+          "entity_type": "$entity_type",
+          "entity_id": "$entity_id",
+          "updated_since": "$updated_since",
+          "with_messages": "$with_messages",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_get_thread",
+      "description": "Read one message thread (M10) with all its messages, senders, recipients, attachments and the linked order or offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Thread id (a UUID) from mediamarkt_list_threads."
+          }
+        },
+        "required": [
+          "thread_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inbox/threads/{thread_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_returns",
+      "description": "List return requests (RT11) with their state, return lines, reason, RMA, tracking and the linked order. Filter by state, order or date. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_state": {
+            "type": "string",
+            "description": "Only returns in this state: WAITING_ACCEPTANCE, IN_PROGRESS, REFUSED, RECEIVED, NO_RECEPTION, CLOSED or CANCELED."
+          },
+          "order_commercial_id": {
+            "type": "string",
+            "description": "Only returns of this order (commercial id)."
+          },
+          "return_creation_date_from": {
+            "type": "string",
+            "description": "Returns created after this time, ISO 8601."
+          },
+          "return_creation_date_to": {
+            "type": "string",
+            "description": "Returns created before this time, ISO 8601."
+          },
+          "return_last_updated_from": {
+            "type": "string",
+            "description": "Returns updated after this time, ISO 8601."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Returns per page, 1 to 100 (default 10)."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/returns",
+        "queryParams": {
+          "return_state": "$return_state",
+          "order_commercial_id": "$order_commercial_id",
+          "return_creation_date_from": "$return_creation_date_from",
+          "return_creation_date_to": "$return_creation_date_to",
+          "return_last_updated_from": "$return_last_updated_from",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_reasons",
+      "description": "List the marketplace's reason codes (RE01): incident, cancellation, refund and message reasons, with their labels and whether the shop may use them. Use a code as the topic of a message thread.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "description": "Language of the labels, e.g. fr_FR. Only a locale active on this marketplace works (others answer 400); leave empty for the default."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reasons",
+        "queryParams": {
+          "locale": "$locale",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_carriers",
+      "description": "List the carriers the marketplace knows (SH21) with their code, label and tracking URL. Use the code as carrier_code in mediamarkt_update_tracking.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/carriers",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_invoices",
+      "description": "List the accounting documents MediaMarkt issues to the shop (IV01): invoices and credit notes with period, totals with and without tax, commission details, payment state and due date. Pages with max and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Documents created at or after this time, ISO 8601."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Documents created before this time, ISO 8601."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "AUTO_INVOICE",
+              "MANUAL_INVOICE",
+              "MANUAL_CREDIT"
+            ],
+            "description": "Document type. The default is AUTO_INVOICE (the regular billing-cycle invoices); ALL includes manual invoices and credits."
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "PAID",
+              "FAILED"
+            ],
+            "description": "Only documents in this payment state."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Documents per page, 1 to 100.",
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of documents to skip, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "type": "$type",
+          "payment_status": "$payment_status",
+          "max": "$max",
+          "offset": "$offset",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_transactions",
+      "description": "List the shop's transaction lines (TL02): order amounts, shipping, commissions, refunds, manual credits and payouts, with amount, type, payment state, balance and the accounting document they belong to. Filter by date, type or order. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_created_from": {
+            "type": "string",
+            "description": "Lines created at or after this time, ISO 8601."
+          },
+          "date_created_to": {
+            "type": "string",
+            "description": "Lines created before this time, ISO 8601."
+          },
+          "transaction_date_from": {
+            "type": "string",
+            "description": "Lines whose transaction date is at or after this time, ISO 8601."
+          },
+          "transaction_date_to": {
+            "type": "string",
+            "description": "Lines whose transaction date is before this time, ISO 8601."
+          },
+          "last_updated_from": {
+            "type": "string",
+            "description": "Lines updated at or after this time, ISO 8601."
+          },
+          "transaction_type": {
+            "type": "string",
+            "description": "Only this transaction type, e.g. ORDER_AMOUNT, ORDER_SHIPPING_AMOUNT, COMMISSION_FEE, REFUND_ORDER_AMOUNT, PAYMENT."
+          },
+          "payment_state": {
+            "type": "string",
+            "description": "Only lines in this payment state: PENDING, PAYABLE, PAID, NOT_APPLICABLE or RESERVE."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Only lines of this order."
+          },
+          "accounting_document_number": {
+            "type": "string",
+            "description": "Only lines of this accounting document (invoice number)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Lines per page, 1 to 2000.",
+            "default": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellerpayment/transactions_logs",
+        "queryParams": {
+          "date_created_from": "$date_created_from",
+          "date_created_to": "$date_created_to",
+          "transaction_date_from": "$transaction_date_from",
+          "transaction_date_to": "$transaction_date_to",
+          "last_updated_from": "$last_updated_from",
+          "transaction_type": "$transaction_type",
+          "payment_state": "$payment_state",
+          "order_id": "$order_id",
+          "accounting_document_number": "$accounting_document_number",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_document_requests",
+      "description": "List accounting document requests (DR11), used when MediaMarkt runs Enhanced Seller Invoicing: invoices and credit notes that MediaMarkt or the shop issues, with state, type, issuer, document number, amounts and payment state. Filter by date, state, type or document number. Pass next_page_token back as page_token for more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "STAGING",
+              "TO_PROCESS",
+              "ISSUED",
+              "CANCELED"
+            ],
+            "description": "Only requests in this state. TO_PROCESS are documents the shop still has to issue."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INVOICE",
+              "CREDIT_NOTE"
+            ],
+            "description": "Only invoices or only credit notes."
+          },
+          "issuer_type": {
+            "type": "string",
+            "enum": [
+              "OPERATOR",
+              "SHOP"
+            ],
+            "description": "Only documents issued by MediaMarkt (OPERATOR), or by the shop (SHOP)."
+          },
+          "document_number": {
+            "type": "string",
+            "description": "Only the request with this accounting document number."
+          },
+          "date_created_from": {
+            "type": "string",
+            "description": "Requests created after this time, ISO 8601."
+          },
+          "date_created_to": {
+            "type": "string",
+            "description": "Requests created before this time, ISO 8601."
+          },
+          "issue_date_from": {
+            "type": "string",
+            "description": "Requests issued after this time, ISO 8601."
+          },
+          "issue_date_to": {
+            "type": "string",
+            "description": "Requests issued before this time, ISO 8601."
+          },
+          "payment_state": {
+            "type": "string",
+            "enum": [
+              "PAID",
+              "PENDING"
+            ],
+            "description": "Only paid or pending documents (purchase order and fee requests only)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Requests per page.",
+            "default": 20
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token from the previous page. All other filters are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/document-request/requests",
+        "queryParams": {
+          "state": "$state",
+          "type": "$type",
+          "issuer_type": "$issuer_type",
+          "document_number": "$document_number",
+          "date_created_from": "$date_created_from",
+          "date_created_to": "$date_created_to",
+          "issue_date_from": "$issue_date_from",
+          "issue_date_to": "$issue_date_to",
+          "payment_state": "$payment_state",
+          "limit": "$limit",
+          "page_token": "$page_token",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_order_documents",
+      "description": "List the documents attached to one or more orders (OR72): delivery notes, shipping labels, customer invoices and other files, with id, file name, type code and upload date. Download links are not part of this tool; open the file in the back office.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "string",
+            "description": "Comma-separated order ids, e.g. 1234567-A,1234568-A."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/documents",
+        "queryParams": {
+          "order_ids": "$order_ids",
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_channels",
+      "description": "List the marketplace's sales channels (CH11), usually one per country site, with code and label. Use the codes as channel_codes in mediamarkt_list_orders and mediamarkt_list_product_offers. Changes rarely: call it once, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_shipping_zones",
+      "description": "List the active shipping zones of the marketplace (SH11) with code and label, e.g. mainland France or Corsica. Changes rarely: call it once, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/zones",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_shipping_methods",
+      "description": "List the active shipping methods of the marketplace (SH12), e.g. standard, express or pick-up, with code, label, whether a tracking number is mandatory and whether it is click and collect. The code appears as shipping_type_code on orders. Changes rarely: call it once, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/types",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_list_logistic_classes",
+      "description": "List the marketplace's logistic classes (SH31), the size or weight bands that decide shipping prices, with code and label. Use the code as logistic_class in mediamarkt_update_offers. Changes rarely: call it once, not on every question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/logistic_classes",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      }
+    },
+    {
+      "name": "mediamarkt_accept_order",
+      "description": "Accept or refuse the lines of an order waiting for acceptance (OR21). Every line of the order must be listed. Refusing a line cancels it for good. Acts on the live marketplace: name the order and the decision per line and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          },
+          "order_lines": {
+            "type": "array",
+            "description": "One entry per order line: {\"id\": \"<order_line_id>\", \"accepted\": true}. Use accepted false only when the user explicitly wants to refuse that line.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "order_line_id from mediamarkt_list_orders."
+                },
+                "accepted": {
+                  "type": "boolean",
+                  "description": "true to accept, false to refuse (cancels the line)."
+                }
+              },
+              "required": [
+                "id",
+                "accepted"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "order_lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/accept",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "order_lines": "$order_lines"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mediamarkt_update_tracking",
+      "description": "Set the carrier and tracking number of an order (OR23). Give carrier_code from mediamarkt_list_carriers, or carrier_name with carrier_url for a carrier the marketplace does not know. Acts on the live marketplace and is shown to the customer: name the order and the tracking data and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "The carrier's tracking number."
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "Carrier code from mediamarkt_list_carriers."
+          },
+          "carrier_name": {
+            "type": "string",
+            "description": "Carrier name, for a carrier that is not in mediamarkt_list_carriers."
+          },
+          "carrier_url": {
+            "type": "string",
+            "description": "Full tracking URL, for a carrier that is not in mediamarkt_list_carriers."
+          },
+          "carrier_standard_code": {
+            "type": "string",
+            "description": "Standard carrier code, when the marketplace uses them."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/tracking",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "tracking_number": "$tracking_number",
+          "carrier_code": "$carrier_code",
+          "carrier_name": "$carrier_name",
+          "carrier_url": "$carrier_url",
+          "carrier_standard_code": "$carrier_standard_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mediamarkt_ship_order",
+      "description": "Confirm that an order in SHIPPING has been shipped (OR24); it moves to SHIPPED and the customer is notified. Set the tracking first with mediamarkt_update_tracking. Cannot be undone: name the order and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/ship",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mediamarkt_update_offers",
+      "description": "Create or update offers, including price and stock (OF24). Replaces each offer completely: every field left out is reset (a missing quantity becomes 0), so read the offer first and send it back whole with only the intended change. Returns an import_id to check with mediamarkt_get_offer_import. Acts on the live marketplace: list each SKU with the old and new values and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offers": {
+            "type": "array",
+            "description": "Offers to create or update. Each needs shop_sku, state_code and price; product_id and product_id_type are required when the offer is new. Send every field the offer has (quantity, leadtime_to_ship, logistic_class, description, discount, all_prices, min_quantity_alert, available_started, available_ended, offer_additional_fields...), otherwise it is reset. Leave update_delete empty or set it to update.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shop_sku": {
+                  "type": "string",
+                  "description": "Your SKU of the offer."
+                },
+                "product_id": {
+                  "type": "string",
+                  "description": "Product reference, e.g. the EAN."
+                },
+                "product_id_type": {
+                  "type": "string",
+                  "description": "Type of product_id, e.g. EAN, or SHOP_SKU / SKU as the marketplace allows."
+                },
+                "state_code": {
+                  "type": "string",
+                  "description": "Offer condition code from mediamarkt_list_offer_conditions."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Price in the marketplace currency."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Stock available. If left out it is set to 0."
+                },
+                "leadtime_to_ship": {
+                  "type": "integer",
+                  "description": "Days to ship."
+                },
+                "logistic_class": {
+                  "type": "string",
+                  "description": "Logistic class code."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Offer description."
+                },
+                "discount": {
+                  "type": "object",
+                  "description": "Discount {price, start_date, end_date}; left out means deleted."
+                },
+                "all_prices": {
+                  "type": "array",
+                  "description": "Channel and volume prices, as read from the offer.",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "update_delete": {
+                  "type": "string",
+                  "enum": [
+                    "update"
+                  ],
+                  "description": "Leave empty or update. Deleting offers is not done with this tool."
+                }
+              },
+              "required": [
+                "shop_sku",
+                "state_code",
+                "price"
+              ]
+            }
+          }
+        },
+        "required": [
+          "offers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "offers": "$offers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mediamarkt_reply_thread",
+      "description": "Reply in a message thread (M12) to the customer or MediaMarkt. The message is delivered at once and cannot be taken back: show the user the text and the recipients and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Thread id from mediamarkt_list_threads."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text (up to 50,000 characters)."
+          },
+          "to": {
+            "type": "array",
+            "description": "Recipients, e.g. [{\"type\": \"CUSTOMER\"}] or [{\"type\": \"OPERATOR\"}]. type is CUSTOMER, OPERATOR (MediaMarkt) or SHOP; add id only to pick one participant of the thread.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "CUSTOMER",
+                    "OPERATOR",
+                    "SHOP"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "topic": {
+            "type": "object",
+            "description": "Optional new topic: {\"type\": \"FREE_TEXT\", \"value\": \"...\"} or {\"type\": \"REASON_CODE\", \"value\": \"<code from mediamarkt_list_reasons>\"}."
+          }
+        },
+        "required": [
+          "thread_id",
+          "body",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inbox/threads/{thread_id}/message",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "message_input": {
+            "__json": {
+              "body": "$body",
+              "to": "$to",
+              "topic": "$topic"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "mediamarkt_create_order_thread",
+      "description": "Start a new message thread on an order (OR43) with the customer, MediaMarkt or both. The message is delivered at once: show the user the text, topic and recipients and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text (up to 50,000 characters)."
+          },
+          "to": {
+            "type": "array",
+            "description": "Recipients: CUSTOMER, OPERATOR (MediaMarkt) or both.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CUSTOMER",
+                "OPERATOR"
+              ]
+            }
+          },
+          "topic_type": {
+            "type": "string",
+            "enum": [
+              "FREE_TEXT",
+              "REASON_CODE"
+            ],
+            "description": "FREE_TEXT for your own subject, REASON_CODE for a code from mediamarkt_list_reasons.",
+            "default": "FREE_TEXT"
+          },
+          "topic_value": {
+            "type": "string",
+            "description": "The subject text, or the reason code."
+          }
+        },
+        "required": [
+          "order_id",
+          "body",
+          "to",
+          "topic_value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/threads",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "thread_input": {
+            "__json": {
+              "body": "$body",
+              "to": "$to",
+              "topic": {
+                "type": "$topic_type",
+                "value": "$topic_value"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "mediamarkt_resolve_incident",
+      "description": "Mark the open incident on one order line as resolved (OR64), once the customer's problem is solved. reason_code must be an INCIDENT_CLOSE reason from mediamarkt_list_reasons. Closes the incident on the live marketplace: name the order, the line and the reason and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 1234567-A."
+          },
+          "order_line_id": {
+            "type": "string",
+            "description": "Order line id with the open incident, e.g. 1234567-A-1 (order_line_id in mediamarkt_list_orders)."
+          },
+          "reason_code": {
+            "type": "string",
+            "description": "Code of an INCIDENT_CLOSE reason from mediamarkt_list_reasons."
+          }
+        },
+        "required": [
+          "order_id",
+          "order_line_id",
+          "reason_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/lines/{order_line_id}/resolve_incident",
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "reason_code": "$reason_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mediamarkt_accept_return",
+      "description": "Accept or refuse a return request in WAITING_ACCEPTANCE (RT21). Only when MediaMarkt handles returns in the seller back office and leaves the decision to the shop. Refusing needs a rejection_reason_code. This only decides the request; refunds are not made by this tool. Acts on the live marketplace: name the return, the decision and the reason and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": {
+            "type": "string",
+            "description": "Return id from mediamarkt_list_returns."
+          },
+          "accepted": {
+            "type": "boolean",
+            "description": "true accepts the return, false refuses it."
+          },
+          "rejection_reason_code": {
+            "type": "string",
+            "enum": [
+              "RETURN_REJECTION_NOT_ELIGIBLE",
+              "RETURN_REJECTION_NOT_NEEDED",
+              "RETURN_REJECTION_WINDOW_CLOSED"
+            ],
+            "description": "Required when accepted is false: not eligible, no return needed, or return window closed."
+          }
+        },
+        "required": [
+          "return_id",
+          "accepted"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/returns/accept",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "returns": [
+            {
+              "id": "$return_id",
+              "accepted": "$accepted",
+              "rejection_reason_code": "$rejection_reason_code"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mediamarkt_receive_return",
+      "description": "Confirm that the goods of an accepted return arrived at your warehouse (RT25). The return moves to RECEIVED. Acts on the live marketplace: name the return and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": {
+            "type": "string",
+            "description": "Return id from mediamarkt_list_returns."
+          }
+        },
+        "required": [
+          "return_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/returns/receive",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyMapping": {
+          "returns": [
+            {
+              "id": "$return_id"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "mediamarkt_import_products",
+      "description": "Send a product file to the marketplace (P41) to create or enrich products in its catalog. file_url is the address of a CSV, XLSX or XML file in the product file format MediaMarkt asks for; the connector downloads it (up to 10 MB) and uploads it. Returns an import_id to follow with mediamarkt_get_product_import. The limit is one import every 15 minutes. Changes the marketplace catalog: describe the file and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the product file (CSV, XLSX or XML)."
+          },
+          "operator_format": {
+            "type": "boolean",
+            "description": "true when the file is already in the product format MediaMarkt defines."
+          }
+        },
+        "required": [
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/imports",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          },
+          "operator_format": "$operator_format"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "mediamarkt_import_offers",
+      "description": "Import an offer file (OF01) to create, update or delete offers in bulk. REPLACE mode deletes every offer that is not in the file, and NORMAL mode deletes the lines marked delete. file_url is the address of a CSV, XLSX or XML file in the offer file format MediaMarkt asks for; the connector downloads it (up to 10 MB) and uploads it. Returns an import_id to follow with mediamarkt_get_offer_import. Installed switched off; describe the file and the mode and get a yes from the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of the offer file."
+          },
+          "import_mode": {
+            "type": "string",
+            "enum": [
+              "NORMAL",
+              "REPLACE"
+            ],
+            "description": "NORMAL creates, updates or deletes the offers in the file. REPLACE also deletes every offer missing from it.",
+            "default": "NORMAL"
+          },
+          "with_products": {
+            "type": "boolean",
+            "description": "true when the file also carries product data."
+          }
+        },
+        "required": [
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers/imports",
+        "queryParams": {
+          "shop_id": "${MEDIAMARKT_SHOP_ID}"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          },
+          "import_mode": "$import_mode",
+          "with_products": "$with_products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

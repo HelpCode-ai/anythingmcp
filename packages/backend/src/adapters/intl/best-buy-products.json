@@ -1,0 +1,580 @@
+{
+  "slug": "best-buy-products",
+  "name": "Best Buy Products",
+  "aliases": [
+    "Best Buy",
+    "BestBuy",
+    "Best Buy API",
+    "bestbuy.com"
+  ],
+  "description": "Search the Best Buy catalog from Claude, ChatGPT or Copilot with the official Best Buy APIs: products by keyword, category, price or SKU with prices and reviews, product details, stores near a ZIP code, in-store availability of a product, categories, and trending, most viewed and also-viewed products. Read-only; needs a Best Buy API key.",
+  "instructions": "## Best Buy Products\nThis connector works with the **Best Buy APIs** (`https://api.bestbuy.com/v1`): the product catalog of bestbuy.com with prices and availability, the stores in the United States and Puerto Rico, the category tree and the recommendation lists (trending, most viewed, also viewed). Everything is read-only: it cannot add to a cart or place orders (Best Buy's Commerce API is by invitation and is not part of this connector).\n\n**Setup (a few minutes)**\n1. Open https://developer.bestbuy.com and click **Get API Key**. Best Buy's documentation says to sign up with your email address; it then sends an email with instructions to activate the key.\n2. Once the key is active, paste it into `BEST_BUY_API_KEY`. The connector sends it as the `apiKey` query parameter on every call and asks for JSON.\n\n**Where to start**: `best_buy_products_search_products` with one keyword and, if wanted, a price range. For a whole category use `best_buy_products_list_category_products` with a category id found through `best_buy_products_list_categories` (search by name with a trailing `*`, then walk down `subCategories`). `best_buy_products_get_product` reads one product by SKU, `best_buy_products_get_products_by_sku` several at once.\n\n**Anything more specific** goes through `best_buy_products_query_products`, which takes a filter in Best Buy's own syntax: terms such as `manufacturer=canon`, `salePrice<1000` or `onSale=true`, joined with `&` (and) or `|` (or). Its description lists the operators and examples. Use it to combine a keyword with a category, to require several keywords, or to filter on any other product attribute.\n\n**Stores**: `best_buy_products_find_stores` lists the stores around a US ZIP code. `best_buy_products_get_store_availability` says which stores have a SKU in stock now, by ZIP code or for one store; a store that is not in the answer does not have it.\n\n**Recommendations**: `best_buy_products_get_trending_products` and `best_buy_products_get_most_viewed_products` need a category id; `best_buy_products_get_also_viewed_products` needs a SKU. Each returns ten products at most.\n\n**Field notes**:\n- Prices are decimal US dollars: `salePrice` is what the product costs now, `regularPrice` the price before a discount.\n- A SKU is a number (8880044). Category ids look like `abcat0502000`, `pcmcat209400050001` or `cat00000`.\n- Product lists return a short set of attributes by default; name others in `show`, or use `all` for everything. Lists are paged: 10 per page by default, 100 at most.\n- By default only active products are returned.\n- `onlineAvailability` and `inStoreAvailability` say whether a product is sold online or in stores at all; for a particular store use the store availability tool.\n- Attribute names are case sensitive (`salePrice`, not `saleprice`).\n- Best Buy asks that its data is not cached except briefly, and the links in its answers expire after seven days.\n\n**Errors**: 400 means the filter is malformed (often a wrong attribute name or a value starting with `*`); 403 means the key is not valid, not yet activated, or over its call limit; 404 means there is no such SKU or item. Best Buy does not publish its rate limits in the documentation: on 403 after many calls, slow down, and prefer one call with a SKU list over one call per SKU.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "best-buy-products",
+  "docsUrl": "https://bestbuyapis.github.io/api-documentation/",
+  "prerequisites": "A Best Buy API key from https://developer.bestbuy.com (Get API Key): sign up with your email address and activate the key from the email Best Buy sends.",
+  "requiredEnvVars": [
+    "BEST_BUY_API_KEY"
+  ],
+  "envVarMeta": {
+    "BEST_BUY_API_KEY": {
+      "label": "Best Buy API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The key from the Best Buy developer portal (Get API Key), after you activated it from the email Best Buy sent. Paste only the key.",
+      "link": "https://developer.bestbuy.com"
+    }
+  },
+  "verifyHints": {
+    "400": "Best Buy could not read the request: the filter is malformed or names an attribute that does not exist.",
+    "403": "Best Buy refused the key: it is wrong, not activated yet (use the link in the email from Best Buy), or over its call limit.",
+    "404": "Best Buy found no product, store or category with that id.",
+    "rate_limited": "The key is over its call limit. Wait a little and try again with fewer calls."
+  },
+  "probe": {
+    "tool": "best_buy_products_list_categories",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "connector": {
+    "name": "Best Buy Products",
+    "type": "REST",
+    "baseUrl": "https://api.bestbuy.com/v1",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "apiKey": "{{BEST_BUY_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "best_buy_products_search_products",
+      "description": "Search the Best Buy catalog by keyword, within an optional price range. The keyword is matched against name, manufacturer, descriptions, features and details. Several words separated by spaces match products with ANY of them; to require every word, or to combine a keyword with a category or another attribute, use `best_buy_products_query_products`. Returns `total`, `totalPages`, `currentPage`, `from`, `to` and `products` with the attributes named in `show` (by default SKU, name, manufacturer, model number, sale and regular price in US dollars, whether it is on sale, review average and count, online and in-store availability, the bestbuy.com link, an image and a short description). 10 per page by default, 100 at most.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Keyword, for example `laptop`, `oled` or `airpods`."
+          },
+          "min_price": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "description": "Lowest sale price in US dollars."
+          },
+          "max_price": {
+            "type": "number",
+            "minimum": 0,
+            "default": 1000000,
+            "description": "Highest sale price in US dollars."
+          },
+          "show": {
+            "type": "string",
+            "default": "sku,name,manufacturer,modelNumber,salePrice,regularPrice,onSale,customerReviewAverage,customerReviewCount,onlineAvailability,inStoreAvailability,url,image,shortDescription",
+            "description": "Comma-separated attributes to return for each product. `all` returns every attribute, which is a lot per product."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Attribute and direction, for example `salePrice.asc`, `customerReviewAverage.dsc` or `name.asc`. Several are separated by commas. Attributes with a dot in their name cannot be sorted on."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Results per page, 100 at most."
+          }
+        },
+        "required": [
+          "search"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products(search={search}&salePrice>={min_price}&salePrice<={max_price})",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "json",
+          "show": "$show",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Search products by keyword"
+      }
+    },
+    {
+      "name": "best_buy_products_list_category_products",
+      "description": "List the Best Buy products of one category, within an optional price range. The category id comes from `best_buy_products_list_categories` (for example `abcat0502000` for laptops); products in its sub-categories are included. Returns `total`, `totalPages`, `currentPage`, `from`, `to` and `products` with the attributes named in `show` (by default SKU, name, manufacturer, model number, sale and regular price in US dollars, whether it is on sale, review average and count, online and in-store availability, the bestbuy.com link, an image and a short description). 10 per page by default, 100 at most.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Best Buy category id, for example `abcat0502000`.",
+            "pattern": "^[A-Za-z0-9]+$"
+          },
+          "min_price": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "description": "Lowest sale price in US dollars."
+          },
+          "max_price": {
+            "type": "number",
+            "minimum": 0,
+            "default": 1000000,
+            "description": "Highest sale price in US dollars."
+          },
+          "show": {
+            "type": "string",
+            "default": "sku,name,manufacturer,modelNumber,salePrice,regularPrice,onSale,customerReviewAverage,customerReviewCount,onlineAvailability,inStoreAvailability,url,image,shortDescription",
+            "description": "Comma-separated attributes to return for each product. `all` returns every attribute, which is a lot per product."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Attribute and direction, for example `salePrice.asc`, `customerReviewAverage.dsc` or `name.asc`. Several are separated by commas. Attributes with a dot in their name cannot be sorted on."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Results per page, 100 at most."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products(categoryPath.id={category_id}&salePrice>={min_price}&salePrice<={max_price})",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "json",
+          "show": "$show",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "List the products of a category"
+      }
+    },
+    {
+      "name": "best_buy_products_get_products_by_sku",
+      "description": "Read several Best Buy products in one call by their SKU numbers. Returns `total`, `totalPages`, `currentPage`, `from`, `to` and `products` with the attributes named in `show` (by default SKU, name, manufacturer, model number, sale and regular price in US dollars, whether it is on sale, review average and count, online and in-store availability, the bestbuy.com link, an image and a short description). One call for a list is much cheaper on the rate limit than one call per SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "string",
+            "description": "SKU numbers separated by commas, without spaces, for example `6534009,8880044`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "show": {
+            "type": "string",
+            "default": "sku,name,manufacturer,modelNumber,salePrice,regularPrice,onSale,customerReviewAverage,customerReviewCount,onlineAvailability,inStoreAvailability,url,image,shortDescription",
+            "description": "Comma-separated attributes to return for each product. `all` returns every attribute, which is a lot per product."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Attribute and direction, for example `salePrice.asc`, `customerReviewAverage.dsc` or `name.asc`. Several are separated by commas. Attributes with a dot in their name cannot be sorted on."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Results per page, 100 at most."
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products(sku%20in({skus}))",
+        "queryParams": {
+          "format": "json",
+          "show": "$show",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Get products by SKU list"
+      }
+    },
+    {
+      "name": "best_buy_products_query_products",
+      "description": "Search Best Buy products with a filter written in Best Buy's own query syntax, for anything the simpler tools cannot express. A filter is one or more terms `attribute operator value`, joined with `&` (and) or `|` (or), grouped with parentheses. Operators: `=`, `!=`, `>`, `<`, `>=`, `<=` and `in(a,b,c)` after a space. Attribute names are case sensitive, values are not. `*` is a wildcard: `attribute=*` means the attribute has a value, `name=iPhone*` matches a prefix (a value cannot start with `*`). `search=word` is the keyword search; repeat it for several words. Examples: `search=oven&search=stainless&salePrice<500`, `manufacturer=canon&salePrice<1000`, `categoryPath.id=abcat0502000&onSale=true`, `sku%20in(6534009,8880044)`, `releaseDate>today`. A space inside the filter is written `%20`. Useful attributes: sku, name, manufacturer, modelNumber, salePrice, regularPrice, onSale, categoryPath.id, categoryPath.name, type, releaseDate, customerReviewAverage, onlineAvailability, inStoreAvailability. Returns `total`, `totalPages`, `currentPage`, `from`, `to` and `products` with the attributes named in `show` (by default SKU, name, manufacturer, model number, sale and regular price in US dollars, whether it is on sale, review average and count, online and in-store availability, the bestbuy.com link, an image and a short description).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The filter, without the surrounding parentheses, for example `manufacturer=canon&salePrice<1000`. Write a space as `%20` (`sku%20in(6534009,8880044)`, `name=Sony%20Bravia*`); leave the operators as they are."
+          },
+          "show": {
+            "type": "string",
+            "default": "sku,name,manufacturer,modelNumber,salePrice,regularPrice,onSale,customerReviewAverage,customerReviewCount,onlineAvailability,inStoreAvailability,url,image,shortDescription",
+            "description": "Comma-separated attributes to return for each product. `all` returns every attribute, which is a lot per product."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Attribute and direction, for example `salePrice.asc`, `customerReviewAverage.dsc` or `name.asc`. Several are separated by commas. Attributes with a dot in their name cannot be sorted on."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Results per page, 100 at most."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products({query})",
+        "queryParams": {
+          "format": "json",
+          "show": "$show",
+          "sort": "$sort",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Query products (Best Buy filter syntax)"
+      }
+    },
+    {
+      "name": "best_buy_products_get_product",
+      "description": "Read one Best Buy product by its SKU: name, manufacturer, model number, sale and regular price in US dollars, descriptions, features, category path, customer review average and count, online and in-store availability, shipping details, images and the link to bestbuy.com. `show` limits the answer to the attributes you name; without it Best Buy returns its standard set, and `show=all` returns everything. An unknown SKU answers 404.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Best Buy SKU number, for example 8880044."
+          },
+          "show": {
+            "type": "string",
+            "description": "Comma-separated attributes to return, for example `sku,name,salePrice,longDescription,features.feature`, or `all`."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{sku}.json",
+        "queryParams": {
+          "show": "$show"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Get a product"
+      }
+    },
+    {
+      "name": "best_buy_products_find_stores",
+      "description": "Find Best Buy stores near a US postal code. Returns `total` and `stores` with store id, name, type (Big Box, Outlet Center and others), address, city, state, postal code, phone, opening hours and the distance in miles. The search area is a square around the postal code, so a store can be listed slightly beyond the radius. Covers the United States and Puerto Rico.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postal_code": {
+            "type": "string",
+            "description": "US ZIP code, 5 digits, for example 55423.",
+            "pattern": "^[0-9]{5}$"
+          },
+          "radius_miles": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Search radius in miles."
+          },
+          "show": {
+            "type": "string",
+            "default": "storeId,storeType,name,longName,address,city,region,postalCode,phone,hours,distance",
+            "description": "Comma-separated store attributes to return, or `all` (which adds the detailed hours of the next two weeks and the services offered)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Stores per page, 100 at most."
+          }
+        },
+        "required": [
+          "postal_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stores(area({postal_code},{radius_miles}))",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "json",
+          "show": "$show",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Find stores near a postal code"
+      }
+    },
+    {
+      "name": "best_buy_products_get_store_availability",
+      "description": "Check which Best Buy stores have a product in stock right now. Give the SKU and either a US postal code (stores within 250 miles, nearest first) or one store id. Returns only the stores that have it: store id, name, address, city, postal code, store type, distance in miles, `lowStock` (true when it may sell out soon) and `minPickupHours` (hours until a pick-up order is ready). A store that is not listed does not have the product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Best Buy SKU number of the product."
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "US ZIP code to search around. Give this or `store_id`.",
+            "pattern": "^[0-9]{5}$"
+          },
+          "store_id": {
+            "type": "integer",
+            "description": "Id of one store to check (the `storeId` from `best_buy_products_find_stores`). Give this or `postal_code`."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{sku}/stores.json",
+        "queryParams": {
+          "postalCode": "$postal_code",
+          "storeId": "$store_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Check store availability of a product"
+      }
+    },
+    {
+      "name": "best_buy_products_list_categories",
+      "description": "List or look up Best Buy product categories. Without arguments it pages through all of them (several thousand). `name` finds categories by name, with `*` as a wildcard at the end (`Laptops*`, `Sony DSLR Camera*`); `category_id` reads one category. Each entry has `id`, `name`, `url`, its `path` from the root category down and its `subCategories`: walk down from a broad category to find the id to pass to the product tools. 10 per page by default, 100 at most.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "default": "*",
+            "description": "Category name to find, case-insensitive. End it with `*` to match every name that starts with the text; a name cannot start with `*`."
+          },
+          "category_id": {
+            "type": "string",
+            "default": "*",
+            "description": "Id of one category, for example `abcat0100000`.",
+            "pattern": "^(\\*|[A-Za-z0-9]+)$"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Categories per page, 100 at most."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories(name={name}&id={category_id})",
+        "encodePathParams": true,
+        "queryParams": {
+          "format": "json",
+          "show": "id,name,url,path,subCategories",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "List or find categories"
+      }
+    },
+    {
+      "name": "best_buy_products_get_trending_products",
+      "description": "The ten products of a Best Buy category whose page views on bestbuy.com are growing fastest, measured over the last three hours against the three hours before. Each result has its `rank`, SKU, name, current and regular price in US dollars, customer review score and count, an image and links. A deep sub-category may have too little traffic and return nothing: try its parent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Best Buy category id, for example `abcat0400000` (Cameras and Camcorders). A category name does not work.",
+            "pattern": "^[A-Za-z0-9]+$"
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/trendingViewed(categoryId={category_id})",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Trending products of a category"
+      }
+    },
+    {
+      "name": "best_buy_products_get_most_viewed_products",
+      "description": "The ten most viewed products of a Best Buy category on bestbuy.com, refreshed every two hours over a window of up to 48 hours. Each result has its `rank`, SKU, name, current and regular price in US dollars, customer review score and count, an image and links. Unlike the trending list, this ranks by the number of views, not by their growth.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Best Buy category id, for example `abcat0107000` (TV and Home Theater Accessories). A category name does not work.",
+            "pattern": "^[A-Za-z0-9]+$"
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/mostViewed(categoryId={category_id})",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Most viewed products of a category"
+      }
+    },
+    {
+      "name": "best_buy_products_get_also_viewed_products",
+      "description": "Up to ten products that shoppers on bestbuy.com also looked at when viewing a given product, from the browsing of the last thirty days. Each result has its `rank`, SKU, name, current and regular price in US dollars, customer review score and count, an image and links. Good for alternatives to a product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Best Buy SKU number of the product to start from."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{sku}/alsoViewed"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Products also viewed"
+      }
+    }
+  ]
+}

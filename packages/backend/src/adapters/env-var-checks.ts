@@ -1,4 +1,4 @@
-import { describeAdapterEnvVars, EnvVarDescriptor } from './env-var-meta';
+import { describeAdapterEnvVars, describeEnvVarOptions, EnvVarDescriptor } from './env-var-meta';
 import { addressFix, describeAddressFix, withMissingScheme } from './address-fix';
 import { normalizeWooCommerceUrl } from './woocommerce-setup';
 
@@ -239,6 +239,9 @@ export function checkAdapterEnvValues(
 function checkOne(d: EnvVarDescriptor, value: string): string | undefined {
   // Values that are still a {{VARIABLE}} are resolved later and checked there.
   if (/\{\{\s*[\w.]+\s*\}\}/.test(value)) return undefined;
+  // A variable with a fixed list of choices takes one of them and nothing
+  // else; a listed value needs no further check.
+  if (d.options?.length) return optionProblem(d, value);
   const isAddress = d.kind === 'address' || ADDRESS_NAME.test(d.name);
   const isCredential = d.secret || d.kind === 'credential';
   if (isAddress || isCredential) {
@@ -258,6 +261,16 @@ function checkOne(d: EnvVarDescriptor, value: string): string | undefined {
     return `${d.label} does not look right. ${d.patternMessage ?? (d.example ? `Example: ${d.example}` : d.help ?? '')}`.trim();
   }
   return undefined;
+}
+
+/**
+ * Why `value` is refused for a variable with a fixed list of choices
+ * (`envVarMeta.<VAR>.options`): undefined when it is one of them or the
+ * variable has no list, otherwise a sentence naming the choices.
+ */
+export function optionProblem(d: Pick<EnvVarDescriptor, 'label' | 'options'>, value: string): string | undefined {
+  if (!d.options?.length || d.options.some((o) => o.value === value)) return undefined;
+  return `${d.label} must be one of: ${describeEnvVarOptions(d.options)}.`;
 }
 
 /** One sentence naming every refused field, for callers without a form. */

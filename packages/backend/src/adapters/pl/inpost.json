@@ -1,0 +1,1314 @@
+{
+  "slug": "inpost",
+  "name": "InPost",
+  "description": "InPost ShipX API for Poland: find Paczkomat lockers and pickup points, list and track shipments, download labels, calculate prices, read courier pickup orders and the cash on delivery report. Creating and buying shipments and ordering a courier are included but switched off. API token and organization ID from Manager Paczek.",
+  "instructions": "## InPost\nThis connector works with the **InPost ShipX API** for Poland at `https://api-shipx-pl.easypack24.net`: Paczkomat lockers and pickup points, services, your shipments and their labels, tracking, price calculation, courier pickup orders (dispatch orders) and the cash on delivery report. Creating and buying shipments and ordering a courier are included but installed switched off.\n\n**Setup (about 5 minutes)**\n1. Sign in to **Manager Paczek** at https://manager.paczkomaty.pl.\n2. Open **Moje konto** (My Account), **Dane** (Data), and make sure the company address and the invoice data are complete. InPost does not issue API access without them.\n3. Open **Moje konto**, tab **API**, expand **API ShipX** and click **Generate**. If you have a courier contract, tick the box and enter the contract number; for locker services alone just click Generate.\n4. Click **Pokaż token** (Show token) and copy the token into `INPOST_TOKEN`. Up to 10 tokens can exist.\n5. Copy the **Organization ID** shown in My Account into `INPOST_ORGANIZATION_ID`.\n\nThe token is sent as a bearer token. It is a production token: sandbox tokens from sandbox-manager.paczkomaty.pl only work on the sandbox host and are refused here.\n\n**Where to start**: `inpost_get_organization` shows the services of your contract. `inpost_list_shipments` lists your shipments, `inpost_track_shipment` follows one by tracking number, and `inpost_search_points` finds lockers.\n\n**Lockers and points**: `inpost_search_points` reads the points service at `https://api.inpost.pl/v1/points` with the same token. For \"the nearest locker\", pass relative_post_code (or relative_point with coordinates) together with sort_by distance_to_relative_point; distances are in metres. The `name` of a point (e.g. KRA010) is what a shipment takes as `target_point`. Only points with `status` Operating accept parcels.\n\n**Reference data**: `inpost_list_services` (service ids and their extra services), `inpost_list_sending_methods` (how a parcel is handed over: at a locker, at a point, or collected by a courier) and `inpost_list_statuses` (every status code with a customer-friendly text in English or Polish).\n\n**Shipments**: `inpost_list_shipments` and `inpost_get_shipment` use the ShipX `id`; `inpost_track_shipment` uses the 24-digit tracking number. A shipment goes created, offers_prepared, offer_selected, confirmed; from confirmed on it has a tracking number and `inpost_get_shipment_label` returns its label as a PDF, ZPL or EPL file. Tracking history is kept 45 days. `inpost_calculate_shipment_prices` prices shipments without creating them.\n\n**Creating shipments (switched off)**: `inpost_create_shipment` buys the shipment in the same call unless only_choice_of_offer is true, `inpost_buy_shipment` pays for one created without payment, and `inpost_cancel_shipment` only works before payment (status created or offers_prepared). A bought shipment cannot be cancelled through the API. Creation is asynchronous: read the shipment again until it is confirmed. Locker parcels need the receiver phone and e-mail, a `template` size and `custom_attributes.target_point`; courier parcels need the receiver address and the dimensions in mm and weight in kg.\n\n**Courier pickups**: `inpost_list_dispatch_orders` and `inpost_get_dispatch_order` read pickup orders, `inpost_calculate_dispatch_order_price` prices one. `inpost_create_dispatch_order` orders the courier for a fee and `inpost_cancel_dispatch_order` cancels an order in status new or sent; both are installed switched off.\n\n**Money**: amounts are in PLN. Prepaid customers pay from the balance topped up in Manager Paczek, and a shipment fails to confirm when the balance is too low. Customers billed on account (debit clients) get `rate` and prices as null everywhere. `inpost_get_cod_report` returns the cash on delivery report for courier shipments as CSV.\n\n**Formats**: post codes are `NN-NNN`, phone numbers 9 digits without +48, times ISO 8601 with the Polish offset. Lists return `count`, `page`, `per_page` and `items`; raise `page` until it reaches `total_pages` or an empty `items`. Several values of one filter are separated by commas.\n\n**Errors**: InPost answers with `status`, `error` (a key such as `validation_failed`, `invalid_parameter`, `resource_not_found`, `access_forbidden`, `invalid_action`, `offer_expired`), a description and `details` naming the fields with reasons such as required, invalid or too_long. The connector asks for English messages. 401 means the token is wrong, `access_forbidden` that the token does not belong to this organization id. InPost does not publish rate limits for ShipX; avoid polling in tight loops.",
+  "aliases": [
+    "Paczkomat",
+    "Paczkomaty",
+    "InPost ShipX",
+    "InPost Paczkomaty"
+  ],
+  "region": "pl",
+  "category": "logistics",
+  "icon": "inpost",
+  "docsUrl": "https://dokumentacja-inpost.atlassian.net/wiki/spaces/PL/pages/622754/API+ShipX",
+  "requiredEnvVars": [
+    "INPOST_TOKEN",
+    "INPOST_ORGANIZATION_ID"
+  ],
+  "envVarMeta": {
+    "INPOST_TOKEN": {
+      "label": "ShipX API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Manager Paczek, Moje konto (My Account), tab API, API ShipX: click Generate, then Pokaż token (Show token) and copy the whole token.",
+      "link": "https://manager.paczkomaty.pl",
+      "pattern": "^[A-Za-z0-9._~+/=-]{20,4000}$",
+      "patternMessage": "Paste the token only, in one piece, without the word Bearer and without spaces."
+    },
+    "INPOST_ORGANIZATION_ID": {
+      "label": "Organization ID",
+      "kind": "setting",
+      "help": "Manager Paczek, Moje konto (My Account): the Organization ID shown after the ShipX access was generated. Digits only.",
+      "link": "https://manager.paczkomaty.pl",
+      "example": "12345",
+      "pattern": "^\\d{1,12}$",
+      "patternMessage": "The organization ID is a number, e.g. 12345."
+    }
+  },
+  "verifyHints": {
+    "401": "InPost did not accept the token. Copy it again from Manager Paczek, Moje konto, API, API ShipX (Pokaż token). A token from the sandbox manager does not work on the production API.",
+    "403": "InPost refused the call: the token does not belong to this organization ID, or the organization has no access to the resource. Check the Organization ID in Manager Paczek.",
+    "404": {
+      "hint": "InPost found no organization, shipment or dispatch order with that id. Check the Organization ID in Manager Paczek, Moje konto.",
+      "field": "INPOST_ORGANIZATION_ID"
+    },
+    "rate_limited": "InPost is throttling the calls. Wait a moment and try again, and avoid polling shipments in a tight loop."
+  },
+  "probe": {
+    "tool": "inpost_get_organization",
+    "params": {}
+  },
+  "prerequisites": "An InPost business account in Manager Paczek (manager.paczkomaty.pl) with complete company and invoice data, to generate a ShipX API token and see the Organization ID. About 5 minutes.",
+  "connector": {
+    "name": "InPost ShipX API",
+    "type": "REST",
+    "baseUrl": "https://api-shipx-pl.easypack24.net",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{INPOST_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Accept-Language": "en_GB",
+      "X-User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "inpost_get_organization",
+      "description": "Read your InPost organization: `id`, `name`, `tax_id`, the list of `services` your contract allows (e.g. inpost_locker_standard, inpost_courier_standard), the address, invoice address and contact person. Use it to see which services the other tools can use. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{{INPOST_ORGANIZATION_ID}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_search_points",
+      "description": "Find InPost Paczkomat parcel lockers and PaczkoPunkt pickup points. Returns `count`, `page`, `per_page`, `total_pages` and `items`, each with `name` (the code used as target_point, e.g. KRA02APP), `type`, `status` (Operating when usable), `location` (latitude, longitude), `address` and `address_details`, `opening_hours`, `location_description`, `functions`, `payment_available`, `location_247` and, in a search by distance, `distance` in metres. Search by name, city, post code, or nearest to a post code or to coordinates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Point name, or several separated by commas, e.g. KRA02APP or KRA02APP,ADA01N."
+          },
+          "city": {
+            "type": "string",
+            "description": "City name in Polish, e.g. Kraków. Several separated by commas."
+          },
+          "post_code": {
+            "type": "string",
+            "description": "Post code as NN-NNN; lists points registered under it. For the nearest points use relative_post_code instead."
+          },
+          "province": {
+            "type": "string",
+            "description": "Province (voivodeship) name in Polish, e.g. małopolskie."
+          },
+          "relative_post_code": {
+            "type": "string",
+            "description": "Post code to measure from: returns the points closest to it. Combine with sort_by distance_to_relative_point.",
+            "pattern": "^\\d{2}-\\d{3}$"
+          },
+          "relative_point": {
+            "type": "string",
+            "description": "Coordinates to measure from as latitude,longitude, e.g. 52.123,19.321.",
+            "pattern": "^-?\\d{1,2}(\\.\\d+)?,-?\\d{1,3}(\\.\\d+)?$"
+          },
+          "max_distance": {
+            "type": "integer",
+            "description": "Radius in metres around relative_point or relative_post_code. Default 10000, maximum 50000. Needs sort_by distance_to_relative_point.",
+            "minimum": 1,
+            "maximum": 50000
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of points in a search by distance.",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "type": {
+            "type": "string",
+            "description": "Kind of point, several separated by commas: parcel_locker (lockers and points you can send to), parcel_locker_only (physical lockers only), pop (all parcel points), parcel_locker_superpop."
+          },
+          "functions": {
+            "type": "string",
+            "description": "Functions the point must offer, separated by commas, e.g. parcel_collect, parcel_send, parcel_reverse_return_send."
+          },
+          "payment_available": {
+            "type": "boolean",
+            "description": "true keeps only points where payment is possible."
+          },
+          "is_next": {
+            "type": "boolean",
+            "description": "true keeps only NEXT automatic parcel stations."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "name (default), distance_to_relative_point or status.",
+            "enum": [
+              "name",
+              "distance_to_relative_point",
+              "status"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "asc (default) or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "fields": {
+            "type": "string",
+            "description": "Optional list of attributes to return, separated by commas, e.g. name,address,location,status,opening_hours. Keeps the answer small."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Points per page. InPost allows up to 500; each point is a large object.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 10
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api.inpost.pl/v1/points",
+        "queryParams": {
+          "name": "$name",
+          "city": "$city",
+          "post_code": "$post_code",
+          "province": "$province",
+          "relative_post_code": "$relative_post_code",
+          "relative_point": "$relative_point",
+          "max_distance": "$max_distance",
+          "limit": "$limit",
+          "type": "$type",
+          "functions": "$functions",
+          "payment_available": "$payment_available",
+          "is_next": "$is_next",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order",
+          "fields": "$fields",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_list_services",
+      "description": "List the InPost services ShipX knows, each with `id` (e.g. inpost_locker_standard, inpost_courier_standard), `name`, `description` and its `additional_services` (insurance, cod, sms, email, saturday). Which of them your organization may use is in inpost_get_organization. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/services"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_list_sending_methods",
+      "description": "List the ways a parcel can be handed to InPost: parcel_locker (drop at a Paczkomat), dispatch_order (courier collects), pop (parcel point), branch, any_point. Returns `id`, `name` and `description` per method; pass a service to get only the methods valid for it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "Optional service id to list the methods for, e.g. inpost_locker_standard (Paczkomat locker parcel), inpost_courier_standard, inpost_courier_express_1000, inpost_courier_express_1200, inpost_courier_express_1700, inpost_courier_c2c, inpost_courier_palette, inpost_locker_pass_thru."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sending_methods",
+        "queryParams": {
+          "service": "$service"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_list_statuses",
+      "description": "List every shipment status ShipX uses with its `name` (the code found on shipments and in tracking, e.g. ready_to_pickup), a short `title` and a `description` written for end customers. Use it to explain a status in plain words. Not paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lang": {
+            "type": "string",
+            "description": "Language of the titles and descriptions: en_GB (default here) or pl_PL.",
+            "enum": [
+              "en_GB",
+              "pl_PL"
+            ],
+            "default": "en_GB"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/statuses",
+        "queryParams": {
+          "lang": "$lang"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_list_shipments",
+      "description": "List the shipments of your organization, newest first. Returns `count`, `page`, `per_page` and `items`, each with `id`, `status`, `tracking_number`, `service`, `reference`, `created_at`, `receiver` and `sender`, `parcels`, `custom_attributes` (target locker, sending method), `cod`, `insurance`, the `offers` and the selected offer with its `rate` (PLN; null for customers billed on account). Filter by status, service, date, tracking number or receiver. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Status or several separated by commas: created, offers_prepared, offer_selected, confirmed (bought, label available), then tracking statuses such as dispatched_by_sender, collected_from_sender, taken_by_courier, adopted_at_source_branch, sent_from_source_branch, out_for_delivery, ready_to_pickup, delivered, pickup_time_expired, returned_to_sender, canceled."
+          },
+          "service": {
+            "type": "string",
+            "description": "Service id or several separated by commas, e.g. inpost_locker_standard (Paczkomat locker parcel), inpost_courier_standard, inpost_courier_express_1000, inpost_courier_express_1200, inpost_courier_express_1700, inpost_courier_c2c, inpost_courier_palette, inpost_locker_pass_thru."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Exact tracking number, 24 digits."
+          },
+          "tracking_number_cont": {
+            "type": "string",
+            "description": "Part of a tracking number."
+          },
+          "id": {
+            "type": "string",
+            "description": "Shipment id, or several separated by commas."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Shipments created on this day, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "created_at_gteq": {
+            "type": "string",
+            "description": "Created at or after this time, ISO 8601, e.g. 2026-01-01T00:00+01:00."
+          },
+          "created_at_lteq": {
+            "type": "string",
+            "description": "Created at or before this time, ISO 8601."
+          },
+          "receiver_name": {
+            "type": "string",
+            "description": "Start of the receiver first name, last name or company name."
+          },
+          "receiver_email": {
+            "type": "string",
+            "description": "Start of the receiver e-mail address."
+          },
+          "receiver_phone": {
+            "type": "string",
+            "description": "Receiver phone number."
+          },
+          "receiver_post_code": {
+            "type": "string",
+            "description": "Start of the receiver post code."
+          },
+          "receiver_city": {
+            "type": "string",
+            "description": "Receiver city."
+          },
+          "sending_method": {
+            "type": "string",
+            "description": "Sending method or several separated by commas: parcel_locker, dispatch_order, pop, branch, any_point."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field. Default created_at.",
+            "enum": [
+              "id",
+              "created_at",
+              "tracking_number",
+              "service",
+              "status",
+              "insurance_amount",
+              "cod_amount",
+              "external_customer_id"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "desc (default) or asc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{{INPOST_ORGANIZATION_ID}}/shipments",
+        "queryParams": {
+          "status": "$status",
+          "service": "$service",
+          "tracking_number": "$tracking_number",
+          "tracking_number_cont": "$tracking_number_cont",
+          "id": "$id",
+          "created_at": "$created_at",
+          "created_at_gteq": "$created_at_gteq",
+          "created_at_lteq": "$created_at_lteq",
+          "receiver_name": "$receiver_name",
+          "receiver_email": "$receiver_email",
+          "receiver_phone": "$receiver_phone",
+          "receiver_post_code": "$receiver_post_code",
+          "receiver_city": "$receiver_city",
+          "sending_method": "$sending_method",
+          "sort_by": "$sort_by",
+          "sort_order": "$sort_order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_get_shipment",
+      "description": "Read one shipment by its ShipX id: `status`, `tracking_number` (and `return_tracking_number` once it was returned to the sender), `service`, `reference`, `receiver`, `sender`, `parcels`, `custom_attributes`, `cod`, `insurance`, `offers`, `selected_offer` with its rate, `transactions`, and `created_at` and `updated_at` (ISO 8601 with offset). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "ShipX shipment id (`id` of inpost_list_shipments, not the tracking number), digits only.",
+            "pattern": "^\\d{1,20}$"
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shipments/{shipment_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_track_shipment",
+      "description": "Track an InPost shipment by tracking number. Returns `status` (the current status code), `service`, `custom_attributes` (parcel size, target and drop-off locker), `tracking_details` (the status history, newest first, each with `status`, `datetime` and the `agency` or `location`) and `expected_flow`. InPost keeps tracking for 45 days after the shipment was created; the sandbox returns no statuses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "InPost tracking number, 24 digits, e.g. 632085946340007012341234.",
+            "pattern": "^\\d{20,30}$"
+          }
+        },
+        "required": [
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/tracking/{tracking_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_calculate_shipment_prices",
+      "description": "Price one or more shipments without creating them. Returns a list with, per shipment `id`, `calculated_charge_amount` (total), `fuel_charge_amount`, `notification_charge_amount`, `cod_charge_amount` and `insurance_charge_amount` as strings in PLN. Customers billed on account (debit clients) get null instead of prices. Nothing is created. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipments": {
+            "type": "array",
+            "description": "Shipments to price.",
+            "items": {
+              "type": "object",
+              "description": "One shipment in the same shape as inpost_create_shipment.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Any id of yours, e.g. SHIPMENT1, to find the price in the answer. Required when pricing several."
+                },
+                "service": {
+                  "type": "string",
+                  "description": "Service id, e.g. inpost_locker_standard (Paczkomat locker parcel), inpost_courier_standard, inpost_courier_express_1000, inpost_courier_express_1200, inpost_courier_express_1700, inpost_courier_c2c, inpost_courier_palette, inpost_locker_pass_thru."
+                },
+                "receiver": {
+                  "type": "object",
+                  "description": "The receiver. Locker services need email and phone; courier services need a name and the address.",
+                  "properties": {
+                    "company_name": {
+                      "type": "string",
+                      "description": "Company name."
+                    },
+                    "first_name": {
+                      "type": "string",
+                      "description": "First name."
+                    },
+                    "last_name": {
+                      "type": "string",
+                      "description": "Last name."
+                    },
+                    "email": {
+                      "type": "string",
+                      "description": "E-mail address; InPost sends the pickup code for locker parcels here."
+                    },
+                    "phone": {
+                      "type": "string",
+                      "description": "Mobile number with 9 digits, without the +48 prefix."
+                    },
+                    "address": {
+                      "type": "object",
+                      "description": "Postal address; required for courier services.",
+                      "properties": {
+                        "street": {
+                          "type": "string",
+                          "description": "Street name."
+                        },
+                        "building_number": {
+                          "type": "string",
+                          "description": "Building number, with the flat number if any, e.g. 87A/12."
+                        },
+                        "city": {
+                          "type": "string",
+                          "description": "City."
+                        },
+                        "post_code": {
+                          "type": "string",
+                          "description": "Polish post code as NN-NNN, e.g. 00-718."
+                        },
+                        "country_code": {
+                          "type": "string",
+                          "description": "ISO 3166-1 alpha-2 country code; PL."
+                        }
+                      },
+                      "required": [
+                        "street",
+                        "building_number",
+                        "city",
+                        "post_code",
+                        "country_code"
+                      ]
+                    }
+                  }
+                },
+                "parcels": {
+                  "type": "object",
+                  "description": "The parcel: `template` (small, medium, large) or `dimensions` (length, width, height, unit mm) with `weight` (amount, unit kg)."
+                },
+                "custom_attributes": {
+                  "type": "object",
+                  "description": "Extra attributes. Locker services need `target_point` (the name of the destination locker or point, e.g. KRA010); `sending_method` says how the parcel reaches InPost; `dropoff_point` names the locker used to send when sending_method is parcel_locker.",
+                  "properties": {
+                    "target_point": {
+                      "type": "string",
+                      "description": "Destination locker or point name from inpost_search_points, e.g. KRA010."
+                    },
+                    "sending_method": {
+                      "type": "string",
+                      "description": "parcel_locker, dispatch_order (courier collects), pop, branch or any_point. See inpost_list_sending_methods for what a service allows."
+                    },
+                    "dropoff_point": {
+                      "type": "string",
+                      "description": "Locker name where you drop the parcel, for sending_method parcel_locker."
+                    }
+                  }
+                },
+                "insurance": {
+                  "type": "object",
+                  "description": "Optional insured value.",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "Currency, PLN."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "cod": {
+                  "type": "object",
+                  "description": "Optional cash on delivery amount.",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "description": "Amount."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "description": "Currency, PLN."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "additional_services": {
+                  "type": "array",
+                  "description": "Optional extra services: sms, email, saturday.",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "service",
+                "receiver",
+                "parcels"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/organizations/{{INPOST_ORGANIZATION_ID}}/shipments/calculate",
+        "bodyMapping": {
+          "shipments": "$shipments"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_get_shipment_label",
+      "description": "Download the label of a shipment that is already bought (status confirmed or later) as a file: PDF by default, or ZPL or EPL for thermal printers. InPost answers `invalid_action` for a shipment that was not bought yet. The label is returned as a file attachment, not as text. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "ShipX shipment id, digits only.",
+            "pattern": "^\\d{1,20}$"
+          },
+          "format": {
+            "type": "string",
+            "description": "Pdf (default), Zpl or Epl.",
+            "enum": [
+              "Pdf",
+              "Zpl",
+              "Epl"
+            ],
+            "default": "Pdf"
+          },
+          "type": {
+            "type": "string",
+            "description": "normal (A4 page, default for locker parcels) or A6 (label size; the only type for courier services). dpi300 exists for Zpl locker labels.",
+            "enum": [
+              "normal",
+              "A6",
+              "dpi300"
+            ]
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shipments/{shipment_id}/label",
+        "queryParams": {
+          "format": "$format",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_list_dispatch_orders",
+      "description": "List the courier pickup orders (dispatch orders) of your organization. Returns `count`, `page`, `per_page` and `items`, each with `id`, `status` (new, sent and later ones such as accepted or done), `external_id` (the order number at the courier), `created_at`, the pickup `address`, the `shipments` it covers (id and tracking number), `comments` and the `price` (null for customers billed on account). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Status or several separated by commas, e.g. new (not yet passed on), sent (passed on, not yet accepted), accepted, done."
+          },
+          "id": {
+            "type": "string",
+            "description": "Dispatch order id, or several separated by commas."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Orders created on this day, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "created_at_gteq": {
+            "type": "string",
+            "description": "Created at or after this time, ISO 8601."
+          },
+          "created_at_lteq": {
+            "type": "string",
+            "description": "Created at or before this time, ISO 8601."
+          },
+          "address": {
+            "type": "string",
+            "description": "Start of the street name of the pickup address."
+          },
+          "post_code": {
+            "type": "string",
+            "description": "Start of the post code of the pickup address."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{{INPOST_ORGANIZATION_ID}}/dispatch_orders",
+        "queryParams": {
+          "status": "$status",
+          "id": "$id",
+          "created_at": "$created_at",
+          "created_at_gteq": "$created_at_gteq",
+          "created_at_lteq": "$created_at_lteq",
+          "address": "$address",
+          "post_code": "$post_code",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_get_dispatch_order",
+      "description": "Read one courier pickup order: `id`, `status`, `external_id` (the order number at the courier, filled once InPost has processed the order), `created_at`, the pickup `address`, the `shipments` with their tracking numbers, `comments` and `price`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dispatch_order_id": {
+            "type": "string",
+            "description": "Dispatch order id, digits only.",
+            "pattern": "^\\d{1,20}$"
+          }
+        },
+        "required": [
+          "dispatch_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/dispatch_orders/{dispatch_order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_calculate_dispatch_order_price",
+      "description": "Price a courier pickup for a set of bought shipments without ordering it. Returns `total_success_count`, `total_error_count`, `total_price` (amount and currency, PLN), `price_list` per carrier group (courier, locker, allegro) and `invalid_shipments` with the reason. Prepaid customers only: customers billed on account get no prices. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipments": {
+            "type": "array",
+            "description": "Ids of the shipments to collect; each must be in status confirmed and not belong to another open dispatch order.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1
+          },
+          "dispatch_point_id": {
+            "type": "integer",
+            "description": "Optional id of a saved dispatch point whose address the courier should come to."
+          }
+        },
+        "required": [
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/organizations/{{INPOST_ORGANIZATION_ID}}/dispatch_orders/calculate",
+        "bodyMapping": {
+          "dispatch_point_id": "$dispatch_point_id",
+          "shipments": "$shipments"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_get_cod_report",
+      "description": "Download the cash on delivery report for a date range as CSV text. Columns: date, customer number, sender, receiver, receiver post code, receiver city, waybill number, shipping date, delivery date, amount, remarks, reference and cost centre (the header is in Polish: nrklienta, nadawca, odbiorca, nrlistu, kwota and so on). Covers courier services only, not locker parcels. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "First day of the range, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of the range, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "format": {
+            "type": "string",
+            "description": "File format; only csv exists.",
+            "enum": [
+              "csv"
+            ],
+            "default": "csv"
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/organizations/{{INPOST_ORGANIZATION_ID}}/reports/cod",
+        "queryParams": {
+          "format": "$format",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "inpost_create_shipment",
+      "description": "Create a shipment in simplified mode. Unless only_choice_of_offer is true, InPost buys the shipment right away: the price is taken from the prepaid balance or put on the invoice, so the tool is installed switched off. The answer comes back with status created; the purchase runs in the background, so read the shipment again with inpost_get_shipment until it is confirmed and has a tracking number, then fetch the label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "Service id, e.g. inpost_locker_standard (Paczkomat locker parcel), inpost_courier_standard, inpost_courier_express_1000, inpost_courier_express_1200, inpost_courier_express_1700, inpost_courier_c2c, inpost_courier_palette, inpost_locker_pass_thru. It must be one of the services of your organization."
+          },
+          "receiver": {
+            "type": "object",
+            "description": "The receiver. Locker services need email and phone; courier services need phone, a name or company name and the address.",
+            "properties": {
+              "company_name": {
+                "type": "string",
+                "description": "Company name."
+              },
+              "first_name": {
+                "type": "string",
+                "description": "First name."
+              },
+              "last_name": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "email": {
+                "type": "string",
+                "description": "E-mail address; InPost sends the pickup code for locker parcels here."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Mobile number with 9 digits, without the +48 prefix."
+              },
+              "address": {
+                "type": "object",
+                "description": "Postal address; required for courier services.",
+                "properties": {
+                  "street": {
+                    "type": "string",
+                    "description": "Street name."
+                  },
+                  "building_number": {
+                    "type": "string",
+                    "description": "Building number, with the flat number if any, e.g. 87A/12."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "City."
+                  },
+                  "post_code": {
+                    "type": "string",
+                    "description": "Polish post code as NN-NNN, e.g. 00-718."
+                  },
+                  "country_code": {
+                    "type": "string",
+                    "description": "ISO 3166-1 alpha-2 country code; PL."
+                  }
+                },
+                "required": [
+                  "street",
+                  "building_number",
+                  "city",
+                  "post_code",
+                  "country_code"
+                ]
+              }
+            }
+          },
+          "parcels": {
+            "type": "array",
+            "description": "The parcels, 1 to 1000. Locker services take exactly one.",
+            "items": {
+              "type": "object",
+              "description": "One parcel: either a locker size template, or dimensions and weight.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Optional label of yours for the parcel."
+                },
+                "template": {
+                  "type": "string",
+                  "description": "Locker size: small (A, 8 x 38 x 64 cm), medium (B, 19 x 38 x 64 cm), large (C, 41 x 38 x 64 cm) or xlarge (D, 50 x 50 x 80 cm, inpost_courier_c2c only); each up to 25 kg.",
+                  "enum": [
+                    "small",
+                    "medium",
+                    "large",
+                    "xlarge"
+                  ]
+                },
+                "dimensions": {
+                  "type": "object",
+                  "description": "Courier parcels: outer dimensions.",
+                  "properties": {
+                    "length": {
+                      "type": "string",
+                      "description": "Length."
+                    },
+                    "width": {
+                      "type": "string",
+                      "description": "Width."
+                    },
+                    "height": {
+                      "type": "string",
+                      "description": "Height."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "mm."
+                    }
+                  },
+                  "required": [
+                    "length",
+                    "width",
+                    "height",
+                    "unit"
+                  ]
+                },
+                "weight": {
+                  "type": "object",
+                  "description": "Courier parcels: weight.",
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "description": "Weight."
+                    },
+                    "unit": {
+                      "type": "string",
+                      "description": "kg."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "unit"
+                  ]
+                },
+                "is_non_standard": {
+                  "type": "boolean",
+                  "description": "true for a non-standard courier parcel (irregular shape)."
+                }
+              }
+            },
+            "minItems": 1
+          },
+          "custom_attributes": {
+            "type": "object",
+            "description": "Extra attributes. Locker services need `target_point` (the name of the destination locker or point, e.g. KRA010); `sending_method` says how the parcel reaches InPost; `dropoff_point` names the locker used to send when sending_method is parcel_locker.",
+            "properties": {
+              "target_point": {
+                "type": "string",
+                "description": "Destination locker or point name from inpost_search_points, e.g. KRA010."
+              },
+              "sending_method": {
+                "type": "string",
+                "description": "parcel_locker, dispatch_order (courier collects), pop, branch or any_point. See inpost_list_sending_methods for what a service allows."
+              },
+              "dropoff_point": {
+                "type": "string",
+                "description": "Locker name where you drop the parcel, for sending_method parcel_locker."
+              }
+            }
+          },
+          "sender": {
+            "type": "object",
+            "description": "Optional sender. When left out, the data of your organization is used.",
+            "properties": {
+              "company_name": {
+                "type": "string",
+                "description": "Company name."
+              },
+              "first_name": {
+                "type": "string",
+                "description": "First name."
+              },
+              "last_name": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "email": {
+                "type": "string",
+                "description": "E-mail address; InPost sends the pickup code for locker parcels here."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Mobile number with 9 digits, without the +48 prefix."
+              },
+              "address": {
+                "type": "object",
+                "description": "Postal address; required for courier services.",
+                "properties": {
+                  "street": {
+                    "type": "string",
+                    "description": "Street name."
+                  },
+                  "building_number": {
+                    "type": "string",
+                    "description": "Building number, with the flat number if any, e.g. 87A/12."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "City."
+                  },
+                  "post_code": {
+                    "type": "string",
+                    "description": "Polish post code as NN-NNN, e.g. 00-718."
+                  },
+                  "country_code": {
+                    "type": "string",
+                    "description": "ISO 3166-1 alpha-2 country code; PL."
+                  }
+                },
+                "required": [
+                  "street",
+                  "building_number",
+                  "city",
+                  "post_code",
+                  "country_code"
+                ]
+              }
+            }
+          },
+          "cod": {
+            "type": "object",
+            "description": "Optional cash on delivery amount; then insurance is required for courier services.",
+            "properties": {
+              "amount": {
+                "type": "number",
+                "description": "Amount."
+              },
+              "currency": {
+                "type": "string",
+                "description": "Currency, PLN."
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ]
+          },
+          "insurance": {
+            "type": "object",
+            "description": "Optional insured value.",
+            "properties": {
+              "amount": {
+                "type": "number",
+                "description": "Amount."
+              },
+              "currency": {
+                "type": "string",
+                "description": "Currency, PLN."
+              }
+            },
+            "required": [
+              "amount",
+              "currency"
+            ]
+          },
+          "reference": {
+            "type": "string",
+            "description": "Optional reference of yours, 3 to 100 characters, e.g. the order number. Printed on the label."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Optional comment, 3 to 100 characters."
+          },
+          "additional_services": {
+            "type": "array",
+            "description": "Optional extra services: sms, email, saturday.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_return": {
+            "type": "boolean",
+            "description": "true creates a return shipment: sender and receiver are swapped by InPost."
+          },
+          "only_choice_of_offer": {
+            "type": "boolean",
+            "description": "true selects the offer but does not pay for it; pay later with inpost_buy_shipment before the offer expires. Default false: pay at once."
+          },
+          "mpk": {
+            "type": "string",
+            "description": "Optional name of a cost centre that already exists in the organization."
+          }
+        },
+        "required": [
+          "service",
+          "receiver",
+          "parcels"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/organizations/{{INPOST_ORGANIZATION_ID}}/shipments",
+        "bodyMapping": {
+          "service": "$service",
+          "receiver": "$receiver",
+          "sender": "$sender",
+          "parcels": "$parcels",
+          "custom_attributes": "$custom_attributes",
+          "cod": "$cod",
+          "insurance": "$insurance",
+          "reference": "$reference",
+          "comments": "$comments",
+          "additional_services": "$additional_services",
+          "is_return": "$is_return",
+          "only_choice_of_offer": "$only_choice_of_offer",
+          "mpk": "$mpk"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "inpost_buy_shipment",
+      "description": "Pay for a shipment that was created without payment (offer mode, or only_choice_of_offer): InPost charges the price of the chosen offer, so the tool is installed switched off. The purchase runs in the background: the answer still shows the old status, and the tracking number appears once the shipment is confirmed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "ShipX shipment id, digits only.",
+            "pattern": "^\\d{1,20}$"
+          },
+          "offer_id": {
+            "type": "integer",
+            "description": "Id of the offer to buy, from `offers` of the shipment; it must be in status available or selected."
+          }
+        },
+        "required": [
+          "shipment_id",
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/shipments/{shipment_id}/buy",
+        "bodyMapping": {
+          "offer_id": "$offer_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "inpost_cancel_shipment",
+      "description": "Cancel a shipment that has not been bought yet: it must be in status created or offers_prepared, otherwise InPost answers `invalid_action`. It cannot be undone. Answers 204 with no content. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "ShipX shipment id, digits only.",
+            "pattern": "^\\d{1,20}$"
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/shipments/{shipment_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "inpost_create_dispatch_order",
+      "description": "Order a courier to collect bought shipments at an address (dispatch order). InPost charges for the pickup according to your price list, so the tool is installed switched off; price it first with inpost_calculate_dispatch_order_price. The order is processed in the background: read it with inpost_get_dispatch_order to get `external_id`, the order number at the courier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipments": {
+            "type": "array",
+            "description": "Ids of the shipments to collect. All must be in status confirmed, not in another dispatch order, and all locker services or all courier services.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "address": {
+            "type": "object",
+            "description": "Where the courier collects.",
+            "properties": {
+              "street": {
+                "type": "string",
+                "description": "Street name."
+              },
+              "building_number": {
+                "type": "string",
+                "description": "Building number, with the flat number if any, e.g. 87A/12."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "post_code": {
+                "type": "string",
+                "description": "Polish post code as NN-NNN, e.g. 00-718."
+              },
+              "country_code": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code; PL."
+              }
+            },
+            "required": [
+              "street",
+              "building_number",
+              "city",
+              "post_code",
+              "country_code"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the pickup place, e.g. your company or warehouse name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Contact phone at the pickup place, 9 digits."
+          },
+          "email": {
+            "type": "string",
+            "description": "Optional contact e-mail."
+          },
+          "office_hours": {
+            "type": "string",
+            "description": "Optional hours when the parcels can be collected, e.g. 8-16."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Optional comment for the courier."
+          }
+        },
+        "required": [
+          "shipments",
+          "address",
+          "name",
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/organizations/{{INPOST_ORGANIZATION_ID}}/dispatch_orders",
+        "bodyMapping": {
+          "shipments": "$shipments",
+          "comment": "$comment",
+          "name": "$name",
+          "phone": "$phone",
+          "email": "$email",
+          "office_hours": "$office_hours",
+          "address": "$address"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "inpost_cancel_dispatch_order",
+      "description": "Cancel a courier pickup order. Only orders in status new or sent can be cancelled; otherwise InPost answers `invalid_status`. It cannot be undone. Answers 204 with no content. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dispatch_order_id": {
+            "type": "string",
+            "description": "Dispatch order id, digits only.",
+            "pattern": "^\\d{1,20}$"
+          }
+        },
+        "required": [
+          "dispatch_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/dispatch_orders/{dispatch_order_id}"
+      },
+      "enabled": false
+    }
+  ]
+}

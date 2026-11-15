@@ -1,0 +1,181 @@
+{
+  "licenseWall": {
+    "title": "AI とアプリの接続を維持しましょう",
+    "body": "7 日間のトライアルは終了しました。サブスクリプションを開始すると、{client} は引き続きコネクタを利用できます。設定した内容はすべて保持されます。",
+    "yourAi": "お使いの AI",
+    "loading": "プランを読み込み中…",
+    "trust": {
+      "cancel": "いつでも解約可能",
+      "stripe": "Stripe による安全な決済",
+      "hosted": "フランクフルトでホスト",
+      "gdpr": "GDPR · DPA"
+    },
+    "workspaces": "AnythingMCP Cloud のワークスペース {count} 件",
+    "directory": "Claude Directory に掲載",
+    "directoryChatgpt": "ChatGPT プラグインディレクトリに掲載",
+    "directoryBoth": "Claude と ChatGPT のディレクトリに掲載",
+    "workspaceLabel": "ワークスペース：",
+    "reasons": {
+      "paymentFailed": {
+        "title": "お支払いが完了しませんでした",
+        "bodyAdmin": "前回のお支払いが完了しなかったため、サブスクリプションは一時停止中です。お支払い方法を更新するとすぐに再開されます。新しいお支払い方法を保存した時点で、未払い分が決済されます。コネクタと設定は保持されます。",
+        "bodyMember": "このワークスペースのサブスクリプションは、前回のお支払いが完了しなかったため一時停止中です。ワークスペースの管理者にお支払い方法の更新を依頼してください。コネクタと設定は保持されます。"
+      },
+      "noLicense": {
+        "title": "ライセンスが必要です",
+        "body": "このワークスペースには有効なライセンスがありません。続けるには、トライアルを開始するかプランを購入してください。"
+      },
+      "trialEnded": {
+        "title": "トライアルは終了しました",
+        "body": "7 日間のトライアルは終了しました。AnythingMCP Cloud を引き続き利用するには、ライセンスを購入してください。コネクタと設定は保持されます。"
+      },
+      "lapsed": {
+        "title": "サブスクリプションは有効ではありません",
+        "body": "サブスクリプションは有効ではありません。多くの場合、更新時のお支払いが完了しなかったことが原因です。請求ポータルでお支払い方法を更新すると再開されます。新しいプランを購入すると、現在のものとは別に 2 つ目のサブスクリプションが始まります。コネクタと設定は保持されます。"
+      },
+      "expired": {
+        "title": "ライセンスの有効期限が切れました",
+        "body": "ライセンスは現在有効ではありません。AnythingMCP を引き続き利用するには、ライセンスを購入または更新してください。コネクタと設定は保持されます。"
+      }
+    },
+    "startTrial": {
+      "start": "7 日間の無料トライアルを開始",
+      "starting": "開始しています…",
+      "failed": "トライアルを開始できませんでした。もう一度お試しいただくか、サポートまでご連絡ください。"
+    },
+    "viewPlans": "プランを見てライセンスを購入",
+    "openingCheckout": "決済ページを開いています…",
+    "subscribeTo": "{plan} に登録する",
+    "comparePlans": "プランを比較",
+    "opening": "開いています…",
+    "payment": {
+      "update": "お支払い方法を更新",
+      "updated": "お支払い方法を更新しました",
+      "checking": "確認中…",
+      "openFailed": "お支払いページを開けませんでした。もう一度お試しいただくか、サポートまでご連絡ください。",
+      "notYet": "お支払いはまだ確認できていません。お支払い方法を更新した直後の場合は、1 分ほどしてからもう一度お試しください。",
+      "checkFailed": "現在確認できません。1 分ほどしてからもう一度お試しください。"
+    },
+    "updateBilling": "請求情報を更新",
+    "switchWorkspace": "別のワークスペースに切り替える",
+    "alreadyPurchased": "すでに購入済みですか？",
+    "enterKey": "ライセンスキーを入力",
+    "notContinuing": "利用をやめる場合：",
+    "deleteAccount": "アカウントを削除"
+  },
+  "planPicker": {
+    "periodLabel": "請求期間",
+    "planLabel": "プラン",
+    "monthly": "月払い",
+    "yearly": "年払い",
+    "twoMonthsFree": "2 か月分無料",
+    "mostPopular": "一番人気",
+    "summary": "コネクタ {connectors} 個 · MCP サーバー {mcpServers} 台 · {users, plural, =1 {ユーザー # 名} other {ユーザー最大 # 名}}",
+    "price": "{amount}/{period, select, yearly {年} other {月}}",
+    "priceLocal": "約 {amount}/{period, select, yearly {年} other {月}}",
+    "exactly": "正確には {price}",
+    "yearlyPerMonth": "月あたり約 {amount}",
+    "outgrown": "このワークスペースの現在の利用: {items}",
+    "usage": {
+      "connectors": "コネクタ {count} 個",
+      "mcpServers": "MCP サーバー {count} 台",
+      "users": "ユーザー {count} 名"
+    },
+    "footer": {
+      "vat": "価格はユーロ建て、VAT 込みです。",
+      "noVat": "価格はユーロ建てです。",
+      "local": "価格はユーロ建てで、決済時に {currency} でお支払いいただきます。",
+      "localVat": "価格はユーロ建て（VAT 込み）で、決済時に {currency} でお支払いいただきます。"
+    },
+    "enterpriseQuestion": "ユーザー追加、シングルサインオン、SCIM が必要ですか？",
+    "pastTeam": "このワークスペースは Team の上限を超えています。",
+    "enterpriseLink": "Enterprise について問い合わせる",
+    "listSeparator": "、"
+  },
+  "cardCheckout": {
+    "failed": "現在、決済ページを開けませんでした。しばらくしてからもう一度お試しください。"
+  },
+  "trialBanner": {
+    "today": "トライアルは本日終了します。",
+    "tomorrow": "トライアルは明日終了します。",
+    "daysLeft": "トライアル：残り {days} 日。",
+    "includesTeam": "Team のすべての機能が含まれます。",
+    "aboveStarter": {
+      "link": "Starter の上限超過：変更点を見る",
+      "title": "このワークスペースは Starter の上限を超えています",
+      "body": "トライアルには Team のすべての機能が含まれます。Starter を選ぶと、トライアル終了時に次の点が変わります。Team ならすべてそのままです。",
+      "close": "閉じる"
+    },
+    "choosePlan": "プランを選ぶ",
+    "openingCheckout": "決済ページを開いています…",
+    "addPaymentBefore": "お支払い方法を登録：{date} まで請求はありません",
+    "addPayment": "お支払い方法を登録",
+    "upgrade": "アップグレード"
+  },
+  "planFit": {
+    "title": "{plan} で変わること",
+    "fits": "現在の利用内容はすべて {plan} に収まります。",
+    "chooseTeam": "Team を選ぶ",
+    "showDetails": "対象を見る",
+    "hideDetails": "閉じる",
+    "keep": "有効のまま",
+    "pause": "一時停止",
+    "groups": {
+      "connectors": "コネクタ",
+      "mcpServers": "MCP サーバー",
+      "fileSearch": "File Search フォルダ"
+    },
+    "unnamed": "名称なし",
+    "lines": {
+      "connectors": "{total} 件中 {paused} 件のコネクタが一時停止（利用の少ないもの）。どれにするかは選べます。",
+      "mcpServers": "{total} 件中 {paused} 件の MCP サーバーが一時停止（利用の少ないもの）。",
+      "mcpServersChoose": "{total} 件中 {paused} 件の MCP サーバーが一時停止（利用の少ないもの）。どれにするかは選べます。",
+      "users": "ユーザー {max} 人まで（現在 {current} 人）。アクセスを失う人はいません。",
+      "fileSearch": "File Search：最大 {maxFolders} フォルダ、{maxFiles, number} ファイル。",
+      "fileSearchStorage": "File Search：最大 {maxSize} のストレージ。",
+      "codeTools": "保存済みコードツール {max} 件（現在 {current} 件）。",
+      "inline": "インラインコード（code_execute）は含まれません。"
+    }
+  },
+  "startTrial": {
+    "loading": "読み込み中…",
+    "skipCorner": "お支払い情報なしで続ける",
+    "eyebrow": {
+      "choosePlan": "プランを選択",
+      "freeUntil": "{date} まで無料",
+      "freeTrial": "無料トライアル"
+    },
+    "title": {
+      "paysToday": "ワークスペースを使い続ける",
+      "trial": "無料トライアル"
+    },
+    "ending": "無料トライアルは <strong>{date}</strong> に終了します。終了が近いため、お支払い方法を登録して無料で試し続けることはできません。<strong>プランは本日開始され、本日請求されます。</strong>ワークスペース、コネクタ、設定はそのまま変わりません。",
+    "endingSoon": "無料トライアルはまもなく終了します。終了が近いため、お支払い方法を登録して無料で試し続けることはできません。<strong>プランは本日開始され、本日請求されます。</strong>ワークスペース、コネクタ、設定はそのまま変わりません。",
+    "returning": "このメールアドレスは以前 AnythingMCP のサブスクリプションをご利用いただいているため、お支払い方法を登録しての新しい無料トライアルはご利用いただけません。<strong>プランは本日開始され、本日請求されます。</strong>ワークスペース、コネクタ、設定はそのまま変わりません。後で決める場合、現在のトライアルは <strong>{date}</strong> まで続きます。",
+    "returningNoDate": "このメールアドレスは以前 AnythingMCP のサブスクリプションをご利用いただいているため、お支払い方法を登録しての新しい無料トライアルはご利用いただけません。<strong>プランは本日開始され、本日請求されます。</strong>ワークスペース、コネクタ、設定はそのまま変わりません。",
+    "trial": "すべての機能を <strong>{date}</strong> まで無料でご利用いただけます。今お支払い方法を登録すると、トライアル終了後もプランがそのまま継続し、それまで請求はありません。お支払い情報なしで試し続けることもできます。その場合は<strong>コネクタ数の上限が低く</strong>なりますが、いつでもお支払い方法を登録してプランのすべての機能を利用できます。",
+    "trialNoDate": "すべての機能をトライアル終了まで無料でご利用いただけます。今お支払い方法を登録すると、トライアル終了後もプランがそのまま継続し、それまで請求はありません。お支払い情報なしで試し続けることもできます。その場合は<strong>コネクタ数の上限が低く</strong>なりますが、いつでもお支払い方法を登録してプランのすべての機能を利用できます。",
+    "authorizationReturn": "どちらを選んでも、そのまま AI クライアントの接続手続きに戻ります。",
+    "chargesToday": "このアドレスは以前サブスクリプションをご利用いただいているため、決済時に本日 {amount} が請求されます。",
+    "start": {
+      "opening": "決済ページを開いています…",
+      "tryAgain": "もう一度試す",
+      "checkout": "決済に進む",
+      "trial": "無料トライアルを開始"
+    },
+    "promo": "コード {code} は決済時に適用されます。",
+    "price": "{amount}/{period, select, yearly {年} other {月}}",
+    "priceLocal": "約 {local}/{period, select, yearly {年} other {月}}（{exact}）",
+    "finePrintPaysToday": "{plan}、{price}。本日請求され、以降は{period, select, yearly {毎年} other {毎月}}請求されます。Stripe による安全な決済。請求ポータルからいつでも解約できます。",
+    "finePrintTrial": "{plan}、{date} から{period, select, yearly {年払い} other {月払い}}で請求されます。Stripe による安全な決済。それまでに解約すれば料金はかかりません。",
+    "finePrintTrialNoDate": "{plan}、トライアル終了時から{period, select, yearly {年払い} other {月払い}}で請求されます。Stripe による安全な決済。それまでに解約すれば料金はかかりません。",
+    "notReady": "まだ決めていませんか？",
+    "notReadyCard": "お支払い方法はまだ登録しませんか？",
+    "keepFree": "無料トライアルを続ける",
+    "tryFree": "お支払い情報なしで無料で試す",
+    "methods": {
+      "trial": "本日 0 € · カード、PayPal など",
+      "pay": "カード、PayPal など"
+    }
+  }
+}

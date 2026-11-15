@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/badge';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { ActiveSubscriptionNotice, subscribedWorkspacesOf, type SubscribedWorkspace } from '@/components/active-subscription-notice';
 
 const AUTH_MODES = ['none', 'legacy', 'oauth2', 'both'] as const;
 
@@ -38,6 +39,8 @@ export default function SettingsPage() {
   const [serverUrl, setServerUrl] = useState('');
   // Cloud only: onboarding tips and offers by email (the drip, win-back).
   const [isCloud, setIsCloud] = useState(false);
+  // Whether server info has answered (or failed): until then isCloud is only a guess.
+  const [deploymentKnown, setDeploymentKnown] = useState(false);
   const [marketingOptOut, setMarketingOptOut] = useState<boolean | null>(null);
   // Management API keys (scope !== MCP): the credential the amcp CLI uses to
   // drive /api/*. MCP tool keys stay on the per-server page.
@@ -60,6 +63,7 @@ export default function SettingsPage() {
   // A passwordless (social) account confirms deletion with a fresh sign-in.
   const [deleteNeedsReauth, setDeleteNeedsReauth] = useState(false);
   const [blockingOrgs, setBlockingOrgs] = useState<{ id: string; name: string }[] | null>(null);
+  const [subscribedOrgs, setSubscribedOrgs] = useState<SubscribedWorkspace[] | null>(null);
 
   // Connected accounts
   const [linkable, setLinkable] = useState<LinkableProvider[]>([]);
@@ -75,7 +79,7 @@ export default function SettingsPage() {
       setOauthEndpoints(info.oauthEndpoints);
       setServerUrl(info.serverUrl);
       setIsCloud(info.deploymentMode === 'cloud');
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setDeploymentKnown(true));
   }, []);
 
   useEffect(() => {
@@ -130,7 +134,8 @@ export default function SettingsPage() {
   };
 
   const loadLinkable = () => {
-    if (!token) return;
+    // SSO is self-hosted only: on Cloud the route answers 404, so don't ask.
+    if (!token || !deploymentKnown || isCloud) return;
     // Silently empty when the workspace has no provider: this card should not
     // announce a feature the workspace has not configured.
     sso.myProviders(token).then(setLinkable).catch(() => setLinkable([]));
@@ -150,7 +155,7 @@ export default function SettingsPage() {
   useEffect(() => {
     loadLinkable();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, deploymentKnown, isCloud]);
 
   useEffect(() => {
     loadSocial();
@@ -258,6 +263,7 @@ export default function SettingsPage() {
     setDeleting(true);
     setDeleteError(null);
     setBlockingOrgs(null);
+    setSubscribedOrgs(null);
     try {
       await users.deleteSelf(
         hasPassword ? { password: deletePassword, confirm: 'DELETE' } : { confirm: 'DELETE' },
@@ -265,12 +271,15 @@ export default function SettingsPage() {
       );
       logout();
     } catch (err: any) {
+      const subscribed = subscribedWorkspacesOf(err);
       if (err instanceof ApiError) {
         if (err.status === 403 && err.body?.code === 'reauth_required') {
           setDeleteNeedsReauth(true);
           setDeleteError(err.message);
         } else if (err.status === 401) {
           setDeleteError(hasPassword ? t('incorrectPassword') : err.message || t('deleteFailed'));
+        } else if (subscribed && subscribed.length > 0) {
+          setSubscribedOrgs(subscribed);
         } else if (err.status === 409 && Array.isArray(err.body?.blockingOrganizations)) {
           setBlockingOrgs(err.body.blockingOrganizations);
           setDeleteError(err.body?.error || t('onlyAdmin'));
@@ -311,6 +320,7 @@ export default function SettingsPage() {
     setDeleteConfirm('');
     setDeleteError(null);
     setBlockingOrgs(null);
+    setSubscribedOrgs(null);
     setDeleting(false);
   };
 
@@ -860,6 +870,9 @@ export default function SettingsPage() {
                   autoComplete="off"
                 />
               </div>
+              {subscribedOrgs && (
+                <ActiveSubscriptionNotice workspaces={subscribedOrgs} returnPath="/settings?delete=1" />
+              )}
               {deleteError && !blockingOrgs && (
                 <p className="text-sm text-[var(--danger)]">{deleteError}</p>
               )}

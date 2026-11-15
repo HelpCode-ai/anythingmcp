@@ -141,6 +141,289 @@ export function loginBasicAuthProblems(connector) {
   return problems;
 }
 
+/**
+ * LOGIN_TOKEN for XML APIs (Fnac Darty): a login sent and answered in XML
+ * (`loginBodyFormat`, `loginResponseFormat`), the token placed in the request
+ * body as the `loginToken` placeholder instead of a header
+ * (`tokenPlacement: "body"`), and a re-login when the body reports a refused
+ * token (`refreshOnBody401`). Each is opt-in; this catches a combination the
+ * engine would run without doing what the adapter meant.
+ */
+const LOGIN_TOKEN_PLACEHOLDER = '$' + '{loginToken}';
+export function loginTokenXmlProblems(adapter) {
+  const connector = adapter?.connector;
+  const cfg = connector?.authConfig;
+  const tools = Array.isArray(adapter?.tools) ? adapter.tools : [];
+  const templates = tools.map((t) => t?.endpointMapping?.bodyTemplate).filter((t) => typeof t === 'string');
+  const usesLoginToken = templates.some((t) => t.includes(LOGIN_TOKEN_PLACEHOLDER));
+  const problems = [];
+  const fields = ['loginBodyFormat', 'loginResponseFormat', 'tokenPlacement', 'refreshOnBody401'];
+  const set = cfg && typeof cfg === 'object' ? fields.filter((f) => cfg[f] !== undefined) : [];
+  if (connector?.authType !== 'LOGIN_TOKEN') {
+    for (const f of set) problems.push(`${f} only applies to LOGIN_TOKEN authentication`);
+    if (usesLoginToken) problems.push(`${LOGIN_TOKEN_PLACEHOLDER} in a bodyTemplate needs LOGIN_TOKEN authentication with tokenPlacement: "body"`);
+    return problems;
+  }
+  if (!cfg || typeof cfg !== 'object') return problems;
+  if (cfg.loginBodyFormat !== undefined) {
+    if (cfg.loginBodyFormat !== 'xml') problems.push('loginBodyFormat must be "xml"');
+    else if (typeof cfg.loginBody !== 'string') problems.push('loginBodyFormat: "xml" needs loginBody to be the XML document as a string');
+  }
+  if (cfg.loginResponseFormat !== undefined && cfg.loginResponseFormat !== 'xml') problems.push('loginResponseFormat must be "xml"');
+  if (cfg.tokenPlacement !== undefined && !['header', 'body'].includes(cfg.tokenPlacement)) problems.push('tokenPlacement must be "header" or "body"');
+  if (cfg.tokenPlacement === 'body') {
+    if (connector.type !== 'REST') problems.push('tokenPlacement: "body" is only supported by REST connectors');
+    if (!usesLoginToken) problems.push(`tokenPlacement: "body" sends no token header, so at least one tool's bodyTemplate must contain ${LOGIN_TOKEN_PLACEHOLDER}`);
+    for (const f of ['headerName', 'headerTemplate']) {
+      if (cfg[f] !== undefined) problems.push(`${f} is not sent with tokenPlacement: "body"; remove it`);
+    }
+  } else if (usesLoginToken && (cfg.tokenPlacement === undefined || cfg.tokenPlacement === 'header')) {
+    problems.push(`${LOGIN_TOKEN_PLACEHOLDER} in a bodyTemplate renders empty without authConfig.tokenPlacement: "body"`);
+  }
+  if (cfg.refreshOnBody401 !== undefined) {
+    if (typeof cfg.refreshOnBody401 !== 'boolean') problems.push('refreshOnBody401 must be true or false');
+    else if (cfg.refreshOnBody401) {
+      const rules = connector.config?.errorWhen;
+      const list = rules === undefined ? [] : Array.isArray(rules) ? rules : [rules];
+      if (!list.some((r) => r && typeof r === 'object' && r.status === 401)) problems.push('refreshOnBody401 needs a connector.config.errorWhen rule with status 401 that recognises the refused token');
+    }
+  }
+  return problems;
+}
+
+const LOGIN_TOKEN_SOURCES = ['body', 'cookie', 'header'];
+
+/**
+ * LOGIN_TOKEN reads the token from the login answer's body (default), a
+ * cookie or, with tokenSource "header", a response header named by
+ * tokenHeaderName (Ceneo answers it in `access_token`). LoginTokenService
+ * refuses a header source without a name at sign-in, and reads the body for a
+ * source it does not know; both fail here instead.
+ */
+export function loginTokenSourceProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object') return [];
+  const problems = [];
+  const { tokenSource, tokenHeaderName } = cfg;
+  if (tokenSource === undefined && tokenHeaderName === undefined) return problems;
+  if (connector.authType !== 'LOGIN_TOKEN') {
+    for (const field of ['tokenSource', 'tokenHeaderName']) {
+      if (cfg[field] !== undefined) problems.push(`${field} only applies to LOGIN_TOKEN authentication`);
+    }
+    return problems;
+  }
+  if (tokenSource !== undefined && !LOGIN_TOKEN_SOURCES.includes(tokenSource)) {
+    problems.push(`tokenSource must be one of ${LOGIN_TOKEN_SOURCES.join(', ')}`);
+  }
+  if (tokenSource === 'header') {
+    // RFC 9110 field-name characters: what a response header can be called.
+    if (typeof tokenHeaderName !== 'string' || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(tokenHeaderName)) {
+      problems.push('tokenSource "header" needs authConfig.tokenHeaderName, the name of the response header that carries the token');
+    }
+  } else if (tokenHeaderName !== undefined) {
+    problems.push('tokenHeaderName is only read with tokenSource "header"');
+  }
+  return problems;
+}
+
+const BLOCK_NAME = '[A-Za-z_][A-Za-z0-9_]*';
+const OPTIONAL_BLOCK = new RegExp('^' + BLOCK_NAME + '(?:\\|' + BLOCK_NAME + ')*$');
+const REPEATED_BLOCK = new RegExp('^' + BLOCK_NAME + '$');
+const BLOCK_OPENERS = { optional: '$' + '{?', repeated: '$' + '{*', close: '$' + '{/' };
+
+/**
+ * Optional (`?name` … `/name`) and repeated (`#items` … `/items`) blocks of an
+ * XML bodyTemplate, written inside the usual dollar-brace placeholder: each
+ * opener names its parameter(s) and has its closing tag, and the mapping is an
+ * XML body. The engine stops a call whose template breaks these rules
+ * (xml-body-template.util.ts); found here, the adapter never ships.
+ */
+export function xmlTemplateBlockProblems(endpointMapping) {
+  const template = endpointMapping?.bodyTemplate;
+  if (typeof template !== 'string') return [];
+  if (!template.includes(BLOCK_OPENERS.optional) && !template.includes(BLOCK_OPENERS.repeated)) return [];
+  if (endpointMapping.bodyEncoding !== 'xml') return ['optional and repeated blocks need bodyEncoding: "xml"'];
+  const problems = [];
+  let pos = 0;
+  for (;;) {
+    const optional = template.indexOf(BLOCK_OPENERS.optional, pos);
+    const repeated = template.indexOf(BLOCK_OPENERS.repeated, pos);
+    const open = optional === -1 ? repeated : repeated === -1 ? optional : Math.min(optional, repeated);
+    if (open === -1) break;
+    const kind = template[open + 2];
+    const tagEnd = template.indexOf('}', open);
+    const expr = tagEnd === -1 ? '' : template.slice(open + 3, tagEnd);
+    const opener = BLOCK_OPENERS[kind === '?' ? 'optional' : 'repeated'];
+    if (!(kind === '?' ? OPTIONAL_BLOCK : REPEATED_BLOCK).test(expr)) {
+      problems.push(`a block opener must name a parameter, as in ${opener}name}`);
+      break;
+    }
+    pos = tagEnd + 1;
+  }
+  // Every opener has its closing tag: as many closers as openers per name,
+  // and never a closer before its opener (blocks nest, also under one name).
+  const names = new Set([...template.matchAll(/\$\{[?*]([^}]*)\}/g)].map((m) => m[1]));
+  for (const expr of problems.length ? [] : names) {
+    const tags = [...template.matchAll(/\$\{([?*/])([^}]*)\}/g)].filter((m) => m[2] === expr);
+    let depth = 0;
+    for (const tag of tags) {
+      depth += tag[1] === '/' ? -1 : 1;
+      if (depth < 0) break;
+    }
+    if (depth !== 0) problems.push(`the block ${expr} is not closed once for every time it is opened (${BLOCK_OPENERS.close}${expr}})`);
+  }
+  return problems;
+}
+
+/**
+ * OAUTH2 token answers are read at the top level (RFC 6749). An adapter whose
+ * provider wraps the token fields names the wrapper in
+ * authConfig.tokenResponsePath, a dotted path of keys ("data"); see
+ * token-response.util.ts.
+ */
+export function tokenResponsePathProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object' || cfg.tokenResponsePath === undefined) return [];
+  if (connector.authType !== 'OAUTH2') return ['tokenResponsePath only applies to OAUTH2 authentication'];
+  const path = cfg.tokenResponsePath;
+  if (typeof path !== 'string' || !/^[A-Za-z0-9_$-]+(\.[A-Za-z0-9_$-]+)*$/.test(path)) {
+    return ['tokenResponsePath must be a dotted path of keys to the object that holds the token fields, such as "data"'];
+  }
+  return [];
+}
+
+const SIGNATURE_MODES = new Set(['hmac', 'digest']);
+const SIGNATURE_PLACEMENTS = new Set(['header', 'query', 'body']);
+const SIGNATURE_ENCODINGS = new Set(['hex', 'base64', 'hex-upper', 'hex-base64']);
+const HMAC_ALGORITHMS = new Set(['sha256', 'sha1', 'sha512']);
+
+/**
+ * `authConfig.signature` of an HMAC connector: the options added for a plain
+ * digest in the JSON body (Temu) and for a nonce in the key with a wrapped
+ * header value (SHEIN). The engine (applyHmacSignature in
+ * packages/backend/src/connectors/engines/rest.engine.ts) reads these fields
+ * leniently, so a typing mistake here would sign differently without failing:
+ * the mistakes are refused at this gate instead. A signed-JWT signature
+ * (`signature.jwt`) has its own fields and is not checked here.
+ */
+export function hmacSignatureProblems(connector) {
+  const sig = connector?.authConfig?.signature;
+  if (connector?.authType !== 'HMAC' || !sig || typeof sig !== 'object' || Array.isArray(sig) || sig.jwt !== undefined) return [];
+  const problems = [];
+  const mode = sig.mode ?? 'hmac';
+  const placement = sig.placement ?? 'header';
+  const template = typeof sig.template === 'string' ? sig.template : '';
+  const secret = typeof sig.secret === 'string' ? sig.secret : '';
+  const headerTemplate = typeof sig.headerTemplate === 'string' ? sig.headerTemplate : '';
+  const usesNonce = (text) => text.includes('${nonce}');
+
+  if (!SIGNATURE_MODES.has(mode)) problems.push('signature.mode must be "hmac" or "digest"');
+  if (!SIGNATURE_PLACEMENTS.has(placement)) problems.push('signature.placement must be "header", "query" or "body"');
+  if (sig.encoding !== undefined && !SIGNATURE_ENCODINGS.has(sig.encoding)) problems.push('signature.encoding must be "hex", "base64", "hex-upper" or "hex-base64"');
+  if (sig.algorithm !== undefined && !HMAC_ALGORITHMS.has(sig.algorithm) && !(sig.algorithm === 'md5' && mode === 'digest')) {
+    problems.push(sig.algorithm === 'md5'
+      ? 'signature.algorithm "md5" is only accepted with signature.mode "digest"'
+      : 'signature.algorithm must be "sha256", "sha1" or "sha512" (or "md5" with signature.mode "digest")');
+  }
+  if (mode === 'digest') {
+    if (!template.trim()) problems.push('signature.mode "digest" needs signature.template: a plain hash has no key, so the template must hold the secret where the vendor puts it');
+    if (sig.secret !== undefined) problems.push('signature.mode "digest" does not use signature.secret: put the secret in signature.template');
+  }
+  if (sig.bodyParams !== undefined) {
+    const flat = sig.bodyParams && typeof sig.bodyParams === 'object' && !Array.isArray(sig.bodyParams)
+      && Object.values(sig.bodyParams).every((v) => ['string', 'number', 'boolean'].includes(typeof v));
+    if (!flat) problems.push('signature.bodyParams must map field names to text, numbers or true/false');
+    if (placement !== 'body') problems.push('signature.bodyParams only applies to signature.placement "body"');
+  }
+  if (placement === 'body') {
+    const paramName = sig.paramName ?? 'sign';
+    if (sig.bodyParams && typeof sig.bodyParams === 'object' && paramName in sig.bodyParams) problems.push(`signature.bodyParams must not set "${paramName}", the field the signature is written to`);
+    if (sig.timestampParam !== undefined && sig.timestampParam === paramName) problems.push('signature.timestampParam and signature.paramName must be different fields');
+    if (sig.headerName !== undefined || sig.headerTemplate !== undefined) problems.push('signature.headerName and signature.headerTemplate do not apply to signature.placement "body"');
+    if (sig.queryParams !== undefined) problems.push('signature.queryParams does not apply to signature.placement "body": use signature.bodyParams');
+  }
+  if (sig.nonceLength !== undefined) {
+    if (!Number.isInteger(sig.nonceLength) || sig.nonceLength < 1 || sig.nonceLength > 64) problems.push('signature.nonceLength must be a whole number from 1 to 64');
+    if (!usesNonce(template) && !usesNonce(secret) && !usesNonce(headerTemplate)) problems.push('signature.nonceLength is set, but ${nonce} is used in neither template, secret nor headerTemplate');
+  } else if (usesNonce(template) || usesNonce(secret) || usesNonce(headerTemplate)) {
+    problems.push('${nonce} needs signature.nonceLength');
+  }
+  if (mode === 'digest' && usesNonce(secret)) problems.push('${nonce} in signature.secret has no effect with signature.mode "digest"');
+  if (sig.headerTemplate !== undefined) {
+    if (!headerTemplate.includes('${signature}')) problems.push('signature.headerTemplate must contain ${signature}');
+    if (placement === 'query') problems.push('signature.headerTemplate does not apply to signature.placement "query"');
+  }
+  return problems;
+}
+
+const IOP_FIELDS = new Set(['appKey', 'authorizeUrl', 'tokenBaseUrl', 'tokenPath', 'refreshPath', 'authorizeParams', 'tokenResponsePath']);
+const IOP_FLOW_PARAMS = new Set(['response_type', 'client_id', 'redirect_uri', 'state']);
+
+/**
+ * `authConfig.tokenProvider: "iop"` (Alibaba IOP gateways: Lazada, Miravia,
+ * AliExpress seller): the engine obtains and renews the seller's access
+ * token (iop-token.service.ts) from the `authConfig.iop` block and signs it
+ * into every call. Checked: HMAC only; the authorize page and the token
+ * base are https URLs; the token operations are paths; static authorize
+ * parameters do not replace the flow's own; an app key is given; the
+ * signature is the IOP one the token calls reuse (query placement,
+ * upper-case hex, milliseconds, sorted parameters) and carries no
+ * access_token of its own. No access-token variable is needed.
+ */
+export function iopTokenProviderProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object' || cfg.tokenProvider !== 'iop') return [];
+  if (connector.authType !== 'HMAC') return ['tokenProvider "iop" only applies to HMAC authentication'];
+  const iop = cfg.iop;
+  if (!iop || typeof iop !== 'object' || Array.isArray(iop)) return ['tokenProvider "iop" needs an authConfig.iop object'];
+  const problems = [];
+  for (const key of Object.keys(iop)) {
+    if (!IOP_FIELDS.has(key)) problems.push(`authConfig.iop.${key} is not a known field (${[...IOP_FIELDS].join(', ')})`);
+  }
+  for (const key of ['authorizeUrl', 'tokenBaseUrl']) {
+    const value = iop[key];
+    if (typeof value !== 'string' || !/^https:\/\/[^/\s?#]+/.test(value)) problems.push(`authConfig.iop.${key} must be an https URL`);
+    else if (/[?#]/.test(value)) problems.push(`authConfig.iop.${key} must not carry a query or fragment: put static parameters in authorizeParams`);
+  }
+  for (const key of ['tokenPath', 'refreshPath']) {
+    const value = iop[key];
+    if (typeof value !== 'string' || !/^\/[^\s?#]*$/.test(value) || value.includes('//')) {
+      problems.push(`authConfig.iop.${key} must be a path starting with "/", such as "/auth/token/create"`);
+    }
+  }
+  if (iop.authorizeParams !== undefined) {
+    const params = iop.authorizeParams;
+    if (!params || typeof params !== 'object' || Array.isArray(params) || !Object.values(params).every((v) => typeof v === 'string')) {
+      problems.push('authConfig.iop.authorizeParams must map parameter names to text, such as { "force_auth": "true" }');
+    } else {
+      for (const key of Object.keys(params)) {
+        if (IOP_FLOW_PARAMS.has(key)) problems.push(`authConfig.iop.authorizeParams must not set "${key}": the engine sets it`);
+      }
+    }
+  }
+  if (iop.tokenResponsePath !== undefined && (typeof iop.tokenResponsePath !== 'string' || !/^[A-Za-z0-9_$-]+(\.[A-Za-z0-9_$-]+)*$/.test(iop.tokenResponsePath))) {
+    problems.push('authConfig.iop.tokenResponsePath must be a dotted path of keys, such as "data"');
+  }
+  const sig = cfg.signature;
+  const statics = sig && typeof sig.queryParams === 'object' && sig.queryParams ? sig.queryParams : {};
+  if (iop.appKey !== undefined ? typeof iop.appKey !== 'string' || !iop.appKey.trim() : typeof statics.app_key !== 'string' || !statics.app_key.trim()) {
+    problems.push('tokenProvider "iop" needs the app key in authConfig.iop.appKey (or signature.queryParams.app_key)');
+  }
+  if (!sig || typeof sig !== 'object' || Array.isArray(sig)) {
+    problems.push('tokenProvider "iop" needs authConfig.signature: the token calls are signed with it');
+    return problems;
+  }
+  if (typeof sig.secret !== 'string' || !sig.secret.trim()) problems.push('tokenProvider "iop" needs signature.secret (the app secret)');
+  if (sig.placement !== 'query') problems.push('tokenProvider "iop" needs signature.placement "query"');
+  if (sig.encoding !== 'hex-upper') problems.push('tokenProvider "iop" needs signature.encoding "hex-upper"');
+  if (sig.timestampFormat !== 'ms') problems.push('tokenProvider "iop" needs signature.timestampFormat "ms"');
+  if (typeof sig.template !== 'string' || !sig.template.includes('${sortedParams}')) problems.push('tokenProvider "iop" needs a signature.template with ${sortedParams}');
+  if (Object.prototype.hasOwnProperty.call(statics, 'access_token')) {
+    problems.push('signature.queryParams must not set access_token with tokenProvider "iop": the provider adds the seller\'s token');
+  }
+  return problems;
+}
+
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
 // real adapters mention "to-do" lists, and only the uppercase word is ours.
 const TODO_MARKER = /\bTODO\b/;
@@ -186,6 +469,54 @@ export function graphqlVariableDefinitions(document) {
       return { name: m[1], required: m[2].trim().endsWith('!') && m[3] !== '=' };
     })
     .filter(Boolean);
+}
+
+const MIN_ENV_OPTIONS = 2;
+const MAX_ENV_OPTIONS = 20;
+// Connector types whose address variables are cleaned up when saved
+// (packages/backend/src/common/url.util.ts, HTTP_CONNECTOR_TYPES).
+const ADDRESS_NORMALISED_TYPES = new Set(['REST', 'GRAPHQL', 'SOAP', 'MCP', 'ODATA']);
+
+/**
+ * `envVarMeta.<VAR>.options`: a fixed list of choices, shown as a select in
+ * the setup form and enforced on every path that writes the variable
+ * (packages/backend/src/adapters/env-var-checks.ts). A stored value is
+ * compared with the option values as written, so each must be exactly what
+ * ends up stored.
+ */
+function envMetaOptionErrors(adapter, envVar, m, path) {
+  const errors = [];
+  const rule = 'env-meta-options';
+  const docs = 'adapter-fields';
+  const at = `${path}.options`;
+  const example = '[{ "value": "https://api.example.fr", "label": "France" }, { "value": "https://api.example.es", "label": "Spain" }]';
+  const options = m.options;
+  if (!Array.isArray(options) || options.length < MIN_ENV_OPTIONS || options.length > MAX_ENV_OPTIONS) {
+    errors.push(error(rule, at, `options must be an array of ${MIN_ENV_OPTIONS} to ${MAX_ENV_OPTIONS} choices`, `Use ${example}. A single possible value needs no variable; a longer list is a text field with a pattern.`, docs));
+    return errors;
+  }
+  if (m.secret === true) errors.push(error(rule, at, 'a variable with options cannot be "secret": true: the form shows the choices and the one that is stored', 'Remove "secret": true, or remove options and keep a text field.', docs));
+  let pattern;
+  if (typeof m.pattern === 'string') { try { pattern = new RegExp(m.pattern); } catch { /* reported by env-meta-pattern */ } }
+  const baseUrl = ADDRESS_NORMALISED_TYPES.has(adapter.connector?.type) && typeof adapter.connector?.baseUrl === 'string' ? adapter.connector.baseUrl.trim() : '';
+  // As in packages/backend/src/common/base-url-variable.util.ts (LEADING_VAR, SUBDOMAIN_SLOT).
+  const startsBaseUrl = /^\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/.exec(baseUrl)?.[1] === envVar;
+  const firstHostLabel = [...baseUrl.matchAll(/:\/\/\{\{([A-Za-z0-9_]+)\}\}\./g)].some((slot) => slot[1] === envVar);
+  const seen = new Set();
+  for (const [i, option] of options.entries()) {
+    const here = `${at}[${i}]`;
+    if (!option || typeof option !== 'object' || Array.isArray(option)) { errors.push(error(rule, here, 'each option must be an object with a value and a label', `Use ${example}.`, docs)); continue; }
+    for (const k of Object.keys(option)) if (k !== 'value' && k !== 'label') errors.push(error(rule, `${here}.${k}`, `Unknown option field "${k}"`, 'An option has exactly two fields: value and label.', docs));
+    if (typeof option.label !== 'string' || !option.label.trim()) errors.push(error(rule, `${here}.label`, 'option label must be a non-empty string', 'Set label to what the user picks, e.g. "France".', docs));
+    if (typeof option.value !== 'string' || !option.value) { errors.push(error(rule, `${here}.value`, 'option value must be a non-empty string', 'Set value to what is stored and sent, e.g. "https://api.example.fr". Leaving the variable empty is not a choice: make the variable optional instead.', docs)); continue; }
+    if (option.value !== option.value.trim()) errors.push(error(rule, `${here}.value`, 'option value starts or ends with a space; submitted values are trimmed, so it could never be chosen', 'Remove the surrounding whitespace.', docs));
+    if (seen.has(option.value)) errors.push(error(rule, `${here}.value`, `option value "${option.value}" is listed more than once`, 'Keep each value once; two labels for the same value cannot be told apart once stored.', docs));
+    seen.add(option.value);
+    if (pattern && !pattern.test(option.value)) errors.push(error(rule, `${here}.value`, `option value "${option.value}" does not match the variable's own pattern`, 'Fix the value or the pattern (or drop the pattern: the options already limit the value).', docs));
+    if (startsBaseUrl && !/^https?:\/\/\S+$/i.test(option.value)) errors.push(error(rule, `${here}.value`, `option value "${option.value}" is not a whole URL, but {{${envVar}}} starts connector.baseUrl: it is stored with https:// in front and then no longer equals this option`, 'Write the value with its scheme, e.g. "https://api.example.fr".', docs));
+    if (firstHostLabel && !/^[a-z0-9_-]+$/.test(option.value)) errors.push(error(rule, `${here}.value`, `option value "${option.value}" is not a lower-case host label, but {{${envVar}}} is the first label of the host in connector.baseUrl: it is stored as one and then no longer equals this option`, 'Use only the label, in lower case, e.g. "eu".', docs));
+  }
+  return errors;
 }
 
 /** True when a `$param` reference is nested somewhere inside an object or array. */
@@ -270,6 +601,21 @@ export function errorWhenProblems(value) {
     }
     for (const key of Object.keys(rule)) if (!known.has(key)) problems.push(`${at}.${key} is not a known field`);
   });
+  return problems;
+}
+
+/**
+ * Problems with `connector.config.mcpFixedArguments`, the arguments an MCP
+ * bridge sends with every tool call (mcp-connector-config.util.ts). Other
+ * engines never read it, and anything but an object is ignored at call time,
+ * so both mistakes would otherwise go unnoticed until a call fails upstream.
+ */
+export function mcpFixedArgumentsProblems(connector) {
+  const value = connector?.config?.mcpFixedArguments;
+  if (value === undefined) return [];
+  const problems = [];
+  if (connector.type !== 'MCP') problems.push(`mcpFixedArguments only applies to connectors of type "MCP", not "${connector.type}"`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) problems.push('mcpFixedArguments must be an object of argument names and their values');
   return problems;
 }
 
@@ -426,7 +772,7 @@ export function validateAdapter(adapter, file, region) {
     const meta = adapter.envVarMeta;
     const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
     const KINDS = new Set(['address', 'credential', 'setting']);
-    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'patternMessage', 'link', 'advanced']);
+    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'patternMessage', 'link', 'advanced', 'options']);
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
       errors.push(error('env-meta-shape', 'envVarMeta', 'envVarMeta must map a variable name to its description', 'Use { "MY_VAR": { "label": "…", "help": "…" } }.', 'adapter-fields'));
     } else {
@@ -438,6 +784,7 @@ export function validateAdapter(adapter, file, region) {
         if (m.kind !== undefined && !KINDS.has(m.kind)) errors.push(error('env-meta-kind', `${path}.kind`, `kind must be address, credential or setting, not "${m.kind}"`, 'Pick the kind that matches what the value is.', 'adapter-fields'));
         if (m.pattern !== undefined) { try { new RegExp(m.pattern); } catch { errors.push(error('env-meta-pattern', `${path}.pattern`, 'pattern is not a valid regular expression', 'Fix or remove the pattern.', 'adapter-fields')); } }
         if (m.link !== undefined && !/^https:\/\//.test(String(m.link))) errors.push(error('env-meta-link', `${path}.link`, 'link must be an https URL', 'Use the provider page where the value is created.', 'adapter-fields'));
+        if (m.options !== undefined) errors.push(...envMetaOptionErrors(adapter, envVar, m, path));
       }
     }
   }
@@ -548,6 +895,22 @@ export function validateAdapter(adapter, file, region) {
     errors.push(error('login-basic-auth', 'connector.authConfig.loginBasicAuth', problem, 'With loginBasicAuth: true the engine sends Authorization: Basic base64(username:password) on the login request; give username and password, and keep the password out of loginBody and loginHeaders.', 'authentication'));
   }
 
+  for (const problem of loginTokenSourceProblems(adapter.connector)) {
+    errors.push(error('login-token-source', 'connector.authConfig.tokenSource', problem, 'Leave tokenSource out to read the token from the body (tokenJsonPath), use "cookie" with cookieName, or "header" with tokenHeaderName, e.g. "tokenSource": "header", "tokenHeaderName": "access_token".', 'authentication'));
+  }
+
+  for (const problem of tokenResponsePathProblems(adapter.connector)) {
+    errors.push(error('token-response-path', 'connector.authConfig.tokenResponsePath', problem, 'Set it only when the token endpoint wraps access_token, refresh_token and expires_in in another object, e.g. "tokenResponsePath": "data"; leave it out when they are at the top level.', 'authentication'));
+  }
+
+  for (const problem of hmacSignatureProblems(adapter.connector)) {
+    errors.push(error('hmac-signature', 'connector.authConfig.signature', problem, 'See the tables under "Plain digest and body placement" and "Nonce and header template" for the fields and their values.', 'hmac-signed-requests'));
+  }
+
+  for (const problem of iopTokenProviderProblems(adapter.connector)) {
+    errors.push(error('iop-token-provider', 'connector.authConfig.iop', problem, 'Give authorizeUrl and tokenBaseUrl as https URLs, tokenPath and refreshPath as paths ("/auth/token/create", "/auth/token/refresh"), and the IOP signature (placement "query", encoding "hex-upper", timestampFormat "ms", ${sortedParams}).', 'shop-authorization-token-providers'));
+  }
+
   if (adapter.checkBeforeAuthorization !== undefined) {
     const check = adapter.checkBeforeAuthorization;
     const okPath = check && typeof check === 'object' && typeof check.path === 'string' && check.path.trim() && !/^https?:/i.test(check.path);
@@ -556,8 +919,16 @@ export function validateAdapter(adapter, file, region) {
     if (adapter.connector?.authType !== 'OAUTH2') errors.push(error('check-before-authorization', 'checkBeforeAuthorization', 'checkBeforeAuthorization only runs for adapters signed in through the browser (OAUTH2)', 'Remove it, or use probe for other adapters.', 'adapter-fields'));
   }
 
+  for (const problem of loginTokenXmlProblems(adapter)) {
+    errors.push(error('login-token-xml', 'connector.authConfig', problem, 'See the "XML logins and a token in the request body" section of docs/connectors/login-token-auth.md: loginBodyFormat and loginResponseFormat take "xml", tokenPlacement takes "header" or "body", refreshOnBody401 takes true or false.', 'authentication'));
+  }
+
   for (const problem of errorWhenProblems(adapter.connector?.config?.errorWhen)) {
     errors.push(error('error-when', 'connector.config.errorWhen', problem, 'Each rule needs a path and may set equals, in, matches, messagePath, messageMatches and an error status (400-599).', 'errors-inside-a-200-response'));
+  }
+
+  for (const problem of mcpFixedArgumentsProblems(adapter.connector)) {
+    errors.push(error('mcp-fixed-arguments', 'connector.config.mcpFixedArguments', problem, 'Use an object such as { "meta": { "agent": "…" } } on an MCP connector, or remove the field.', 'mcp-adapters-a-vendors-own-mcp-server'));
   }
 
   const slugUnderscored = adapter.slug.replace(/-/g, '_');
@@ -586,6 +957,9 @@ export function validateAdapter(adapter, file, region) {
       for (const [pname, pdef] of Object.entries(props)) {
         if (!pdef || typeof pdef !== 'object' || !pdef.description) warnings.push(warning('parameter-description', `${base}.parameters.properties.${pname}`, `tool "${tool.name}" parameter "${pname}" missing description`));
       }
+    }
+    for (const problem of xmlTemplateBlockProblems(tool.endpointMapping)) {
+      errors.push(error('xml-template-blocks', `${base}.endpointMapping.bodyTemplate`, problem, 'Open a block with a parameter name and close it with the same name, on a mapping with bodyEncoding "xml".', 'xml-bodies'));
     }
     if (adapter.connector?.type === 'GRAPHQL') errors.push(...graphqlVariableErrors(adapter, tool, base));
   }

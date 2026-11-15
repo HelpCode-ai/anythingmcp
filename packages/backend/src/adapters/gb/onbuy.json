@@ -1,0 +1,1075 @@
+{
+  "slug": "onbuy",
+  "name": "OnBuy",
+  "description": "OnBuy API v2 for sellers on the British marketplace: orders with dispatch and tracking, listings with price and stock by SKU, winning-price checks, catalogue search and product creation, categories, brands, carriers and delivery options. Consumer key and secret key.",
+  "instructions": "## OnBuy\nThis connector works with the **OnBuy API v2** (OnCommerce) at `https://api.onbuy.com/v2`, for sellers on OnBuy, the British marketplace: orders, dispatch and tracking, listings with price and stock, the product catalogue, categories, brands, carriers and delivery options.\n\n**Setup (about 3 minutes)**\n1. Open the **OnBuy API** page in your Seller Control Panel (`https://seller.onbuy.com/inventory/integrations/onbuy-api/`). If you cannot open it, ask the OnBuy seller team for API access.\n2. Copy the **Live** consumer key into `ONBUY_CONSUMER_KEY` and the **Live** secret key into `ONBUY_SECRET_KEY`. Test keys work too, but only see test data.\n3. Enter the site ID in `ONBUY_SITE_ID`: `2000` for OnBuy UK.\n\nThe connector exchanges the two keys for an access token that lasts 15 minutes and renews it on its own. OnBuy ties each token to the address that asked for it, so all calls must leave from the same address: that is the case on AnythingMCP Cloud; on your own server avoid outbound connections that change address.\n\n**Where to start**: `onbuy_list_sites` proves the keys work. `onbuy_list_orders` lists the orders awaiting dispatch; `onbuy_get_order` shows one in full.\n\n**Orders**: `onbuy_list_orders` filters by status, ids and dates. Dispatch with `onbuy_dispatch_orders` (whole order or some products, with or without tracking), then set the exact carrier with `onbuy_update_tracking` and a code from `onbuy_list_carriers`. `onbuy_cancel_orders` and `onbuy_refund_orders` pay the buyer back and are installed switched off. There is no messaging API: buyer emails are relay addresses.\n\n**Listings**: `onbuy_list_listings`, `onbuy_update_listings` (price and stock by SKU, up to 1000 per call), `onbuy_create_listing` on an existing product, `onbuy_check_winning` to see who holds the lead price. `onbuy_delete_listings` is installed switched off; set stock to 0 to pause a listing. `onbuy_list_conditions` and `onbuy_list_delivery_options` give the codes and template ids a listing can carry.\n\n**Products**: OnBuy keeps one page per product (identified by its OPC) that several sellers list on. Search with `onbuy_search_products` first; only when nothing matches, create it with `onbuy_create_product` and follow the job with `onbuy_get_queue` or `onbuy_list_queues`. `onbuy_list_categories`, `onbuy_get_category_features`, `onbuy_search_brands` and `onbuy_list_commission_tiers` supply the ids and fees.\n\n**Formats**: prices are pounds sterling as decimals; dates are UTC, written `YYYY-MM-DD HH:MM:SS`. Lists page with `limit` and `offset`, and `metadata.total_rows` gives the total. Batch calls answer 200 with a result per row: read `success` and `message` of each.\n\n**Limits**: every request type has hourly and daily limits, shown on the API page of the Seller Control Panel. Batch price and stock changes into few large calls. A 429 means the limit is used up.",
+  "aliases": [
+    "OnBuy.com",
+    "OnBuy Seller",
+    "OnCommerce",
+    "OnBuy Marketplace"
+  ],
+  "region": "gb",
+  "category": "e-commerce",
+  "icon": "onbuy",
+  "docsUrl": "https://docs.api.onbuy.com/",
+  "requiredEnvVars": [
+    "ONBUY_CONSUMER_KEY",
+    "ONBUY_SECRET_KEY",
+    "ONBUY_SITE_ID"
+  ],
+  "envVarMeta": {
+    "ONBUY_CONSUMER_KEY": {
+      "label": "Consumer key",
+      "kind": "credential",
+      "help": "Seller Control Panel, OnBuy API page: the Live consumer key.",
+      "link": "https://seller.onbuy.com/inventory/integrations/onbuy-api/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the consumer key only, without spaces."
+    },
+    "ONBUY_SECRET_KEY": {
+      "label": "Secret key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the consumer key on the OnBuy API page. Use the Live pair, not the Test pair.",
+      "link": "https://seller.onbuy.com/inventory/integrations/onbuy-api/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the secret key only, without spaces."
+    },
+    "ONBUY_SITE_ID": {
+      "label": "Site ID",
+      "kind": "setting",
+      "help": "The OnBuy regional site your account sells on. Enter 2000 for OnBuy UK.",
+      "example": "2000",
+      "pattern": "^[0-9]{1,6}$",
+      "patternMessage": "The site ID is a number: 2000 for OnBuy UK."
+    }
+  },
+  "verifyHints": {
+    "400": "OnBuy refused the request, mostly because of a missing or wrong field. The message names it.",
+    "401": "OnBuy did not issue or accept a token. Copy the Live consumer key and secret key again from the OnBuy API page of the Seller Control Panel. A token is also refused when calls leave from another address than the one that requested it.",
+    "403": "This seller account has no permission for that API method. Ask the OnBuy seller team to enable it.",
+    "404": "OnBuy found no order, product, queue entry or category with that id on this site.",
+    "rate_limited": "OnBuy limits each request type per hour and per day; the API page of the Seller Control Panel shows the usage. Send fewer, larger batches and try again later."
+  },
+  "probe": {
+    "tool": "onbuy_list_sites",
+    "params": {
+      "limit": 1
+    }
+  },
+  "prerequisites": "An OnBuy seller account with access to the OnBuy API page of the Seller Control Panel, which shows the Live consumer key and secret key. About 3 minutes.",
+  "connector": {
+    "name": "OnBuy API v2",
+    "type": "REST",
+    "baseUrl": "https://api.onbuy.com/v2",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api.onbuy.com/v2/auth/request-token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "secret_key": "${password}",
+        "consumer_key": "${username}"
+      },
+      "username": "{{ONBUY_CONSUMER_KEY}}",
+      "password": "{{ONBUY_SECRET_KEY}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_at",
+      "expiryFormat": "unix",
+      "tokenTTLSeconds": 900,
+      "proactiveRefreshSeconds": 120,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "onbuy_list_sites",
+      "description": "List the OnBuy regional sites with site_id, name, country_code and default_localisation (2000 is OnBuy UK). A cheap call that proves the keys work. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only sites whose name matches, e.g. UK."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites",
+        "queryParams": {
+          "filter[name]": "$name",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_list_orders",
+      "description": "List orders, by default those awaiting dispatch: order_id, date, updated_at, status, price_subtotal, price_delivery, price_total and sales fees (GBP as decimal strings), delivery_service, buyer (name, relay email, phone), billing_address, delivery_address, the fee breakdown, and the products with sku, opc, quantity, unit and total price and their dispatches. Filter by status, order ids, modification date or creation date range. Dates are UTC, written YYYY-MM-DD HH:MM:SS. Page with limit and offset; `metadata.total_rows` is the total. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Order status. Default awaiting_dispatch; use all for every status.",
+            "enum": [
+              "awaiting_dispatch",
+              "dispatched",
+              "partially_dispatched",
+              "cancelled",
+              "cancelled_by_seller",
+              "cancelled_by_buyer",
+              "partially_refunded",
+              "refunded",
+              "complete",
+              "all"
+            ],
+            "default": "awaiting_dispatch"
+          },
+          "order_ids": {
+            "type": "string",
+            "description": "Only these order ids, comma-separated, e.g. T6DE3V,T6K7WV."
+          },
+          "modified_since": {
+            "type": "string",
+            "description": "Only orders changed since this UTC time, e.g. 2026-11-01 00:00:00."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Orders placed at or after this UTC time, e.g. 2026-11-01 00:00:00. Use together with date_to."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Orders placed at or before this UTC time."
+          },
+          "previously_exported": {
+            "type": "integer",
+            "description": "1: only orders already fetched through the API. 0: only orders not fetched yet. Leave out for both.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "sort_created": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "sort_modified": {
+            "type": "string",
+            "description": "Sort by modification date.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 50.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "filter[status]": "$status",
+          "filter[order_ids]": "$order_ids",
+          "filter[modified_since]": "$modified_since",
+          "filter[date_from]": "$date_from",
+          "filter[date_to]": "$date_to",
+          "filter[previously_exported]": "$previously_exported",
+          "sort[created]": "$sort_created",
+          "sort[modified]": "$sort_modified",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_get_order",
+      "description": "Read one order: order_id, date, updated_at, status, price_subtotal, price_delivery, price_total and sales fees (GBP as decimal strings), delivery_service, buyer (name, relay email, phone), billing_address, delivery_address, the fee breakdown, and the products with sku, opc, quantity, unit and total price and their dispatches. The billing address can be empty. The dispatch_id of each dispatch is what onbuy_update_tracking needs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "OnBuy order id, e.g. T58ZSDG (`order_id` of onbuy_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_dispatch_orders",
+      "description": "Mark one or more orders as dispatched; OnBuy emails the buyer. With only order_id the whole order is dispatched; list products to dispatch a part. Tracking is optional: leave it out for untracked parcels. Returns a result per order id with success and, when refused, message and errorcode.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "description": "Orders to dispatch. Each object: order_id, optionally products (list of objects with sku or opc and quantity) for a partial dispatch, and optionally tracking, an object with number, supplier_name (your name for the carrier, required with a number) and url.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "orders"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/dispatch",
+        "bodyMapping": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "orders": "$orders"
+        }
+      }
+    },
+    {
+      "name": "onbuy_update_tracking",
+      "description": "Add or correct the tracking number and the carrier of a dispatch that already exists. Use it to set the exact carrier with an onbuy_carrier_code from onbuy_list_carriers. Returns success per dispatch_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dispatches": {
+            "type": "array",
+            "description": "Dispatches to update. Each object: dispatch_id (from the dispatches of an order), tracking_number, and optionally onbuy_carrier_code.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "dispatches"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/dispatches/tracking",
+        "bodyMapping": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "dispatches": "$dispatches"
+        }
+      }
+    },
+    {
+      "name": "onbuy_cancel_orders",
+      "description": "Cancel one or more orders. OnBuy refunds the buyer and the cancellation counts against the seller. It cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "description": "Orders to cancel. Each object: order_id, order_cancellation_reason_id (1 Out of Stock, 2 Buyer Cancelled Order, 3 Undeliverable Address, 4 Pricing Error, 5 Other Issue) and cancel_order_additional_info (text).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "orders"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/cancel",
+        "bodyMapping": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "orders": "$orders"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "onbuy_refund_orders",
+      "description": "Refund one or more orders in full or in part. This pays money back to the buyer and cannot be undone. Returns order_refund_id and refund_total per order. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "description": "Orders to refund. Each object: order_id, order_refund_reason_id (1 Customer Return, 2 Item not Delivered, 3 Item is Damaged/Faulty, 4 Incorrect Item Sent, 5 Other Issue, 6 Order Cancelled), optionally delivery (delivery cost to refund), seller_note, customer_note and items (list of objects with onbuy_internal_reference and amount) for a partial refund.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "orders"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/refund",
+        "bodyMapping": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "orders": "$orders"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "onbuy_list_listings",
+      "description": "List your product listings: name, sku, group_sku, price and sale_price (GBP), stock, condition, opc, product_url, handling_time, delivery_template_id, boost_marketing_commission, created_at and updated_at. Filter by SKU, OPC, condition or stock. Page with limit and offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Only the listing with exactly this SKU."
+          },
+          "opc": {
+            "type": "string",
+            "description": "Only listings of this OnBuy product code, e.g. PN8JV6."
+          },
+          "condition": {
+            "type": "string",
+            "description": "Only this condition code, e.g. new (codes from onbuy_list_conditions)."
+          },
+          "in_stock": {
+            "type": "integer",
+            "description": "1: only listings in stock. 0: only listings out of stock.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "sort_last_created": {
+            "type": "string",
+            "description": "Sort by creation date.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 50.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "filter[sku]": "$sku",
+          "filter[opc]": "$opc",
+          "filter[condition]": "$condition",
+          "filter[in_stock]": "$in_stock",
+          "sort[last_created]": "$sort_last_created",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_create_listing",
+      "description": "Create your listing on a product that already exists on OnBuy (found with onbuy_search_products), with price and stock per condition. Returns the created listing ids. A new product needs onbuy_create_product instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "opc": {
+            "type": "string",
+            "description": "OnBuy product code of the product, e.g. PN8JV6."
+          },
+          "listings": {
+            "type": "object",
+            "description": "Listing data keyed by condition code (e.g. new). Each value is an object with sku, price (GBP), stock, and optionally group_sku, handling_time (days), return_time (days), free_returns, warranty (months), delivery_template_id, delivery_weight (kg), condition_notes, sale_price, sale_start_date, sale_end_date (YYYY-MM-DD HH:MM:SS)."
+          }
+        },
+        "required": [
+          "opc",
+          "listings"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/{opc}/listings",
+        "bodyMapping": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "opc": "$opc",
+          "listings": "$listings"
+        }
+      }
+    },
+    {
+      "name": "onbuy_update_listings",
+      "description": "Change price, stock or the boost commission of up to 1000 listings by SKU in one call. OnBuy asks for large batches instead of one call per SKU, because calls count against hourly and daily limits. Returns the stored values per SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listings": {
+            "type": "array",
+            "description": "Listings to change. Each object: sku and any of price (GBP), stock (integer), boost_marketing_commission (percent), sale_price, sale_start_date, sale_end_date.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "listings"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/listings/by-sku",
+        "bodyMapping": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "listings": "$listings"
+        }
+      }
+    },
+    {
+      "name": "onbuy_delete_listings",
+      "description": "Delete listings by SKU (up to 1000 per call). The offers disappear from OnBuy; to pause one, set its stock to 0 with onbuy_update_listings instead. Returns ok or an error per SKU. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "SKUs of the listings to delete.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 1000
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/listings/by-sku",
+        "bodyMapping": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "skus": "$skus"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "onbuy_check_winning",
+      "description": "Check for a list of SKUs whether your listing is the winning one on its product page: per sku your price, the lead_price of the winning listing and winning true or false. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "array",
+            "description": "SKUs to check, at most 1000.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 1000
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/check-winning",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "skus[]": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_search_products",
+      "description": "Search the OnBuy catalogue by name, barcode, OPC or MPN, to find out whether a product already exists before listing it: opc, name, url, thumbnail_url and product_codes. Up to 50 barcodes can be searched at once, comma-separated. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text: a name, one or more barcodes (comma-separated), an OPC or an MPN."
+          },
+          "field": {
+            "type": "string",
+            "description": "Which field query is matched with.",
+            "enum": [
+              "name",
+              "product_code",
+              "opc",
+              "mpn"
+            ],
+            "default": "name"
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Only products in this category."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 20.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "filter[query]": "$query",
+          "filter[field]": "$field",
+          "filter[category_id]": "$category_id",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_create_product",
+      "description": "Create a product that does not exist on OnBuy yet, optionally with your listing. The product is queued: the answer carries a queue_id, and onbuy_get_queue tells when it succeeded and under which opc. A listing created this way starts with stock 0 and price 0, so set both afterwards with onbuy_update_listings. Search first with onbuy_search_products to avoid duplicates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id from onbuy_list_categories (only categories with can_list_in true)."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Product description."
+          },
+          "product_codes": {
+            "type": "array",
+            "description": "Barcodes (EAN-13 or UPC) as strings.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "brand_name": {
+            "type": "string",
+            "description": "Brand name. Give this or brand_id."
+          },
+          "brand_id": {
+            "type": "integer",
+            "description": "Brand id from onbuy_search_brands; 1 means unbranded. Give this or brand_name."
+          },
+          "default_image": {
+            "type": "string",
+            "description": "URL of the main image."
+          },
+          "additional_images": {
+            "type": "array",
+            "description": "URLs of further images.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mpn": {
+            "type": "string",
+            "description": "Manufacturer part number."
+          },
+          "rrp": {
+            "type": "string",
+            "description": "Recommended retail price in GBP, e.g. 24.99."
+          },
+          "summary_points": {
+            "type": "array",
+            "description": "Short bullet points.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "product_data": {
+            "type": "array",
+            "description": "Extra data rows, each an object with label, value and group.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "features": {
+            "type": "array",
+            "description": "Category features, each an object with option_id from onbuy_get_category_features.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "listings": {
+            "type": "object",
+            "description": "Your listing keyed by condition code, e.g. new, each with sku, price and stock."
+          },
+          "published": {
+            "type": "integer",
+            "description": "1 publishes the product once created; 0 keeps it as a draft, which OnBuy clears after 72 hours.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
+          },
+          "uid": {
+            "type": "string",
+            "description": "Your own reference, returned with the queue entry."
+          }
+        },
+        "required": [
+          "category_id",
+          "product_name",
+          "description",
+          "product_codes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "uid": "$uid",
+          "published": "$published",
+          "category_id": "$category_id",
+          "product_name": "$product_name",
+          "description": "$description",
+          "product_codes": "$product_codes",
+          "brand_name": "$brand_name",
+          "brand_id": "$brand_id",
+          "default_image": "$default_image",
+          "additional_images": "$additional_images",
+          "mpn": "$mpn",
+          "rrp": "$rrp",
+          "summary_points": "$summary_points",
+          "product_data": "$product_data",
+          "features": "$features",
+          "listings": "$listings"
+        }
+      }
+    },
+    {
+      "name": "onbuy_list_queues",
+      "description": "List queued jobs such as product creations with their status (success, failed or pending), uid, opc, product_url and warning or error messages. Filter by queue ids or status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queue_ids": {
+            "type": "string",
+            "description": "Only these queue ids, comma-separated."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only jobs in this status.",
+            "enum": [
+              "success",
+              "failed",
+              "pending"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/queues",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "filter[queue_ids]": "$queue_ids",
+          "filter[status]": "$status",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_get_queue",
+      "description": "Read one queued job: status (success, failed or pending), uid, the opc and product_url once created, and error or warning messages. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queue_id": {
+            "type": "string",
+            "description": "Queue id returned by onbuy_create_product."
+          }
+        },
+        "required": [
+          "queue_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/queues/{queue_id}",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_list_categories",
+      "description": "Search the OnBuy category tree: category_id, name, category_tree (path), parent_id, can_list_in (only these accept listings), product_code_required, the available condition codes and commission_tier_id. Filter by name or path text. At most 100 rows per call. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of a category name or path, e.g. Non-Fiction."
+          },
+          "name": {
+            "type": "string",
+            "description": "Part of the category name, any case."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Only this category."
+          },
+          "can_list_in": {
+            "type": "integer",
+            "description": "1: only categories that accept listings.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 20.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "filter[search]": "$search",
+          "filter[name]": "$name",
+          "filter[category_id]": "$category_id",
+          "filter[can_list_in]": "$can_list_in",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_get_category_features",
+      "description": "List the features of a category (such as Size or Colour): feature_id, name, whether it is required, and its options with option_id and name. The option ids go into the features of onbuy_create_product. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id from onbuy_list_categories."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 20.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/{category_id}/features",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_search_brands",
+      "description": "Search brands known to OnBuy by name: brand_id, name and type. Use the brand_id in onbuy_create_product. At most 100 rows per call. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Brand name or part of it."
+          },
+          "sort_name": {
+            "type": "string",
+            "description": "Sort by name.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 20.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brands",
+        "queryParams": {
+          "filter[name]": "$name",
+          "sort[name]": "$sort_name",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_list_carriers",
+      "description": "List the carriers OnBuy supports, optionally filtered by name: onbuy_carrier_code and carrier_name. The code is used in onbuy_update_tracking. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Carrier name or part of it, e.g. royal."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "filter[name]": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_list_conditions",
+      "description": "List the listing conditions OnBuy accepts: condition_id, name and code (new, refurbished grades and so on). The code keys the listings of onbuy_create_listing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/conditions",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_list_commission_tiers",
+      "description": "List the commission tiers of the site: name, sales fee percentage, minimum amount in pence and thresholds, each with an id that matches commission_tier_id of a category. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 100. Default 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/commission-tiers",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "onbuy_list_delivery_options",
+      "description": "List the delivery options set up on the seller account: template name and seller_delivery_template_id, country and region, delivery type, days and price. The template id can be set on a listing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows to return, at most 1000. Default 100.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, for paging. `metadata.total_rows` in the answer tells how many rows exist.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/deliveries",
+        "queryParams": {
+          "site_id": "{{ONBUY_SITE_ID}}",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

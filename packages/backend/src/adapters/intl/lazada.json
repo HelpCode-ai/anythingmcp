@@ -1,0 +1,1634 @@
+{
+  "slug": "lazada",
+  "name": "Lazada Seller",
+  "aliases": [
+    "Lazada Open Platform",
+    "Lazada Seller Center",
+    "LazOP"
+  ],
+  "description": "Let your AI work with your Lazada shop in Singapore, Thailand, Malaysia, Vietnam, the Philippines or Indonesia: orders, packing and ready to ship, shipping labels and tracking, products with price and stock, payouts, reviews and return requests.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "lazada",
+  "docsUrl": "https://open.lazada.com/apps/doc/doc?nodeId=10533&docId=108130",
+  "instructions": "## Lazada Seller\nThis connector calls the **Lazada Open Platform API** for one Lazada shop in one country (Singapore, Thailand, Malaysia, Vietnam, the Philippines or Indonesia): orders and their items, packing and ready to ship, shipping labels and tracking, products with price and stock, categories and brands, seller performance, payout statements and transactions, reviews with replies, and return, refund and cancellation requests. Cancelling orders and removing or deactivating products are installed switched off. Nothing here moves money or decides a return or a refund.\n\n**What you need**: the shop's Seller Center login, a Lazada Open Platform account with the partner type Enterprise/Personal Self-Developed and the role Software Developer, and an app of the category Seller In-house APP. About 20 minutes of work, plus Lazada's reviews: the account's basic information within 3 business days, the app category usually on the same day.\n\n**Setup**\n1. Register at https://open.lazada.com/apps/user/register, verify the email address, fill in the basic information with the partner type **Enterprise/Personal Self-Developed** and submit it. Lazada reviews it within 3 business days. Then register the role **Software Developer**.\n2. In the App Console (https://isvconsole.lazada.com/apps/console/apps) open **App Management** and click **Create App**. Find **Seller In-house App**, click **Apply** and enter a reason; Lazada usually reviews it on the same day. When the category is **Active**, click it and then **Create App**.\n3. As **Callback URL** enter this server's address followed by `/api/iop-auth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/iop-auth/callback`). It has to match exactly, or the sign-in ends with \"Redirect uri does not match the callback URL of the app\". The App Logo must be exactly 120x120 px. Click **Confirm**.\n4. On the app's details page (**Manage** in the app list) copy the **App Key** into `LAZADA_APP_KEY` and the **App Secret** into `LAZADA_APP_SECRET`, and pick the shop's country for `LAZADA_HOST`.\n5. An app of a self-developed account has the authorization policy \"Allow binding user to authorize\": at the very bottom of the app's details page, under **Authorized Seller Whitelist**, click **Add** and enter the seller ID (the short code at the top left of Seller Center, Settings), the email and password of the shop's Seller Center login and the country. A cross-border shop selects China or adds all six sites. Without this entry the sign-in ends with a seller whitelist error.\n6. Install the connector and click **Authorize with Provider** (the last step of the setup guide does it). On Lazada's page select the shop's country, click **Use Seller Login**, sign in with the shop's email and password (QR code login does not work here), check that the email under My Account is the shop's and click **Authorize**.\n\n**Tokens**: the access token and its lifetime are read from Lazada's token answer (`expires_in` and `refresh_expires_in`, in seconds), stored encrypted on the connector and renewed automatically before they run out. While the app is in **Testing** status both tokens last about a day and the app may make 10,000 calls a day; once it is **Online** (the **Apply Online** button on the app's page, which cannot be undone) Lazada documents 30 days for the access token, 180 days for the refresh token and 10,000,000 calls a day. Lazada does not renew the refresh token itself: when it ends, the connector shows that it needs a new authorization and someone clicks **Authorize with Provider** again. A token is valid for one country only, so `LAZADA_HOST` must be the country that was selected at the sign-in; a shop in several countries needs one connector per country. After Lazada adds an API permission group to the app, authorize again: a token keeps the permissions it was issued with.\n\n**How it signs**: every call carries `app_key`, `access_token`, a millisecond `timestamp`, `sign_method=sha256` and `sign`: an upper-case HMAC-SHA256, keyed with the App Secret, over the API path followed by every parameter sorted by name as name plus value. The App Secret never leaves AnythingMCP. Lazada refuses a timestamp more than 7200 seconds off.\n\n**Where to start**: `lazada_get_seller` checks the authorization and names the shop; `lazada_get_seller_performance` gives its ratings against Lazada's targets.\n- Orders: `lazada_list_orders` (a time window is mandatory), `lazada_get_order`, then `lazada_get_order_items` or, for up to 50 orders at once, `lazada_get_multiple_order_items`. Lazada has no order status: every item has its own, and the order lists the distinct ones.\n- Shipping an order: read the items, then `lazada_get_shipment_providers`, `lazada_pack_order_items` (returns package_id and tracking_number), `lazada_get_shipping_label` and `lazada_set_ready_to_ship`. Only items in status pending or repacked can be packed and only packed ones set ready to ship. `lazada_get_order_trace` follows the parcel afterwards; `lazada_get_order_document` reads an invoice or another order document.\n- Products: `lazada_list_products`, `lazada_get_product`, `lazada_update_price_quantity` for price and stock. New listings: `lazada_get_category_tree`, `lazada_get_category_attributes`, `lazada_list_brands`, `lazada_migrate_image`, then `lazada_create_product`; `lazada_update_product` changes content. `lazada_list_qc_alert_products` shows what quality control flagged. `lazada_deactivate_product` and `lazada_remove_product` are switched off at install.\n- Money: `lazada_get_payout_status` (statements) and `lazada_list_transactions` (fee and sales lines). Both only read.\n- Reviews: `lazada_list_review_ids` for a product and a window of at most 7 days, `lazada_get_reviews` for the texts, `lazada_reply_to_review` to answer.\n- Returns and cancellations: `lazada_list_reverse_orders` and `lazada_get_reverse_order` only read. `lazada_validate_order_cancellation` tells whether items can be cancelled and with which reasons; `lazada_cancel_order_items` is switched off at install, because a cancellation cannot be undone and hurts the shop's rating.\n\n**Ids, times and amounts**: order, order item, product (item_id), SKU and review ids are long numbers; pass them as digits. Order windows take ISO 8601 with an offset (`2026-11-01T00:00:00+08:00`), product windows the same without the colon in the offset (`+0800`), finance calls plain dates (`YYYY-MM-DD`), reviews and reverse orders Unix milliseconds. Use the time zone of the shop's country. Order amounts are decimal strings in the shop's currency (`currency` on each item); what the buyer paid for an item is paid_price plus shipping_amount. Reverse-order amounts are in cents, except in Vietnam. Since 2026 Lazada masks buyer names, addresses and phone numbers in order reads with asterisks; the shipping label still carries the full address.\n\n**Limits**: order lists page by 100 with an offset up to 5000, product lists by 50 up to 10000, brands by 200, transactions by 500 over less than 180 days. The same order can be read 10 times per 30 seconds. Stock and price updates take up to 50 SKUs per call. Each API also has a per-second limit shared by all apps; a refused call can simply be sent again a second later.\n\n**Answers and errors**: Lazada answers HTTP 200 with `code` 0 and the result in `data` or `result`; any other `code` is an error with `type` (ISV: the request, ISP: Lazada's service, SYSTEM: the platform) and `message`. `IllegalAccessToken`: the token ended or belongs to another country. `IncompleteSignature` or `InvalidAppKey`: App Key and App Secret do not belong together. `InsufficientPermission`: the app's API Permission Group lacks this API. `ApiCallLimit`, `AppApiCallLimit` and E1002: a call limit, try again later. Packing, ready to ship and label calls answer `code` 0 with a `result` whose items carry their own item_err_code: 0 means success.",
+  "prerequisites": "A Lazada seller account, a Lazada Open Platform account (partner type Enterprise/Personal Self-Developed, role Software Developer) and an app of the category Seller In-house APP whose Callback URL is this server's address followed by /api/iop-auth/callback, with the shop on the app's Authorized Seller Whitelist. About 20 minutes, plus Lazada's review of the account (within 3 business days) and of the app category (usually the same day).",
+  "appRegistrationUrl": "https://isvconsole.lazada.com/apps/console/apps",
+  "requiredEnvVars": [
+    "LAZADA_HOST",
+    "LAZADA_APP_KEY",
+    "LAZADA_APP_SECRET"
+  ],
+  "envVarMeta": {
+    "LAZADA_HOST": {
+      "label": "Country",
+      "kind": "address",
+      "help": "The country of the Lazada shop you authorize. Each country has its own API address, and a token works in one country only.",
+      "link": "https://open.lazada.com/apps/doc/doc?nodeId=10400&docId=108065",
+      "pattern": "^https://api\\.lazada\\.(sg|co\\.th|com\\.my|vn|com\\.ph|co\\.id)$",
+      "patternMessage": "Pick one of the six Lazada country addresses, for example https://api.lazada.sg.",
+      "options": [
+        {
+          "value": "https://api.lazada.sg",
+          "label": "Singapore"
+        },
+        {
+          "value": "https://api.lazada.co.th",
+          "label": "Thailand"
+        },
+        {
+          "value": "https://api.lazada.com.my",
+          "label": "Malaysia"
+        },
+        {
+          "value": "https://api.lazada.vn",
+          "label": "Vietnam"
+        },
+        {
+          "value": "https://api.lazada.com.ph",
+          "label": "Philippines"
+        },
+        {
+          "value": "https://api.lazada.co.id",
+          "label": "Indonesia"
+        }
+      ]
+    },
+    "LAZADA_APP_KEY": {
+      "label": "App Key",
+      "kind": "setting",
+      "help": "Lazada App Console, App Management, Manage on your app: the App Key (a number).",
+      "example": "101406",
+      "link": "https://isvconsole.lazada.com/apps/console/apps",
+      "pattern": "^[0-9]{4,12}$",
+      "patternMessage": "The App Key is a number."
+    },
+    "LAZADA_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page as the App Key: the App Secret. It signs every request and is never sent.",
+      "link": "https://isvconsole.lazada.com/apps/console/apps",
+      "pattern": "^\\S{8,128}$",
+      "patternMessage": "Paste the App Secret alone, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Lazada refused the app key, the signature or the shop's access token. Check that LAZADA_APP_KEY and LAZADA_APP_SECRET belong to the same app and that LAZADA_HOST is the country selected at the sign-in (a token works in one country only), then click Authorize with Provider again.",
+    "403": "Lazada does not let this app make the call. In the App Console check the app's API Permission Group (after Lazada adds a group, authorize the shop again), that the shop's registration in Seller Center is complete, and the app's IP Whitelist: leave it empty or add this server's outbound address.",
+    "404": "Lazada has no API at this address. Check that LAZADA_HOST is one of the six country addresses, without a path.",
+    "rate_limited": "Lazada limits calls per API and per app: 10,000 calls a day while the app is in Testing status, 10,000,000 once it is Online, and 10 reads of the same order per 30 seconds. Wait and try again; apply for Online status in the App Console when testing is done."
+  },
+  "probe": {
+    "tool": "lazada_get_seller"
+  },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 20,
+    "examples": [
+      "Which Lazada orders still have to be packed?",
+      "Pack order 560694402192001 and give me its shipping label",
+      "Set the price of SKU MUG-01 to 24.90 and its stock to 50",
+      "Show this week's reviews of my best seller and draft replies"
+    ],
+    "needs": [
+      "Your Lazada shop's Seller Center login (email and password)",
+      "A Lazada Open Platform account with the partner type **Enterprise/Personal Self-Developed**",
+      "About 20 minutes, plus Lazada's reviews: the account's basic information within 3 business days, the app category usually on the same day"
+    ],
+    "why": "Lazada lets other tools reach a shop only through an app registered on the Lazada Open Platform. A seller creates one for their own shop: AnythingMCP signs every call with the app's key and secret and asks Lazada for access to the shop.\n\nYou approve that access on Lazada's own page. Lazada only lets a self-developed app sign in shops that are on the app's whitelist, which is why the setup has a step for it. Deleting the connector removes the keys and the access it holds.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Create your Lazada app",
+        "body": "Sign in to the **Lazada Open Platform** (register first if you have no account: your basic information is reviewed within 3 business days, then you register the role below).\n\nIn the App Console open **App Management** and click **Create App**. Find **Seller In-house App**, click **Apply** and enter a reason. Lazada usually reviews it on the same day. When the category is **Active**, click it, then **Create App**, fill in the form with the values below and click **Confirm**.",
+        "action": {
+          "label": "Open the Lazada App Console",
+          "url": "https://isvconsole.lazada.com/apps/console/apps"
+        },
+        "values": [
+          {
+            "label": "Partner type",
+            "value": "Enterprise/Personal Self-Developed",
+            "pick": true,
+            "note": "On the basic information page of a new account."
+          },
+          {
+            "label": "Role",
+            "value": "Software Developer",
+            "pick": true
+          },
+          {
+            "label": "App category",
+            "value": "Seller In-house APP",
+            "pick": true
+          },
+          {
+            "label": "Callback URL",
+            "value": "{{redirectUri}}",
+            "note": "Paste it exactly: Lazada refuses a sign-in that comes back to another address."
+          }
+        ],
+        "confirm": "I created the app with this callback URL",
+        "problems": [
+          {
+            "q": "I have no Lazada Open Platform account",
+            "a": "Register at [open.lazada.com](https://open.lazada.com/apps/user/register), verify your email address and fill in the basic information with the partner type **Enterprise/Personal Self-Developed**. Lazada reviews it within 3 business days. Then register the role **Software Developer**."
+          },
+          {
+            "q": "There is no Create App button in the category",
+            "a": "The category has to be **Active** first. Lazada usually reviews the application on the same day, or on the next business day after a holiday."
+          },
+          {
+            "q": "Lazada refuses the App Logo",
+            "a": "The logo must be exactly 120x120 px."
+          },
+          {
+            "q": "I already created the app with another callback URL",
+            "a": "Open the app in the App Console and edit its **Callback URL**: it can be changed at any time."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Copy your App Key and App Secret",
+        "body": "In the App Console, click **Manage** on your app. Copy its **App Key** and **App Secret** into the fields below, and pick the country of your shop.",
+        "action": {
+          "label": "Open the Lazada App Console",
+          "url": "https://isvconsole.lazada.com/apps/console/apps"
+        },
+        "fields": [
+          "LAZADA_APP_KEY",
+          "LAZADA_APP_SECRET",
+          "LAZADA_HOST"
+        ],
+        "problems": [
+          {
+            "q": "Which country do I pick?",
+            "a": "The country of the shop you will sign in with. Lazada's access is valid for one country only: a shop in several countries needs one connector per country."
+          }
+        ]
+      },
+      {
+        "id": "whitelist",
+        "title": "Add your shop to the seller whitelist",
+        "body": "An app of a self-developed account may only sign in shops that are on its whitelist. On the app's details page (**Manage**), scroll to the very bottom, and under **Authorized Seller Whitelist** click **Add**.\n\nEnter the **Seller ID** (the short code at the top left of Seller Center, Settings), the email and password of the shop's Seller Center login, and the country. Lazada documents no waiting time for this entry: you can go on once it is saved.\n\nA new app is in **Testing** status: 10,000 calls a day, and an authorization that lasts about a day. When everything works, click **Apply Online** on the app's page (this cannot be undone), then authorize once more for a long-lived authorization.",
+        "action": {
+          "label": "Open the Lazada App Console",
+          "url": "https://isvconsole.lazada.com/apps/console/apps"
+        },
+        "confirm": "My shop is on the Authorized Seller Whitelist",
+        "problems": [
+          {
+            "q": "Where do I find the Seller ID?",
+            "a": "It is the **short code** shown at the top left of the **Settings** page in Seller Center."
+          },
+          {
+            "q": "My shop is a cross-border shop",
+            "a": "As country select **China**, or add all six sites to the whitelist."
+          }
+        ]
+      },
+      {
+        "id": "authorize",
+        "title": "Authorize your shop",
+        "body": "Continue saves your keys and opens Lazada's authorization page. Select the country of your shop, click **Use Seller Login** and sign in with the shop's email and password. Back on the authorization page, check that the email under **My Account** is your shop's, then click **Authorize**. You come back here on your own.",
+        "problems": [
+          {
+            "q": "Lazada says \"Redirect uri does not match the callback URL of the app\"",
+            "a": "The **Callback URL** of the app differs from the one in step 1, or the App Key belongs to another app. Copy the address again with the button, save it in the app, and check the App Key."
+          },
+          {
+            "q": "Lazada shows a seller whitelist error",
+            "a": "The shop you signed in with is not on the app's **Authorized Seller Whitelist**. Go back one step and add it."
+          },
+          {
+            "q": "Lazada says the seller short code is invalid",
+            "a": "The page is signed in with another site or another seller account. Click **Switch**, log out of Seller Center, come back to the authorization page, select your shop's country and sign in again."
+          },
+          {
+            "q": "A \"Missing parameter\" error appears after the login",
+            "a": "This can happen on the first authorization. Keep the browser window open and start the authorization again from this step."
+          },
+          {
+            "q": "After the login I land in Seller Center instead of the authorization page",
+            "a": "You were already signed in to Seller Center, or used the QR code. Open a new private browser window and sign in with email and password: QR code login does not work for an authorization."
+          },
+          {
+            "q": "The connector asks for a new authorization every day",
+            "a": "The app is still in **Testing** status, where an authorization lasts about a day. Click **Apply Online** on the app's page, then authorize again."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Lazada Open Platform",
+    "type": "REST",
+    "baseUrl": "{{LAZADA_HOST}}/rest",
+    "authType": "HMAC",
+    "authConfig": {
+      "tokenProvider": "iop",
+      "iop": {
+        "appKey": "{{LAZADA_APP_KEY}}",
+        "authorizeUrl": "https://auth.lazada.com/oauth/authorize",
+        "tokenBaseUrl": "https://auth.lazada.com/rest",
+        "tokenPath": "/auth/token/create",
+        "refreshPath": "/auth/token/refresh",
+        "authorizeParams": {
+          "force_auth": "true"
+        }
+      },
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex-upper",
+        "secret": "{{LAZADA_APP_SECRET}}",
+        "placement": "query",
+        "paramName": "sign",
+        "timestampParam": "timestamp",
+        "timestampFormat": "ms",
+        "queryParams": {
+          "app_key": "{{LAZADA_APP_KEY}}",
+          "sign_method": "sha256"
+        },
+        "template": "${apiPath}${sortedParams}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "matches": "AccessToken|RefreshToken|Signature|AppKey|InvalidCode|AUTH_TYPE",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 401
+        },
+        {
+          "path": "code",
+          "matches": "Permission|WhiteIp|IpLimit|Forbidden|Denied|Mp3SellerApiLimit|SellerNotVerified",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 403
+        },
+        {
+          "path": "code",
+          "matches": "CallLimit|TRAFFIC_CONTROL|Throttl|Frequen|^E?(901|1002|1009)$",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 429
+        },
+        {
+          "path": "code",
+          "matches": "^(?!0+$).+",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "messageMatches": "E901|E1002|E1009|Query limit exceeded|too frequent",
+          "status": 429
+        },
+        {
+          "path": "code",
+          "matches": "^(?!0+$).+",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "lazada_get_seller",
+      "description": "The authorized Lazada shop: seller_id, name (shop name), name_company, short_code, email, location, status (ACTIVE, INACTIVE or DELETED), verified, cb (true for a cross-border seller) and marketplaceEaseMode. No parameters; the lightest call, so it also checks that the authorization works.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/get"
+      }
+    },
+    {
+      "name": "lazada_get_seller_performance",
+      "description": "Performance indicators of the shop as Seller Center shows them: main_category_id, main_category_name and `indicators`, each with name, type (for example POSITIVE_SELLER_RATING), score, formatted_score, target, formatted_target and target_respected (true when the target is met).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "description": "Language of the indicator names and tips. Defaults to en-US.",
+            "enum": [
+              "en-US",
+              "zh-CN",
+              "ms-MY",
+              "th-TH",
+              "vi-VN",
+              "id-ID"
+            ],
+            "default": "en-US"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/performance/get",
+        "queryParams": {
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "lazada_list_orders",
+      "description": "Orders of the shop in a time window: `data.countTotal` (all matches), `data.count` (this page) and `data.orders` with order_id, order_number, statuses (the distinct statuses of the order's items; Lazada has no order-level status), price, voucher, shipping_fee, payment_method, items_count, created_at, updated_at, shipping and billing address, buyer_note, warehouse_code, need_cancel_confirm and is_cancel_pending. Give created_after or update_after: one of the two is mandatory. Amounts are decimal strings in the shop's currency; what the buyer paid is price minus voucher plus shipping_fee. Pages of up to 100 with offset (at most 5000: beyond that move created_after to the last order read and start again at 0). Buyer names, addresses and phone numbers can come back masked with asterisks.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Orders created at or after this time. ISO 8601 with offset, for example `2026-11-01T00:00:00+08:00`."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Orders created at or before this time. ISO 8601 with offset, for example `2026-11-01T00:00:00+08:00`."
+          },
+          "update_after": {
+            "type": "string",
+            "description": "Orders updated at or after this time. ISO 8601 with offset, for example `2026-11-01T00:00:00+08:00`."
+          },
+          "update_before": {
+            "type": "string",
+            "description": "Orders updated at or before this time. ISO 8601 with offset, for example `2026-11-01T00:00:00+08:00`."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only orders that have an item in this status. Leave out for every status.",
+            "enum": [
+              "unpaid",
+              "pending",
+              "canceled",
+              "ready_to_ship",
+              "delivered",
+              "returned",
+              "shipped",
+              "failed",
+              "topack",
+              "toship",
+              "shipping",
+              "lost"
+            ]
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort column.",
+            "enum": [
+              "created_at",
+              "updated_at"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort order.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Orders to skip, from 0. At most 5000.",
+            "minimum": 0,
+            "maximum": 5000,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, up to 100. Defaults to 50 here.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/get",
+        "queryParams": {
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "update_after": "$update_after",
+          "update_before": "$update_before",
+          "status": "$status",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_order",
+      "description": "One order by id: statuses of its items, price, voucher, shipping_fee, payment_method, items_count, created_at, updated_at, shipping and billing address, buyer_note, delivery_info, warehouse_code, need_cancel_confirm (the buyer asked to cancel and the seller must answer) and is_cancel_pending. The items are in lazada_get_order_items. Lazada allows 10 reads of the same order per 30 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id (digits), from lazada_list_orders.",
+            "pattern": "^[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/get",
+        "queryParams": {
+          "order_id": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_order_items",
+      "description": "The items of one order, one object per unit sold (two identical products are two items with their own order_item_id): order_item_id, name, sku (seller SKU), shop_sku, status, item_price, paid_price, shipping_amount, voucher_amount, tax_amount, currency, package_id, tracking_code, shipment_provider, shipping_type, shipping_provider_type, sla_time_stamp (ship-by time), is_digital, delivery_option_sof (1 for an order the seller delivers), is_fbl, reason, cancel_return_initiator, need_cancel_confirm and reverse_order_id. Read this before packing: only items in status pending or repacked can be packed, and only packed items can be set ready to ship. Unpaid and canceled items cannot be packed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id (digits).",
+            "pattern": "^[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/items/get",
+        "queryParams": {
+          "order_id": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_multiple_order_items",
+      "description": "The items of up to 50 orders in one call: per order its order_id, order_number and `order_items` with order_item_id, name, sku (seller SKU), shop_sku, status, item_price, paid_price, shipping_amount, voucher_amount, tax_amount, currency, package_id, tracking_code, shipment_provider, shipping_type, shipping_provider_type, sla_time_stamp (ship-by time), is_digital, delivery_option_sof (1 for an order the seller delivers), is_fbl, reason, cancel_return_initiator, need_cancel_confirm and reverse_order_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "string",
+            "description": "Order ids separated by commas, without spaces, at most 50. Example: `560694402192001,560694402192002`.",
+            "pattern": "^[0-9]{1,20}(,[0-9]{1,20})*$"
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/items/get",
+        "queryParams": {
+          "order_ids": "[${order_ids}]"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_order_trace",
+      "description": "Logistics tracking of an order, available once it is ready to ship: `result.module` with, per package, ofc_package_id, tracking_number and `logistic_detail_info_list` (title, description, status_code, detail_type and event_time in Unix milliseconds).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id (digits).",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the event texts, for example en. Defaults to en.",
+            "default": "en"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logistic/order/trace",
+        "queryParams": {
+          "order_id": "$order_id",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_order_document",
+      "description": "A document of order items: `data.document` with file (base64; decode it and read it by mime_type), mime_type and document_type. The items must be packed first, or Lazada answers E034. For the shipping label of a package use lazada_get_shipping_label, which also gives a PDF link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "doc_type": {
+            "type": "string",
+            "description": "The document to get.",
+            "enum": [
+              "invoice",
+              "shippingLabel",
+              "carrierManifest"
+            ]
+          },
+          "order_item_ids": {
+            "type": "string",
+            "description": "Order item ids separated by commas, without spaces. Example: `279709,279710`.",
+            "pattern": "^[0-9]{1,20}(,[0-9]{1,20})*$"
+          }
+        },
+        "required": [
+          "doc_type",
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/document/get",
+        "queryParams": {
+          "doc_type": "$doc_type",
+          "order_item_ids": "[${order_item_ids}]"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_shipment_providers",
+      "description": "What to pass when packing order items: `result.data.platform_default` (1: Lazada allocates the carrier and there is nothing to choose; 0: the seller chooses one of `shipment_providers` and passes its provider_code when packing), `shipment_providers` (name, provider_code) and `shipping_allocate_type` (TFS or NTFS, passed on to lazada_pack_order_items). Up to 20 orders per call. Changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "The orders and their items. Example: `[{\"order_id\": 560694402192001, \"order_item_ids\": [560694402292001]}]`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_id": {
+                  "type": "integer",
+                  "description": "The order id."
+                },
+                "order_item_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 1,
+                  "description": "order_item_id values of that order."
+                }
+              },
+              "required": [
+                "order_id",
+                "order_item_ids"
+              ]
+            }
+          }
+        },
+        "required": [
+          "orders"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/shipment/providers/get",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "getShipmentProvidersReq": {
+            "__json": {
+              "orders": "$orders"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "lazada_pack_order_items",
+      "description": "Mark order items as packed. Lazada creates the package and its tracking number: per item the answer has item_err_code (0 means packed; anything else failed, with msg), package_id, tracking_number and shipment_provider. `result.success` true does not mean every item succeeded, so read each item_err_code. Only items in status pending or repacked can be packed; items of an order that are left out stay pending. Up to 20 orders per call. Keep package_id for lazada_get_shipping_label and lazada_set_ready_to_ship. Confirm with the user first, naming the order and the items.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pack_order_list": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "The orders to pack with their items. Example: `[{\"order_id\": 560694402192001, \"order_item_list\": [560694402292001]}]`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_id": {
+                  "type": "integer",
+                  "description": "The order id."
+                },
+                "order_item_list": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 1,
+                  "description": "order_item_id values to pack."
+                }
+              },
+              "required": [
+                "order_id",
+                "order_item_list"
+              ]
+            }
+          },
+          "shipping_allocate_type": {
+            "type": "string",
+            "description": "TFS for a local shop, NTFS for a cross-border shop; lazada_get_shipment_providers returns the value for an order.",
+            "enum": [
+              "TFS",
+              "NTFS"
+            ]
+          },
+          "shipment_provider_code": {
+            "type": "string",
+            "description": "provider_code from lazada_get_shipment_providers. Needed for a cross-border shop (NTFS) when platform_default is not 1; leave out for a local shop (TFS) and for orders the seller delivers."
+          }
+        },
+        "required": [
+          "pack_order_list",
+          "shipping_allocate_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/fulfill/pack",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "packReq": {
+            "__json": {
+              "pack_order_list": "$pack_order_list",
+              "delivery_type": "dropship",
+              "shipment_provider_code": "$shipment_provider_code",
+              "shipping_allocate_type": "$shipping_allocate_type"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "lazada_set_ready_to_ship",
+      "description": "Mark packed packages as ready to ship, up to 20 per call. For parcels that are picked up Lazada then notifies the courier; drop-off parcels have to be handed in within the ship-by time. Per package the answer has item_err_code (0 means done; anything else failed, with msg). `result.success` true does not mean every package succeeded. Only packed items qualify. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "The packages, by the package_id the pack call returned. Example: `[{\"package_id\": \"FP038524014\"}]`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "package_id": {
+                  "type": "string",
+                  "description": "The package id, for example FP038524014."
+                }
+              },
+              "required": [
+                "package_id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/package/rts",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "readyToShipReq": {
+            "__json": {
+              "packages": "$packages"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "lazada_get_shipping_label",
+      "description": "The shipping label (AWB) of up to 20 packed packages, combined into one document: `result.data.pdf_url` (with doc_type PDF; the link works for ten minutes), `file` (base64: with HTML the label page itself, with PDF a small page that embeds the link) and doc_type. The label carries the full recipient address, also when order reads return it masked. Not available for orders the seller delivers (DBS/SOF). Changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packages": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "The packages, by the package_id the pack call returned. Example: `[{\"package_id\": \"FP038524014\"}]`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "package_id": {
+                  "type": "string",
+                  "description": "The package id, for example FP038524014."
+                }
+              },
+              "required": [
+                "package_id"
+              ]
+            }
+          },
+          "doc_type": {
+            "type": "string",
+            "description": "Label format. Defaults to PDF.",
+            "enum": [
+              "PDF",
+              "HTML"
+            ],
+            "default": "PDF"
+          },
+          "print_item_list": {
+            "type": "boolean",
+            "description": "true prints the list of items on the label."
+          }
+        },
+        "required": [
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/package/document/get",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "getDocumentReq": {
+            "__json": {
+              "doc_type": "$doc_type",
+              "packages": "$packages",
+              "print_item_list": "$print_item_list"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "lazada_list_products",
+      "description": "Products of the shop: `data.total_products` (products, not SKUs) and `data.products` with item_id, primary_category, status, attributes (name, brand, description and the category's own attributes), images, created_time, updated_time (Unix milliseconds) and `skus`, each with SkuId, SellerSku, ShopSku, Status, quantity, Available, price, special_price with its dates and the package size and weight. Pages of up to 50 with offset; the offset ends at 10000, so narrow the date range for a larger shop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Product status to list. Defaults to all.",
+            "enum": [
+              "all",
+              "live",
+              "inactive",
+              "deleted",
+              "pending",
+              "rejected",
+              "sold-out"
+            ],
+            "default": "all"
+          },
+          "create_after": {
+            "type": "string",
+            "description": "Products created at or after this time. ISO 8601, for example `2026-11-01T00:00:00+0800`."
+          },
+          "create_before": {
+            "type": "string",
+            "description": "Products created at or before this time. ISO 8601, for example `2026-11-01T00:00:00+0800`."
+          },
+          "update_after": {
+            "type": "string",
+            "description": "Products updated at or after this time. ISO 8601, for example `2026-11-01T00:00:00+0800`."
+          },
+          "update_before": {
+            "type": "string",
+            "description": "Products updated at or before this time. ISO 8601, for example `2026-11-01T00:00:00+0800`."
+          },
+          "sku_seller_list": {
+            "type": "string",
+            "description": "Only products with these seller SKUs, as a JSON array of whole SKUs, at most 100. Example: `[\"MUG-01\", \"MUG-02\"]`."
+          },
+          "options": {
+            "type": "string",
+            "description": "1 adds stock details per SKU: reserved, ready-to-ship, pending and real-time stock.",
+            "enum": [
+              "1"
+            ]
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Products to skip, from 0. At most 10000.",
+            "minimum": 0,
+            "maximum": 10000,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, up to 50. Defaults to 20 here.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/get",
+        "queryParams": {
+          "filter": "$filter",
+          "create_after": "$create_after",
+          "create_before": "$create_before",
+          "update_after": "$update_after",
+          "update_before": "$update_before",
+          "sku_seller_list": "$sku_seller_list",
+          "options": "$options",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_product",
+      "description": "One product by item id: primary_category, status, subStatus and rejectReason when Lazada rejected it, attributes, images, variation (the product's own variant attributes), created_time, updated_time and `skus` with SkuId, SellerSku, ShopSku, Status, quantity, price, special_price and the package size and weight.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "The product item id (digits), from lazada_list_products.",
+            "pattern": "^[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/item/get",
+        "queryParams": {
+          "item_id": "$item_id"
+        }
+      }
+    },
+    {
+      "name": "lazada_update_price_quantity",
+      "description": "Set the price, sale price and stock of SKUs: up to 50 SKUs per call, 20 recommended, across several products. Quantity is the new total stock (not a difference); it cannot be negative or lower than the stock held by open orders and campaigns. Leave out what should stay as it is. A seller with several warehouses gives the stock per warehouse inside `MultiWarehouseInventories`; a seller with one warehouse must not. Lazada answers code 0 when the update is accepted. Confirm with the user first, showing each SKU with its new price and stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "The request document as text. Per SKU: ItemId and SkuId (or SellerSku), then Price, SalePrice, SaleStartDate, SaleEndDate (`YYYY-MM-DD`) and Quantity as needed. Example: `<Request><Product><Skus><Sku><ItemId>234234234</ItemId><SkuId>234</SkuId><Price>1099.00</Price><SalePrice>900.00</SalePrice><SaleStartDate>2026-11-20</SaleStartDate><SaleEndDate>2026-11-30</SaleEndDate><Quantity>20</Quantity></Sku></Skus></Product></Request>`. The same structure as JSON is accepted too: `{\"Request\":{\"Product\":{\"Skus\":{\"Sku\":[{\"ItemId\":\"234234234\",\"SkuId\":\"234\",\"Price\":\"1099.00\"}]}}}}`."
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/price_quantity/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "lazada_create_product",
+      "description": "Create one product with its SKUs. Before calling: pick a leaf category with lazada_get_category_tree, read its attributes with lazada_get_category_attributes (mandatory ones and the sale attributes that tell SKUs apart), take brand_id from lazada_list_brands, and turn every image into a Lazada image address with lazada_migrate_image (other addresses are refused). Mandatory: PrimaryCategory, the attributes name and brand_id, and per SKU SellerSku, price, package_height, package_length, package_width (cm) and package_weight (kg). Returns `data.item_id` and `data.sku_list` (seller_sku, sku_id, shop_sku). Lazada reviews new products before they go live. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "The product as JSON text. Example: `{\"Request\":{\"Product\":{\"PrimaryCategory\":\"10002019\",\"Images\":{\"Image\":[\"https://my-live-02.slatic.net/p/47b6cb07bd8f80aa3cc34b180b902f3e.jpg\"]},\"Attributes\":{\"name\":\"Leather laptop bag\",\"description\":\"Laptop bag for 11 to 12 inch laptops\",\"brand_id\":\"30768\",\"warranty_type\":\"Local seller warranty\"},\"Skus\":{\"Sku\":[{\"SellerSku\":\"BAG-GREEN-10\",\"saleProp\":{\"color_family\":\"Green\"},\"quantity\":\"3\",\"price\":\"35\",\"package_height\":\"10\",\"package_length\":\"10\",\"package_width\":\"10\",\"package_weight\":\"0.5\",\"package_content\":\"laptop bag\"}]}}}}`. Images and Sku are arrays (up to 8 images each). `AssociatedSku` with an existing SkuId adds the new SKUs to that product."
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/create",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "lazada_update_product",
+      "description": "Change the attributes, images or SKU details of an existing product. Same document as lazada_create_product with ItemId, and every other field optional: send only what changes, and name each SKU by its SkuId. All SKUs of one call must belong to the same product. Images are replaced, not removed, and must be Lazada image addresses (lazada_migrate_image). For price and stock use lazada_update_price_quantity instead. Do not use it to set a Status of inactive or deleted: lazada_deactivate_product and lazada_remove_product are the switched-off tools for that. Confirm with the user first, showing what changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "The changes as JSON text. Example: `{\"Request\":{\"Product\":{\"ItemId\":\"2096962270\",\"Attributes\":{\"name\":\"Leather laptop bag, green\"},\"Skus\":{\"Sku\":[{\"SkuId\":\"234523151512\",\"package_weight\":\"0.6\"}]}}}}`."
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "lazada_migrate_image",
+      "description": "Copy one image from a public web address into Lazada's image storage and get its Lazada address back in `data.image.url` (with hash_code). Product creation and updates only accept such addresses. JPG or PNG, at most 3 MB, between 330 and 5000 pixels on each side, served on port 80 or 443.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "The request document as text, with the image address in Url. Example: `<Request><Image><Url>https://example.org/images/bag.jpg</Url></Image></Request>`. Write an ampersand inside the address as `&amp;`."
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/image/migrate",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "lazada_get_category_tree",
+      "description": "The whole product category tree of the shop's country: per category its category_id, name, leaf (true when products can be listed in it), var and children. A large answer: read it once and keep the ids you need. Category ids differ per country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language_code": {
+            "type": "string",
+            "description": "Language of the names: en_US everywhere, plus the language of the country (en_SG, th_TH, ms_MY, vi_VN, fil_PH, id_ID). A language of another country can return empty names. Defaults to en_US.",
+            "enum": [
+              "en_US",
+              "en_SG",
+              "th_TH",
+              "ms_MY",
+              "vi_VN",
+              "fil_PH",
+              "id_ID"
+            ],
+            "default": "en_US"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/tree/get",
+        "queryParams": {
+          "language_code": "$language_code"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_category_attributes",
+      "description": "The attributes a product of one category can or must carry: per attribute its name (the key used in a product document), label, input_type (text, numeric, date, singleSelect, multiSelect, enumInput, multiEnumInput, img or rich text), is_mandatory, is_sale_prop (1 for an attribute that tells SKUs apart, such as color_family or size), attribute_type, `advanced.is_key_prop` and `options` with the allowed values (name, en_name, id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "primary_category_id": {
+            "type": "string",
+            "description": "A leaf category id from lazada_get_category_tree.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "language_code": {
+            "type": "string",
+            "description": "Language of the names: en_US everywhere, plus the language of the country (en_SG, th_TH, ms_MY, vi_VN, fil_PH, id_ID). A language of another country can return empty names. Defaults to en_US.",
+            "enum": [
+              "en_US",
+              "en_SG",
+              "th_TH",
+              "ms_MY",
+              "vi_VN",
+              "fil_PH",
+              "id_ID"
+            ],
+            "default": "en_US"
+          }
+        },
+        "required": [
+          "primary_category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/attributes/get",
+        "queryParams": {
+          "primary_category_id": "$primary_category_id",
+          "language_code": "$language_code"
+        }
+      }
+    },
+    {
+      "name": "lazada_list_brands",
+      "description": "Brands known to Lazada in the shop's country, a page at a time: `data.module` with brand_id (the value a product needs), name, name_en and global_identifier, and `data.total_record`. Tens of thousands of brands: page with start_row. The list differs per country.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_row": {
+            "type": "integer",
+            "description": "Brands to skip, from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Brands per page, up to 200. Defaults to 100 here.",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/brands/query",
+        "queryParams": {
+          "startRow": "$start_row",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "lazada_list_qc_alert_products",
+      "description": "Products that Lazada's quality control has flagged: productId, categoryId, suggestionCategories (the categories Lazada suggests instead) and deactivationTime (when the product is taken offline unless it is fixed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Products to skip, from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products per page. Defaults to 20 here.",
+            "minimum": 1,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/qc/alert/list",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "lazada_deactivate_product",
+      "description": "Take a product, or some of its SKUs, offline: buyers no longer see it. Installed switched off. Confirm with the user first, naming the product and the SKUs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_body": {
+            "type": "string",
+            "description": "The request document as text: ItemId is mandatory, Skus optional (without it the whole product is deactivated). Example: `{\"Request\":{\"Product\":{\"ItemId\":3865707451,\"Skus\":{\"SkuId\":[22332218421]}}}}`."
+          }
+        },
+        "required": [
+          "request_body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/deactivate",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "apiRequestBody": "$request_body"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "lazada_remove_product",
+      "description": "Delete SKUs of a product, or the product when all its SKUs are named: up to 50 SKUs per call. This cannot be undone. Give sku_id_list or seller_sku_list; sku_id_list wins when both are given. Installed switched off. Confirm with the user first, naming every SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_id_list": {
+            "type": "string",
+            "description": "A JSON array of SKU references, each the text SkuId, the item id and the SKU id joined by underscores. Example: `[\"SkuId_1269656765_5230534246\"]`."
+          },
+          "seller_sku_list": {
+            "type": "string",
+            "description": "A JSON array of seller SKUs. Example: `[\"test00111\", \"test00222\"]`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/remove",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "sku_id_list": "$sku_id_list",
+          "seller_sku_list": "$seller_sku_list"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "lazada_get_payout_status",
+      "description": "Payout statements created after a date: per statement its statement_number, created_at, opening_balance, item_revenue, other_revenue_total, fees_total, refunds, fees_on_refunds_total, subtotal1 (revenue minus fees), subtotal2 (subtotal1 minus refunds), shipment_fee, shipment_fee_credit, guarantee_deposit, closing_balance, payout (amount with currency) and paid (1 paid, 0 not paid). Read only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Statements created after this date, `YYYY-MM-DD`.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        },
+        "required": [
+          "created_after"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/payout/status/get",
+        "queryParams": {
+          "created_after": "$created_after"
+        }
+      }
+    },
+    {
+      "name": "lazada_list_transactions",
+      "description": "Transaction and fee lines of the seller account between two dates (a range under 180 days): transaction_date, transaction_type, fee_name, fee_type, amount (negative for a charge), VAT_in_amount, WHT_amount, paid_status, statement, transaction_number, order_no, orderItem_no, orderItem_status, seller_sku, lazada_sku, shipping_provider and reference. Pages of up to 500 with offset. Read only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "description": "First day, `YYYY-MM-DD`.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Last day, `YYYY-MM-DD`, less than 180 days after start_time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "trade_order_id": {
+            "type": "string",
+            "description": "Only the lines of this order id.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "trade_order_line_id": {
+            "type": "string",
+            "description": "Only the lines of this order item id.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "trans_type": {
+            "type": "string",
+            "description": "Transaction type id; Lazada's own example passes -1. Leave out unless a type id is known."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Lines to skip, from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Lines per page, up to 500. Defaults to 100 here.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/transaction/details/get",
+        "queryParams": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "trade_order_id": "$trade_order_id",
+          "trade_order_line_id": "$trade_order_line_id",
+          "trans_type": "$trans_type",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "lazada_list_review_ids",
+      "description": "Ids of the reviews of one product in a time window: `data.id_list`, with total, current (the page) and page_size. The window is at most 7 days and reviews older than three months are not returned. Pass the ids to lazada_get_reviews for the texts and ratings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "The product item id (digits).",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "start_time": {
+            "type": "integer",
+            "description": "Start of the window, Unix milliseconds (the review create_time)."
+          },
+          "end_time": {
+            "type": "integer",
+            "description": "End of the window, Unix milliseconds, at most 7 days after start_time."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Only reviews of this order id.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "current": {
+            "type": "integer",
+            "description": "Page number, from 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 1
+          }
+        },
+        "required": [
+          "item_id",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/review/seller/history/list",
+        "queryParams": {
+          "item_id": "$item_id",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "order_id": "$order_id",
+          "current": "$current"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_reviews",
+      "description": "Up to 10 reviews by id: `data.review_list` with id, review_content, ratings (product_rating, seller_rating, logistics_rating, overall_rating), review_images, review_videos, product_id, order_id, create_time and submit_time (Unix milliseconds), review_type, can_reply and seller_reply (the answer already given). `outdated_reviews` lists ids that can no longer be read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "review_ids": {
+            "type": "string",
+            "description": "Review ids from lazada_list_review_ids separated by commas, without spaces, at most 10. Example: `111111111111,111111111112`.",
+            "pattern": "^[0-9]{1,20}(,[0-9]{1,20}){0,9}$"
+          }
+        },
+        "required": [
+          "review_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/review/seller/list/v2",
+        "queryParams": {
+          "id_list": "[${review_ids}]"
+        }
+      }
+    },
+    {
+      "name": "lazada_reply_to_review",
+      "description": "Publish the seller's reply to a review. Buyers see it at once, a review takes one reply (a second one is refused with REPLY_ALREADY) and it has to be sent within Lazada's reply period. Text only, at most 500 characters. Check can_reply in lazada_get_reviews first. Confirm with the user first, showing the reply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "review_id": {
+            "type": "string",
+            "description": "The review id (digits).",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "content": {
+            "type": "string",
+            "description": "The reply text, at most 500 characters.",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "review_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/review/seller/reply/add",
+        "queryParams": {
+          "id": "$review_id",
+          "content": "$content"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "lazada_list_reverse_orders",
+      "description": "Return, refund and cancellation requests of the shop: `result.total` and `result.items`, each with reverse_order_id, trade_order_id, request_type (CANCEL, RETURN or ONLY_REFUND), is_rtm (true: returned to the seller, false: to a Lazada warehouse), shipping_type and `reverse_order_lines` with reverse_order_line_id, trade_order_line_id, reverse_status, ofc_status, reason_text, refund_amount and item_unit_price (in cents, except Vietnam where they are in dong), seller_sku_id, tracking_number, is_dispute and sla (the seller's deadline, Unix milliseconds). Read only: accepting or refusing a return or a refund is done in Seller Center.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_no": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Requests per page. Defaults to 10.",
+            "minimum": 1,
+            "default": 10
+          },
+          "reverse_order_id": {
+            "type": "string",
+            "description": "Only this reverse order id.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "trade_order_id": {
+            "type": "string",
+            "description": "Only the requests of this order id.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "request_type_list": {
+            "type": "string",
+            "description": "Request types as a JSON array of CANCEL, RETURN, ONLY_REFUND. Example: `[\"RETURN\", \"ONLY_REFUND\"]`."
+          },
+          "reverse_status_list": {
+            "type": "string",
+            "description": "Statuses as a JSON array. Example: `[\"REQUEST_INITIATE\"]` for requests that wait for the seller."
+          },
+          "ofc_status_list": {
+            "type": "string",
+            "description": "Logistics statuses of the return as a JSON array. Example: `[\"RETURN_CANCELED\"]`."
+          },
+          "return_to_type": {
+            "type": "string",
+            "description": "RTM: returned to the seller; RTW: returned to a Lazada warehouse.",
+            "enum": [
+              "RTM",
+              "RTW"
+            ]
+          },
+          "dispute_in_progress": {
+            "type": "boolean",
+            "description": "true for requests with an open dispute only."
+          },
+          "qc_decision": {
+            "type": "string",
+            "description": "Only returns with this warehouse quality-check decision.",
+            "enum": [
+              "scrap",
+              "return_to_merchant",
+              "return_to_merchant_cb",
+              "return_to_customer",
+              "return_to_warehouse",
+              "not_returned"
+            ]
+          },
+          "order_created_from": {
+            "type": "integer",
+            "description": "Order items created from this time. Unix milliseconds."
+          },
+          "order_created_to": {
+            "type": "integer",
+            "description": "Order items created up to this time. Unix milliseconds."
+          },
+          "request_created_from": {
+            "type": "integer",
+            "description": "Requests created from this time. Unix milliseconds."
+          },
+          "request_created_to": {
+            "type": "integer",
+            "description": "Requests created up to this time. Unix milliseconds."
+          },
+          "request_modified_from": {
+            "type": "integer",
+            "description": "Requests changed from this time. Unix milliseconds."
+          },
+          "request_modified_to": {
+            "type": "integer",
+            "description": "Requests changed up to this time. Unix milliseconds."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reverse/getreverseordersforseller",
+        "queryParams": {
+          "page_no": "$page_no",
+          "page_size": "$page_size",
+          "reverse_order_id": "$reverse_order_id",
+          "trade_order_id": "$trade_order_id",
+          "request_type_list": "$request_type_list",
+          "reverse_status_list": "$reverse_status_list",
+          "ofc_status_list": "$ofc_status_list",
+          "return_to_type": "$return_to_type",
+          "dispute_in_progress": "$dispute_in_progress",
+          "QC_Decision": "$qc_decision",
+          "TradeOrderLineCreatedTimeRangeStart": "$order_created_from",
+          "TradeOrderLineCreatedTimeRangeEnd": "$order_created_to",
+          "ReverseOrderLineTimeRangeStart": "$request_created_from",
+          "ReverseOrderLineTimeRangeEnd": "$request_created_to",
+          "ReverseOrderLineModifiedTimeRangeStart": "$request_modified_from",
+          "ReverseOrderLineModifiedTimeRangeEnd": "$request_modified_to"
+        }
+      }
+    },
+    {
+      "name": "lazada_get_reverse_order",
+      "description": "One return, refund or cancellation request by its reverse order id: request_type (CANCEL, RETURN or ONLY_REFUND), trade_order_id, shipping_type (PICK_UP or DROP_OFF), is_rtm and `reverseOrderLineDTOList` with reverse_order_line_id, trade_order_line_id, reverse_status (for example REQUEST_INITIATE, REQUEST_REJECT, REQUEST_CANCEL, CANCEL_SUCCESS), ofc_status, reason_text, refund_amount and item_unit_price (in cents, except Vietnam), refund_payment_method, whqc_decision, tracking_number, is_dispute and sla (the seller's deadline, Unix milliseconds). Read only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reverse_order_id": {
+            "type": "string",
+            "description": "The reverse order id (digits), from lazada_list_reverse_orders or the reverse_order_id of an order item.",
+            "pattern": "^[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "reverse_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/reverse/return/detail/list",
+        "queryParams": {
+          "reverse_order_id": "$reverse_order_id"
+        }
+      }
+    },
+    {
+      "name": "lazada_validate_order_cancellation",
+      "description": "Check whether order items can be cancelled by the seller, and with which reasons: `data.reason_options` (reason_id, reason_name; the ids differ per country), tip_type and tip_content (why not, or a warning such as that stock is set to 0). Only items from pending to ready to ship can be cancelled. Changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id (digits).",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "order_item_ids": {
+            "type": "string",
+            "description": "The order item ids to cancel, separated by commas, without spaces. Example: `560694402292001,560694402292002`.",
+            "pattern": "^[0-9]{1,20}(,[0-9]{1,20})*$"
+          }
+        },
+        "required": [
+          "order_id",
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/reverse/cancel/validate",
+        "queryParams": {
+          "order_id": "$order_id",
+          "order_item_id_list": "[${order_item_ids}]"
+        }
+      }
+    },
+    {
+      "name": "lazada_cancel_order_items",
+      "description": "Cancel order items for a seller's reason. This cannot be undone, counts against the shop's cancellation rate (a high rate can bring a daily order limit), and with the reasons out of stock or wrong price sets the product's stock to 0. When an item is already packed, the other items of its package are cancelled too. Get reason_id from lazada_validate_order_cancellation first. Returns tip_type and tip_content. Installed switched off. Confirm with the user first, naming the order, the items and the reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id (digits).",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "order_item_ids": {
+            "type": "string",
+            "description": "The order item ids to cancel, separated by commas, without spaces. Example: `560694402292001,560694402292002`.",
+            "pattern": "^[0-9]{1,20}(,[0-9]{1,20})*$"
+          },
+          "reason_id": {
+            "type": "string",
+            "description": "A reason_id from lazada_validate_order_cancellation, for example 10000021."
+          }
+        },
+        "required": [
+          "order_id",
+          "order_item_ids",
+          "reason_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/reverse/cancel/create",
+        "queryParams": {
+          "order_id": "$order_id",
+          "order_item_id_list": "[${order_item_ids}]",
+          "reason_id": "$reason_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}

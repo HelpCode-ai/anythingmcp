@@ -288,4 +288,44 @@ describe('computeSetupState', () => {
       });
     });
   });
+
+  describe('a seller connector on an IOP gateway (tokenProvider "iop")', () => {
+    // The Lazada adapter's authConfig, placeholders and all.
+    const iop = (envVars: Record<string, string>, tokens: Record<string, unknown> = {}) =>
+      computeSetupState({
+        authType: 'HMAC',
+        authConfig: {
+          tokenProvider: 'iop',
+          iop: {
+            appKey: '{{LAZADA_APP_KEY}}',
+            authorizeUrl: 'https://auth.lazada.com/oauth/authorize',
+            tokenBaseUrl: 'https://auth.lazada.com/rest',
+            tokenPath: '/auth/token/create',
+            refreshPath: '/auth/token/refresh',
+          },
+          signature: {
+            secret: '{{LAZADA_APP_SECRET}}',
+            queryParams: { app_key: '{{LAZADA_APP_KEY}}', sign_method: 'sha256' },
+            template: '${apiPath}${sortedParams}',
+          },
+          ...tokens,
+        },
+        baseUrl: 'https://api.lazada.sg/rest',
+        envVars,
+        config: { adapterSlug: 'lazada' },
+      });
+    const keys = { LAZADA_APP_KEY: '100132', LAZADA_APP_SECRET: 'testappsecret1234567890' };
+
+    it('asks for the app key and secret, then waits for the seller to authorize, then is ready', () => {
+      expect(iop({ LAZADA_APP_KEY: '', LAZADA_APP_SECRET: '' })).toEqual({
+        status: 'needs_input',
+        missing: ['LAZADA_APP_KEY', 'LAZADA_APP_SECRET'],
+      });
+      expect(iop(keys)).toEqual({ status: 'needs_authorization', missing: [] });
+      expect(iop(keys, { accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 1000 })).toEqual({
+        status: 'ready',
+        missing: [],
+      });
+    });
+  });
 });

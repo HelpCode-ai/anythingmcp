@@ -1,0 +1,505 @@
+{
+  "_readme": [
+    "One row per retailer marketplace. scripts/generate-retailer-adapters.mjs turns each row into",
+    "packages/backend/src/adapters/<region>/<slug>.json, <slug>.live.spec.ts and",
+    "packages/frontend/public/logos/connectors/<slug>.svg, from the tools of the adapter named in `source`.",
+    "Edit a row here and run the generator; never edit the generated files by hand (CI runs --check).",
+    "hosts: one entry fixes the base URL; several entries become a choice at install (envVarMeta.options).",
+    "keyPath: menu path to the API key in the seller back office, parts separated by ' > '.",
+    "sellerHelpUrl: the retailer's own seller help or application page; null uses the back office sign-in page.",
+    "sources: where the host and the access rule come from (not shown to users)."
+  ],
+  "source": "packages/backend/src/adapters/intl/mirakl.json",
+  "retailers": [
+    {
+      "slug": "decathlon",
+      "name": "Decathlon Marketplace",
+      "retailer": "Decathlon",
+      "region": "intl",
+      "brandColor": "#0082C3",
+      "monogram": "D",
+      "hosts": [{ "value": "https://marketplace-decathlon-eu.mirakl.net", "label": "Europe (EUR)" }],
+      "countries": ["BE", "FR", "DE", "ES", "IT", "NL", "PT"],
+      "countriesNote": "These are the sales channels of the euro shop.",
+      "shopIdNeeded": true,
+      "shopIdNote": "Decathlon keeps one shop per currency group, so a user who sells in several currencies has several shops.",
+      "access": "Decathlon approves each seller through an application form, a contract and a brand list (a curated marketplace).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.decathlon.de/landing/marketplace-marktplatz-partnerprogramm/_/R-a-marketplace",
+      "notes": [
+        "Only the European (EUR) seller platform is known to this connector. Decathlon runs separate shops in local currency for Switzerland, Romania, Hungary, the United Kingdom and Asia-Pacific on other addresses, which this connector does not reach."
+      ],
+      "aliases": ["Decathlon seller API", "Decathlon Mirakl", "Decathlon partner"],
+      "sources": [
+        "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
+        "https://github.com/fluffhead-tim/retail-category-selector/blob/HEAD/data/marketplaces.json",
+        "https://github.com/reselllausanne/shopify-fulfillment-dashboard/blob/HEAD/README.md",
+        "https://help.lengow.com/hc/en-us/articles/4411823106834-Decathlon-Mirakl-Starting-with-Decathlon",
+        "https://support.channelengine.com/hc/en-us/articles/4412651192209-Decathlon-marketplace-guide",
+        "https://helpcenter.channable.com/hc/en-us/articles/360018386360"
+      ]
+    },
+    {
+      "slug": "carrefour",
+      "name": "Carrefour Marketplace",
+      "retailer": "Carrefour",
+      "region": "intl",
+      "brandColor": "#004E9F",
+      "monogram": "Ca",
+      "hosts": [
+        { "value": "https://carrefourfr-prod.mirakl.net", "label": "France" },
+        { "value": "https://carrefoures-prod.mirakl.net", "label": "Spain" }
+      ],
+      "countries": ["FR", "ES"],
+      "shopIdNeeded": false,
+      "access": "Carrefour selects its sellers; contact it by e-mail (`devenir_vendeur@carrefour.com` for France, `es_marketplace_carrefourinfo@carrefour.com` for Spain).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.carrefour.fr/services/carrefour-marketplace-vendeurs",
+      "notes": [],
+      "aliases": ["Carrefour seller API", "Carrefour Mirakl", "Carrefour France", "Carrefour Spain"],
+      "sources": [
+        "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://help.lengow.com/hc/en-us/articles/360012466380-Carrefour-Mirakl-Starting-with-Carrefour"
+      ]
+    },
+    {
+      "slug": "mediamarkt",
+      "name": "MediaMarkt Marketplace",
+      "retailer": "MediaMarkt",
+      "region": "intl",
+      "brandColor": "#DF0000",
+      "monogram": "MM",
+      "hosts": [{ "value": "https://mediamarktsaturn.mirakl.net", "label": "All countries" }],
+      "countries": ["DE", "AT", "ES", "NL", "IT", "BE", "CH", "PL", "HU"],
+      "countriesNote": "In Italy the marketplace trades as MediaWorld. All countries share one seller platform.",
+      "shopIdNeeded": true,
+      "shopIdNote": "MediaMarkt usually opens one shop per country, so most sellers have several shops under one user.",
+      "access": "MediaMarkt takes applications through a form per country, followed by a business verification (KYC).",
+      "keyPath": "your login name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://sell.mediamarktsaturn.com/en-ES/faqs",
+      "notes": [],
+      "aliases": ["MediaMarkt seller API", "MediaMarkt Mirakl", "MediaMarktSaturn", "Media Markt", "Saturn Marketplace", "MediaWorld"],
+      "sources": [
+        "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://github.com/invoice-collector/invoice-collector/tree/HEAD/src/collectors/sketch",
+        "https://sell.mediamarktsaturn.com/en-ES/faqs",
+        "https://support.channelengine.com/hc/en-us/articles/4409485339933-MediaMarkt-Saturn-marketplace-guide",
+        "https://help.lengow.com/hc/en-us/articles/8190500369564-MediaMarktSaturn-Mirakl-Starting-with-MediaMarktSaturn"
+      ]
+    },
+    {
+      "slug": "leroy-merlin",
+      "name": "Leroy Merlin Marketplace",
+      "retailer": "Leroy Merlin",
+      "region": "intl",
+      "brandColor": "#78BE20",
+      "monogram": "LM",
+      "hosts": [{ "value": "https://adeo-marketplace.mirakl.net", "label": "France, Italy, Spain, Portugal" }],
+      "countries": ["FR", "IT", "ES", "PT"],
+      "countriesNote": "Bricoman France sells from the same shop.",
+      "shopIdNeeded": true,
+      "shopIdNote": "Users with several shops are common on Leroy Merlin.",
+      "access": "Leroy Merlin takes applications through a form, followed by a business verification (KYC).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.leroymerlin.fr/devenez-marchand-marketplace.html",
+      "notes": [
+        "Leroy Merlin Poland (a separate shop in PLN) and Romania run on other addresses, which this connector does not reach."
+      ],
+      "aliases": ["Leroy Merlin seller API", "Leroy Merlin Mirakl", "ADEO Marketplace", "Bricoman"],
+      "sources": [
+        "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://help.lengow.com/hc/en-us/articles/4411830439826-Leroy-Merlin-Bricoman-Mirakl-Starting-with-Leroy-Merlin-Bricoman",
+        "https://support.channelengine.com/hc/en-us/articles/4700020245789-Leroy-Merlin-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "b-and-q",
+      "name": "B&Q Marketplace",
+      "retailer": "B&Q",
+      "region": "gb",
+      "brandColor": "#FF6600",
+      "monogram": "BQ",
+      "hosts": [{ "value": "https://marketplace.kingfisher.com", "label": "United Kingdom" }],
+      "countries": ["GB"],
+      "shopIdNeeded": true,
+      "shopIdNote": "Sellers on B&Q are known to set the shop id, also with a single shop.",
+      "access": "B&Q takes applications through the Kingfisher Merchant Hub; the business must be VAT-registered.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://merchanthub.kingfisher.com/uk-en/start-selling-2/",
+      "notes": [
+        "B&Q belongs to Kingfisher, which is why the seller platform is on a Kingfisher address."
+      ],
+      "aliases": ["B&Q seller API", "B&Q Mirakl", "B and Q", "BandQ", "Kingfisher Marketplace", "diy.com"],
+      "sources": [
+        "https://merchanthub.kingfisher.com/uk-en/start-selling-2/",
+        "https://github.com/fluffhead-tim/retail-category-selector/blob/HEAD/data/marketplaces.json",
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://support.channelengine.com/hc/en-us/articles/17113308233501-B-Q-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "conforama",
+      "name": "Conforama Marketplace",
+      "retailer": "Conforama",
+      "region": "intl",
+      "brandColor": "#E2001A",
+      "monogram": "Cf",
+      "hosts": [{ "value": "https://conforama-prod.mirakl.net", "label": "France, Spain, Portugal" }],
+      "countries": ["FR", "ES", "PT"],
+      "shopIdNeeded": false,
+      "access": "Conforama selects its sellers; contact it by e-mail (`marketplacebyconfo@conforama.fr`).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Conforama seller API", "Conforama Mirakl", "Marketplace by Confo", "Confo"],
+      "sources": [
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://help.lengow.com/hc/en-us/articles/360012235771-Conforama-Mirakl-Starting-with-Conforama",
+        "https://support.channelengine.com/hc/en-us/articles/4409485372701-Conforama-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "debenhams",
+      "name": "Debenhams Marketplace",
+      "retailer": "Debenhams",
+      "region": "gb",
+      "brandColor": "#1A1A1A",
+      "monogram": "De",
+      "hosts": [{ "value": "https://debenhamsuk-prod.mirakl.net", "label": "United Kingdom" }],
+      "countries": ["GB"],
+      "countriesNote": "Orders can also come from Ireland, Australia and the United States.",
+      "shopIdNeeded": false,
+      "access": "Debenhams selects its sellers through an application form and asks for a UK legal entity and a UK bank account.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.debenhams.com/page/register-to-sell",
+      "notes": [],
+      "aliases": ["Debenhams seller API", "Debenhams Mirakl"],
+      "sources": [
+        "https://github.com/fluffhead-tim/retail-category-selector/blob/HEAD/data/marketplaces.json",
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://support.channelengine.com/hc/en-us/articles/10067819485341-Debenhams-marketplace-guide",
+        "https://www.debenhams.com/page/register-to-sell"
+      ]
+    },
+    {
+      "slug": "douglas",
+      "name": "Douglas Partner Program",
+      "retailer": "Douglas",
+      "nameInSentence": "the Douglas Partner Program, the Douglas marketplace,",
+      "region": "intl",
+      "brandColor": "#9BDCD2",
+      "letterColor": "#1A1A1A",
+      "monogram": "Do",
+      "hosts": [{ "value": "https://douglas-prod.mirakl.net", "label": "All countries" }],
+      "countries": ["DE", "AT", "BE", "CZ", "FR", "HU", "IT", "PL", "NL", "SK", "ES", "CH"],
+      "shopIdNeeded": false,
+      "access": "Douglas selects its partners through its partner contact form.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://douglas.group/de/partner-werden",
+      "notes": [],
+      "aliases": ["Douglas Marketplace", "Douglas seller API", "Douglas Mirakl"],
+      "sources": [
+        "https://github.com/invoice-collector/invoice-collector/tree/HEAD/src/collectors/sketch",
+        "https://support.channelengine.com/hc/en-us/articles/4409514733725-Douglas-partner-program-guide",
+        "https://corporate.douglas.de/partner-contactform/?lang=en"
+      ]
+    },
+    {
+      "slug": "empik",
+      "name": "EmpikPlace",
+      "retailer": "Empik",
+      "nameInSentence": "EmpikPlace, the Empik marketplace,",
+      "region": "pl",
+      "brandColor": "#111111",
+      "monogram": "Em",
+      "hosts": [{ "value": "https://marketplace.empik.com", "label": "Poland" }],
+      "countries": ["PL"],
+      "shopIdNeeded": false,
+      "access": "Empik takes applications through a form and reviews them in about one working day; it is open to businesses established in the EU.",
+      "keyPath": "the user menu (top right) > Klucz API",
+      "keyButton": "Wygeneruj nowy klucz",
+      "sellerHelpUrl": "https://www.pomoc.empikplace.com/portal/en/kb/articles/how-to-create-a-seller-account-and-log-in",
+      "notes": [
+        "The connector calls `https://marketplace.empik.com`, the address Empik's developer portal names for the API. If you sign in at `marketplace.czs.empik.com`, that is the same account, but that address does not answer API calls."
+      ],
+      "aliases": ["Empik Marketplace", "Empik seller API", "Empik Mirakl"],
+      "sources": [
+        "https://www.empik.com/empikplace/integracje/developerportal",
+        "https://www.pomoc.empikplace.com/portal/en/kb/articles/how-to-create-a-seller-account-and-log-in",
+        "https://support.channelengine.com/hc/en-us/articles/36744464583197-Empik-com-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "eprice",
+      "name": "ePRICE Marketplace",
+      "retailer": "ePRICE",
+      "region": "it",
+      "brandColor": "#004B9B",
+      "monogram": "eP",
+      "hosts": [{ "value": "https://marketplace.eprice.it", "label": "Italy" }],
+      "countries": ["IT"],
+      "shopIdNeeded": false,
+      "access": "ePRICE approves each seller after a sign-up on its site.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.eprice.it/p/myaccount/aiuto/diventa-fornitore",
+      "notes": [],
+      "aliases": ["ePRICE seller API", "ePRICE Mirakl", "eprice.it"],
+      "sources": [
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://help.lengow.com/hc/en-us/articles/31576191976476-ePRICE-Mirakl-Starting-with-ePRICE-Mirakl",
+        "https://support.channelengine.com/hc/en-us/articles/4409502907037-ePRICE-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "home24",
+      "name": "home24 Marketplace",
+      "retailer": "home24",
+      "region": "intl",
+      "brandColor": "#F45334",
+      "monogram": "h",
+      "hosts": [{ "value": "https://home24.mirakl.net", "label": "All countries" }],
+      "countries": ["DE", "AT", "CH", "FR", "NL"],
+      "shopIdNeeded": true,
+      "shopIdNote": "home24 opens one shop per country, so a seller in several countries has several shops under one user.",
+      "access": "home24 selects its sellers: after a first contact it sends an invitation link to open the shop.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["home24 seller API", "home24 Mirakl", "Home 24"],
+      "sources": [
+        "https://github.com/invoice-collector/invoice-collector/tree/HEAD/src/collectors/sketch",
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://help.lengow.com/hc/en-us/articles/6875412527900-home24-Mirakl-Starting-with-home24",
+        "https://support.channelengine.com/hc/en-us/articles/4797049241757-Home24-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "la-redoute",
+      "name": "La Redoute Marketplace",
+      "retailer": "La Redoute",
+      "region": "fr",
+      "brandColor": "#1A1A1A",
+      "monogram": "LR",
+      "hosts": [{ "value": "https://mirakl.marketplace.laredoute.com", "label": "France" }],
+      "countries": ["FR"],
+      "countriesNote": "Belgium and Luxembourg are announced for January 2027.",
+      "shopIdNeeded": false,
+      "access": "La Redoute is selective and reviews each application made on its seller page.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.laredoute.fr/espace-devenir-vendeur-marketplace.aspx",
+      "notes": [],
+      "aliases": ["La Redoute seller API", "La Redoute Mirakl", "LaRedoute", "Redoute"],
+      "sources": [
+        "https://github.com/rix4uni/BugBountyData/blob/HEAD/data/laredoute.com.txt",
+        "https://help.lengow.com/hc/en-us/articles/8317003073564-La-Redoute-Mirakl-Starting-with-La-Redoute",
+        "https://support.channelengine.com/hc/en-us/articles/4409485084701-La-Redoute-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "maisons-du-monde",
+      "name": "Maisons du Monde Marketplace",
+      "retailer": "Maisons du Monde",
+      "region": "intl",
+      "brandColor": "#1A1A1A",
+      "monogram": "Md",
+      "hosts": [{ "value": "https://maisonsdumonde-prod.mirakl.net", "label": "France, Italy, Germany, Spain" }],
+      "countries": ["FR", "IT", "DE", "ES"],
+      "shopIdNeeded": false,
+      "access": "Maisons du Monde selects its sellers among businesses established in the EU; contact it by e-mail (`marketplace@maisonsdumonde.com`).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Maisons du Monde seller API", "Maisons du Monde Mirakl", "MDM Marketplace"],
+      "sources": [
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://help.lengow.com/hc/en-us/articles/360012428580-Maisons-du-Monde-Mirakl-Starting-with-Maisons-du-Monde"
+      ]
+    },
+    {
+      "slug": "worten",
+      "name": "Worten Marketplace",
+      "retailer": "Worten",
+      "region": "intl",
+      "brandColor": "#E30613",
+      "monogram": "W",
+      "hosts": [{ "value": "https://marketplace.worten.pt", "label": "Portugal" }],
+      "countries": ["PT"],
+      "countriesNote": "Worten left the Spanish market on 1 August 2026, so the marketplace sells in Portugal only.",
+      "shopIdNeeded": false,
+      "access": "Worten takes applications through a form on its seller page.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.worten.pt/vender-no-marketplace-worten",
+      "notes": [],
+      "aliases": ["Worten seller API", "Worten Mirakl", "Worten Portugal"],
+      "sources": [
+        "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://help.lengow.com/hc/en-us/articles/360031111972-Worten-Mirakl-Starting-with-Worten"
+      ]
+    },
+    {
+      "slug": "best-buy-marketplace",
+      "name": "Best Buy Marketplace",
+      "retailer": "Best Buy",
+      "region": "intl",
+      "brandColor": "#0046BE",
+      "monogram": "BB",
+      "hosts": [
+        { "value": "https://marketplace.bestbuy.ca", "label": "Canada" },
+        { "value": "https://bestbuyus-prod.mirakl.net", "label": "United States" }
+      ],
+      "countries": ["CA", "US"],
+      "countriesNote": "The United States marketplace opened in August 2025.",
+      "shopIdNeeded": false,
+      "access": "Best Buy takes applications in each country; its seller hub explains the onboarding for the United States.",
+      "keyPath": "your user name (top right) > My user settings > API Keys",
+      "sellerHelpUrl": "https://partners.bestbuy.com/-/seller-hub/set-up-your-store/store-setup/integrators-and-connectors",
+      "notes": [],
+      "aliases": ["Best Buy seller API", "Best Buy Mirakl", "Best Buy Canada", "BestBuy Marketplace"],
+      "sources": [
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/5CORE-ALL/invent/blob/HEAD/config/services.php",
+        "https://help.sellercloud.com/?p=11441",
+        "https://support.channelengine.com/hc/en-us/articles/31873642736925-Best-Buy-US-marketplace-guide",
+        "https://partners.bestbuy.com/-/seller-hub/set-up-your-store/store-setup/integrators-and-connectors"
+      ]
+    },
+    {
+      "slug": "but",
+      "name": "BUT Marketplace",
+      "retailer": "BUT",
+      "region": "fr",
+      "brandColor": "#E30613",
+      "monogram": "Bu",
+      "hosts": [{ "value": "https://but-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "BUT selects its sellers; contact it by e-mail (`BUT_MARKETPLACE_BIZDEV@but.fr`).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["BUT seller API", "BUT Mirakl", "but.fr"],
+      "sources": [
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://help.lengow.com/hc/en-us/articles/360030897092-BUT-Mirakl-Starting-with-BUT"
+      ]
+    },
+    {
+      "slug": "conrad",
+      "name": "Conrad Marketplace",
+      "retailer": "Conrad",
+      "region": "de",
+      "brandColor": "#0098D8",
+      "monogram": "Cr",
+      "hosts": [{ "value": "https://conradb2b-prod.mirakl.net", "label": "Germany" }],
+      "countries": ["DE"],
+      "countriesNote": "It is a marketplace for business buyers (B2B). An integrator guide also lists Austria, Belgium, France, Italy and the Netherlands.",
+      "shopIdNeeded": false,
+      "access": "Conrad vets each seller after a contact form; the business must be VAT-registered and ship from a warehouse in Germany.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://platform.conrad.de/en/seller/seller-faq.html",
+      "notes": [],
+      "aliases": ["Conrad seller API", "Conrad Mirakl", "Conrad Sourcing Platform", "Conrad Electronic"],
+      "sources": [
+        "https://asset.conrad.com/media10/add/160267/c3/-/de/a6a2e75290974d6ca4051d7447bc80d5/",
+        "https://platform.conrad.de/en/seller/seller-faq.html"
+      ]
+    },
+    {
+      "slug": "el-corte-ingles",
+      "name": "El Corte Inglés Marketplace",
+      "retailer": "El Corte Inglés",
+      "region": "es",
+      "brandColor": "#00843D",
+      "monogram": "EC",
+      "hosts": [{ "value": "https://marketplace.elcorteingles.es", "label": "Spain, Portugal" }],
+      "countries": ["ES", "PT"],
+      "shopIdNeeded": false,
+      "access": "El Corte Inglés selects its sellers; contact it by e-mail (`infovendedormarketplace@elcorteingles.es`).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["El Corte Inglés seller API", "El Corte Inglés Mirakl", "ECI Marketplace"],
+      "sources": [
+        "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://help.lengow.com/hc/en-us/articles/360013341059-El-Corte-Ingl%C3%A9s-Mirakl-Starting-with-El-Corte-Ingl%C3%A9s"
+      ]
+    },
+    {
+      "slug": "mountain-warehouse",
+      "name": "Mountain Warehouse Marketplace",
+      "retailer": "Mountain Warehouse",
+      "region": "gb",
+      "brandColor": "#1B365D",
+      "monogram": "MW",
+      "hosts": [{ "value": "https://mountainwarehouseuk-prod.mirakl.net", "label": "United Kingdom" }],
+      "countries": ["GB"],
+      "shopIdNeeded": false,
+      "access": "Mountain Warehouse takes applications on its seller page or by e-mail (`sellwithus@mountainwarehouse.com`) and asks for a UK company with a UK VAT number.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://sellers.mountainwarehouse.com",
+      "notes": [],
+      "aliases": ["Mountain Warehouse seller API", "Mountain Warehouse Mirakl"],
+      "sources": [
+        "https://github.com/fluffhead-tim/retail-category-selector/blob/HEAD/data/marketplaces.json",
+        "https://support.channelengine.com/hc/en-us/articles/18462003877021-Mountain-Warehouse-marketplace-guide",
+        "https://sellers.mountainwarehouse.com"
+      ]
+    },
+    {
+      "slug": "pccomponentes",
+      "name": "PcComponentes Marketplace",
+      "retailer": "PcComponentes",
+      "region": "es",
+      "brandColor": "#FF6000",
+      "monogram": "PC",
+      "hosts": [{ "value": "https://pccomponentes-prod.mirakl.net", "label": "All countries" }],
+      "countries": ["ES", "PT", "FR", "IT", "DE"],
+      "shopIdNeeded": false,
+      "access": "PcComponentes takes applications on its marketplace page.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://marketplacehelp.pccomponentes.com/hc/en-us/articles/20560979139997-Get-API-information",
+      "notes": [],
+      "aliases": ["PcComponentes seller API", "PcComponentes Mirakl", "PC Componentes"],
+      "sources": [
+        "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://github.com/invoice-collector/invoice-collector/tree/HEAD/src/collectors/sketch",
+        "https://marketplacehelp.pccomponentes.com/hc/en-us/articles/20560979139997-Get-API-information",
+        "https://support.channelengine.com/hc/en-us/articles/13102742835741-PcComponentes-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "vente-unique",
+      "name": "Vente-unique Marketplace",
+      "retailer": "Vente-unique",
+      "region": "intl",
+      "brandColor": "#E30054",
+      "monogram": "VU",
+      "hosts": [{ "value": "https://venteunique-prod.mirakl.net", "label": "All countries" }],
+      "countries": ["FR", "IT", "ES", "BE", "NL", "DE", "PT", "PL", "CH", "AT", "NO", "DK", "SE", "IE", "GB"],
+      "countriesNote": "Further European countries are served from the same shop.",
+      "shopIdNeeded": true,
+      "shopIdNote": "Users with several shops are common on Vente-unique.",
+      "access": "Vente-unique takes applications on its seller page.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.vente-unique.com/s/devenir-marchand",
+      "notes": [],
+      "aliases": ["Vente-unique seller API", "Vente-unique Mirakl", "Vente-unique.com", "Vente unique"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/8363025976476-Vente-unique-Mirakl-Starting-with-Vente-unique"
+      ]
+    }
+  ]
+}

@@ -28,6 +28,11 @@ function makeService(opts: { isCloud?: boolean; orphans?: any[]; paid?: any[] } 
       deleteMany: jest.fn(async () => ({ count: 1 })),
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
+    organization: {
+      findMany: jest.fn(async (args: any) =>
+        (args?.where?.id?.in ?? []).map((id: string) => ({ id, name: `Workspace ${id}` })),
+      ),
+    },
   };
   const siteSettings = { get: jest.fn(async (k: string) => (k === 'instance_id' ? 'cloud-1' : null)) };
   const deployment = { isCloud: () => isCloud, isSelfHosted: () => !isCloud };
@@ -149,7 +154,7 @@ describe('LicenseReleaseService', () => {
   });
 
   describe('assertNoLiveSubscription', () => {
-    const paid = [{ licenseKey: 'AMCP-PAID-0000-0000-0001', billing: null }];
+    const paid = [{ licenseKey: 'AMCP-PAID-0000-0000-0001', billing: null, organizationId: 'org-1', status: 'active' }];
     const verified = (billing: any, valid = true) => ({ data: { valid, billing } });
 
     it('refuses while Stripe would charge again: trialing, active, past due', async () => {
@@ -165,11 +170,38 @@ describe('LicenseReleaseService', () => {
       const { svc, prisma } = makeService({ paid });
       await expect(svc.assertNoLiveSubscription(['org-1'])).rejects.toThrow();
       const where = (prisma.license.findMany.mock.calls[0] as any[])[0].where;
-      expect(where).toEqual({ organizationId: { in: ['org-1'] }, status: 'active', plan: { not: 'trial' } });
+      expect(where).toEqual({ organizationId: { in: ['org-1'] }, plan: { not: 'trial' } });
       const [url, config] = mockedAxios.get.mock.calls[0] as any[];
       expect(url).toMatch(/\/api\/license\/verify$/);
-      expect(config.params).toEqual({ key: 'AMCP-PAID-0000-0000-0001', billing: '1' });
+      expect(config.params).toEqual({ key: 'AMCP-PAID-0000-0000-0001', billing: '1', organizationId: 'org-1' });
       expect(config.headers['x-amcp-service-token']).toBe(process.env.LICENSE_SERVICE_TOKEN);
+    });
+
+    it('refuses a declined card trial that the site already answers as revoked while Stripe retries', async () => {
+      // 10 Nov 2026: the licence was "revoked" here, the deletion went through,
+      // and Stripe's retry charged the deleted workspace four days later.
+      for (const status of ['past_due', 'unpaid', 'incomplete']) {
+        mockedAxios.get.mockResolvedValueOnce({
+          data: { valid: false, error: 'License has been revoked', billing: { status, cancelling: false } },
+        });
+        const { svc } = makeService({ paid: [{ ...paid[0], status: 'revoked' }] });
+        await expect(svc.assertNoLiveSubscription(['org-1'])).rejects.toThrow(/active subscription/);
+      }
+    });
+
+    it('names the workspaces to cancel, with a code the app can act on', async () => {
+      mockedAxios.get
+        .mockResolvedValueOnce(verified({ status: 'past_due', cancelling: false }, false))
+        .mockResolvedValueOnce(verified({ status: 'canceled', cancelling: false }, false));
+      const { svc } = makeService({
+        paid: [paid[0], { ...paid[0], licenseKey: 'AMCP-PAID-0000-0000-0002', organizationId: 'org-2', status: 'revoked' }],
+      });
+      const err: any = await svc.assertNoLiveSubscription(['org-1', 'org-2']).catch((e) => e);
+      expect(err.getStatus()).toBe(409);
+      expect(err.getResponse()).toMatchObject({
+        code: 'active_subscription',
+        organizations: [{ id: 'org-1', name: 'Workspace org-1' }],
+      });
     });
 
     it('lets the workspace go once the customer has cancelled in Stripe, or the licence has ended', async () => {
@@ -200,6 +232,18 @@ describe('LicenseReleaseService', () => {
       mockedAxios.get.mockRejectedValueOnce(httpError(undefined));
       const unknown = makeService({ paid });
       await expect(unknown.svc.assertNoLiveSubscription(['org-1'])).rejects.toThrow(/try again/);
+    });
+
+    it('when the site cannot be reached, a stopped licence with no known state does not block', async () => {
+      mockedAxios.get.mockRejectedValueOnce(httpError(undefined));
+      const stopped = makeService({ paid: [{ ...paid[0], status: 'expired' }] });
+      await expect(stopped.svc.assertNoLiveSubscription(['org-1'])).resolves.toBeUndefined();
+
+      mockedAxios.get.mockRejectedValueOnce(httpError(undefined));
+      const retried = makeService({
+        paid: [{ ...paid[0], status: 'revoked', billing: { status: 'past_due', cancelling: false } }],
+      });
+      await expect(retried.svc.assertNoLiveSubscription(['org-1'])).rejects.toThrow(/active subscription/);
     });
 
     it('checks nothing on a self-hosted install', async () => {

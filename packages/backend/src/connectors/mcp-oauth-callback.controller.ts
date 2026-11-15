@@ -654,6 +654,7 @@ export class McpOAuthCallbackController {
         clientAssertion: flow.clientAssertion,
         userAgent: flow.userAgent,
         resource: flow.resource,
+        ...(flow.tokenResponsePath ? { tokenResponsePath: flow.tokenResponsePath } : {}),
       });
     } catch (err: any) {
       if (flow.dynamicClient && /invalid_client|unauthorized_client/i.test(String(err?.message))) {

@@ -1,0 +1,330 @@
+{
+  "slug": "reverb-listings",
+  "name": "Reverb Listings",
+  "aliases": [
+    "Reverb marketplace",
+    "Reverb search",
+    "reverb.com"
+  ],
+  "description": "Search what is for sale on Reverb, the marketplace for new, used and vintage music gear, from Claude, ChatGPT or Copilot: listings by text, make, condition, price, year, category and country, listing details with shipping and return terms, categories, and shops with their listings. Read-only, no account or token.",
+  "instructions": "## Reverb Listings\nThis connector reads the **public side of the Reverb API** (`https://api.reverb.com/api`): what is for sale on Reverb, the marketplace for new, used and vintage musical instruments and audio gear. It searches listings, reads a listing, lists the product categories and reads a shop and what it sells. It needs no Reverb account and cannot buy, make offers or see orders. To manage your own Reverb shop (listings, orders, messages), use the **Reverb** connector, which works with a personal access token.\n\n**Setup**: nothing to enter. Install the connector and it works. The calls are sent without a token, with the headers Reverb asks for (`Accept: application/hal+json`, `Accept-Version: 3.0` and a `User-Agent`).\n\n**Where to start**: `reverb_listings_search_listings` with a `query` (\"fender telecaster\", \"sm57\") and the filters that fit: `make`, `condition` (new or used), `price_min` and `price_max`, `year_min` and `year_max`, `item_region` (where the item is) and `ships_to` (where it can be sent). The answer's `humanized_params` repeats in words how Reverb understood the search: check it when the results look off. `reverb_listings_get_listing` then gives the full description, shipping and return terms of one listing.\n\n**Categories**: `reverb_listings_list_categories` returns every category with its `uuid`; pass one as `category_uuid` to the search (\"Acoustic Guitars / 12-String\", \"Effects and Pedals / Delay\").\n\n**Shops**: every listing names its shop (`shop.slug`). `reverb_listings_get_shop` reads its profile, rating and policies; `reverb_listings_list_shop_listings` lists what it has for sale.\n\n**Field notes**:\n- Prices are objects with `amount` as a decimal string (\"274.80\"), `amount_cents`, `currency` and a ready-to-show `display`. `price` is the listing price and `buyer_price` what the buyer pays. They come in USD unless `display_currency` asks for another currency; `listing_currency` is the currency the seller listed in.\n- `condition.display_name` is the grade of the item (Brand New, Mint, Excellent, Very Good, Good, Fair, Poor, Non Functioning). The `condition` filter only tells new from used.\n- Results are paged, and Reverb stops at page 50 of a search however many listings match (`total` can be far higher). Narrow the search instead of paging deep.\n- `year` is free text typed by the seller (\"1978\", \"2009 - 2010\", or empty).\n- `description` in a listing is HTML.\n- Give the user the `_links.web.href` of a listing: that is its page on reverb.com.\n- Rate limit: Reverb documents 2,000 read requests per minute and 10,000 per 10 minutes per application, and answers 429 beyond that. It publishes no separate terms for calls without a token.\n- The price guide is not offered: Reverb answers that this endpoint is no longer publicly available.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "reverb-listings",
+  "docsUrl": "https://www.reverb-api.com/docs/getting-started",
+  "prerequisites": "Nothing: no Reverb account and no token. To manage your own shop, use the Reverb connector instead.",
+  "requiredEnvVars": [],
+  "verifyHints": {
+    "403": "Reverb refused the call. Some parts of its API are no longer public (the price guide); the listing search needs no token.",
+    "404": "Reverb found no listing or shop with that id or slug; a sold or removed listing answers 404.",
+    "429": "Reverb is limiting requests from this address (2,000 reads per minute). Wait a minute and try again.",
+    "rate_limited": "Reverb is limiting requests from this address (2,000 reads per minute). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "reverb_listings_search_listings",
+    "params": {
+      "query": "guitar",
+      "per_page": 1
+    }
+  },
+  "connector": {
+    "name": "Reverb Listings",
+    "type": "REST",
+    "baseUrl": "https://api.reverb.com/api",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/hal+json",
+      "Accept-Version": "3.0",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "reverb_listings_search_listings",
+      "description": "Search the public listings on Reverb, the marketplace for new, used and vintage music gear. Combine a free-text `query` with filters: make, condition, price range, year range, category, where the item is located and where it ships to. Returns `total`, `current_page`, `total_pages`, a sentence saying how the search was understood (`humanized_params`) and `listings`, each with id, make, model, year, finish, title, condition, price and buyer price (amount as a decimal string, currency), shop name and slug, shipping, and links to the photo and the page on reverb.com. Paged with `page` and `per_page`; Reverb serves at most 50 pages per search, so narrow the filters instead of paging deep.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Free text, as typed in the Reverb search box: \"fender telecaster\", \"sm57\", \"moog matriarch\"."
+          },
+          "make": {
+            "type": "string",
+            "description": "Brand of the item, for example fender, gibson or roland."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "new",
+              "used"
+            ],
+            "description": "Only brand-new items, or only used ones (every used grade from mint to non-functioning)."
+          },
+          "price_min": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Lowest price, in the display currency (USD unless `display_currency` is set)."
+          },
+          "price_max": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Highest price, in the display currency (USD unless `display_currency` is set)."
+          },
+          "year_min": {
+            "type": "integer",
+            "description": "Earliest year the item was made, for example 1965."
+          },
+          "year_max": {
+            "type": "integer",
+            "description": "Latest year the item was made, for example 1979."
+          },
+          "category_uuid": {
+            "type": "string",
+            "description": "Only listings in this category: a `uuid` from `reverb_listings_list_categories`."
+          },
+          "item_region": {
+            "type": "string",
+            "description": "Where the item is located: an ISO 3166-1 alpha-2 country code such as US, GB, DE or JP.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "ships_to": {
+            "type": "string",
+            "description": "Only listings that ship to this country: an ISO 3166-1 alpha-2 code such as US, GB or DE.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "price|asc",
+              "price|desc"
+            ],
+            "description": "Order by price, lowest first (`price|asc`) or highest first (`price|desc`). Without it Reverb orders by relevance."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Listings per page."
+          },
+          "display_currency": {
+            "type": "string",
+            "description": "Currency to show every price in, as an ISO 4217 code such as USD, EUR or GBP (sent as the `X-Display-Currency` header). Without it Reverb answers in USD.",
+            "pattern": "^[A-Z]{3}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings",
+        "queryParams": {
+          "query": "$query",
+          "make": "$make",
+          "condition": "$condition",
+          "price_min": "$price_min",
+          "price_max": "$price_max",
+          "year_min": "$year_min",
+          "year_max": "$year_max",
+          "category_uuid": "$category_uuid",
+          "item_region": "$item_region",
+          "ships_to": "$ships_to",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "X-Display-Currency": "$display_currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Search listings"
+      }
+    },
+    {
+      "name": "reverb_listings_get_listing",
+      "description": "Read one Reverb listing by its numeric id (the `id` of a search result): title, make, model, year, finish, the full description as HTML, condition, price and buyer price, how many are in stock, whether offers are accepted, where the item is (`location`), shipping rates and policy, return policy, the shop with its feedback count and rating, view and watch counts, photos and the link to the page on reverb.com. A listing that was removed answers 404.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "string",
+            "description": "Numeric id of the listing, for example 102787080. The longer id-and-title form from a reverb.com link works too."
+          },
+          "display_currency": {
+            "type": "string",
+            "description": "Currency to show every price in, as an ISO 4217 code such as USD, EUR or GBP (sent as the `X-Display-Currency` header). Without it Reverb answers in USD.",
+            "pattern": "^[A-Z]{3}$"
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings/{listing_id}",
+        "headers": {
+          "X-Display-Currency": "$display_currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Get a listing"
+      }
+    },
+    {
+      "name": "reverb_listings_list_categories",
+      "description": "List every Reverb product category as a flat list (about 320 entries): `uuid`, `full_name` with its parent (for example \"Acoustic Guitars / 12-String\"), `slug` and `root_slug`. Use a `uuid` as `category_uuid` in `reverb_listings_search_listings`. The list rarely changes, so read it once per conversation.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/flat"
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "select": {
+            "categories": {
+              "$from": "$.categories[*]",
+              "$select": {
+                "uuid": "$.uuid",
+                "full_name": "$.full_name",
+                "slug": "$.slug",
+                "root_slug": "$.root_slug"
+              }
+            }
+          }
+        },
+        "cacheTtl": 86400
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "List categories"
+      }
+    },
+    {
+      "name": "reverb_listings_get_shop",
+      "description": "Read the public profile of a Reverb shop by its slug (the `shop.slug` of a listing, or the last part of a reverb.com/shop/ address): name, description, shop type, country, feedback count and rating, whether it is a preferred seller, a quick shipper or on vacation, and its shipping, payment and return policies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_slug": {
+            "type": "string",
+            "description": "Slug of the shop, for example the `shop.slug` field of a listing."
+          }
+        },
+        "required": [
+          "shop_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops/{shop_slug}"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "Get a shop"
+      }
+    },
+    {
+      "name": "reverb_listings_list_shop_listings",
+      "description": "List the live listings of one Reverb shop by its slug, optionally narrowed by a text query or a price range. Returns the same fields as the listing search: `total`, `total_pages` and `listings` with id, make, model, title, condition, price and links. Paged with `page` and `per_page`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_slug": {
+            "type": "string",
+            "description": "Slug of the shop, for example the `shop.slug` field of a listing."
+          },
+          "query": {
+            "type": "string",
+            "description": "Free text to search within the shop."
+          },
+          "price_min": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Lowest price, in the display currency (USD unless `display_currency` is set)."
+          },
+          "price_max": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Highest price, in the display currency (USD unless `display_currency` is set)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "price|asc",
+              "price|desc"
+            ],
+            "description": "Order by price, lowest first (`price|asc`) or highest first (`price|desc`)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Listings per page."
+          },
+          "display_currency": {
+            "type": "string",
+            "description": "Currency to show every price in, as an ISO 4217 code such as USD, EUR or GBP (sent as the `X-Display-Currency` header). Without it Reverb answers in USD.",
+            "pattern": "^[A-Z]{3}$"
+          }
+        },
+        "required": [
+          "shop_slug"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listings",
+        "queryParams": {
+          "shop": "$shop_slug",
+          "query": "$query",
+          "price_min": "$price_min",
+          "price_max": "$price_max",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "X-Display-Currency": "$display_currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "title": "List a shop's listings"
+      }
+    }
+  ]
+}

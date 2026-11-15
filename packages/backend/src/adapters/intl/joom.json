@@ -1,0 +1,976 @@
+{
+  "slug": "joom",
+  "name": "Joom",
+  "description": "Joom for Merchants API v3 for sellers on the Joom marketplace: unfulfilled orders, shipping with tracking, products with variants, prices, stock per warehouse, categories, warehouses and FBJ replenishments. Sign-in with an app you create in the Joom Merchant Panel.",
+  "instructions": "## Joom\nThis connector works with the **Joom for Merchants API v3** at `https://api-merchant.joom.com/api/v3`, for merchants who sell on the Joom marketplace: orders and shipping, products with variants, prices and stock per warehouse, categories, warehouses and FBJ replenishments.\n\n**Setup (about 10 minutes)**\n1. Sign in to the Joom Merchant Panel and create an app for the API. As its redirect URL enter the callback address of your AnythingMCP server: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or your own server address followed by `/api/mcp-oauth/callback`.\n2. Copy the app's client ID into `JOOM_CLIENT_ID` and its secret into `JOOM_CLIENT_SECRET`.\n3. Click **Authorize with Provider**, log in to Joom with the merchant account and grant access. Joom sends you back and the connector stores the refresh token; access tokens are renewed on their own.\n\n**Where to start**: `joom_count_products` proves the connection. `joom_list_unfulfilled_orders` shows what has to be shipped; `joom_get_order` gives one order in full.\n\n**Orders and shipping**: an order is one product variant with a quantity; a basket with three products arrives as three orders with the same `transactionId`. After you handed the parcel to your carrier call `joom_fulfill_order` with the tracking number and a carrier from `joom_list_shippers`; correct a wrong number with `joom_modify_tracking`. `joom_list_orders` with `updated_from` returns later changes (refunds, returns, reviews). `joom_cancel_order` refunds the customer and `joom_fulfill_orders_online` books Joom's own shipping, which Joom may charge for: both are installed switched off. `joom_list_pickup_addresses` is only needed for online shipping.\n\n**Products**: `joom_list_products`, `joom_get_product`, `joom_create_product`, `joom_update_product`. Everything can be addressed by your own SKU or by the Joom id. A product has a current version and a published one: `state` describes the current version (pending while Joom reviews it, rejected when you must fix something), `hasActiveVersion` tells whether customers can buy it. `joom_update_product` behaves like a patch and also changes price and inventory per variant. To pause a product set `enabled` to false; `joom_remove_product` and `joom_remove_product_variants` delete for good and are installed switched off. Pick the category with `joom_list_categories` and read its attributes with `joom_get_category_requirements`.\n\n**Stock per warehouse**: `joom_list_warehouses`, `joom_get_product_stock`, `joom_update_product_stock`. `joom_list_fbj_replenishments` is for stores that use Fulfillment by Joom.\n\n**Formats**: times are RFC 3339 in UTC. Prices are decimal strings with a dot (`\"10.3\"`) and a separate ISO 4217 currency code. Answers carry `data`; errors carry `errors` with `code`, `field` and `message`.\n\n**Paging**: list tools return up to 500 rows (100 by default). When the answer has `paging.next`, take the `after` value from that URL and pass it as `after`.\n\n**Rate limits**: 2000 calls per minute per store in total. `joom_list_products`, `joom_list_orders` and `joom_list_unfulfilled_orders` share 50 calls per minute. The headers `X-Rate-Limit-Remaining` and `X-Rate-Limit-Reset` tell what is left; a 429 means wait until the minute is over.",
+  "aliases": [
+    "Joom Merchant",
+    "Joom for Merchants",
+    "Joom Marketplace"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "joom",
+  "docsUrl": "https://merchant.joom.com/docs/api/v3",
+  "requiredEnvVars": [
+    "JOOM_CLIENT_ID",
+    "JOOM_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "JOOM_REFRESH_TOKEN"
+  ],
+  "appRegistrationUrl": "https://merchant.joom.com",
+  "envVarMeta": {
+    "JOOM_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Joom Merchant Panel: the client ID of the app you created for the API.",
+      "link": "https://merchant.joom.com/docs/api/v3",
+      "pattern": "^\\S{4,200}$",
+      "patternMessage": "Paste the client ID only, without spaces."
+    },
+    "JOOM_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The secret shown next to the client ID of the same app.",
+      "link": "https://merchant.joom.com/docs/api/v3",
+      "pattern": "^\\S{8,300}$",
+      "patternMessage": "Paste the client secret without spaces."
+    },
+    "JOOM_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "help": "Leave empty: the sign-in with Joom fills it in.",
+      "advanced": true
+    }
+  },
+  "prerequisites": "A Joom merchant account with access to the Merchant Panel, where you create an app for the API whose redirect URL is `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or your own AnythingMCP server address followed by `/api/mcp-oauth/callback`). Then sign in with the merchant account: no token to copy.",
+  "verifyHints": {
+    "400": "Joom refused the request. The `errors` list names the field; an order in the wrong state (already shipped or cancelled) also answers 400.",
+    "401": "Joom did not accept the access. Check that the client ID and secret belong to the same app, then click Authorize with Provider and grant access again.",
+    "403": "Joom refused the call: the product or order belongs to another store than the one that was authorized.",
+    "404": "Joom found no order or product with that id or SKU. A Joom id in the sku field (or the other way round) also answers 404.",
+    "rate_limited": "Joom allows 2000 calls per minute per store and 50 per minute for the list tools together. Wait for the seconds in X-Rate-Limit-Reset and try again."
+  },
+  "probe": {
+    "tool": "joom_count_products",
+    "params": {}
+  },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 10,
+    "examples": [
+      "Which Joom orders still have to be shipped?",
+      "Mark order 5f1a as shipped with this tracking number",
+      "Set the stock of SKU TSHIRT-RED-M to 40",
+      "Which of my products did Joom reject?"
+    ],
+    "needs": [
+      "Your Joom merchant account with access to the Merchant Panel",
+      "About 10 minutes"
+    ],
+    "why": "Joom lets other tools reach a store only through an app that the merchant creates in the Merchant Panel. Creating one is free: AnythingMCP uses its client ID and secret to ask Joom for access to your store.\n\nYou approve that access on Joom's own page. AnythingMCP never sees your Joom password, and deleting the connector removes the keys and the access it holds.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Create your Joom app",
+        "body": "Sign in to the **Joom Merchant Panel** and create an **App** for the API. Enter the redirect URL below exactly as shown: Joom sends you back to it after you grant access.\n\nJoom then shows the app's **client ID** and **secret**. Keep the page open for the next step.",
+        "action": {
+          "label": "Open the Joom Merchant Panel",
+          "url": "https://merchant.joom.com"
+        },
+        "values": [
+          {
+            "label": "App name",
+            "value": "AnythingMCP",
+            "note": "Any name works."
+          },
+          {
+            "label": "Redirect URL",
+            "value": "{{redirectUri}}",
+            "note": "Paste it exactly, without a space or a slash at the end."
+          }
+        ],
+        "confirm": "I created the app",
+        "problems": [
+          {
+            "q": "I cannot find where to create an app",
+            "a": "Joom describes the step in its API documentation under **Authorization**: [merchant.joom.com/docs/api/v3](https://merchant.joom.com/docs/api/v3). If the Merchant Panel does not offer it to your account, ask Joom Merchant Support or your account manager."
+          },
+          {
+            "q": "I already have an app",
+            "a": "Use it: set its redirect URL to the address above and save."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Paste the client ID and secret",
+        "body": "Copy the **client ID** and the **secret** of your app into the fields below. Both must come from the same app.",
+        "fields": [
+          "JOOM_CLIENT_ID",
+          "JOOM_CLIENT_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "I lost the secret",
+            "a": "Open the app in the Merchant Panel and copy it again, or create a new app and use its client ID and secret."
+          }
+        ]
+      },
+      {
+        "id": "authorize",
+        "title": "Authorize access",
+        "body": "AnythingMCP opens Joom. Log in with the merchant account of the store you want to connect and grant access. You come back here on your own.",
+        "problems": [
+          {
+            "q": "Joom shows an error instead of the page to grant access",
+            "a": "The client ID is not the one of your app, or the redirect URL saved in the app differs from the one in step 1. Copy both again."
+          },
+          {
+            "q": "I have more than one store",
+            "a": "Log in with the account of the store you want to connect. For another store, set up a second Joom connector."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Joom for Merchants API v3",
+    "type": "REST",
+    "baseUrl": "https://api-merchant.joom.com/api/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "refresh_token",
+      "authorizationUrl": "https://api-merchant.joom.com/api/v2/oauth/authorize",
+      "tokenUrl": "https://api-merchant.joom.com/api/v2/oauth/access_token",
+      "refreshUrl": "https://api-merchant.joom.com/api/v2/oauth/refresh_token",
+      "tokenResponsePath": "data",
+      "pkce": false,
+      "clientId": "{{JOOM_CLIENT_ID}}",
+      "clientSecret": "{{JOOM_CLIENT_SECRET}}",
+      "refreshToken": "{{JOOM_REFRESH_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    "healthcheckPath": "/products/multi/count"
+  },
+  "tools": [
+    {
+      "name": "joom_list_unfulfilled_orders",
+      "description": "List the orders that still have to be shipped (status approved), oldest first: id, status, quantity, product (id, sku, variant id and sku), priceInfo (unitPrice, orderPrice, shippingPrice, commissionAmount, refundAmount as decimal strings in the order currency), shippingAddress, shipment (provider, trackingNumber), allowedShippingTypes, orderTimestamp and updateTimestamp (UTC). Up to 500 rows per call; when `paging.next` is present, call again with `after` taken from that URL. Shares a limit of 50 calls per minute with the other list tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 500. Default 100.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only rows updated at or after this time, RFC 3339 in UTC, e.g. 2026-11-01T00:00:00Z (2026-11-01 also works)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Paging token: the value of `after` in the `paging.next` URL of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/unfulfilled",
+        "queryParams": {
+          "limit": "$limit",
+          "updatedFrom": "$updated_from",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_list_orders",
+      "description": "List orders in any status changed since a point in time (shipped, refunded, cancelled, returned, reviewed): id, status, quantity, product (id, sku, variant id and sku), priceInfo (unitPrice, orderPrice, shippingPrice, commissionAmount, refundAmount as decimal strings in the order currency), shippingAddress, shipment (provider, trackingNumber), allowedShippingTypes, orderTimestamp and updateTimestamp (UTC), plus refund, return and reviewRating when present. Joom recommends polling about once a day with updated_from. Up to 500 rows per call; when `paging.next` is present, call again with `after` taken from that URL. Shares a limit of 50 calls per minute with the other list tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 500. Default 100.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only rows updated at or after this time, RFC 3339 in UTC, e.g. 2026-11-01T00:00:00Z (2026-11-01 also works)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Paging token: the value of `after` in the `paging.next` URL of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/multi",
+        "queryParams": {
+          "limit": "$limit",
+          "updatedFrom": "$updated_from",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_get_order",
+      "description": "Read one order: status (approved, shipped, fulfilledOnline, cancelled, refunded, paidByJoomRefund, returnInitiated, returnArrived, returnCompleted, returnDeclined, returnExpired), product and variant, quantity, prices and commission, the customer shipping address, shipment with carrier and tracking number, refund and return details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Joom order id (`id` of an order in joom_list_unfulfilled_orders or joom_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "id": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_fulfill_order",
+      "description": "Mark an approved order as shipped with your own carrier: sends the carrier and tracking number to Joom, which then tells the customer. Call it only after the parcel was handed over. Give provider (carrier name) or provider_id (id from joom_list_shippers), not both. Returns the updated order with status shipped.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Joom order id (`id` of an order in joom_list_unfulfilled_orders or joom_list_orders)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number from the carrier, letters and digits only."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Carrier name as returned by joom_list_shippers. Use this or provider_id."
+          },
+          "provider_id": {
+            "type": "string",
+            "description": "Carrier id as returned by joom_list_shippers. Use this or provider."
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/fulfill",
+        "queryParams": {
+          "id": "$order_id"
+        },
+        "bodyMapping": {
+          "provider": "$provider",
+          "providerId": "$provider_id",
+          "trackingNumber": "$tracking_number"
+        }
+      }
+    },
+    {
+      "name": "joom_modify_tracking",
+      "description": "Change the tracking number or the carrier of an order that was already shipped with your own carrier (not for orders shipped through Joom online shipping). Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Joom order id (`id` of an order in joom_list_unfulfilled_orders or joom_list_orders)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "New tracking number, letters and digits only."
+          },
+          "provider": {
+            "type": "string",
+            "description": "New carrier name (joom_list_shippers). Use this or provider_id, or leave both out to keep the carrier."
+          },
+          "provider_id": {
+            "type": "string",
+            "description": "New carrier id (joom_list_shippers). Use this or provider."
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/modifyTracking",
+        "queryParams": {
+          "id": "$order_id"
+        },
+        "bodyMapping": {
+          "provider": "$provider",
+          "providerId": "$provider_id",
+          "trackingNumber": "$tracking_number"
+        }
+      }
+    },
+    {
+      "name": "joom_cancel_order",
+      "description": "Cancel an order you cannot ship (only approved or fulfilledOnline orders). Joom refunds the customer in full and the cancellation counts against the store. It cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Joom order id (`id` of an order in joom_list_unfulfilled_orders or joom_list_orders)."
+          },
+          "reason": {
+            "type": "string",
+            "description": "outOfStock (the variant is sold out) or unableToFulfill (any other reason; note is then required).",
+            "enum": [
+              "outOfStock",
+              "unableToFulfill"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Explanation shown to the customer. Required with unableToFulfill."
+          }
+        },
+        "required": [
+          "order_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/cancel",
+        "queryParams": {
+          "id": "$order_id"
+        },
+        "bodyMapping": {
+          "reason": "$reason",
+          "note": "$note"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "joom_fulfill_orders_online",
+      "description": "Ship one or more approved orders through Joom online shipping (Joom Logistics and partner carriers): Joom books the shipment and returns shipperName, shippingOrderNumber and trackingNumber. Joom may charge for this shipping and can send a carrier to pick the parcel up. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "description": "Joom order ids to ship together in one parcel.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pickup": {
+            "type": "boolean",
+            "description": "true: the carrier collects the parcel at your pickup address. false: you bring it to the carrier."
+          },
+          "pickup_address_id": {
+            "type": "string",
+            "description": "Pickup address id from joom_list_pickup_addresses, when pickup is true."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/fulfillOnline",
+        "bodyMapping": {
+          "ids": "$order_ids",
+          "pickup": "$pickup",
+          "pickupAddressId": "$pickup_address_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "joom_list_shippers",
+      "description": "List the carriers Joom accepts for this merchant, each with its id and name. Use the id or the name in joom_fulfill_order and joom_modify_tracking. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shippers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_list_products",
+      "description": "List products with all their variants: id, sku, name, state (active, warning, pending, rejected, disabledByJoom, disabledByMerchant), enabled, hasActiveVersion, category, and per variant sku, price, currency, inventory and shipping data. Use updated_from to read only what changed (reviews by Joom, stock running out). Up to 500 rows per call; when `paging.next` is present, call again with `after` taken from that URL. Shares a limit of 50 calls per minute with the other list tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 500. Default 100.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only rows updated at or after this time, RFC 3339 in UTC, e.g. 2026-11-01T00:00:00Z (2026-11-01 also works)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Paging token: the value of `after` in the `paging.next` URL of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/multi",
+        "queryParams": {
+          "limit": "$limit",
+          "updatedFrom": "$updated_from",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_count_products",
+      "description": "Count the products of the store, optionally only those updated since a point in time. Returns `data.count`. A cheap call that also proves the connection works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updated_from": {
+            "type": "string",
+            "description": "Only rows updated at or after this time, RFC 3339 in UTC, e.g. 2026-11-01T00:00:00Z (2026-11-01 also works)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/multi/count",
+        "queryParams": {
+          "updatedFrom": "$updated_from"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_get_product",
+      "description": "Read one product by Joom product id or by your SKU: name, description, brand, images, category, state and review result, take rate (Joom commission in percent), content score, and every variant with sku, price, currency, inventory, GTIN, size, colour and shipping measures. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Joom product id. Give either this or sku."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your own product SKU. Give either this or product_id."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language for category and attribute names, e.g. en."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "id": "$product_id",
+          "sku": "$sku",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_create_product",
+      "description": "Create a product with its variants. Joom reviews new products before they go on sale (state pending, then active or rejected). Prices are decimal strings with a currency per variant. Returns the created product with its Joom id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your unique product SKU."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "main_image": {
+            "type": "string",
+            "description": "URL of the main image (JPEG, PNG or GIF, direct link to the file)."
+          },
+          "variants": {
+            "type": "array",
+            "description": "Variants as objects. Each needs sku; on creation also price (decimal string, e.g. \"12.50\") and currency (ISO 4217). Optional: inventory (integer), size, colors, gtin, msrPrice, shippingPrice (decimal strings), shippingWeight (kg), shippingLength, shippingWidth, shippingHeight (cm), mainImage (URL), enabled, hsCode, declaredValue.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Plain-text description. No HTML; separate lines with a line break."
+          },
+          "brand": {
+            "type": "string",
+            "description": "Brand or manufacturer."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Joom category id from joom_list_categories."
+          },
+          "extra_images": {
+            "type": "array",
+            "description": "URLs of additional images.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Search tags.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "store_id": {
+            "type": "string",
+            "description": "Joom store id. Only when the authorization covers several stores."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "false creates the product switched off. Default true."
+          }
+        },
+        "required": [
+          "sku",
+          "name",
+          "main_image",
+          "variants"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/create",
+        "bodyMapping": {
+          "sku": "$sku",
+          "name": "$name",
+          "mainImage": "$main_image",
+          "variants": "$variants",
+          "description": "$description",
+          "brand": "$brand",
+          "categoryId": "$category_id",
+          "extraImages": "$extra_images",
+          "tags": "$tags",
+          "storeId": "$store_id",
+          "enabled": "$enabled"
+        }
+      }
+    },
+    {
+      "name": "joom_update_product",
+      "description": "Change a product, found by Joom product id or by SKU. Works like a patch: only the fields you send change, and only the variants you list (matched by variant sku; an unknown sku adds a new variant). Use it for price and stock too: send variants with sku and price or inventory. Set enabled false to take a product or a variant off sale without deleting it. Returns the updated product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Joom product id. Give either this or sku."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your own product SKU. Give either this or product_id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New product name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New plain-text description."
+          },
+          "brand": {
+            "type": "string",
+            "description": "Brand or manufacturer."
+          },
+          "main_image": {
+            "type": "string",
+            "description": "URL of the new main image."
+          },
+          "extra_images": {
+            "type": "array",
+            "description": "URLs of additional images; replaces the current list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Search tags; replaces the current list.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Joom category id from joom_list_categories."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "false takes the whole product off sale, true puts it back."
+          },
+          "variants": {
+            "type": "array",
+            "description": "Only the variants to change. Variants as objects. Each needs sku; on creation also price (decimal string, e.g. \"12.50\") and currency (ISO 4217). Optional: inventory (integer), size, colors, gtin, msrPrice, shippingPrice (decimal strings), shippingWeight (kg), shippingLength, shippingWidth, shippingHeight (cm), mainImage (URL), enabled, hsCode, declaredValue.",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/update",
+        "queryParams": {
+          "id": "$product_id",
+          "sku": "$sku"
+        },
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "brand": "$brand",
+          "mainImage": "$main_image",
+          "extraImages": "$extra_images",
+          "tags": "$tags",
+          "categoryId": "$category_id",
+          "enabled": "$enabled",
+          "variants": "$variants"
+        }
+      }
+    },
+    {
+      "name": "joom_remove_product",
+      "description": "Delete a product and all its variants for good. A removed product cannot be restored; to pause sales use joom_update_product with enabled false instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Joom product id. Give either this or sku."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your own product SKU. Give either this or product_id."
+          },
+          "reason": {
+            "type": "string",
+            "description": "stopSelling or legalRequirement.",
+            "enum": [
+              "stopSelling",
+              "legalRequirement"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/remove",
+        "queryParams": {
+          "id": "$product_id",
+          "sku": "$sku"
+        },
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "joom_remove_product_variants",
+      "description": "Delete some variants of a product for good (not all of them: use joom_remove_product for the whole product). Removed variants cannot be restored. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Joom product id. Give either this or sku."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your own product SKU. Give either this or product_id."
+          },
+          "variants": {
+            "type": "array",
+            "description": "Variants to delete, each an object with id (Joom variant id) or sku (your variant SKU).",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "variants"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/removeVariants",
+        "queryParams": {
+          "id": "$product_id",
+          "sku": "$sku"
+        },
+        "bodyMapping": {
+          "variants": "$variants"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "joom_get_product_stock",
+      "description": "Read stock and default shipping price of every variant of one product per warehouse: variant id and sku, warehouse id and label, inventory, shippingPrice and currency. Without a warehouse filter all your warehouses are returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Joom product id. Give either this or sku."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your own product SKU. Give either this or product_id."
+          },
+          "warehouse_id": {
+            "type": "string",
+            "description": "Only this warehouse (id from joom_list_warehouses)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 500. Default 100.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "after": {
+            "type": "string",
+            "description": "Paging token: the value of `after` in the `paging.next` URL of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/warehouses",
+        "queryParams": {
+          "id": "$product_id",
+          "sku": "$sku",
+          "warehouseId": "$warehouse_id",
+          "limit": "$limit",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_update_product_stock",
+      "description": "Set stock or the default shipping price of variants of one product in a warehouse. Only the variant and warehouse pairs you list change. Without warehouseId or warehouseLabel the default warehouse is used. Returns an empty object on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Joom product id. Give either this or sku."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your own product SKU. Give either this or product_id."
+          },
+          "items": {
+            "type": "array",
+            "description": "Rows to change. Each object needs variantSku or variantId and either inventory (integer) or shippingPrice with currency (decimal string and ISO 4217 code); optional warehouseId or warehouseLabel.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/warehouses/update",
+        "queryParams": {
+          "id": "$product_id",
+          "sku": "$sku"
+        },
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "joom_list_categories",
+      "description": "List the whole Joom category tree: id, name and parent of every category. The answer is large; read it once and reuse the ids in joom_create_product and joom_get_category_requirements. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/productCategories"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_get_category_requirements",
+      "description": "Read which product attributes a category requires or recommends (key, whether it is mandatory, allowed values). Joom marks this endpoint as experimental, so the shape can change. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Joom category id from joom_list_categories."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the attribute names, e.g. en."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/productCategories/requirements",
+        "queryParams": {
+          "id": "$category_id",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_list_warehouses",
+      "description": "List your warehouses: id, label, name, country, type, enabled and the countries each one ships to. The ids and labels are used in the stock tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 500. Default 100.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses/multi",
+        "queryParams": {
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_list_pickup_addresses",
+      "description": "List the pickup addresses saved for the store (id, name, address, city, country, contact). Only needed for Joom online shipping with carrier pickup. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pickupAddresses/all"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "joom_list_fbj_replenishments",
+      "description": "List Fulfillment by Joom (FBJ) replenishment requests with their status (pendingApprove, pendingInbound, pendingShipping, shippedByMerchant, actionRequired, onReview, completed, cancelled), warehouse and variants. Empty for stores that do not use FBJ. Up to 500 rows per call; when `paging.next` is present, call again with `after` taken from that URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 500. Default 100.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only rows updated at or after this time, RFC 3339 in UTC, e.g. 2026-11-01T00:00:00Z (2026-11-01 also works)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Paging token: the value of `after` in the `paging.next` URL of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fbj/replenishments/multi",
+        "queryParams": {
+          "limit": "$limit",
+          "updatedFrom": "$updated_from",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

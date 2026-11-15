@@ -1,5 +1,6 @@
 import { ConnectorSetupService, SETUP_LINK_RETENTION_MS } from './connector-setup.service';
 import { AdaptersService } from './adapters.service';
+import { describeAdapterEnvVars } from './env-var-meta';
 import { encrypt } from '../common/crypto/encryption.util';
 import { outboundRequest } from '../common/outbound-http';
 
@@ -435,6 +436,80 @@ describe('ConnectorSetupService — install', () => {
     const out: any = await service.install(ctx, { adapter: 'openplz' });
     expect(out.body.upgradeUrl).toBeUndefined();
     expect(out.body.whatTheUserCanDo).toMatch(/administrator/);
+  });
+});
+
+describe('ConnectorSetupService — a setting with a fixed list of choices (envVarMeta.options)', () => {
+  const countries = [
+    { value: 'https://fr.shop.example.test', label: 'France' },
+    { value: 'https://es.shop.example.test', label: 'Spain' },
+  ];
+  /** Magento as it is, with choices put on its address (no catalog adapter is pinned here). */
+  function buildWithChoices() {
+    const built = build();
+    const describe = built.adapters.describe;
+    built.adapters.describe = (slug: string) => {
+      const d = describe(slug);
+      if (slug !== 'magento') return d;
+      const envVarMeta = { ...d.envVarMeta, MAGENTO_BASE_URL: { ...d.envVarMeta.MAGENTO_BASE_URL, label: 'Country', options: countries } };
+      return { ...d, envVarMeta, envVars: describeAdapterEnvVars({ ...d, envVarMeta }) };
+    };
+    return built;
+  }
+
+  it('lists the choices to the model, with how to pass one', async () => {
+    const { service, ctx } = buildWithChoices();
+    const out: any = (await service.find(ctx, { query: 'magento' })).body;
+    const magento = out.results.find((r: any) => r.adapter === 'magento');
+    expect(magento.settingsYouMayPass).toEqual([
+      {
+        name: 'MAGENTO_BASE_URL',
+        label: 'Country',
+        required: true,
+        help: expect.any(String),
+        example: expect.any(String),
+        options: countries,
+        howToPass: expect.stringMatching(/Ask the user which one applies.*pass the value/),
+      },
+    ]);
+  });
+
+  it('says nothing about choices for a setting without them', async () => {
+    const { service, ctx } = build();
+    const out: any = (await service.find(ctx, { query: 'magento' })).body;
+    const magento = out.results.find((r: any) => r.adapter === 'magento');
+    expect(Object.keys(magento.settingsYouMayPass[0]).sort()).toEqual(['example', 'help', 'label', 'name', 'required']);
+  });
+
+  it('refuses a value that is not one of them, naming the choices, before installing anything', async () => {
+    const { service, ctx, adapters } = buildWithChoices();
+    for (const value of ['https://de.shop.example.test', 'France', 'fr.shop.example.test']) {
+      const out: any = await service.install(ctx, { adapter: 'magento', settings: { MAGENTO_BASE_URL: value } });
+      expect(out.isError).toBe(true);
+      expect(out.body.error).toBe(
+        "'Country' must be one of: France (https://fr.shop.example.test), Spain (https://es.shop.example.test).",
+      );
+      expect(out.body.hint).toMatch(/Ask the user which one applies/);
+    }
+    expect(adapters.importAdapter).not.toHaveBeenCalled();
+  });
+
+  it('installs with a listed value, and without the setting when the user chooses on the page', async () => {
+    const { service, ctx, adapters } = buildWithChoices();
+    const out: any = await service.install(ctx, { adapter: 'magento', settings: { MAGENTO_BASE_URL: ' https://es.shop.example.test ' } });
+    expect(out.isError).toBeFalsy();
+    expect(adapters.importAdapter).toHaveBeenLastCalledWith(
+      'magento',
+      'u1',
+      'org-1',
+      { MAGENTO_BASE_URL: 'https://es.shop.example.test' },
+      { addressMayWait: true },
+    );
+
+    const { service: second, ctx: ctx2, adapters: adapters2 } = buildWithChoices();
+    const empty: any = await second.install(ctx2, { adapter: 'magento', settings: { MAGENTO_BASE_URL: '' } });
+    expect(empty.isError).toBeFalsy();
+    expect(adapters2.importAdapter).toHaveBeenLastCalledWith('magento', 'u1', 'org-1', {}, { addressMayWait: true });
   });
 });
 

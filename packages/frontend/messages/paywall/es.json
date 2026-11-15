@@ -1,0 +1,181 @@
+{
+  "licenseWall": {
+    "title": "Mantén tu IA conectada a tus apps",
+    "body": "Tu prueba de 7 días ha terminado. Suscríbete y {client} seguirá trabajando con tus conectores. Todo lo que configuraste se conserva.",
+    "yourAi": "tu IA",
+    "loading": "Cargando tus planes…",
+    "trust": {
+      "cancel": "Cancela cuando quieras",
+      "stripe": "Pago seguro con Stripe",
+      "hosted": "Alojado en Fráncfort",
+      "gdpr": "RGPD · DPA"
+    },
+    "workspaces": "{count} workspaces en AnythingMCP Cloud",
+    "directory": "En el Claude Directory",
+    "directoryChatgpt": "En el directorio de plugins de ChatGPT",
+    "directoryBoth": "En los directorios de Claude y ChatGPT",
+    "workspaceLabel": "Workspace:",
+    "reasons": {
+      "paymentFailed": {
+        "title": "Tu pago no se ha completado",
+        "bodyAdmin": "Tu último pago no se ha completado, así que tu suscripción está en pausa. Actualiza tu método de pago y se reanuda enseguida: el pago pendiente se cobra en cuanto guardes el nuevo. Tus conectores y ajustes se conservan.",
+        "bodyMember": "El último pago de la suscripción de este workspace no se ha completado, así que la suscripción está en pausa. Pide a un administrador del workspace que actualice el método de pago. Tus conectores y ajustes se conservan."
+      },
+      "noLicense": {
+        "title": "Licencia necesaria",
+        "body": "Este workspace no tiene una licencia activa. Inicia una prueba o compra un plan para continuar."
+      },
+      "trialEnded": {
+        "title": "Tu prueba ha terminado",
+        "body": "Tu prueba de 7 días ha terminado. Compra una licencia para seguir usando AnythingMCP Cloud. Tus conectores y ajustes se conservan."
+      },
+      "lapsed": {
+        "title": "Tu suscripción no está activa",
+        "body": "Tu suscripción no está activa, normalmente por un pago de renovación que no se completó. Actualiza tu método de pago en el portal de facturación y se reanuda; si compras un plan nuevo, empezaría una segunda suscripción junto a esta. Tus conectores y ajustes se conservan."
+      },
+      "expired": {
+        "title": "Tu licencia ha caducado",
+        "body": "Tu licencia ya no está activa. Compra o renueva una licencia para seguir usando AnythingMCP. Tus conectores y ajustes se conservan."
+      }
+    },
+    "startTrial": {
+      "start": "Empezar la prueba gratuita de 7 días",
+      "starting": "Iniciando…",
+      "failed": "No se pudo iniciar la prueba. Inténtalo de nuevo o escribe a soporte."
+    },
+    "viewPlans": "Ver planes y comprar una licencia",
+    "openingCheckout": "Abriendo el pago…",
+    "subscribeTo": "Suscribirse a {plan}",
+    "comparePlans": "Comparar planes",
+    "opening": "Abriendo…",
+    "payment": {
+      "update": "Actualizar método de pago",
+      "updated": "Ya he actualizado mi método de pago",
+      "checking": "Comprobando…",
+      "openFailed": "No se pudo abrir la página de pago. Inténtalo de nuevo o escribe a soporte.",
+      "notYet": "El pago aún no ha llegado. Si acabas de actualizar tu método de pago, inténtalo de nuevo en un minuto.",
+      "checkFailed": "No se puede comprobar ahora. Inténtalo de nuevo en un minuto."
+    },
+    "updateBilling": "Actualizar la facturación",
+    "switchWorkspace": "Cambiar a otro workspace",
+    "alreadyPurchased": "¿Ya has comprado?",
+    "enterKey": "Introduce tu clave de licencia",
+    "notContinuing": "¿No vas a continuar?",
+    "deleteAccount": "Eliminar tu cuenta"
+  },
+  "planPicker": {
+    "periodLabel": "Periodo de facturación",
+    "planLabel": "Plan",
+    "monthly": "Mensual",
+    "yearly": "Anual",
+    "twoMonthsFree": "2 meses gratis",
+    "mostPopular": "El más elegido",
+    "summary": "{connectors} conectores · {mcpServers} servidores MCP · {users, plural, =1 {# usuario} other {hasta # usuarios}}",
+    "price": "{amount}/{period, select, yearly {año} other {mes}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {año} other {mes}}",
+    "exactly": "exactamente {price}",
+    "yearlyPerMonth": "≈ {amount}/mes",
+    "outgrown": "Este workspace tiene {items}",
+    "usage": {
+      "connectors": "{count, plural, one {# conector} other {# conectores}}",
+      "mcpServers": "{count, plural, one {# servidor MCP} other {# servidores MCP}}",
+      "users": "{count, plural, one {# usuario} other {# usuarios}}"
+    },
+    "footer": {
+      "vat": "Precios en EUR, IVA incluido.",
+      "noVat": "Precios en EUR.",
+      "local": "Precios en EUR; pagas en {currency} en el checkout.",
+      "localVat": "Precios en EUR, IVA incluido; pagas en {currency} en el checkout."
+    },
+    "enterpriseQuestion": "¿Más usuarios, inicio de sesión único o SCIM?",
+    "pastTeam": "Este workspace supera Team.",
+    "enterpriseLink": "Consulta Enterprise",
+    "listSeparator": ", "
+  },
+  "cardCheckout": {
+    "failed": "No se pudo abrir el pago en este momento. Inténtalo de nuevo en un momento."
+  },
+  "trialBanner": {
+    "today": "Tu prueba termina hoy.",
+    "tomorrow": "Tu prueba termina mañana.",
+    "daysLeft": "Prueba: quedan {days} días.",
+    "includesTeam": "Incluye todo lo de Team.",
+    "aboveStarter": {
+      "link": "Por encima de Starter: mira qué cambia",
+      "title": "Tu workspace supera Starter",
+      "body": "Tu prueba incluye todo lo de Team. Si eliges Starter, esto cambia cuando termine la prueba. Con Team todo sigue igual.",
+      "close": "Cerrar"
+    },
+    "choosePlan": "Elegir un plan",
+    "openingCheckout": "Abriendo el pago…",
+    "addPaymentBefore": "Añade un método de pago: sin cargos antes del {date}",
+    "addPayment": "Añade un método de pago",
+    "upgrade": "Mejorar el plan"
+  },
+  "planFit": {
+    "title": "Qué cambia con {plan}",
+    "fits": "Todo lo que usas hoy cabe en {plan}.",
+    "chooseTeam": "Elegir Team",
+    "showDetails": "Ver cuáles",
+    "hideDetails": "Ocultar",
+    "keep": "Siguen activos",
+    "pause": "En pausa",
+    "groups": {
+      "connectors": "Conectores",
+      "mcpServers": "Servidores MCP",
+      "fileSearch": "Carpetas de File Search"
+    },
+    "unnamed": "Sin nombre",
+    "lines": {
+      "connectors": "{paused} de {total} conectores en pausa (los menos usados). Tú eliges cuáles.",
+      "mcpServers": "{paused} de {total} servidores MCP en pausa (los menos usados).",
+      "mcpServersChoose": "{paused} de {total} servidores MCP en pausa (los menos usados). Tú eliges cuáles.",
+      "users": "{max, plural, one {# usuario incluido} other {# usuarios incluidos}}, tienes {current}. Nadie pierde el acceso.",
+      "fileSearch": "File Search: hasta {maxFolders, plural, one {# carpeta} other {# carpetas}} y {maxFiles, number} archivos.",
+      "fileSearchStorage": "File Search: hasta {maxSize} de almacenamiento.",
+      "codeTools": "{max} code tools guardados (tienes {current}).",
+      "inline": "Sin código inline (code_execute)."
+    }
+  },
+  "startTrial": {
+    "loading": "Cargando…",
+    "skipCorner": "Continuar sin datos de pago",
+    "eyebrow": {
+      "choosePlan": "Elige tu plan",
+      "freeUntil": "Gratis hasta el {date}",
+      "freeTrial": "Prueba gratuita"
+    },
+    "title": {
+      "paysToday": "Mantén tu workspace en marcha",
+      "trial": "Tu prueba gratuita"
+    },
+    "ending": "Tu prueba gratuita termina el <strong>{date}</strong>, demasiado pronto para añadir un método de pago y seguir probando gratis. <strong>Tu plan empieza hoy y se cobra hoy.</strong> Tu workspace, tus conectores y tus ajustes se quedan exactamente como están.",
+    "endingSoon": "Tu prueba gratuita termina pronto, demasiado pronto para añadir un método de pago y seguir probando gratis. <strong>Tu plan empieza hoy y se cobra hoy.</strong> Tu workspace, tus conectores y tus ajustes se quedan exactamente como están.",
+    "returning": "Esta dirección de correo ya tuvo una suscripción a AnythingMCP, así que no es posible una nueva prueba gratuita con método de pago. <strong>Tu plan empieza hoy y se cobra hoy.</strong> Tu workspace, tus conectores y tus ajustes se quedan exactamente como están, y tu prueba actual sigue hasta el <strong>{date}</strong> si decides más adelante.",
+    "returningNoDate": "Esta dirección de correo ya tuvo una suscripción a AnythingMCP, así que no es posible una nueva prueba gratuita con método de pago. <strong>Tu plan empieza hoy y se cobra hoy.</strong> Tu workspace, tus conectores y tus ajustes se quedan exactamente como están.",
+    "trial": "Todas las funciones, gratis hasta el <strong>{date}</strong>. Añade ahora un método de pago y tu plan continúa sin más después de la prueba, sin ningún cargo antes. O sigue probando sin datos de pago: esa prueba tiene un <strong>límite de conectores más bajo</strong>, y puedes añadir un método de pago cuando quieras para desbloquear tu plan completo.",
+    "trialNoDate": "Todas las funciones, gratis hasta que termine tu prueba. Añade ahora un método de pago y tu plan continúa sin más después de la prueba, sin ningún cargo antes. O sigue probando sin datos de pago: esa prueba tiene un <strong>límite de conectores más bajo</strong>, y puedes añadir un método de pago cuando quieras para desbloquear tu plan completo.",
+    "authorizationReturn": "En cualquier caso, vuelves directamente a terminar de conectar tu cliente de IA.",
+    "chargesToday": "Esta dirección ya tuvo una suscripción, así que el checkout cobrará {amount} hoy.",
+    "start": {
+      "opening": "Abriendo el pago…",
+      "tryAgain": "Reintentar",
+      "checkout": "Continuar al pago",
+      "trial": "Empezar la prueba gratuita"
+    },
+    "promo": "El código {code} se aplicará en el checkout.",
+    "price": "{amount}/{period, select, yearly {año} other {mes}}",
+    "priceLocal": "≈ {local}/{period, select, yearly {año} other {mes}} ({exact})",
+    "finePrintPaysToday": "{plan}, {price}, se cobra hoy y después {period, select, yearly {cada año} other {cada mes}}. Pago seguro con Stripe. Cancela cuando quieras desde el portal de facturación.",
+    "finePrintTrial": "{plan}, facturación {period, select, yearly {anual} other {mensual}} desde el {date}. Pago seguro con Stripe. Si cancelas antes, no pagas nada.",
+    "finePrintTrialNoDate": "{plan}, facturación {period, select, yearly {anual} other {mensual}} desde el final de tu prueba. Pago seguro con Stripe. Si cancelas antes, no pagas nada.",
+    "notReady": "¿Aún no lo tienes claro?",
+    "notReadyCard": "¿Aún no quieres añadir un método de pago?",
+    "keepFree": "Seguir con la prueba gratuita",
+    "tryFree": "Probar gratis sin datos de pago",
+    "methods": {
+      "trial": "0 € hoy · tarjeta, PayPal y otros métodos",
+      "pay": "Tarjeta, PayPal y otros métodos"
+    }
+  }
+}

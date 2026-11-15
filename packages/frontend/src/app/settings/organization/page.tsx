@@ -10,6 +10,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/badge';
+import { ActiveSubscriptionNotice, subscribedWorkspacesOf, type SubscribedWorkspace } from '@/components/active-subscription-notice';
 
 export default function OrganizationSettingsPage() {
   const { token, user, orgName, orgs, setOrgName, switchOrg, replaceSession, logout } = useAuth();
@@ -35,6 +36,7 @@ export default function OrganizationSettingsPage() {
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteSubscribed, setDeleteSubscribed] = useState<SubscribedWorkspace[] | null>(null);
 
   // Security: force every member to sign in again
   const [revokeOpen, setRevokeOpen] = useState(false);
@@ -139,12 +141,15 @@ export default function OrganizationSettingsPage() {
     if (deleteConfirmName.trim() !== name.trim()) return;
     setDeleting(true);
     setDeleteError(null);
+    setDeleteSubscribed(null);
     try {
       const result = await organizations.deleteCurrent({ confirmName: deleteConfirmName.trim() }, token);
       replaceSession(result.accessToken, result.user, result.organization?.name ?? null);
       window.location.href = '/';
     } catch (err: any) {
-      setDeleteError(err?.message || t('deleteFailed'));
+      const subscribed = subscribedWorkspacesOf(err);
+      if (subscribed && subscribed.length > 0) setDeleteSubscribed(subscribed);
+      else setDeleteError(err?.message || t('deleteFailed'));
       setDeleting(false);
     }
   };
@@ -192,6 +197,7 @@ export default function OrganizationSettingsPage() {
     setDeleteOpen(false);
     setDeleteConfirmName('');
     setDeleteError(null);
+    setDeleteSubscribed(null);
     setDeleting(false);
   };
 
@@ -539,6 +545,9 @@ export default function OrganizationSettingsPage() {
               </div>
               {deleteError && (
                 <p className="text-sm text-[var(--danger)]">{deleteError}</p>
+              )}
+              {deleteSubscribed && (
+                <ActiveSubscriptionNotice workspaces={deleteSubscribed} returnPath="/settings/organization" />
               )}
             </div>
 

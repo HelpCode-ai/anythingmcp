@@ -5,7 +5,7 @@ import {
   AxiosError,
   Method,
 } from 'axios';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac, randomInt } from 'node:crypto';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { decodeResponseBody } from '../binary-response.util';
@@ -21,17 +21,20 @@ import {
   resolveTikTokShopAuthConfig,
   shopCipherApplies,
 } from './tiktok-shop-token.service';
+import { IopTokenService, isIopAccessTokenRejected, isIopAuth } from './iop-token.service';
 import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
   LoginTokenAuthConfig,
+  loginTokenHeaderInterpolator,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { followDownload, type DownloadFollowConfig } from './download-follow.util';
 import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { describeInvalidHeaderNames, isValidHeaderName } from '../../common/http-header-name.util';
-import { XMLParser } from 'fast-xml-parser';
+import { isXmlContentType, xmlParser } from './xml-parse.util';
+import { hasXmlTemplateBlocks, renderXmlTemplateBlocks } from './xml-body-template.util';
 import { pickExposedHeaders } from './response-headers.util';
 import { outboundRequest, OutboundRequestOptions } from '../../common/outbound-http';
 import {
@@ -39,7 +42,7 @@ import {
   toolResponseLimitBytes,
   toolTimeoutMs,
 } from './request-limits.util';
-import { assertNoResponseBodyError } from './response-error.util';
+import { assertNoResponseBodyError, ResponseBodyError } from './response-error.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
 import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
@@ -146,6 +149,7 @@ export class RestEngine {
     @Optional() private readonly bearerTokens?: BearerTokenRenewalService,
     @Optional() private readonly shopeeTokens?: ShopeeTokenService,
     @Optional() private readonly tiktokShopTokens?: TikTokShopTokenService,
+    @Optional() private readonly iopTokens?: IopTokenService,
   ) {}
 
   /**
@@ -348,7 +352,11 @@ export class RestEngine {
 
     // Inject authentication
     const headersBeforeAuth = headerNames(axiosConfig.headers);
-    await this.injectAuth(axiosConfig, config);
+    // Set only for LOGIN_TOKEN with `tokenPlacement: "body"`: the token is
+    // then `${loginToken}` in the tool's bodyTemplate instead of a header.
+    const loginBodyToken = await this.injectAuth(axiosConfig, config);
+    // Renders the body again with a new token, for the retry after a re-login.
+    let renderTokenBody: ((token: string) => unknown) | undefined;
     // Headers that carry the connector's credentials stay behind when a
     // redirect leaves the origin: whatever auth added, plus the connector's
     // own headers and templated ones, which often hold a key.
@@ -397,31 +405,43 @@ export class RestEngine {
     const xmlBody = endpointMapping.bodyEncoding === 'xml';
     if (REQUEST_BODY_METHODS.has(httpMethod)) {
       if (endpointMapping.bodyTemplate && xmlBody) {
-        axiosConfig.data = renderXmlBodyTemplate(endpointMapping.bodyTemplate, params);
-      } else if (endpointMapping.bodyTemplate) {
-        const rendered = renderBodyTemplate(
-          endpointMapping.bodyTemplate,
-          params,
-        );
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(rendered);
-        } catch (e: any) {
-          // The parser's "position 38" is a position in a string the caller
-          // cannot see, and we must not show it: env vars are interpolated into
-          // the template too, so the rendered body can carry a credential. Name
-          // the placeholders that had nothing to substitute instead — that is
-          // the usual cause and the only part that is safe to repeat.
-          const missing = missingTemplateParams(endpointMapping.bodyTemplate, params);
-          const hint = missing.length
-            ? ` No value was supplied for ${missing.map((m) => `\`\${${m}}\``).join(', ')}, which is the usual cause.`
-            : '';
-          throw new Error(
-            `bodyTemplate produced invalid JSON after interpolation: ${e.message}.${hint}`,
-          );
+        const template = endpointMapping.bodyTemplate;
+        if (loginBodyToken === undefined) {
+          axiosConfig.data = renderXmlBodyTemplate(template, params);
+        } else {
+          renderTokenBody = (token) => renderXmlBodyTemplate(template, params, { loginToken: token });
+          axiosConfig.data = renderTokenBody(loginBodyToken);
         }
-        assertNoPrototypePollution(parsed);
-        axiosConfig.data = parsed;
+      } else if (endpointMapping.bodyTemplate) {
+        const template = endpointMapping.bodyTemplate;
+        const renderJson = (templateParams: Record<string, unknown>): unknown => {
+          const rendered = renderBodyTemplate(template, templateParams);
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(rendered);
+          } catch (e: any) {
+            // The parser's "position 38" is a position in a string the caller
+            // cannot see, and we must not show it: env vars are interpolated into
+            // the template too, so the rendered body can carry a credential. Name
+            // the placeholders that had nothing to substitute instead — that is
+            // the usual cause and the only part that is safe to repeat.
+            const missing = missingTemplateParams(template, templateParams);
+            const hint = missing.length
+              ? ` No value was supplied for ${missing.map((m) => `\`\${${m}}\``).join(', ')}, which is the usual cause.`
+              : '';
+            throw new Error(
+              `bodyTemplate produced invalid JSON after interpolation: ${e.message}.${hint}`,
+            );
+          }
+          assertNoPrototypePollution(parsed);
+          return parsed;
+        };
+        if (loginBodyToken === undefined) {
+          axiosConfig.data = renderJson(params);
+        } else {
+          renderTokenBody = (token) => renderJson({ ...params, loginToken: token });
+          axiosConfig.data = renderTokenBody(loginBodyToken);
+        }
       } else if (endpointMapping.bodyMapping) {
         let bodyMapping = endpointMapping.bodyMapping;
         let bodyParams = params;
@@ -557,9 +577,11 @@ export class RestEngine {
     // of these APIs sign folds in the request body, which does not exist
     // until the block above has run. A Shopee connector also signs the
     // shop's access token and id, a TikTok Shop connector its shop cipher
-    // (its access token goes in a header, unsigned); undefined for every
-    // other connector.
+    // (its access token goes in a header, unsigned), an IOP connector
+    // (Lazada, Miravia, AliExpress seller) the seller's access token;
+    // undefined for every other connector.
     const tiktokShop = isTikTokShopAuth(config.authType, config.authConfig);
+    const iop = isIopAuth(config.authType, config.authConfig);
     // A TikTok Shop connector without an App key of its own signs, renews and
     // reads its shops with the server's app: filled in here, in memory, for
     // this call (and its retry) only.
@@ -570,7 +592,9 @@ export class RestEngine {
       ? await this.shopeeShopParams(config)
       : tiktokShop
         ? await this.tiktokShopCredentials(tiktokShopConfig, axiosConfig)
-        : undefined;
+        : iop
+          ? await this.iopCredentialParams(config)
+          : undefined;
     this.applyHmacSignature(axiosConfig, tiktokShopConfig, hmacCredentials);
     for (const h of headerNames(axiosConfig.headers)) {
       if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
@@ -578,6 +602,8 @@ export class RestEngine {
     const outbound: OutboundRequestOptions = {
       data: buildBody,
       credentialHeaders: [...credentialHeaders],
+      // A body that carries the login token is not resent to another origin.
+      ...(renderTokenBody ? { credentialsInBody: true } : {}),
     };
 
     // Origin, path template and query parameter names only, with the
@@ -636,12 +662,17 @@ export class RestEngine {
         );
         if (renewalFailed) throw renewalFailed;
       }
-      // LOGIN_TOKEN auto-relogin: retry once on 401 when refreshOn401 is enabled
+      // LOGIN_TOKEN auto-relogin: retry once on 401 when refreshOn401 is enabled.
+      // With `refreshOnBody401: true` also when the API says so in the body:
+      // an `errorWhen` rule with status 401 matches a 2xx answer, or the body
+      // of an HTTP error answer (see bodyReports401).
       if (
-        error instanceof AxiosError &&
-        error.response?.status === 401 &&
         config.authType === 'LOGIN_TOKEN' &&
-        (config.authConfig as Record<string, unknown> | undefined)?.refreshOn401 !== false
+        ((error instanceof AxiosError &&
+          error.response?.status === 401 &&
+          (config.authConfig as Record<string, unknown> | undefined)?.refreshOn401 !== false) ||
+          ((config.authConfig as Record<string, unknown> | undefined)?.refreshOnBody401 === true &&
+            bodyReports401(error, config.errorWhen)))
       ) {
         this.logger.debug('LOGIN_TOKEN: 401 received, re-issuing token...');
         const authConfig = config.authConfig as unknown as LoginTokenAuthConfig;
@@ -651,13 +682,14 @@ export class RestEngine {
           { proxyUrl: config.proxyUrl },
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
+        if (renderTokenBody) axiosConfig.data = renderTokenBody(bundle.token);
         rebuildBody(axiosConfig, buildBody);
         const retryResponse = await outboundRequest(axiosConfig, outbound);
         return withMeta(retryResponse);
       }
       // Shopee refused the shop's access token (expired early, or replaced
       // by another process's renewal): renew once, sign again, resend.
-      if (!tiktokShop && hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
+      if (!tiktokShop && !iop && hmacCredentials && this.shopeeTokens && isShopeeAccessTokenRejected(error)) {
         const renewed = await this.shopeeTokens.renewAfterRejection(config, sentAt);
         if (renewed) {
           this.applyHmacSignature(axiosConfig, config, renewed);
@@ -672,6 +704,17 @@ export class RestEngine {
         if (renewed) {
           const params = this.applyTikTokShopCredentials(axiosConfig, renewed);
           this.applyHmacSignature(axiosConfig, tiktokShopConfig, params);
+          rebuildBody(axiosConfig, buildBody);
+          return withMeta(await outboundRequest(axiosConfig, outbound));
+        }
+      }
+      // An IOP gateway refused the seller's access token (an errorWhen rule
+      // with status 401, e.g. IllegalAccessToken, or HTTP 401): renew once,
+      // sign again with a new timestamp, resend once.
+      if (iop && this.iopTokens && isIopAccessTokenRejected(error)) {
+        const renewed = await this.iopTokens.renewAfterRejection(config, sentAt);
+        if (renewed) {
+          this.applyHmacSignature(axiosConfig, config, renewed);
           rebuildBody(axiosConfig, buildBody);
           return withMeta(await outboundRequest(axiosConfig, outbound));
         }
@@ -873,8 +916,8 @@ export class RestEngine {
       connectorId?: string;
       proxyUrl?: string;
     },
-  ): Promise<void> {
-    if (!config.authConfig) return;
+  ): Promise<string | undefined> {
+    if (!config.authConfig) return undefined;
 
     switch (config.authType) {
       case 'API_KEY': {
@@ -963,6 +1006,9 @@ export class RestEngine {
           bundle.token,
           bundle.aud,
         );
+        // `tokenPlacement: "body"`: the caller renders the token into the
+        // tool's bodyTemplate as `${loginToken}`.
+        if (config.authConfig.tokenPlacement === 'body') return bundle.token;
         break;
       }
       case 'OAUTH1':
@@ -970,6 +1016,7 @@ export class RestEngine {
         // built yet. Handled by applyOAuth1Signature() after they are.
         break;
     }
+    return undefined;
   }
 
   /**
@@ -1015,7 +1062,8 @@ export class RestEngine {
    *                             `${query.NAME}` (the value of a query
    *                             parameter as sent, '' when absent)
    * `credentialParams` are query parameters a token provider adds (Shopee's
-   * access_token and shop_id); they win over a tool's own parameters.
+   * access_token and shop_id, an IOP gateway's access_token); they win over
+   * a tool's own parameters.
    *
    * Sorted-parameter signing, opt-in (the Alibaba IOP gateways: AliExpress,
    * Alibaba.com, Lazada). Also on the query-signing path only:
@@ -1043,6 +1091,49 @@ export class RestEngine {
    *   signature.excludeMultipartBody  true: `${body}` is empty for a
    *                             multipart/form-data body (image uploads),
    *                             as TikTok signs those
+   *
+   * Plain digest and body placement, opt-in (Temu's Partner API: every call
+   * is a JSON body that carries its own signature):
+   *   signature.mode            'hmac' (default) | 'digest': a plain hash of
+   *                             the rendered template, with no key. The
+   *                             secret is then part of the template, where
+   *                             the vendor puts it (Temu: before and after
+   *                             the parameters). `secret` is not used.
+   *   signature.algorithm       also 'md5', which the validator accepts in
+   *                             digest mode only
+   *   signature.placement       'body': the digest goes into the JSON body
+   *                             as the field `paramName`
+   *   signature.bodyParams      static fields written into the JSON body of
+   *                             every call (an app key, the access token),
+   *                             signed like the tool's own; they win over a
+   *                             tool's field of the same name
+   *   signature.timestampParam  with placement 'body': the timestamp is
+   *                             written into the body, as a JSON number for
+   *                             the 's' and 'ms' formats and as text for
+   *                             'iso'
+   *   template variables        `${sortedParams}` with placement 'body': the
+   *                             top-level fields of the JSON body as sent
+   *                             (the query is not part of it), sorted by
+   *                             name and written as name + value with no
+   *                             separators. A string contributes its text as
+   *                             it is; every other value (number, boolean,
+   *                             null, array, object) its JSON text, exactly
+   *                             the text the body carries for it. The
+   *                             signature field itself is left out; empty
+   *                             strings are kept, since they are sent. See
+   *                             sortedBodyParamsString.
+   *
+   * Random key suffix and wrapped header value, opt-in (SHEIN Open Platform):
+   *   signature.nonceLength     a random string of that many characters
+   *                             (A-Z a-z 0-9), new for every signature, as
+   *                             `${nonce}` in `template`, in `secret` (an
+   *                             HMAC key of secret + nonce) and in
+   *                             `headerTemplate`
+   *   signature.headerTemplate  the header value around the digest, e.g.
+   *                             `${nonce}${signature}`; default the digest.
+   *                             It must name `${signature}`.
+   *   signature.encoding        'hex-base64': Base64 of the lower-case hex
+   *                             text of the digest
    */
   private applyHmacSignature(
     axiosConfig: AxiosRequestConfig,
@@ -1069,6 +1160,12 @@ export class RestEngine {
 
     const extended = usesExtendedHmac(sig, credentialParams);
     const timestamp = extended ? hmacTimestamp(sig.timestampFormat) : String(Math.floor(Date.now() / 1000));
+    // Opt-in (see the comment above): the signature lives in the JSON body, a
+    // plain digest replaces the HMAC, a random nonce joins the key. All three
+    // are false or undefined for a signature written before them.
+    const bodyPlacement = extended && String(sig.placement ?? 'header') === 'body';
+    const digestMode = extended && sig.mode !== undefined && signatureMode(sig.mode) === 'digest';
+    const nonce = extended && sig.nonceLength !== undefined ? signatureNonce(sig.nonceLength) : undefined;
     if (extended) {
       // Static and credential parameters first, so the query below (and the
       // signature over it) includes them. A tool's own parameter of the same
@@ -1081,11 +1178,22 @@ export class RestEngine {
         }
       }
       Object.assign(added, credentialParams ?? {});
-      if (sig.timestampParam) added[String(sig.timestampParam)] = timestamp;
+      if (sig.timestampParam && !bodyPlacement) added[String(sig.timestampParam)] = timestamp;
       // A retry signs again: the previous signature is not part of the query.
       const previous = { ...((axiosConfig.params as Record<string, unknown>) ?? {}) };
       if (String(sig.placement ?? 'header') === 'query') delete previous[String(sig.paramName ?? 'sign')];
       axiosConfig.params = { ...previous, ...added };
+    }
+    // Body placement: the static fields and the timestamp join the tool's own
+    // fields before anything is signed, so the string below covers the body
+    // that goes out.
+    if (bodyPlacement) {
+      axiosConfig.data = signedBodyFields(
+        axiosConfig.data,
+        sig,
+        timestamp,
+        String(axiosConfig.method ?? 'GET').toUpperCase(),
+      );
     }
 
     // The body as it will actually go out. An object body is serialized the
@@ -1135,13 +1243,16 @@ export class RestEngine {
           apiPath: apiPathOf(url, config.baseUrl),
           body,
           timestamp,
+          nonce,
           query: params,
           sortedParams: () =>
-            sortedParamsString(
-              params,
-              formBodyOf(axiosConfig),
-              String(sig.placement ?? 'header') === 'query' ? signParam : undefined,
-            ),
+            bodyPlacement
+              ? sortedBodyParamsString(axiosConfig.data as Record<string, unknown>, signParam)
+              : sortedParamsString(
+                  params,
+                  formBodyOf(axiosConfig),
+                  String(sig.placement ?? 'header') === 'query' ? signParam : undefined,
+                ),
           sortedQuery: () =>
             sortedQueryString(params, String(sig.placement ?? 'header') === 'query' ? signParam : undefined),
         })
@@ -1153,12 +1264,30 @@ export class RestEngine {
           .replace(/\$\{body\}/g, body)
           .replace(/\$\{timestamp\}/g, timestamp);
 
-    const rawDigest = createHmac(algorithm, secret)
-      .update(canonical, 'utf8')
-      .digest(encoding as 'hex' | 'base64');
-    const digest = extended && String(sig.encoding) === 'hex-upper' ? rawDigest.toUpperCase() : rawDigest;
+    const rawDigest = digestMode
+      ? createHash(algorithm)
+          .update(canonical, 'utf8')
+          .digest(encoding as 'hex' | 'base64')
+      : createHmac(algorithm, nonce === undefined ? secret : secret.replace(/\$\{nonce\}/g, () => nonce))
+          .update(canonical, 'utf8')
+          .digest(encoding as 'hex' | 'base64');
+    const digest =
+      extended && String(sig.encoding) === 'hex-upper'
+        ? rawDigest.toUpperCase()
+        : extended && String(sig.encoding) === 'hex-base64'
+          ? Buffer.from(rawDigest, 'utf8').toString('base64')
+          : rawDigest;
 
     const extra = (sig.extraHeaders as Record<string, string> | undefined) ?? {};
+    const headerTemplate = signatureHeaderTemplate(sig);
+    if (bodyPlacement) {
+      axiosConfig.data = { ...(axiosConfig.data as Record<string, unknown>), [signParam]: digest };
+      axiosConfig.headers = { ...axiosConfig.headers, ...extra };
+      if (sig.timestampHeader) {
+        (axiosConfig.headers as Record<string, string>)[String(sig.timestampHeader)] = timestamp;
+      }
+      return;
+    }
     if (extended && String(sig.placement ?? 'header') === 'query') {
       axiosConfig.params = { ...params, [signParam]: digest };
       axiosConfig.paramsSerializer = serializeRepeatedParams;
@@ -1171,7 +1300,7 @@ export class RestEngine {
     axiosConfig.headers = {
       ...axiosConfig.headers,
       ...extra,
-      [headerName]: digest,
+      [headerName]: extended && headerTemplate !== undefined ? renderSignatureHeader(headerTemplate, digest, nonce) : digest,
     };
     if (sig.timestampHeader) {
       (axiosConfig.headers as Record<string, string>)[
@@ -1197,6 +1326,22 @@ export class RestEngine {
       throw new Error('Shopee connectors need the Shopee token service, which is not available here.');
     }
     return this.shopeeTokens.getShopParams(config);
+  }
+
+  /**
+   * The seller's access token an IOP call signs and sends (`access_token`),
+   * renewed first when it is about to expire. Only for `authType: HMAC`
+   * with `authConfig.tokenProvider: "iop"`; see iop-token.service.ts.
+   */
+  private async iopCredentialParams(config: {
+    baseUrl: string;
+    authConfig?: Record<string, unknown>;
+    connectorId?: string;
+  }): Promise<Record<string, string>> {
+    if (!this.iopTokens) {
+      throw new Error('IOP connectors (Lazada, Miravia, AliExpress seller) need the IOP token service, which is not available here.');
+    }
+    return this.iopTokens.getCredentialParams(config);
   }
 
   /**
@@ -1424,8 +1569,122 @@ export function usesExtendedHmac(
     sig.timestampFormat !== undefined ||
     sig.encoding === 'hex-upper' ||
     /\$\{(sortedParams|sortedQuery|apiPath)\}/.test(String(sig.template ?? '')) ||
-    credentialParams !== undefined
+    credentialParams !== undefined ||
+    // Plain digest, body placement, nonce and header template (Temu, SHEIN).
+    sig.mode !== undefined ||
+    sig.bodyParams !== undefined ||
+    sig.nonceLength !== undefined ||
+    signatureHeaderTemplate(sig) !== undefined ||
+    sig.encoding === 'hex-base64'
   );
+}
+
+/**
+ * `signature.headerTemplate` of a digest signature: counted only when it
+ * names `${signature}`. (A signed-JWT signature has a `headerTemplate` of its
+ * own, with `${jwt}`, and never reaches the digest code.)
+ */
+function signatureHeaderTemplate(sig: Record<string, unknown>): string | undefined {
+  const template = sig.headerTemplate;
+  return typeof template === 'string' && template.includes('${signature}') ? template : undefined;
+}
+
+/** `signature.mode`: 'hmac' or 'digest'; anything else is a configuration error. */
+function signatureMode(mode: unknown): 'hmac' | 'digest' {
+  if (mode === 'hmac' || mode === 'digest') return mode;
+  throw new Error('This connector\'s signature.mode must be "hmac" or "digest".');
+}
+
+const NONCE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+/**
+ * `${nonce}`: a random string of `length` characters (A-Z a-z 0-9), drawn
+ * anew for every signature. 1 to 64 characters.
+ */
+export function signatureNonce(length: unknown): string {
+  const n = Number(length);
+  if (!Number.isInteger(n) || n < 1 || n > 64) {
+    throw new Error('This connector\'s signature.nonceLength must be a whole number from 1 to 64.');
+  }
+  let out = '';
+  for (let i = 0; i < n; i++) out += NONCE_ALPHABET[randomInt(NONCE_ALPHABET.length)];
+  return out;
+}
+
+/**
+ * The header value of `signature.headerTemplate`: `${signature}` is the
+ * digest, `${nonce}` the random string of this signature ('' without
+ * `nonceLength`). One pass, so neither value is read again as a variable.
+ */
+export function renderSignatureHeader(template: string, signature: string, nonce: string | undefined): string {
+  return template.replace(/\$\{(signature|nonce)\}/g, (_m, name: string) =>
+    name === 'signature' ? signature : (nonce ?? ''),
+  );
+}
+
+/**
+ * The JSON body of a call signed with `placement: "body"`, before the
+ * signature is added: the tool's own fields, then `signature.bodyParams`,
+ * then the timestamp under `timestampParam` (a JSON number for Unix seconds
+ * and milliseconds, text for ISO 8601). The signature of an earlier attempt
+ * is dropped, so a retry signs the same fields again.
+ */
+export function signedBodyFields(
+  data: unknown,
+  sig: Record<string, unknown>,
+  timestamp: string,
+  method: string,
+): Record<string, unknown> {
+  if (!REQUEST_BODY_METHODS.has(method)) {
+    throw new Error(
+      `This connector signs inside the JSON body (signature.placement "body"), which a ${method} request does not have. Use POST for this tool.`,
+    );
+  }
+  const plain =
+    data !== null &&
+    typeof data === 'object' &&
+    (Object.getPrototypeOf(data) === Object.prototype || Object.getPrototypeOf(data) === null);
+  if (data !== undefined && data !== null && !plain) {
+    throw new Error(
+      'This connector signs inside the JSON body (signature.placement "body"), so the tool must send a JSON object: not text, a list, a form or a file upload.',
+    );
+  }
+  const body: Record<string, unknown> = { ...((data as Record<string, unknown> | null | undefined) ?? {}) };
+  delete body[String(sig.paramName ?? 'sign')];
+  const statics = sig.bodyParams;
+  if (statics && typeof statics === 'object' && !Array.isArray(statics)) {
+    for (const [k, v] of Object.entries(statics as Record<string, unknown>)) {
+      if (v !== undefined && v !== null) body[k] = v;
+    }
+  }
+  if (sig.timestampParam) {
+    body[String(sig.timestampParam)] = String(sig.timestampFormat ?? 's') === 'iso' ? timestamp : Number(timestamp);
+  }
+  return body;
+}
+
+/**
+ * `${sortedParams}` for `placement: "body"`: the top-level fields of the JSON
+ * body, sorted by name (code unit order) and concatenated as name + value
+ * with no separators. A string contributes its text as it is; any other value
+ * its JSON text as `JSON.stringify` writes it, which is the text the body
+ * itself carries for that value: no spaces, object keys in the order sent,
+ * numbers in their shortest form (`1`, `19.9`), `true`, `false`, `null`. The
+ * signature field is left out, and so is a field JSON would not send
+ * (`undefined`); an empty string is sent, so its name is signed.
+ *
+ * This is Temu's Partner API signature string (their Python sample:
+ * `json.dumps(v, ensure_ascii=False, separators=(',', ':'))` with the outer
+ * quotes of a string removed).
+ */
+export function sortedBodyParamsString(body: Record<string, unknown>, excludeKey?: string): string {
+  return Object.entries(body ?? {})
+    .filter(([k]) => k !== excludeKey)
+    .map(([k, v]): [string, string | undefined] => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+    .filter((pair): pair is [string, string] => pair[1] !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${k}${v}`)
+    .join('');
 }
 
 /**
@@ -1536,6 +1795,8 @@ export function renderExtendedHmacTemplate(
     apiPath?: string;
     body: string;
     timestamp: string;
+    /** The random string of this signature; undefined without `nonceLength`. */
+    nonce?: string;
     query: Record<string, unknown>;
     /** Computed only when the template asks for it. */
     sortedParams?: () => string;
@@ -1546,8 +1807,11 @@ export function renderExtendedHmacTemplate(
   return template
     .replace(/\\n/g, '\n')
     .replace(
-      /\$\{(method|url|path|pathname|apiPath|body|timestamp|sortedParams|sortedQuery|query\.([^{}]+))\}/g,
-      (_m, name: string, q?: string) => {
+      /\$\{(method|url|path|pathname|apiPath|body|timestamp|sortedParams|sortedQuery|nonce|query\.([^{}]+))\}/g,
+      (match: string, name: string, q?: string) => {
+        // `${nonce}` is a variable only for a signature with `nonceLength`;
+        // without it the text stays as written, as it always has.
+        if (name === 'nonce') return vars.nonce === undefined ? match : vars.nonce;
         if (q !== undefined) {
           const v = vars.query[q];
           if (v === undefined || v === null) return '';
@@ -1940,11 +2204,19 @@ function missingTemplateParams(
  * the parameter's value, XML-escaped; a missing one becomes empty. No quoting
  * rules apply, unlike the JSON renderer: the template is markup and the value
  * lands in element text or an attribute either way.
+ *
+ * A template that uses optional or repeated blocks (`${?name}…${/name}`,
+ * `${*items}…${/items}`) is rendered by xml-body-template.util.ts; one that
+ * does not is rendered here, as before. `locked` holds values the engine
+ * supplies itself (`loginToken`), which win over the call's parameters.
  */
 export function renderXmlBodyTemplate(
   template: string,
   params: Record<string, unknown>,
+  locked?: Record<string, unknown>,
 ): string {
+  if (hasXmlTemplateBlocks(template)) return renderXmlTemplateBlocks(template, params, locked);
+  if (locked) params = { ...params, ...locked };
   return template.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, name: string) => {
     if (!Object.prototype.hasOwnProperty.call(params, name)) return '';
     const value = params[name];
@@ -2009,7 +2281,13 @@ export function buildOauth2TokenHeader(
 
 /**
  * Inject the bearer header (and any extraHeaders) for a LOGIN_TOKEN connector.
- * Both the main header and extraHeaders support `${token}` / `${aud}` placeholders.
+ * Both the main header and extraHeaders support `${token}` / `${aud}` placeholders,
+ * and `${uuid}`: a new random UUID for every request (Walmart wants a fresh
+ * WM_QOS.CORRELATION_ID on each call).
+ *
+ * With `tokenPlacement: "body"` the token travels in the request body (Fnac
+ * Darty: an attribute of every XML request), so the token header is not
+ * sent. extraHeaders, which the adapter wrote out itself, still are.
  */
 export function injectLoginTokenHeaders(
   axiosConfig: AxiosRequestConfig,
@@ -2019,16 +2297,39 @@ export function injectLoginTokenHeaders(
 ): void {
   const headerName = authConfig.headerName || 'Authorization';
   const headerTemplate = authConfig.headerTemplate || 'Bearer ${token}';
-  const interpolate = (s: string): string =>
-    s.replace(/\$\{token\}/g, token).replace(/\$\{aud\}/g, aud || '');
+  const interpolate = loginTokenHeaderInterpolator(token, aud);
 
-  axiosConfig.headers = {
-    ...axiosConfig.headers,
-    [headerName]: interpolate(headerTemplate),
-  };
+  axiosConfig.headers =
+    authConfig.tokenPlacement === 'body'
+      ? { ...axiosConfig.headers }
+      : {
+          ...axiosConfig.headers,
+          [headerName]: interpolate(headerTemplate),
+        };
   for (const [k, v] of Object.entries(authConfig.extraHeaders || {})) {
     axiosConfig.headers[k] = interpolate(String(v));
   }
+}
+
+/**
+ * Whether a failed call says, in its body, that the token was refused: an
+ * `errorWhen` rule with status 401 matched a 2xx answer (the error is then a
+ * ResponseBodyError), or matches the body of an HTTP error answer. Fnac Darty
+ * answers an expired token with an XML `<error code="ERR_098">` and no 401.
+ * Used only when the connector sets `authConfig.refreshOnBody401`.
+ */
+export function bodyReports401(error: unknown, errorWhen: unknown): boolean {
+  if (error instanceof ResponseBodyError) return error.status === 401;
+  if (!(error instanceof AxiosError) || !error.response) return false;
+  try {
+    assertNoResponseBodyError(
+      parseXmlBody(error.response as { data: unknown; headers?: Record<string, unknown> }),
+      errorWhen,
+    );
+  } catch (matched) {
+    return matched instanceof ResponseBodyError && matched.status === 401;
+  }
+  return false;
 }
 
 /**
@@ -2159,24 +2460,13 @@ const PROXY_ERROR_HINTS: Record<string, string> = {
  * Anything that is not declared as XML, or fails to parse, is returned as
  * axios delivered it — a JSON API is never touched.
  */
-const xmlParser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '',
-  removeNSPrefix: true,
-  parseTagValue: false,
-  parseAttributeValue: false,
-  trimValues: true,
-});
-
 export function parseXmlBody(response: {
   data: unknown;
   headers?: Record<string, unknown>;
 }): unknown {
   const { data } = response;
   if (typeof data !== 'string') return data;
-  const contentType = String(response.headers?.['content-type'] ?? '').toLowerCase();
-  const declaredXml = /(^|[/+])xml([;\s]|$)/.test(contentType);
-  if (!declaredXml) return data;
+  if (!isXmlContentType(response.headers?.['content-type'])) return data;
   try {
     const parsed = xmlParser.parse(data);
     // fast-xml-parser hands back an empty object for non-XML text; keep the

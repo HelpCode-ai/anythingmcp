@@ -20,6 +20,7 @@ import { pickProbe, probeResultFailure } from './probe.util';
 import { resolveDerivedEnvVars, withDerivedValues } from './derived-settings';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { tiktokShopNeedsAuthorization } from '../connectors/engines/tiktok-shop-token.service';
+import { iopNeedsAuthorization } from '../connectors/engines/iop-token.service';
 import { metaLoginNeedsAuthorization } from '../connectors/engines/meta-login.util';
 import { odooCheckAdvice } from './odoo-database-hint';
 import {
@@ -62,7 +63,7 @@ import { setupEffort } from './setup-guide';
 import { fileSearchSetupPath } from './file-search-setup';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
-import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
+import { mcpFixedArgumentsOf, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
 import { APP_APPROVAL_ADAPTERS } from './app-approval-watch';
 import { describeHtmlAnswer, looksLikeHtml } from './html-excerpt';
@@ -1064,6 +1065,7 @@ export class AdaptersService {
           adapter.tools,
           discovered,
           mcpToolPrefixOf(adapter.connector.config),
+          mcpFixedArgumentsOf(adapter.connector.config),
         );
         mcpProbe = {
           ok: true,
@@ -1195,6 +1197,8 @@ export class AdaptersService {
     if (shopeeNeedsAuthorization(adapter.connector.authType, auth)) return null;
     // And for a TikTok shop, authorized from the connector page too.
     if (tiktokShopNeedsAuthorization(adapter.connector.authType, auth)) return null;
+    // And for a seller at an IOP gateway (Lazada, Miravia, AliExpress seller).
+    if (iopNeedsAuthorization(adapter.connector.authType, auth)) return null;
     const call = pickProbe(adapter);
     if (!call) return null;
     const started = Date.now();
