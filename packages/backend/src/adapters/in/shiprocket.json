@@ -1,0 +1,1055 @@
+{
+  "slug": "shiprocket",
+  "name": "Shiprocket",
+  "description": "Shiprocket API for Indian e-commerce shipping: orders and shipments, courier serviceability and rates, tracking by AWB, shipment or order, NDR, pickup locations, channels, products, inventory, wallet balance and statement, labels and invoices. Creating orders, AWB, pickups, cancellations and NDR actions installed switched off. API user email and password.",
+  "instructions": "## Shiprocket\nThis connector works with the **Shiprocket API** at `https://apiv2.shiprocket.in/v1/external` for sellers shipping in India: orders and shipments, courier serviceability and rates, tracking by AWB, shipment or order, NDR, pickup locations, channels, products, inventory, wallet balance and statement, labels and invoices. Creating orders, booking couriers (AWB), pickups, cancellations and NDR actions are installed switched off.\n\n**Setup (about 3 minutes)**\n1. Sign in at https://app.shiprocket.in and open **Settings, API, Add New API User** (Configure).\n2. Click **Create API User**, enter an email address that is **different from your Shiprocket login**, choose the modules the user may access and whether it may see buyer details, then click **Create User**.\n3. Copy the API user's password right away (it is shown once). Paste the API user's email into `SHIPROCKET_EMAIL` and the password into `SHIPROCKET_PASSWORD`.\n\nThe connector signs in at `POST /auth/login` and reuses the token, which Shiprocket keeps valid for 10 days, signing in again before it expires. Your main login does not work here: use the API user.\n\n**Where to start**: `shiprocket_list_orders` (newest first), then `shiprocket_get_order` for the shipment, AWB and courier. Tracking: `shiprocket_track_awb`.\n\n**Orders and shipments**: `shiprocket_list_orders`, `shiprocket_get_order`, `shiprocket_list_shipments`, `shiprocket_get_shipment`. Two ids matter: the Shiprocket order id (`id`) used by every tool, and your own `channel_order_id`. An order has one shipment (`shipment_id`), which gets an AWB when a courier is booked.\n\n**Rates and couriers**: `shiprocket_check_serviceability` lists the couriers between two pincodes with rate, estimated days and rating; `shiprocket_list_couriers` your enabled couriers.\n\n**Tracking**: `shiprocket_track_awb`, `shiprocket_track_awbs` (up to 50), `shiprocket_track_shipment`, `shiprocket_track_order`. Undelivered parcels: `shiprocket_list_ndr`, `shiprocket_get_ndr`.\n\n**Account**: `shiprocket_get_wallet_balance`, `shiprocket_get_statement`, `shiprocket_list_pickup_locations`, `shiprocket_list_channels`, `shiprocket_list_products`, `shiprocket_get_inventory`, `shiprocket_get_postcode_details`. Documents: `shiprocket_generate_label` and `shiprocket_generate_invoice` answer a link to the PDF (free, for shipments that already have an AWB).\n\n**Shipping (installed switched off)**: the usual flow is `shiprocket_create_order`, `shiprocket_check_serviceability`, `shiprocket_assign_awb` (charges the wallet), `shiprocket_request_pickup`, then the label. `shiprocket_cancel_orders`, `shiprocket_cancel_shipments` and `shiprocket_ndr_action` (a return is charged as RTO) are switched off as well. Turn them on only for workspaces that ship through Shiprocket, and confirm each call with the user.\n\n**Units and pitfalls**: weight in kg, sizes in cm, money in INR, pincodes have 6 digits. Dates are `YYYY-MM-DD`; times in answers are India time (IST). Order lists are paged with `page` and `per_page`. A 422 names the missing or wrong field.",
+  "aliases": [
+    "Shiprocket India",
+    "Shiprocket API"
+  ],
+  "region": "in",
+  "category": "logistics",
+  "icon": "shiprocket",
+  "docsUrl": "https://apidocs.shiprocket.in/",
+  "requiredEnvVars": [
+    "SHIPROCKET_EMAIL",
+    "SHIPROCKET_PASSWORD"
+  ],
+  "envVarMeta": {
+    "SHIPROCKET_EMAIL": {
+      "label": "API user email",
+      "kind": "credential",
+      "help": "Shiprocket, Settings, API, Add New API User: the email of the API user you created (not your main login).",
+      "link": "https://apidocs.shiprocket.in/",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "patternMessage": "Enter the API user's email address."
+    },
+    "SHIPROCKET_PASSWORD": {
+      "label": "API user password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when you create the API user. Create a new API user if it was lost.",
+      "link": "https://apidocs.shiprocket.in/",
+      "pattern": "^.{6,200}$",
+      "patternMessage": "Paste the API user's password."
+    }
+  },
+  "verifyHints": {
+    "401": "Shiprocket refused the sign-in. Use the API user from Settings, API (not your main Shiprocket login) and its password; create a new API user if the password was lost.",
+    "403": "The API user has no access to this module. Edit the API user in Settings, API and allow the module (orders, shipments, couriers, account).",
+    "404": "Shiprocket found no order, shipment or AWB with that id. Use the Shiprocket order id (id), not your own order id.",
+    "rate_limited": "Shiprocket is limiting the requests. Wait a minute and try again with fewer calls."
+  },
+  "probe": {
+    "tool": "shiprocket_get_wallet_balance",
+    "params": {}
+  },
+  "prerequisites": "A Shiprocket seller account (open sign-up) and an API user created under Settings, API with its own email and password. About 3 minutes.",
+  "connector": {
+    "name": "Shiprocket API",
+    "type": "REST",
+    "baseUrl": "https://apiv2.shiprocket.in/v1/external",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://apiv2.shiprocket.in/v1/external/auth/login",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "email": "${username}",
+        "password": "${password}"
+      },
+      "username": "{{SHIPROCKET_EMAIL}}",
+      "password": "{{SHIPROCKET_PASSWORD}}",
+      "tokenJsonPath": "token",
+      "tokenTTLSeconds": 864000,
+      "proactiveRefreshSeconds": 86400,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "shiprocket_list_orders",
+      "description": "List orders, newest first: id (Shiprocket order id), channel_order_id (your order id), channel_name, customer name, email, phone and address, pickup_location, total, payment_method (prepaid or cod), status (NEW, READY TO SHIP, PICKUP SCHEDULED, IN TRANSIT, DELIVERED, CANCELED, RTO...), created_at, products and shipments with awb and courier. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page (default 20)."
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "Only orders created on or after this day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "Only orders created on or before this day, YYYY-MM-DD."
+          },
+          "search": {
+            "type": "string",
+            "description": "An AWB or your channel order id."
+          },
+          "filter_by": {
+            "type": "string",
+            "enum": [
+              "status",
+              "payment_method",
+              "delivery_country",
+              "channel_order_id"
+            ],
+            "description": "Field to filter on, with filter."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Value for filter_by, e.g. NEW, cod, India."
+          },
+          "pickup_location": {
+            "type": "string",
+            "description": "Only orders from this pickup location name."
+          },
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Only orders of this sales channel (id from shiprocket_list_channels)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "id",
+              "status"
+            ],
+            "description": "Sort field."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "from": "$from",
+          "to": "$to",
+          "search": "$search",
+          "filter_by": "$filter_by",
+          "filter": "$filter",
+          "pickup_location": "$pickup_location",
+          "channel_id": "$channel_id",
+          "sort": "$sort",
+          "sort_by": "$sort_by"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_get_order",
+      "description": "Read one order by its Shiprocket order id: customer and billing details, pickup location, products (name, sku, quantity, price), payment method, totals, dimensions and weight, and shipments with shipment id, AWB, courier, status, label and manifest links. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Shiprocket order id (id from shiprocket_list_orders, not your channel order id)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/show/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_list_shipments",
+      "description": "List shipments: id (shipment id), order_id, channel_order_id, awb, courier, status, pickup and delivery dates, weight, dimensions, charges. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page (default 20)."
+          },
+          "filter_by": {
+            "type": "string",
+            "description": "Field to filter on, e.g. id or status."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Value for filter_by."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort direction."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field, e.g. id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "filter_by": "$filter_by",
+          "filter": "$filter",
+          "sort": "$sort",
+          "sort_by": "$sort_by"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_get_shipment",
+      "description": "Read one shipment by shipment id: order, AWB, courier, status, weight and dimensions, charges, pickup and delivery dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Shipment id (from shiprocket_get_order or shiprocket_list_shipments)."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_check_serviceability",
+      "description": "Couriers that can carry a parcel between two pincodes, with rates: per courier courier_company_id, courier_name, rate (INR) and freight and COD charges, estimated_delivery_days and etd, rating, mode (air or surface), pickup and delivery performance, and the recommended courier. Give weight and cod, or order_id of an existing order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "description": "Pickup pincode, 6 digits, e.g. 110030."
+          },
+          "delivery_postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "description": "Delivery pincode, 6 digits, e.g. 122002."
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0.01,
+            "description": "Weight in kg, e.g. 0.5."
+          },
+          "cod": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 cash on delivery, 0 prepaid."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Shiprocket order id instead of weight and cod."
+          },
+          "length": {
+            "type": "number",
+            "minimum": 0.5,
+            "description": "Length in cm."
+          },
+          "breadth": {
+            "type": "number",
+            "minimum": 0.5,
+            "description": "Breadth in cm."
+          },
+          "height": {
+            "type": "number",
+            "minimum": 0.5,
+            "description": "Height in cm."
+          },
+          "declared_value": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Order value in INR."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "Surface",
+              "Air"
+            ],
+            "description": "Only surface or only air couriers."
+          },
+          "is_return": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for a return (reverse) pickup."
+          }
+        },
+        "required": [
+          "pickup_postcode",
+          "delivery_postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/courier/serviceability/",
+        "queryParams": {
+          "pickup_postcode": "$pickup_postcode",
+          "delivery_postcode": "$delivery_postcode",
+          "weight": "$weight",
+          "cod": "$cod",
+          "order_id": "$order_id",
+          "length": "$length",
+          "breadth": "$breadth",
+          "height": "$height",
+          "declared_value": "$declared_value",
+          "mode": "$mode",
+          "is_return": "$is_return"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_list_couriers",
+      "description": "The couriers of your account: courier id, name, type, active status and service details, with a total count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "all"
+            ],
+            "default": "active",
+            "description": "active (default), inactive or all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/courier/courierListWithCounts",
+        "queryParams": {
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_track_awb",
+      "description": "Track a shipment by AWB: track_status, shipment_status, current_status (e.g. Delivered, In Transit, RTO), courier_name, origin, destination, pickup_date, delivered_date, etd, POD link, and shipment_track_activities (date, status, activity, location). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "awb": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{6,40}$",
+            "description": "AWB (tracking number) of the courier, e.g. 788830567028."
+          }
+        },
+        "required": [
+          "awb"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/courier/track/awb/{awb}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_track_awbs",
+      "description": "Track up to 50 shipments at once by AWB: per AWB the same tracking data as shiprocket_track_awb. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "awbs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z-]{6,40}$"
+            },
+            "description": "AWB codes, at most 50."
+          }
+        },
+        "required": [
+          "awbs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/courier/track/awbs",
+        "bodyMapping": {
+          "awbs": "$awbs"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_track_shipment",
+      "description": "Track a shipment by shipment id (same data as shiprocket_track_awb). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Shipment id."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/courier/track/shipment/{shipment_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_track_order",
+      "description": "Track the shipments of an order by your channel order id, with the channel id when the same order id exists in several channels. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Your order id (channel_order_id)."
+          },
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Sales channel id (from shiprocket_list_channels)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/courier/track",
+        "queryParams": {
+          "order_id": "$order_id",
+          "channel_id": "$channel_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_list_pickup_locations",
+      "description": "Your pickup addresses: id, pickup_location (the name used on orders), name, phone, email, address, city, state, pin_code, status and phone_verified. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/company/pickup"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_list_ndr",
+      "description": "Shipments in NDR (non-delivery report: the courier could not deliver): AWB, order, customer, attempts, NDR reason and history, and the date of the last attempt. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page (default 20)."
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "From day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "To day, YYYY-MM-DD."
+          },
+          "search": {
+            "type": "string",
+            "description": "An AWB."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ndr/all",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "from": "$from",
+          "to": "$to",
+          "search": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_get_ndr",
+      "description": "Read the NDR details of one shipment by AWB: attempts, reasons, customer details and history. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "awb": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{6,40}$",
+            "description": "AWB (tracking number) of the courier, e.g. 788830567028."
+          }
+        },
+        "required": [
+          "awb"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ndr/{awb}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_get_wallet_balance",
+      "description": "Your Shiprocket wallet balance in INR (balance_amount). Shipping charges are taken from it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/details/wallet-balance"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_get_statement",
+      "description": "Your account statement: wallet credits and debits per shipment or recharge, with date, amount, AWB and description. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page (default 20)."
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "From day, YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "To day, YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/details/statement",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "from": "$from",
+          "to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_list_channels",
+      "description": "Your sales channels (custom, Shopify, WooCommerce, Amazon...): id, name, status, base channel and sync settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_list_products",
+      "description": "Products in your Shiprocket catalog: id, name, sku, category, price, weight, dimensions and HSN. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page (default 20)."
+          },
+          "filter_by": {
+            "type": "string",
+            "description": "Field to filter on, e.g. id or sku."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Value for filter_by."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "filter_by": "$filter_by",
+          "filter": "$filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_get_inventory",
+      "description": "Inventory per product SKU: sku, name, quantity on hand and available. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_get_postcode_details",
+      "description": "City, state and country of an Indian pincode, and its localities. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "description": "Pincode, 6 digits, e.g. 110077."
+          }
+        },
+        "required": [
+          "postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open/postcode/details",
+        "queryParams": {
+          "postcode": "$postcode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shiprocket_generate_label",
+      "description": "Generate the shipping label PDF for shipments that already have an AWB: label_url (a link to the PDF), label_created and the shipment ids not created. Costs nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Shipment ids, e.g. [16104408]."
+          }
+        },
+        "required": [
+          "shipment_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/courier/generate/label",
+        "bodyMapping": {
+          "shipment_id": "$shipment_ids"
+        }
+      }
+    },
+    {
+      "name": "shiprocket_generate_invoice",
+      "description": "Generate the invoice PDF for orders: invoice_url (a link to the PDF), is_invoice_created and the order ids not created. Costs nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Shiprocket order ids."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/print/invoice",
+        "bodyMapping": {
+          "ids": "$order_ids"
+        }
+      }
+    },
+    {
+      "name": "shiprocket_create_order",
+      "description": "Create a custom (adhoc) order with its shipment record. Installed switched off. The order object follows Shiprocket's create/adhoc model: order_id (yours), order_date, pickup_location (name from shiprocket_list_pickup_locations), billing_customer_name, billing_last_name, billing_address, billing_city, billing_pincode, billing_state, billing_country, billing_email, billing_phone, shipping_is_billing, order_items (name, sku, units, selling_price), payment_method (Prepaid or COD), sub_total, length, breadth, height, weight. Answers order_id, shipment_id and status NEW. No courier is booked until an AWB is assigned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "object",
+            "description": "The order as in Shiprocket's POST /orders/create/adhoc, e.g. `{\"order_id\": \"224-447\", \"order_date\": \"2026-11-15 11:11\", \"pickup_location\": \"Primary\", \"billing_customer_name\": \"...\", \"order_items\": [{\"name\": \"...\", \"sku\": \"...\", \"units\": 1, \"selling_price\": 900}], \"payment_method\": \"Prepaid\", \"sub_total\": 900, \"length\": 10, \"breadth\": 10, \"height\": 5, \"weight\": 0.5}`."
+          }
+        },
+        "required": [
+          "order"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/create/adhoc",
+        "bodyMapping": {
+          "__raw": "$order"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "shiprocket_assign_awb",
+      "description": "Book a courier for a shipment: assigns the AWB and charges the shipping cost to your wallet. Installed switched off. Without courier_id Shiprocket picks the courier from your rules. Answers awb_code, courier_name and the applied rate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Shipment id."
+          },
+          "courier_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "courier_company_id from shiprocket_check_serviceability."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/courier/assign/awb",
+        "bodyMapping": {
+          "shipment_id": "$shipment_id",
+          "courier_id": "$courier_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "shiprocket_request_pickup",
+      "description": "Request a courier pickup for one shipment that has an AWB. The courier is scheduled for the next working day or pickup_date. Installed switched off. Answers pickup_status, pickup_scheduled_date and pickup_token_number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Shipment id (one per call)."
+          },
+          "pickup_date": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "Pickup day as a one-element list, e.g. [\"2026-11-18\"]. Default: the next working day."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/courier/generate/pickup",
+        "bodyMapping": {
+          "shipment_id": [
+            "$shipment_id"
+          ],
+          "pickup_date": "$pickup_date"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "shiprocket_cancel_orders",
+      "description": "Cancel orders by Shiprocket order id. Cannot be undone; a shipment already picked up is not stopped. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Shiprocket order ids to cancel."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/cancel",
+        "bodyMapping": {
+          "ids": "$order_ids"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "shiprocket_cancel_shipments",
+      "description": "Cancel shipments by AWB before they are out for pickup (up to 2000 at once). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "awbs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2000,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z-]{6,40}$"
+            },
+            "description": "AWB codes to cancel."
+          }
+        },
+        "required": [
+          "awbs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/cancel/shipment/awbs",
+        "bodyMapping": {
+          "awbs": "$awbs"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "shiprocket_ndr_action",
+      "description": "Act on an NDR shipment: re-attempt delivery (optionally with a new phone, address or date) or return it to origin, which is charged as RTO. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "awb": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{6,40}$",
+            "description": "AWB (tracking number) of the courier, e.g. 788830567028."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "re-attempt",
+              "return"
+            ],
+            "description": "re-attempt delivery, or return to origin."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Reason or note for the courier."
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "New customer phone for the re-attempt, 10 digits."
+          },
+          "address1": {
+            "type": "string",
+            "description": "New address line 1 for the re-attempt."
+          },
+          "address2": {
+            "type": "string",
+            "description": "New address line 2."
+          },
+          "deferred_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Preferred re-attempt day, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "awb",
+          "action",
+          "comments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ndr/{awb}/action",
+        "bodyMapping": {
+          "action": "$action",
+          "comments": "$comments",
+          "phone": "$phone",
+          "address1": "$address1",
+          "address2": "$address2",
+          "deferred_date": "$deferred_date"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

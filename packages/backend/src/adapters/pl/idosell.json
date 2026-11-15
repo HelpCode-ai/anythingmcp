@@ -1,0 +1,1023 @@
+{
+  "slug": "idosell",
+  "name": "IdoSell",
+  "description": "IdoSell (IAI-Shop) Admin API for Polish online shops: orders, statuses and history, parcels with tracking numbers, products and stock per warehouse, categories, customers, returns and couriers. API key.",
+  "instructions": "## IdoSell\nThis connector works with the **IdoSell Admin API** (formerly IAI-Shop), the REST API of the Polish shop platform, version v8 at `https://<panel domain>/api/admin/v8`: orders and their parcels, order statuses and history, products and stock per warehouse, categories, customers (accounts and CRM), returns and couriers.\n\n**Setup (about 3 minutes)**\n1. In the IdoSell panel open **Settings, API** (in Polish **Ustawienia, API**) and go to the Admin API access keys (**Klucze dostępu do Admin API**).\n2. Add a key, give it a name and set the access per module: read and write for orders (OMS) and products, read for customers (CRM) and returns, or read only everywhere for a read-only connector. Save and click **Show key**.\n3. Paste the key into `IDOSELL_API_KEY` and the panel address (for example `client1234.idosell.com`, or your shop's own domain that serves `/api/admin`) into `IDOSELL_DOMAIN`.\n\nThe connector sends the key in the `X-API-KEY` header. Write calls wrap their arguments in `params`, as IdoSell requires.\n\n**Where to start**: `idosell_get_shops_data` to confirm the panel, then `idosell_search_orders` (for example statuses new and on_order with a date range) and `idosell_get_orders` for single orders.\n\n**Orders**: `idosell_search_orders`, `idosell_get_orders`, `idosell_list_order_statuses`, `idosell_get_order_history`, `idosell_update_order` (status, API flag, notes). `idosell_cancel_order` is installed switched off. Parcels and tracking numbers: `idosell_get_order_packages`, `idosell_add_order_packages`, with courier ids from `idosell_list_couriers`. `idosell_get_returns` reads returns; accepting returns and refunds are not included.\n\n**Products and stock**: `idosell_search_products`, `idosell_get_products`, `idosell_list_categories`, `idosell_get_product_stocks` and `idosell_update_product_stock` (set, add or subtract per size and warehouse; products without sizes use the size `uniw`).\n\n**Customers**: `idosell_get_clients` and `idosell_search_clients_crm`.\n\n**Ids**: an order has an id like `shop-12345` and a serial number (12345) shown in the panel; most order tools use the serial number. Products are identified by the IAI code (productId) or by external and producer codes, chosen with `ident_type`.\n\n**Paging and formats**: search and list calls take a page number from 0 and at most 100 results per page; the answer reports the result count and page count. Dates are `YYYY-MM-DD HH:MM:SS` in the panel's time zone. GET filters with several values take them separated by commas.\n\n**Errors**: a refused key answers 401, a key without access to the module 403 with the module named, too many calls 429. Some answers carry `errors.faultCode` and `errors.faultString` with HTTP 200; the connector reports those as failed calls.",
+  "aliases": [
+    "IAI-Shop",
+    "IdoSell Shop",
+    "IAI Shop",
+    "IdoSell Admin API"
+  ],
+  "region": "pl",
+  "category": "e-commerce",
+  "icon": "idosell",
+  "docsUrl": "https://idosell.readme.io/docs/getting-started",
+  "requiredEnvVars": [
+    "IDOSELL_DOMAIN",
+    "IDOSELL_API_KEY"
+  ],
+  "envVarMeta": {
+    "IDOSELL_DOMAIN": {
+      "label": "Panel domain",
+      "kind": "address",
+      "help": "The address of your IdoSell panel without https://, e.g. client1234.idosell.com, or your shop's own domain.",
+      "example": "client1234.idosell.com",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$",
+      "patternMessage": "Enter only the domain in lower case, e.g. client1234.idosell.com, without https:// and without a path."
+    },
+    "IDOSELL_API_KEY": {
+      "label": "Admin API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "IdoSell panel, Settings, API, Admin API access keys: add a key with the module access you need, then Show key.",
+      "link": "https://idosell.readme.io/docs/getting-started",
+      "pattern": "^\\S{20,512}$",
+      "patternMessage": "Paste only the API key, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "IdoSell refused the API key. Show the key again in Settings, API, Admin API access keys, and check the panel domain.",
+      "field": "IDOSELL_API_KEY"
+    },
+    "403": "The key works but has no access to this module (orders, products, customers or returns). Raise the key's access level for the module in Settings, API.",
+    "404": {
+      "hint": "IdoSell found nothing here: no Admin API at this domain, or no order or product with that id.",
+      "field": "IDOSELL_DOMAIN"
+    },
+    "rate_limited": "IdoSell throttled the calls (429). Wait a moment and try again.",
+    "unreachable": {
+      "hint": "No IdoSell panel answers at this domain. Use the panel address, e.g. client1234.idosell.com.",
+      "field": "IDOSELL_DOMAIN"
+    }
+  },
+  "probe": {
+    "tool": "idosell_get_shops_data",
+    "params": {}
+  },
+  "prerequisites": "An IdoSell shop and a panel user who may create Admin API access keys under Settings, API. About 3 minutes.",
+  "connector": {
+    "name": "IdoSell Admin API",
+    "type": "REST",
+    "baseUrl": "https://{{IDOSELL_DOMAIN}}/api/admin/v8",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-KEY",
+      "apiKey": "{{IDOSELL_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "errors.faultCode",
+          "matches": "^[1-9][0-9]*$",
+          "messagePath": "errors.faultString",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "idosell_get_shops_data",
+      "description": "Read the panel's shops and main settings: shop ids, names, languages, currencies and the default configuration. A cheap call to check the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/system/shopsData"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_search_orders",
+      "description": "Search orders: orderId, orderSerialNumber, orderStatus, order dates, clientResult (customer and addresses), payments, dispatch (courier, cost), productsResults (productId, sizeId, quantity, prices) and orderSource. Up to 100 per page, pages from 0. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "description": "Order statuses: new, finished, false, lost, on_order, packed, ready, canceled, payment_waiting, delivery_waiting, suspended, joined, finished_ext.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status_ids": {
+            "type": "array",
+            "description": "Ids of configurable order statuses (from idosell_list_order_statuses).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "order_ids": {
+            "type": "array",
+            "description": "Order ids such as shop-12345.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "serial_numbers": {
+            "type": "array",
+            "description": "Order serial numbers.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "orders_range": {
+            "type": "object",
+            "description": "Date or serial number range, e.g. `{\"ordersDateRange\": {\"ordersDateType\": \"add\", \"ordersDateBegin\": \"2026-01-01 00:00:00\", \"ordersDateEnd\": \"2026-01-31 23:59:59\"}}`. Date types: add (placed), modified, dispatch, payment."
+          },
+          "clients": {
+            "type": "array",
+            "description": "Customer filters, each with fields such as clientEmail, clientLogin, clientId, clientFirstName, clientLastName or clientNip.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "products": {
+            "type": "array",
+            "description": "Only orders with these products, each with productId and optionally sizeId.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "order_external_id": {
+            "type": "string",
+            "description": "Order id of an external service (marketplace)."
+          },
+          "orders_by": {
+            "type": "array",
+            "description": "Sorting, each with elementName (id, sn, order_time, status, ...) and sortDirection (ASC or DESC).",
+            "items": {
+              "type": "object"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, numbered from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/orders/search",
+        "bodyMapping": {
+          "params": {
+            "ordersStatuses": "$statuses",
+            "ordersStatusesIds": "$status_ids",
+            "ordersIds": "$order_ids",
+            "ordersSerialNumbers": "$serial_numbers",
+            "ordersRange": "$orders_range",
+            "clients": "$clients",
+            "products": "$products",
+            "orderExternalId": "$order_external_id",
+            "ordersBy": "$orders_by",
+            "resultsPage": "$page",
+            "resultsLimit": "$limit"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_get_orders",
+      "description": "Read orders by id, serial number or external id, with the same fields as idosell_search_orders. At most 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "string",
+            "description": "Order ids separated by commas, e.g. shop-12345,shop-12346."
+          },
+          "serial_numbers": {
+            "type": "string",
+            "description": "Order serial numbers separated by commas, e.g. 12345,12346."
+          },
+          "order_external_id": {
+            "type": "string",
+            "description": "Order id of an external service."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/orders",
+        "queryParams": {
+          "ordersIds": "$order_ids",
+          "ordersSerialNumbers": "$serial_numbers",
+          "orderExternalId": "$order_external_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_list_order_statuses",
+      "description": "List the configurable order statuses of the panel: id, name and the system status each maps to.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/statuses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_get_order_history",
+      "description": "Read the history of an order: every change with date, the user or API that made it and what changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_serial_number": {
+            "type": "integer",
+            "description": "Order serial number (orderSerialNumber), the number shown in the panel, e.g. 12345.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_serial_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/history",
+        "queryParams": {
+          "orderSerialNumber": "$order_serial_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_update_order",
+      "description": "Change one order: status (not cancellation, which is a separate tool), the API flag that marks it registered or completed in an external system, the API note, the order note or the estimated delivery date. Only the fields given change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_serial_number": {
+            "type": "integer",
+            "description": "Order serial number (orderSerialNumber), the number shown in the panel, e.g. 12345.",
+            "minimum": 1
+          },
+          "order_status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "new",
+              "payment_waiting",
+              "delivery_waiting",
+              "on_order",
+              "packed",
+              "packed_fulfillment",
+              "packed_ready",
+              "ready",
+              "wait_for_dispatch",
+              "suspended",
+              "finished",
+              "finished_ext",
+              "missing"
+            ]
+          },
+          "order_status_id": {
+            "type": "integer",
+            "description": "Id of a configurable status (from idosell_list_order_statuses), instead of order_status."
+          },
+          "api_flag": {
+            "type": "string",
+            "description": "Registration flag for external programs: none, registered, realized, registered_pos, realized_pos, registration_fault.",
+            "enum": [
+              "none",
+              "registered",
+              "realized",
+              "registered_pos",
+              "realized_pos",
+              "registration_fault"
+            ]
+          },
+          "api_note": {
+            "type": "string",
+            "description": "API note added to the order."
+          },
+          "order_note": {
+            "type": "string",
+            "description": "Note on the order, visible in the panel."
+          },
+          "estimated_delivery_date": {
+            "type": "string",
+            "description": "Estimated shipment date as Y-m-d H:i, e.g. 2026-02-01 12:00."
+          }
+        },
+        "required": [
+          "order_serial_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/orders",
+        "bodyMapping": {
+          "params": {
+            "orders": [
+              {
+                "orderSerialNumber": "$order_serial_number",
+                "orderStatus": "$order_status",
+                "orderStatusId": "$order_status_id",
+                "apiFlag": "$api_flag",
+                "apiNoteToOrder": "$api_note",
+                "orderNote": "$order_note",
+                "estimatedDeliveryDate": "$estimated_delivery_date"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "idosell_cancel_order",
+      "description": "Set an order to canceled. The customer may be notified by the shop and stock is released. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_serial_number": {
+            "type": "integer",
+            "description": "Order serial number (orderSerialNumber), the number shown in the panel, e.g. 12345.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_serial_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/orders",
+        "bodyMapping": {
+          "params": {
+            "orders": [
+              {
+                "orderSerialNumber": "$order_serial_number",
+                "orderStatus": "canceled"
+              }
+            ]
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "idosell_get_order_packages",
+      "description": "List the parcels of orders, returns or RMAs: courier, package and consignment (tracking) numbers, weight and shipping cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "string",
+            "description": "Order serial numbers separated by commas."
+          },
+          "package_numbers": {
+            "type": "string",
+            "description": "Consignment numbers separated by commas."
+          },
+          "return_numbers": {
+            "type": "string",
+            "description": "Return numbers separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/packages",
+        "queryParams": {
+          "orderNumbers": "$order_numbers",
+          "deliveryPackageNumbers": "$package_numbers",
+          "returnNumbers": "$return_numbers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_add_order_packages",
+      "description": "Assign parcels to an order: courier id plus package and consignment (tracking) number for each parcel. Use idosell_list_couriers for courier ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_serial_number": {
+            "type": "string",
+            "description": "Order serial number as text, e.g. 12345."
+          },
+          "packages": {
+            "type": "array",
+            "description": "Parcels, each with courierId, deliveryPackageNumber and deliveryShippingNumber (tracking number), optionally deliveryPackageParameters with productWeight and packagingWeight in grams.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "courierId": {
+                  "type": "string",
+                  "description": "Courier id."
+                },
+                "deliveryPackageNumber": {
+                  "type": "string",
+                  "description": "Package number."
+                },
+                "deliveryShippingNumber": {
+                  "type": "string",
+                  "description": "Consignment (tracking) number."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "order_serial_number",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/packages",
+        "bodyMapping": {
+          "params": {
+            "orderPackages": [
+              {
+                "eventId": "$order_serial_number",
+                "eventType": "order",
+                "packages": "$packages"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "idosell_search_products",
+      "description": "Search products: productId, codes, names and descriptions per language, prices (retail, wholesale, promotional), producer, category, sizes with stock, visibility and availability. Up to 100 per page, pages from 0. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "description": "Products to read, each as an object with productId (IAI code) or productCode (external code).",
+            "items": {
+              "type": "object"
+            }
+          },
+          "contains_text": {
+            "type": "string",
+            "description": "Text in the short or long description."
+          },
+          "contains_code_part": {
+            "type": "string",
+            "description": "Product code or part of it (producer code, external code or the code on the product card)."
+          },
+          "is_available": {
+            "type": "string",
+            "description": "y available, n unavailable.",
+            "enum": [
+              "y",
+              "n"
+            ]
+          },
+          "is_visible": {
+            "type": "string",
+            "description": "y visible in the shop, n hidden.",
+            "enum": [
+              "y",
+              "n"
+            ]
+          },
+          "categories": {
+            "type": "array",
+            "description": "Category filters, each with categoryId.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "producers": {
+            "type": "array",
+            "description": "Producer filters, each with producerId.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "return_elements": {
+            "type": "array",
+            "description": "Fields to return, e.g. code, lang_data, price, sizes; all when left out.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "return_products": {
+            "type": "string",
+            "description": "active (not deleted, default), deleted, or in_trash.",
+            "enum": [
+              "active",
+              "deleted",
+              "in_trash"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, numbered from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/products/search",
+        "bodyMapping": {
+          "params": {
+            "productParams": "$product_ids",
+            "containsText": "$contains_text",
+            "containsCodePart": "$contains_code_part",
+            "productIsAvailable": "$is_available",
+            "productIsVisible": "$is_visible",
+            "categories": "$categories",
+            "producers": "$producers",
+            "returnElements": "$return_elements",
+            "returnProducts": "$return_products",
+            "resultsPage": "$page",
+            "resultsLimit": "$limit"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_get_products",
+      "description": "Read up to 100 non-deleted products by IAI code, external code or producer code, with names, prices, sizes and stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "string",
+            "description": "Product codes separated by commas (IAI code, external system code or producer code)."
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/products",
+        "queryParams": {
+          "productIds": "$product_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_get_product_stocks",
+      "description": "Read stock per product, size and warehouse: quantity, reservations, location in the warehouse and the size ids used by idosell_update_product_stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ident_type": {
+            "type": "string",
+            "description": "What the product codes are: id (IAI code), index, codeExtern or codeProducer.",
+            "enum": [
+              "id",
+              "index",
+              "codeExtern",
+              "codeProducer"
+            ],
+            "default": "id"
+          },
+          "products": {
+            "type": "string",
+            "description": "Product codes separated by commas."
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/stocks",
+        "queryParams": {
+          "identType": "$ident_type",
+          "products": "$products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_update_product_stock",
+      "description": "Set, add to or subtract from the stock of one product size in one warehouse. Products without sizes use the universal size, usually `uniw`; idosell_get_product_stocks shows the size ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ident_type": {
+            "type": "string",
+            "description": "What product_ident is: id (IAI code), index, codeExtern or codeProducer.",
+            "enum": [
+              "id",
+              "index",
+              "codeExtern",
+              "codeProducer"
+            ],
+            "default": "id"
+          },
+          "product_ident": {
+            "type": "string",
+            "description": "Product code of the chosen type, e.g. 1234."
+          },
+          "size_ident_type": {
+            "type": "string",
+            "description": "What size_ident is: id (size id), index, codeExtern or codeProducer.",
+            "enum": [
+              "id",
+              "index",
+              "codeExtern",
+              "codeProducer"
+            ],
+            "default": "id"
+          },
+          "size_ident": {
+            "type": "string",
+            "description": "Size code of the chosen type; uniw for a product without sizes.",
+            "default": "uniw"
+          },
+          "stock_id": {
+            "type": "integer",
+            "description": "Warehouse (stock) id, e.g. 1 for the main warehouse.",
+            "minimum": 0
+          },
+          "operation": {
+            "type": "string",
+            "description": "set replaces the quantity, add adds, substract removes (IdoSell's spelling).",
+            "enum": [
+              "set",
+              "add",
+              "substract"
+            ],
+            "default": "set"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity for the operation.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "product_ident",
+          "stock_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/stocks",
+        "bodyMapping": {
+          "params": {
+            "products": [
+              {
+                "ident": {
+                  "identType": "$ident_type",
+                  "identValue": "$product_ident"
+                },
+                "sizes": [
+                  {
+                    "ident": {
+                      "identType": "$size_ident_type",
+                      "identValue": "$size_ident"
+                    },
+                    "quantity": {
+                      "stocks": [
+                        {
+                          "stock_id": "$stock_id",
+                          "quantity_operation": {
+                            "operation": "$operation",
+                            "quantity": "$quantity"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "idosell_list_categories",
+      "description": "List product categories configured in the panel: id, parent, names per language and last change time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Category ids separated by commas."
+          },
+          "languages": {
+            "type": "string",
+            "description": "Language codes separated by commas, e.g. pol,eng; Defaults returns the shop's default language."
+          },
+          "results_page": {
+            "type": "integer",
+            "description": "Result page, numbered from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "results_limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/categories",
+        "queryParams": {
+          "ids": "$ids",
+          "languages": "$languages",
+          "results_page": "$results_page",
+          "results_limit": "$results_limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_get_clients",
+      "description": "List or find customer accounts: clientId, login, email, names, phone, addresses, client type, active flag, trade credit, shop and registration date. Up to 100 per page, pages from 0.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_ids": {
+            "type": "string",
+            "description": "Customer numbers separated by commas."
+          },
+          "text_search": {
+            "type": "string",
+            "description": "Text searched in customer data (name, email, login, phone)."
+          },
+          "is_active": {
+            "type": "string",
+            "description": "yes or no.",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Only customers of this shop id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, numbered from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/clients",
+        "queryParams": {
+          "clientsIds": "$client_ids",
+          "clientTextSearch": "$text_search",
+          "clientIsActive": "$is_active",
+          "shopId": "$shop_id",
+          "resultsPage": "$page",
+          "resultsLimit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_search_clients_crm",
+      "description": "Search customers in the CRM module by email, login, name, company, tax number, country, wholesaler flag or registration date: customer data with loyalty and newsletter settings. Up to 100 per page. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Customer email."
+          },
+          "login": {
+            "type": "string",
+            "description": "Customer login."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name."
+          },
+          "nip": {
+            "type": "string",
+            "description": "Tax number (NIP)."
+          },
+          "country_id": {
+            "type": "string",
+            "description": "Country, ISO 3166 code such as PL."
+          },
+          "is_wholesaler": {
+            "type": "string",
+            "description": "yes or no.",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          },
+          "registration_date": {
+            "type": "object",
+            "description": "Registration date range, e.g. `{\"clientRegistrationDateBegin\": \"2026-01-01\", \"clientRegistrationDateEnd\": \"2026-01-31\"}`."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, numbered from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients/crm/search",
+        "bodyMapping": {
+          "params": {
+            "clientEmail": "$email",
+            "clientLogin": "$login",
+            "clientFirstName": "$first_name",
+            "clientLastName": "$last_name",
+            "clientFirm": "$company",
+            "clientNip": "$nip",
+            "clientCountryId": "$country_id",
+            "clientIsWholesaler": "$is_wholesaler",
+            "clientRegistrationDate": "$registration_date",
+            "resultsPage": "$page",
+            "resultsLimit": "$limit"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_get_returns",
+      "description": "List returns: id, order serial number, status, products, refund amounts, shipping number and dates. Statuses: 1 not handled, 2 accepted, 3 not accepted, 13 canceled by the customer, 14 canceled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_sn": {
+            "type": "integer",
+            "description": "Only returns of this order serial number."
+          },
+          "return_id": {
+            "type": "integer",
+            "description": "Return id."
+          },
+          "status": {
+            "type": "integer",
+            "description": "Return status code, e.g. 1 not handled or 2 accepted."
+          },
+          "results_page": {
+            "type": "integer",
+            "description": "Result page, numbered from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "results_limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/returns/returns",
+        "queryParams": {
+          "order_sn": "$order_sn",
+          "return_id": "$return_id",
+          "status": "$status",
+          "results_page": "$results_page",
+          "results_limit": "$results_limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "idosell_list_couriers",
+      "description": "List couriers available for a country: courier id, name and whether it offers pickup points. Needed for idosell_add_order_packages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country_code": {
+            "type": "string",
+            "description": "Country code, ISO 3166-1, e.g. PL.",
+            "pattern": "^[A-Za-z]{2}$",
+            "default": "PL"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Result page, numbered from 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        },
+        "required": [
+          "country_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/couriers/couriers",
+        "queryParams": {
+          "countryCode": "$country_code",
+          "resultsPage": "$page",
+          "resultsLimit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

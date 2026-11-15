@@ -1,0 +1,676 @@
+{
+  "slug": "salsify",
+  "name": "Salsify",
+  "description": "Salsify PXM API for one organization: products and their property values, digital assets, property definitions, list membership, exports, import runs and channel runs. API key (bearer) and organization id.",
+  "instructions": "## Salsify\nThis connector works with the **Salsify PXM API** (`https://app.salsify.com/api`) of one Salsify organization: products, digital assets, property definitions, list membership, exports, import runs and channel runs.\n\n**Setup (about 3 minutes)**\n1. Sign in to Salsify (ideally as a dedicated integration user with only the rights it needs) and open your profile, **API access** (https://app.salsify.com/app/profile/edit/api). Copy the **API key** (generate one if empty) into `SALSIFY_API_TOKEN`. It acts with that user's permissions and stays valid until it is regenerated.\n2. Copy the **organization id** from the address bar: the part after `/orgs/`, starting with `s-` (for example `s-1a2b3c4d-...`). Paste it into `SALSIFY_ORG_ID`.\n\nAPI access depends on your Salsify licence; ask your Salsify contact if the profile shows no API key. The token is sent as a bearer token.\n\n**Where to start**: `salsify_list_products` (with a filter, or without for all) and `salsify_get_product` for one product. Property ids are the keys you see on products; `salsify_get_property` explains one.\n\n**Products**: `salsify_list_products`, `salsify_get_product`, `salsify_create_product`, `salsify_update_product`. Values are keyed by property id (for example `Brand`, `Product Name`); a multi-valued property takes a list; null clears a value. Unknown property ids are created as text properties, so check spelling. `salsify_upsert_products` (bulk) and `salsify_delete_product` are installed switched off.\n\n**Digital assets**: `salsify_list_digital_assets`, `salsify_get_digital_asset`, `salsify_create_digital_asset` (from a public URL; processed in the background), `salsify_update_digital_asset`. Link an asset to a product by setting the product's asset property to the asset id.\n\n**Properties and lists**: `salsify_get_property`, `salsify_add_list_members`, `salsify_remove_list_members`. There is no documented call to list every property: export with entity_type attribute.\n\n**Exports and imports**: `salsify_start_export` then `salsify_get_export` until completed; the url is a temporary link to the file. `salsify_get_import_run` reads an import run; `salsify_start_import_run` (runs a configured import, possibly over many products) is switched off.\n\n**Channels**: `salsify_get_latest_channel_run` and `salsify_get_channel_run` show the state and feed link of a channel; `salsify_start_channel_run` is switched off because a run can publish to a retailer. The channel routes are used by Salsify's own integrations but are only partly described in the public reference.\n\n**Filters**: Salsify filter language: `='Brand':'Acme'` (equals), `='Product Name':^'Mug'` (starts with), `='Price':>'10'`, `=list:12345` (list members); join conditions with a comma for AND. Property names and values sit in single quotes.\n\n**Paging and limits**: page from 1 and per_page up to 100; meta.total_entries gives the total. Paging stops at the 10,000th result (422): use an export for larger sets. The organization may make 10,000 requests per hour across all its users (429 above; headers x-ratelimit-remaining and x-ratelimit-reset). Errors come as 422 with an errors list; 401 means the API key is wrong; 400 with a list of organizations means the organization id is missing or wrong.",
+  "aliases": [
+    "Salsify PXM",
+    "Salsify PIM"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "salsify",
+  "docsUrl": "https://developers.salsify.com/reference",
+  "requiredEnvVars": [
+    "SALSIFY_ORG_ID",
+    "SALSIFY_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "SALSIFY_ORG_ID": {
+      "label": "Organization id",
+      "kind": "setting",
+      "help": "The part of the Salsify address after /orgs/, starting with s-, for example s-1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d.",
+      "link": "https://developers.salsify.com/docs/organization-id",
+      "pattern": "^s-[A-Za-z0-9-]{4,64}$",
+      "patternMessage": "The organization id starts with s- (copy it from the address after /orgs/)."
+    },
+    "SALSIFY_API_TOKEN": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Profile, API access in Salsify: the API key of your user (or of an integration user).",
+      "link": "https://developers.salsify.com/docs/token-based-authentication",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the API key without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Salsify refused the API key. Copy it again from Profile, API access, or regenerate it there.",
+      "field": "SALSIFY_API_TOKEN"
+    },
+    "400": {
+      "hint": "Salsify could not pick the organization. Copy the organization id (starting with s-) from the address after /orgs/.",
+      "field": "SALSIFY_ORG_ID"
+    },
+    "403": "The user behind the API key lacks the permission for this call in this organization.",
+    "404": "No product, asset or property with that id, or the organization id is wrong.",
+    "rate_limited": "The organization used its 10,000 requests for this hour. Wait for the reset (x-ratelimit-reset seconds)."
+  },
+  "probe": {
+    "tool": "salsify_list_products",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "prerequisites": "A Salsify organization whose licence includes API access, and a user (preferably a dedicated integration user) with an API key. About 3 minutes.",
+  "connector": {
+    "name": "Salsify API",
+    "type": "REST",
+    "baseUrl": "https://app.salsify.com/api",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SALSIFY_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "salsify_list_products",
+      "description": "List products, optionally narrowed by a Salsify filter: every property value of each product as property id and value pairs, plus system fields such as salsify:id, salsify:created_at, salsify:updated_at, salsify:parent_id and the linked digital assets. meta holds total_entries, current_page and per_page. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Salsify filter language, for example `='Brand':'Acme'`, `=list:12345` (members of a list) or `='Product Name':^'Mug'` (starts with). Combine conditions with a comma (AND). Leave it out for all."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. Results stop after the 10,000th row; use an export for more.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/products",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_get_product",
+      "description": "Get one product by its product id: all property values (property id and value pairs, lists for multi-valued properties), system fields (salsify:id, salsify:parent_id, salsify:created_at, salsify:updated_at, salsify:version) and its digital assets with URLs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id: the value of the property that holds the product id in your organization (often a SKU), exactly as stored."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/products/{product_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_create_product",
+      "description": "Create a product from property id and value pairs; the product id property is required. A property id that does not exist yet is created as a text property, so check names first. Answers with the new product; 422 when the id already exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "object",
+            "description": "Property values, for example `{\"SKU\":\"MUG-001\",\"Product Name\":\"Adventure mug\",\"Brand\":\"Acme\"}`. Use the property ids of your organization; multiple values as a list."
+          }
+        },
+        "required": [
+          "product"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/products",
+        "bodyMapping": {
+          "__raw": "$product"
+        }
+      }
+    },
+    {
+      "name": "salsify_update_product",
+      "description": "Update property values of one product: only the properties sent change; each sent value replaces the stored one, null removes it. Enumerated values must already exist. Also salsify:parent_id. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id: the value of the property that holds the product id in your organization (often a SKU), exactly as stored."
+          },
+          "values": {
+            "type": "object",
+            "description": "Property values to set, for example `{\"Brand\":\"Acme\",\"Keywords\":null}`."
+          }
+        },
+        "required": [
+          "product_id",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/products/{product_id}",
+        "bodyMapping": {
+          "__raw": "$values"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "salsify_upsert_products",
+      "description": "Create or update up to 100 products in one call from a list of property value objects (each with the product id property). Answers with the stored products. A bulk write: installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "description": "Up to 100 product objects, each with the product id property and the values to set.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/products/_upsert",
+        "bodyMapping": {
+          "__raw": "$products"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "salsify_delete_product",
+      "description": "Delete one product permanently, with its property values. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id: the value of the property that holds the product id in your organization (often a SKU), exactly as stored."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/products/{product_id}",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "salsify_list_digital_assets",
+      "description": "List digital assets (images, videos, documents), optionally narrowed by a filter: salsify:id, salsify:name, salsify:url, salsify:format, salsify:bytes, salsify:status, salsify:source_url, dimensions and custom metadata. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Salsify filter language, for example `='Brand':'Acme'`, `=list:12345` (members of a list) or `='Product Name':^'Mug'` (starts with). Combine conditions with a comma (AND). Leave it out for all."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. Results stop after the 10,000th row; use an export for more.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/digital_assets",
+        "queryParams": {
+          "filter": "$filter",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_get_digital_asset",
+      "description": "Get one digital asset: salsify:id, salsify:name, salsify:url (download link), salsify:format, salsify:bytes, salsify:status (in_progress, completed, failed), source URL, dimensions and custom metadata.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "Digital asset id (salsify:id)."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/digital_assets/{asset_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_create_digital_asset",
+      "description": "Add a digital asset from a public URL; Salsify downloads it in the background (salsify:status in_progress, then completed). Optional id, name and custom metadata. Link it to products by setting an asset property on the product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source_url": {
+            "type": "string",
+            "description": "Public URL of the file (no login).",
+            "format": "uri"
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Id to give the asset (salsify:id); Salsify generates one when left out."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name (salsify:name)."
+          }
+        },
+        "required": [
+          "source_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/digital_assets",
+        "bodyMapping": {
+          "salsify:source_url": "$source_url",
+          "salsify:id": "$asset_id",
+          "salsify:name": "$name"
+        }
+      }
+    },
+    {
+      "name": "salsify_update_digital_asset",
+      "description": "Update a digital asset: custom metadata, salsify:name, or salsify:source_url to replace the file (which creates a new link). Only the properties sent change. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "Digital asset id."
+          },
+          "values": {
+            "type": "object",
+            "description": "Values to set, for example `{\"salsify:name\":\"Front view\",\"Asset Use\":\"Web\"}`."
+          }
+        },
+        "required": [
+          "asset_id",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/digital_assets/{asset_id}",
+        "bodyMapping": {
+          "__raw": "$values"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "salsify_get_property",
+      "description": "Get one property (attribute) definition: salsify:id, salsify:name, salsify:data_type (string, rich_text, number, date, boolean, enumerated, digital_asset, link, html), salsify:entity_types, salsify:attribute_group, salsify:role and whether it is multi-valued.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_id": {
+            "type": "string",
+            "description": "Property id, exactly as used as a key on products, for example Brand or Product Name."
+          }
+        },
+        "required": [
+          "property_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/properties/{property_id}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_add_list_members",
+      "description": "Add products (or other entities) to an existing Salsify list by their ids. The list id is the number in the list URL in Salsify.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id (from the list URL)."
+          },
+          "member_ids": {
+            "type": "array",
+            "description": "Product ids to add.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "list_id",
+          "member_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/lists/{list_id}/members",
+        "bodyMapping": {
+          "data": {
+            "member_ids": "$member_ids"
+          }
+        }
+      }
+    },
+    {
+      "name": "salsify_remove_list_members",
+      "description": "Remove products (or other entities) from a Salsify list. The products themselves stay.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "description": "List id (from the list URL)."
+          },
+          "member_ids": {
+            "type": "array",
+            "description": "Product ids to remove from the list.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "list_id",
+          "member_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/orgs/{{SALSIFY_ORG_ID}}/lists/{list_id}/members",
+        "bodyMapping": {
+          "data": {
+            "member_ids": "$member_ids"
+          }
+        }
+      }
+    },
+    {
+      "name": "salsify_start_export",
+      "description": "Start an export file of products, digital assets, properties (attribute), enumerated values (attribute_value) or everything (all). Returns the export run id and status; poll salsify_get_export until status is completed and use its url to download.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "description": "What to export.",
+            "enum": [
+              "product",
+              "digital_asset",
+              "attribute",
+              "attribute_value",
+              "all"
+            ]
+          },
+          "format": {
+            "type": "string",
+            "description": "File format: csv, xlsx or json (products), json or jsonl (all), csv or xlsx (others).",
+            "enum": [
+              "csv",
+              "xlsx",
+              "json",
+              "jsonl"
+            ]
+          },
+          "filter": {
+            "type": "string",
+            "description": "Salsify filter language, for example `='Brand':'Acme'`, `=list:12345` (members of a list) or `='Product Name':^'Mug'` (starts with). Combine conditions with a comma (AND). Leave it out for all."
+          },
+          "properties": {
+            "type": "string",
+            "description": "With include_all_columns false: the property ids to export, single-quoted and comma-separated, for example `'SKU','Product Name','Brand'`."
+          },
+          "include_all_columns": {
+            "type": "boolean",
+            "description": "true (default) exports every property; false only those in properties."
+          },
+          "product_type": {
+            "type": "string",
+            "description": "Products only: leaves (default, lowest level) or all levels of a hierarchy.",
+            "enum": [
+              "leaves",
+              "all"
+            ]
+          },
+          "compress": {
+            "type": "boolean",
+            "description": "true compresses the file as gzip (products and all only)."
+          },
+          "sort_property": {
+            "type": "string",
+            "description": "Products only: property to sort by."
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "Products only: asc or desc, with sort_property.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "required": [
+          "entity_type",
+          "format"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orgs/{{SALSIFY_ORG_ID}}/export_runs",
+        "bodyMapping": {
+          "configuration": {
+            "entity_type": "$entity_type",
+            "format": "$format",
+            "filter": "$filter",
+            "properties": "$properties",
+            "include_all_columns": "$include_all_columns",
+            "product_type": "$product_type",
+            "compress": "$compress",
+            "sort_property": "$sort_property",
+            "sort_order": "$sort_order"
+          }
+        }
+      }
+    },
+    {
+      "name": "salsify_get_export",
+      "description": "Get the state of an export run: status (running, completed, failed), progress, estimated_time_remaining, failure_reason and, once completed, url (a temporary download link to the file).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "description": "Export run id from salsify_start_export."
+          }
+        },
+        "required": [
+          "export_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{{SALSIFY_ORG_ID}}/export_runs/{export_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_start_import_run",
+      "description": "Run an import that is already configured in Salsify (for example a JSON or CSV import from a mount point). It can change many products at once; installed switched off. 422 when the import queue (50) is full.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "import_id": {
+            "type": "string",
+            "description": "Import id (from the import URL in Salsify)."
+          }
+        },
+        "required": [
+          "import_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orgs/{{SALSIFY_ORG_ID}}/imports/{import_id}/runs"
+      },
+      "enabled": false
+    },
+    {
+      "name": "salsify_get_import_run",
+      "description": "Get the state of an import run: status (running, completed, failed, canceled, stopped), progress and errors. Poll no more than every 15 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "description": "Import run id."
+          }
+        },
+        "required": [
+          "run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{{SALSIFY_ORG_ID}}/imports/runs/{run_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_get_latest_channel_run",
+      "description": "Get the latest run of a channel (a product feed or publication to a retailer or site): id, status (running, completed, failed), timestamps and product_export_url, a temporary link to the generated feed file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id (the number in the channel URL in Salsify)."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{{SALSIFY_ORG_ID}}/channels/{channel_id}/runs/latest"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_get_channel_run",
+      "description": "Get one run of a channel: status, timestamps and product_export_url once completed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id."
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Channel run id."
+          }
+        },
+        "required": [
+          "channel_id",
+          "run_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orgs/{{SALSIFY_ORG_ID}}/channels/{channel_id}/runs/{run_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "salsify_start_channel_run",
+      "description": "Start a new run of a channel, which regenerates its feed and, for publishing channels, sends it to the retailer or site. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orgs/{{SALSIFY_ORG_ID}}/channels/{channel_id}/runs"
+      },
+      "enabled": false
+    }
+  ]
+}

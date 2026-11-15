@@ -1,0 +1,1047 @@
+{
+  "slug": "plytix",
+  "name": "Plytix PIM",
+  "description": "Plytix PIM API for product information: product search, products and variants, linked assets, categories and related products, the asset library, attributes, relationships and product families. API key and API password.",
+  "instructions": "## Plytix PIM\nThis connector works with the **Plytix PIM API v1** (`https://pim.plytix.com/api/v1`): product search, products and their variants, linked assets, categories and related products, the asset library (search, add from URL), product attributes, categories, relationship types and product families.\n\n**Setup (about 3 minutes, account owner or admin)**\n1. In Plytix open **Account Administration, API** (https://accounts.plytix.com) and click **Add API key**. Choose the role the key acts with (an editor role is enough for these tools; viewer for read-only use).\n2. Copy the **API key** into `PLYTIX_API_KEY` and the **API password** into `PLYTIX_API_PASSWORD`. The password is shown only once.\n\nThe connector posts both to `https://auth.plytix.com/auth/api/get-token` for an access token, which lasts 15 minutes, and asks for a new one shortly before it runs out. Plytix also offers its own MCP server (`https://pim.plytix.com/mcp`, OAuth sign-in) when your account manager has enabled it; this connector works with plain API keys.\n\n**Where to start**: `plytix_list_product_filters` shows the searchable fields and the keys of your custom attributes. Then `plytix_search_products` (always pass attributes, otherwise only id and sku come back) and `plytix_get_product` for everything about one product.\n\n**Products**: `plytix_search_products`, `plytix_list_product_filters`, `plytix_get_product`, `plytix_create_product`, `plytix_update_product`, `plytix_assign_product_family`. `plytix_delete_product` is installed switched off.\n\n**Variants**: `plytix_list_product_variants`, `plytix_add_product_variant` (new product as a variant), `plytix_link_variant` (existing product as a variant). Variants inherit parent attributes unless a value is overwritten on the variant.\n\n**Assets, categories, related products**: `plytix_list_product_assets`, `plytix_link_product_asset`, `plytix_unlink_product_asset`, `plytix_list_product_categories`, `plytix_link_product_category`, `plytix_unlink_product_category`, `plytix_add_related_products`, `plytix_remove_related_products`. Unlinking never deletes the asset, category or related product.\n\n**Library and data model**: `plytix_search_assets`, `plytix_get_asset`, `plytix_create_asset_from_url`, `plytix_search_attributes`, `plytix_get_attribute`, `plytix_search_categories`, `plytix_search_relationships`, `plytix_search_product_families`, `plytix_list_family_attributes`.\n\n**Search**: filters are a list of AND groups combined with OR: `[[{\"field\":\"status\",\"operator\":\"eq\",\"value\":\"Completed\"}],[{\"field\":\"sku\",\"operator\":\"like\",\"value\":\"MUG\"}]]` finds completed products OR products whose SKU contains MUG. Custom attributes are addressed as `attributes.` plus their label (for example `attributes.in_stock`), in filters and in the attributes list. At most 50 attributes per request.\n\n**Field notes**: ids are 24-character hex strings. status is Draft or Completed. product_type is single, parent, variant (and sub-variant on some plans). Dates are ISO 8601 in UTC. Every answer is wrapped in `data` (a list, also for one record); errors carry `error.msg` and `error.errors` with the field.\n\n**Paging and limits**: page from 1 and page_size up to 100; the answer's `pagination.total_count` gives the total. Sorting more than 10,000 results answers 428: narrow the filter. Plytix limits requests per 10 seconds and per hour depending on the plan (429 when exceeded); ask your account manager for your numbers and avoid loops over thousands of products.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "plytix",
+  "docsUrl": "https://docs.plytix.com/reference/v1-v2/",
+  "requiredEnvVars": [
+    "PLYTIX_API_KEY",
+    "PLYTIX_API_PASSWORD"
+  ],
+  "envVarMeta": {
+    "PLYTIX_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Account Administration, API (accounts.plytix.com): the API key. Only account owners and admins can create keys.",
+      "link": "https://docs.plytix.com/reference/v1-v2/token-authentication/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the API key without spaces."
+    },
+    "PLYTIX_API_PASSWORD": {
+      "label": "API password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the API key is created. Create a new key if it was lost.",
+      "link": "https://docs.plytix.com/reference/v1-v2/token-authentication/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the API password without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Plytix refused the API key and password (\"Bad api_key or api_password\"). Copy both again from Account Administration, API, or create a new key.",
+      "field": "PLYTIX_API_PASSWORD"
+    },
+    "403": "The API key's role may not do this. Give the key a role with edit rights in Account Administration, API.",
+    "404": "No product, asset or other record with that id.",
+    "rate_limited": "Plytix limits requests per 10 seconds and per hour by plan. Wait a little and try again."
+  },
+  "probe": {
+    "tool": "plytix_list_product_filters",
+    "params": {}
+  },
+  "prerequisites": "A Plytix PIM account and an owner or admin who can create an API key under Account Administration, API. About 3 minutes.",
+  "connector": {
+    "name": "Plytix PIM API",
+    "type": "REST",
+    "baseUrl": "https://pim.plytix.com",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://auth.plytix.com/auth/api/get-token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "api_key": "${username}",
+        "api_password": "${password}"
+      },
+      "username": "{{PLYTIX_API_KEY}}",
+      "password": "{{PLYTIX_API_PASSWORD}}",
+      "tokenJsonPath": "data[0].access_token",
+      "tokenTTLSeconds": 840,
+      "proactiveRefreshSeconds": 90,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "plytix_search_products",
+      "description": "Search products with filters: id and sku always, plus the attributes you list (system ones such as label, status, gtin, created, modified, categories, assets, thumbnail, product_level, and custom ones as `attributes.LABEL`). Returns data and pagination with total_count. Up to 100 per page and 50 attributes per request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "array",
+            "description": "Filter groups: a list of lists of conditions, each with field, operator and value. Conditions inside one inner list are combined with AND, the inner lists with OR. Operators: eq, !eq, like, in, !in, gt, gte, lt, lte, exists, !exists, text_search. Example: `[[{\"field\":\"sku\",\"operator\":\"like\",\"value\":\"MUG\"}]]`. Leave it out for everything.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Fields to return besides id and sku, for example `[\"label\",\"status\",\"modified\",\"attributes.price\"]`. Custom attributes take the prefix `attributes.` and their label; plytix_list_product_filters lists the keys.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relationship_filters": {
+            "type": "array",
+            "description": "Filters on related products, in the same shape as filters with relationship fields.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field; prefix with - for descending, for example `-modified`."
+          }
+        },
+        "required": [
+          "attributes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products/search",
+        "bodyMapping": {
+          "filters": "$filters",
+          "attributes": "$attributes",
+          "relationship_filters": "$relationship_filters",
+          "pagination": {
+            "page": "$page",
+            "page_size": "$page_size",
+            "order": "$order"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_list_product_filters",
+      "description": "List the fields products can be searched and returned by: system attributes and every custom attribute with its key (`attributes.LABEL`), type and allowed operators. Call it before building a search.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/filters/product"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_get_product",
+      "description": "Get one product: id, sku, label, status (Draft or Completed), gtin, custom attributes, categories, assets, thumbnail, product_family_id, product_type (single, parent, variant), _parent_id, num_variations, relationships with related products, created and modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "all_attributes": {
+            "type": "boolean",
+            "description": "true includes empty attributes as null."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/products/{product_id}",
+        "queryParams": {
+          "all_attributes": "$all_attributes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_create_product",
+      "description": "Create a product. Only sku is required; custom attribute values go under attributes by label. Existing assets and categories can be linked by id. New attributes, categories or assets are not created here. Answers 201 with the product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Product SKU, unique in the account."
+          },
+          "label": {
+            "type": "string",
+            "description": "Product label (display name)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Draft or Completed.",
+            "enum": [
+              "Draft",
+              "Completed"
+            ]
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Custom attribute values by label, for example `{\"stock\":123,\"color\":[\"Blue\"]}`."
+          },
+          "categories": {
+            "type": "array",
+            "description": "Categories to link, each `{\"id\":\"...\"}`.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products",
+        "bodyMapping": {
+          "sku": "$sku",
+          "label": "$label",
+          "status": "$status",
+          "attributes": "$attributes",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "plytix_update_product",
+      "description": "Change a product (only the fields sent): label, status and custom attribute values by label. Send null to empty an attribute. Answers with the updated product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "label": {
+            "type": "string",
+            "description": "New label."
+          },
+          "status": {
+            "type": "string",
+            "description": "Draft or Completed.",
+            "enum": [
+              "Draft",
+              "Completed"
+            ]
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Custom attribute values to set by label, for example `{\"price\":19.9,\"description\":\"...\"}`."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/api/v1/products/{product_id}",
+        "bodyMapping": {
+          "label": "$label",
+          "status": "$status",
+          "attributes": "$attributes"
+        }
+      }
+    },
+    {
+      "name": "plytix_delete_product",
+      "description": "Delete a product permanently, with its links to assets, categories and relationships. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product to delete id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v1/products/{product_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "plytix_assign_product_family",
+      "description": "Assign a product family to a product, which decides the attributes it shows. Changing the family can hide values of attributes the new family does not have.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "product_family_id": {
+            "type": "string",
+            "description": "Product family id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id",
+          "product_family_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products/{product_id}/family",
+        "bodyMapping": {
+          "product_family_id": "$product_family_id"
+        }
+      }
+    },
+    {
+      "name": "plytix_list_product_variants",
+      "description": "List the variants of a parent product: id, sku, label, status, attributes, overwritten_attributes, product_family_model_id, created and modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Parent product id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/products/{product_id}/variants"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_add_product_variant",
+      "description": "Create a new product as a variant of a parent product, with sku, label and optional attribute values (a value set here overrides the inherited one). Turning a single product into a parent can lose data on it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_product_id": {
+            "type": "string",
+            "description": "Parent product id (24 hex characters)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU of the new variant."
+          },
+          "label": {
+            "type": "string",
+            "description": "Label of the new variant."
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Attribute values of the variant by label."
+          }
+        },
+        "required": [
+          "parent_product_id",
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products/{parent_product_id}/variants",
+        "bodyMapping": {
+          "variant": {
+            "sku": "$sku",
+            "label": "$label",
+            "attributes": "$attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "plytix_link_variant",
+      "description": "Make an existing product a variant of another product (the parent). The variant then inherits the parent attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Parent product id (24 hex characters)."
+          },
+          "variant_id": {
+            "type": "string",
+            "description": "Product that becomes the variant id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id",
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products/{product_id}/variant/{variant_id}"
+      }
+    },
+    {
+      "name": "plytix_list_product_assets",
+      "description": "List the assets linked to a product: id, filename, url, thumbnail, content_type and the attribute they are linked to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/products/{product_id}/assets"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_link_product_asset",
+      "description": "Link an existing asset to a product, in the assets list or in a media attribute such as thumbnail. At most 300 assets per product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Asset id (24 hex characters)."
+          },
+          "attribute_label": {
+            "type": "string",
+            "description": "Where to link it: assets (default list), thumbnail, or the label of a media or media gallery attribute."
+          }
+        },
+        "required": [
+          "product_id",
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products/{product_id}/assets",
+        "bodyMapping": {
+          "id": "$asset_id",
+          "attribute_label": "$attribute_label"
+        }
+      }
+    },
+    {
+      "name": "plytix_unlink_product_asset",
+      "description": "Remove the link between an asset and a product. The asset itself stays in the account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Asset id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id",
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v1/products/{product_id}/assets/{asset_id}"
+      }
+    },
+    {
+      "name": "plytix_list_product_categories",
+      "description": "List the product categories a product belongs to: id, name, path and parents_ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/products/{product_id}/categories"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_link_product_category",
+      "description": "Put a product into an existing product category (find the id with plytix_search_categories).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id",
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products/{product_id}/categories",
+        "bodyMapping": {
+          "id": "$category_id"
+        }
+      }
+    },
+    {
+      "name": "plytix_unlink_product_category",
+      "description": "Take a product out of a product category. The category and its other products stay.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id",
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/v1/products/{product_id}/categories/{category_id}"
+      }
+    },
+    {
+      "name": "plytix_add_related_products",
+      "description": "Add products to a relationship of a product (for example accessories or spare parts), each with a quantity. A product already related gets its quantity updated. Answers with the relationship and its related products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "relationship_id": {
+            "type": "string",
+            "description": "Relationship (from plytix_search_relationships) id (24 hex characters)."
+          },
+          "product_relationships": {
+            "type": "array",
+            "description": "Products to relate, each `{\"product_id\":\"...\",\"quantity\":1}`.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "product_id",
+          "relationship_id",
+          "product_relationships"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products/{product_id}/relationships/{relationship_id}",
+        "bodyMapping": {
+          "product_relationships": "$product_relationships"
+        }
+      }
+    },
+    {
+      "name": "plytix_remove_related_products",
+      "description": "Remove products from a relationship of a product. The products themselves stay. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (24 hex characters)."
+          },
+          "relationship_id": {
+            "type": "string",
+            "description": "Relationship id (24 hex characters)."
+          },
+          "product_relationships": {
+            "type": "array",
+            "description": "Products to remove, each `{\"product_id\":\"...\"}`.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "product_id",
+          "relationship_id",
+          "product_relationships"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/products/{product_id}/relationships/{relationship_id}/unlink",
+        "bodyMapping": {
+          "product_relationships": "$product_relationships"
+        }
+      }
+    },
+    {
+      "name": "plytix_search_assets",
+      "description": "Search assets (images and files) with filters: id plus the fields you list, such as filename, url, thumbnail, content_type, file_type, file_size, extension, categories, n_products, created and modified. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "array",
+            "description": "Filter groups: a list of lists of conditions, each with field, operator and value. Conditions inside one inner list are combined with AND, the inner lists with OR. Operators: eq, !eq, like, in, !in, gt, gte, lt, lte, exists, !exists, text_search. Example: `[[{\"field\":\"sku\",\"operator\":\"like\",\"value\":\"MUG\"}]]`. Leave it out for everything.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Fields to return, for example `[\"filename\",\"url\",\"file_type\",\"modified\"]`.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field; prefix with - for descending, for example `-modified`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/assets/search",
+        "bodyMapping": {
+          "filters": "$filters",
+          "pagination": {
+            "page": "$page",
+            "page_size": "$page_size",
+            "order": "$order"
+          },
+          "attributes": "$attributes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_get_asset",
+      "description": "Get one asset: filename, url, thumbnail, content_type, file_type, file_size, extension, categories, n_products, status, created and modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "Asset id (24 hex characters)."
+          }
+        },
+        "required": [
+          "asset_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/assets/{asset_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_create_asset_from_url",
+      "description": "Add an asset by giving a public URL; Plytix downloads the file. Formats are not converted, so keep the filename extension matching the file. Answers 201 with the asset (409 if it already exists).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public URL of the file.",
+            "format": "uri"
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name to store; defaults to the name in the URL."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/assets",
+        "bodyMapping": {
+          "url": "$url",
+          "filename": "$filename"
+        }
+      }
+    },
+    {
+      "name": "plytix_search_attributes",
+      "description": "Search product attributes: id plus the fields you list, such as name, label, type_class (text, number, dropdown, multiselect, media and others), options, groups, description, created and modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "array",
+            "description": "Filter groups: a list of lists of conditions, each with field, operator and value. Conditions inside one inner list are combined with AND, the inner lists with OR. Operators: eq, !eq, like, in, !in, gt, gte, lt, lte, exists, !exists, text_search. Example: `[[{\"field\":\"sku\",\"operator\":\"like\",\"value\":\"MUG\"}]]`. Leave it out for everything.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Fields to return, for example `[\"name\",\"label\",\"type_class\",\"options\"]`.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field; prefix with - for descending, for example `-modified`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/attributes/product/search",
+        "bodyMapping": {
+          "filters": "$filters",
+          "pagination": {
+            "page": "$page",
+            "page_size": "$page_size",
+            "order": "$order"
+          },
+          "attributes": "$attributes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_get_attribute",
+      "description": "Get one product attribute: name, label, type_class, options (for dropdown and multiselect), groups and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_id": {
+            "type": "string",
+            "description": "Attribute id (24 hex characters)."
+          }
+        },
+        "required": [
+          "attribute_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/attributes/product/{attribute_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_search_categories",
+      "description": "Search product categories: id plus the fields you list: name, path, parents_ids, n_children and order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "array",
+            "description": "Filter groups: a list of lists of conditions, each with field, operator and value. Conditions inside one inner list are combined with AND, the inner lists with OR. Operators: eq, !eq, like, in, !in, gt, gte, lt, lte, exists, !exists, text_search. Example: `[[{\"field\":\"sku\",\"operator\":\"like\",\"value\":\"MUG\"}]]`. Leave it out for everything.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Fields to return, for example `[\"name\",\"path\",\"n_children\"]`.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field; prefix with - for descending, for example `-modified`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/categories/product/search",
+        "bodyMapping": {
+          "filters": "$filters",
+          "pagination": {
+            "page": "$page",
+            "page_size": "$page_size",
+            "order": "$order"
+          },
+          "attributes": "$attributes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_search_relationships",
+      "description": "Search relationship types (how products relate, for example accessories): id plus the fields you list, such as name, label, symmetrical and modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "array",
+            "description": "Filter groups: a list of lists of conditions, each with field, operator and value. Conditions inside one inner list are combined with AND, the inner lists with OR. Operators: eq, !eq, like, in, !in, gt, gte, lt, lte, exists, !exists, text_search. Example: `[[{\"field\":\"sku\",\"operator\":\"like\",\"value\":\"MUG\"}]]`. Leave it out for everything.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Fields to return, for example `[\"name\",\"label\",\"symmetrical\"]`.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field; prefix with - for descending, for example `-modified`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/relationships/search",
+        "bodyMapping": {
+          "filters": "$filters",
+          "pagination": {
+            "page": "$page",
+            "page_size": "$page_size",
+            "order": "$order"
+          },
+          "attributes": "$attributes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_search_product_families",
+      "description": "Search product families: id plus the fields you list, such as name, parent_attributes_count and modified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "array",
+            "description": "Filter groups: a list of lists of conditions, each with field, operator and value. Conditions inside one inner list are combined with AND, the inner lists with OR. Operators: eq, !eq, like, in, !in, gt, gte, lt, lte, exists, !exists, text_search. Example: `[[{\"field\":\"sku\",\"operator\":\"like\",\"value\":\"MUG\"}]]`. Leave it out for everything.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          },
+          "attributes": {
+            "type": "array",
+            "description": "Fields to return, for example `[\"name\",\"modified\"]`.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field; prefix with - for descending, for example `-modified`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/v1/product_families/search",
+        "bodyMapping": {
+          "filters": "$filters",
+          "pagination": {
+            "page": "$page",
+            "page_size": "$page_size",
+            "order": "$order"
+          },
+          "attributes": "$attributes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "plytix_list_family_attributes",
+      "description": "List the attributes linked to a product family, with their attribute level (parent or variant).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_family_id": {
+            "type": "string",
+            "description": "Product family id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_family_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/product_families/{product_family_id}/attributes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

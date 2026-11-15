@@ -1,0 +1,1015 @@
+{
+  "slug": "criteo",
+  "name": "Criteo",
+  "description": "Criteo Marketing Solutions API for advertisers: campaigns, ad sets with budget, bids and targeting, ads, creatives, coupons, audience segments, and statistics, transactions and placements reports. Starting, stopping and budget or bid changes installed switched off. Client ID and secret.",
+  "instructions": "## Criteo Marketing Solutions\nThis connector reads the **Criteo Marketing Solutions API** (stable version 2026-07) at `https://api.criteo.com` for advertisers running Criteo retargeting, prospecting and commerce media campaigns: advertisers, campaigns, ad sets with their budget, bidding and targeting, ads, creatives, coupons, audience segments, and the statistics, transactions and placements reports. Changing spend is possible but installed switched off.\n\n**Setup (about 10 minutes)**\n1. Sign in to the **Criteo Partners Portal** (https://partners.criteo.com) with any account, create an organization if asked, then click **+** under **My apps**.\n2. Name the app, choose **Client Credentials** as the authentication method and **C-Growth** (Marketing Solutions) as the service. Under **Authorizations** pick the domains: **Analytics** read, **Campaign** read, **Creative** read and **Audience** read are enough for every read tool; **Campaign** manage only if you will switch on the spend tools.\n3. Click **Create new key**: a text file with the **client ID** and **client secret** downloads. The secret is only in that file. Paste them into `CRITEO_CLIENT_ID` and `CRITEO_CLIENT_SECRET`.\n4. On the app page click **Generate new URL** under **Consent** and open it (or send it to the advertiser) while signed in to Criteo with a user who may grant access to the advertiser account. Approve the advertisers the app should see. Each consent URL works once.\n\nThe connector exchanges the ID and secret at `https://api.criteo.com/oauth2/token` (client credentials) for a token that lasts 15 minutes and renews it automatically.\n\n**Where to start**: `criteo_list_advertisers` shows the advertisers that granted consent and their ids. `criteo_get_app_info` confirms which Criteo app the credentials belong to. Then `criteo_search_campaigns` and `criteo_search_ad_sets` with those ids, and `criteo_get_statistics_report` for performance.\n\n**Campaign structure**: an advertiser has campaigns (`criteo_search_campaigns`, `criteo_get_campaign`), a campaign has ad sets (`criteo_search_ad_sets`, `criteo_get_ad_set`) that hold the budget, the bid and the targeting; `criteo_get_category_bids` and `criteo_get_display_multipliers` show per-category settings. Ads bind a creative to an ad set: `criteo_list_ads`, `criteo_get_ad`, `criteo_list_creatives`, `criteo_list_coupons`. Audiences: `criteo_search_audience_segments`.\n\n**Reports**: `criteo_get_statistics_report` groups by the dimensions you pass (for a daily trend per ad set use `AdsetId` and `Day`) and returns the metrics you name: `Displays`, `Clicks`, `AdvertiserCost` (spend), `Cpc`, `SalesPc30d`, `RevenueGeneratedPc30d`, `RoasPc30d`, `CostPerOrderPc30d`. The suffix is the attribution window: `Pc30d` post-click 30 days, `Pv24h` post-view 24 hours; `ClientAttribution` metrics use the advertiser's own attribution. `criteo_get_transactions_report` lists the attributed orders, `criteo_get_placements_report` the publishers and apps where ads ran. Keep `format` json. Dates are whole days (`YYYY-MM-DD`) in the time zone you pass; the current day is incomplete.\n\n**Changing spend (installed switched off)**: `criteo_start_ad_set`, `criteo_stop_ad_set`, `criteo_update_ad_set_budget` and `criteo_update_ad_set_bid` change what the advertiser pays. Turn them on only for workspaces that should manage campaigns, and give the app the Campaign manage domain. They answer `errors` and `warnings` per ad set even with HTTP 200: read them.\n\n**Limits and ids**: client-credentials apps may make 250 calls per minute, reporting endpoints 40 per minute; a 429 carries `x-ratelimit-reset`. Ids are numeric strings. `advertiser_ids` in the report tools is one comma-separated string (`12345,67890`), in the search tools a list. The API version is part of each path; Criteo supports a stable version for 12 months.",
+  "aliases": [
+    "Criteo Marketing Solutions",
+    "Criteo API",
+    "Criteo Commerce Growth"
+  ],
+  "region": "intl",
+  "category": "advertising",
+  "icon": "criteo",
+  "docsUrl": "https://developers.criteo.com/marketing-solutions/docs/welcome-to-criteo",
+  "requiredEnvVars": [
+    "CRITEO_CLIENT_ID",
+    "CRITEO_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "CRITEO_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Criteo Partners Portal, My apps, your app: Create new key downloads a text file with the client ID (also called API key).",
+      "link": "https://developers.criteo.com/criteo-apis/docs/get-credentials",
+      "pattern": "^[A-Za-z0-9_-]{16,100}$",
+      "patternMessage": "Paste the client ID only, without spaces."
+    },
+    "CRITEO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "In the same downloaded text file as the client ID (also called API secret). It is shown only once: create a new key if the file is lost.",
+      "link": "https://developers.criteo.com/criteo-apis/docs/get-credentials",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Criteo did not issue a token for this client ID and secret. Copy both again from the downloaded key file, or create a new key under My apps in the Criteo Partners Portal.",
+    "403": "The app has no access to this resource: give it the needed domain (Analytics, Campaign, Creative or Audience) in the Partners Portal, and make sure the advertiser approved the app through a consent URL.",
+    "404": "Criteo found no advertiser, campaign, ad set or ad with that id, or the app has no consent for its advertiser.",
+    "rate_limited": "Criteo allows client-credentials apps 250 calls per minute and 40 per minute on reports. Wait until x-ratelimit-reset and try again."
+  },
+  "probe": {
+    "tool": "criteo_list_advertisers",
+    "params": {}
+  },
+  "prerequisites": "A Criteo Partners Portal account (open sign-up) to create a Marketing Solutions app with client credentials, and a Criteo user who can approve the app's consent URL for the advertiser account. About 10 minutes.",
+  "connector": {
+    "name": "Criteo Marketing Solutions API",
+    "type": "REST",
+    "baseUrl": "https://api.criteo.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{CRITEO_CLIENT_ID}}",
+      "clientSecret": "{{CRITEO_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.criteo.com/oauth2/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "criteo_list_advertisers",
+      "description": "List the advertisers this app may read: per advertiser its id and advertiserName. Only advertisers that granted consent to the app (consent URL in the Criteo Partners Portal) appear; an empty list means no consent yet. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/advertisers/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_app_info",
+      "description": "Read the app behind the credentials: application id, name, organization and the type of OAuth flow. Useful to confirm which Criteo app the connector uses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_search_campaigns",
+      "description": "Search campaigns by advertiser or campaign id: per campaign id, name, advertiserId, goal (Acquisition, Retention, Awareness...), spendLimit (type capped or uncapped, renewal daily, monthly or lifetime, amount in the advertiser currency) and budgetAutomation. Leave both filters out to list every campaign of every consented advertiser. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "description": "Only campaigns of these advertiser ids."
+          },
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "description": "Only these campaign ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2026-07/marketing-solutions/campaigns/search",
+        "bodyMapping": {
+          "filters": {
+            "advertiserIds": "$advertiser_ids",
+            "campaignIds": "$campaign_ids"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_campaign",
+      "description": "Read one campaign: name, advertiserId, goal, spendLimit (amount, type and renewal), scheduled spend limits and budget automation. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Campaign id (from criteo_search_campaigns)."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/campaigns/{campaign_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_search_ad_sets",
+      "description": "Search ad sets by advertiser, campaign or ad set id: per ad set id, name, advertiserId, campaignId, datasetId, objective, schedule (startDate, endDate, activationStatus on or off, deliveryStatus such as live, paused, notLive), bidding (bidAmount, costController), budget (budgetAmount, budgetStrategy, budgetRenewal, pacing), targeting (geo, devices, frequency capping), mediaType and attribution. Leave the filters out to list all ad sets. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "description": "Only ad sets of these advertiser ids."
+          },
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "description": "Only ad sets of these campaign ids."
+          },
+          "ad_set_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "description": "Only these ad set ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2026-07/marketing-solutions/ad-sets/search",
+        "bodyMapping": {
+          "filters": {
+            "advertiserIds": "$advertiser_ids",
+            "campaignIds": "$campaign_ids",
+            "adSetIds": "$ad_set_ids"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_ad_set",
+      "description": "Read one ad set with its full configuration: schedule and delivery status, bidding, budget, scheduled budgets, targeting, attribution and server-to-server trackings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_set_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ad set id (from criteo_search_ad_sets)."
+          }
+        },
+        "required": [
+          "ad_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/ad-sets/{ad_set_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_category_bids",
+      "description": "Read the bid per product category of one ad set: categoryName and bidAmount (advertiser currency, up to 4 decimals). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_set_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ad set id."
+          }
+        },
+        "required": [
+          "ad_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/ad-sets/{ad_set_id}/category-bids"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_display_multipliers",
+      "description": "Read the display multiplier per product category of one ad set: categoryName and displayMultiplier (1 = neutral, above 1 shows the category more often). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_set_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ad set id."
+          }
+        },
+        "required": [
+          "ad_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/ad-sets/{ad_set_id}/display-multipliers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_list_ads",
+      "description": "List the ads of one advertiser, each binding a creative to an ad set: id, name, description, creativeId, adSetId, inventoryType, startDate, endDate and status. 50 per page by default (limit, offset). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Criteo advertiser id (id from criteo_list_advertisers)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Rows per page (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Zero-based offset of the first row. Add limit to page on."
+          }
+        },
+        "required": [
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/advertisers/{advertiser_id}/ads",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_ad",
+      "description": "Read one ad: name, creativeId, adSetId, inventoryType, schedule and delivery status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ad id (from criteo_list_ads)."
+          }
+        },
+        "required": [
+          "ad_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/ads/{ad_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_list_creatives",
+      "description": "List the creatives in the library of one advertiser: id, name, description, author, status, format (Image, HtmlTag, Dynamic, Adaptive, Video), datasetId and the attributes of the format. 50 per page by default (limit, offset). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Criteo advertiser id (id from criteo_list_advertisers)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Rows per page (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Zero-based offset of the first row. Add limit to page on."
+          }
+        },
+        "required": [
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/advertisers/{advertiser_id}/creatives",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_list_coupons",
+      "description": "List the coupons of one advertiser: id, name, adSetId, format, start and end date, status and slide images. 50 per page by default (limit, offset). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Criteo advertiser id (id from criteo_list_advertisers)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Rows per page (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Zero-based offset of the first row. Add limit to page on."
+          }
+        },
+        "required": [
+          "advertiser_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2026-07/marketing-solutions/advertisers/{advertiser_id}/coupons",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_search_audience_segments",
+      "description": "Search audience segments: per segment id, name, description, type (Retargeting, Lookalike, ContactList, InMarket, Prospecting, Location, Behavioral), advertiserId, the type's settings and created and updated dates. Filter by advertiser, segment id or type. 50 per page by default (limit, offset). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "description": "Only segments of these advertiser ids."
+          },
+          "audience_segment_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "description": "Only these segment ids."
+          },
+          "segment_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Retargeting",
+                "Lookalike",
+                "ContactList",
+                "InMarket",
+                "Prospecting",
+                "Location",
+                "Behavioral"
+              ]
+            },
+            "description": "Only segments of these types."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Rows per page (default 50)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Zero-based offset of the first row. Add limit to page on."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2026-07/marketing-solutions/audience-segments/search",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        },
+        "bodyMapping": {
+          "data": {
+            "type": "AudienceSegment",
+            "attributes": {
+              "advertiserIds": "$advertiser_ids",
+              "audienceSegmentIds": "$audience_segment_ids",
+              "audienceSegmentTypes": "$segment_types"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_statistics_report",
+      "description": "Performance report by ad set and the dimensions you choose (day, campaign, ad, category, device, OS...), with the metrics you choose: e.g. Displays, Clicks, AdvertiserCost (spend), Cpc, ClickThroughRate, SalesPc30d (sales after a click within 30 days), RevenueGeneratedPc30d, RoasPc30d, CostPerOrderPc30d, Visits, ExposedUsers. Money is in the currency you ask for. Up to two years back; reporting calls count against 40 per minute. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}( *, *[0-9]{1,20})*$",
+            "description": "One advertiser id or several separated by commas, e.g. 12345 or 12345,67890 (ids from criteo_list_advertisers)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the report, YYYY-MM-DD (the time part is ignored). At most two years back."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the report, YYYY-MM-DD, not before start_date."
+          },
+          "dimensions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "AdsetId",
+                "Adset",
+                "AdvertiserId",
+                "Advertiser",
+                "CampaignId",
+                "Campaign",
+                "AdId",
+                "Ad",
+                "CouponId",
+                "Coupon",
+                "CategoryId",
+                "Category",
+                "Hour",
+                "Day",
+                "Week",
+                "Month",
+                "Year",
+                "Os",
+                "Device",
+                "MarketingObjectiveId",
+                "MarketingObjective",
+                "ChannelId",
+                "Channel",
+                "Goal",
+                "AdChannel",
+                "SocialPlatform"
+              ]
+            },
+            "description": "How to group the rows, e.g. [\"AdsetId\", \"Day\"]. An id dimension brings its name along."
+          },
+          "metrics": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{2,60}$"
+            },
+            "description": "Metric names as Criteo spells them, e.g. [\"Displays\", \"Clicks\", \"AdvertiserCost\", \"SalesPc30d\", \"RevenueGeneratedPc30d\", \"RoasPc30d\"]. The full list is in the statistics/report reference."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency of the money columns, e.g. EUR, USD, GBP."
+          },
+          "ad_set_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "description": "Only these ad set ids."
+          },
+          "ad_set_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Active",
+                "NotRunning",
+                "Dead"
+              ]
+            },
+            "description": "Only ad sets in these states."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone of the days and hours, e.g. Europe/Paris or America/New_York. Default: the advertiser's time zone."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "csv",
+              "xml",
+              "excel"
+            ],
+            "default": "json",
+            "description": "Answer format. Keep json (default) so the rows can be read; csv, xml and excel come back as a file."
+          }
+        },
+        "required": [
+          "advertiser_ids",
+          "start_date",
+          "end_date",
+          "dimensions",
+          "metrics",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2026-07/statistics/report",
+        "bodyMapping": {
+          "advertiserIds": "$advertiser_ids",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "dimensions": "$dimensions",
+          "metrics": "$metrics",
+          "currency": "$currency",
+          "adSetIds": "$ad_set_ids",
+          "adSetStatus": "$ad_set_status",
+          "timezone": "$timezone",
+          "format": "$format"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_transactions_report",
+      "description": "List attributed transactions (sales) per transaction id: date, advertiser, ad set, transaction id as sent by the site, amount, currency, event type (click or display attribution) and device. Up to two years back; reporting calls count against 40 per minute. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}( *, *[0-9]{1,20})*$",
+            "description": "One advertiser id or several separated by commas, e.g. 12345 or 12345,67890 (ids from criteo_list_advertisers)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the report, YYYY-MM-DD (the time part is ignored). At most two years back."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the report, YYYY-MM-DD, not before start_date."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency of the money columns, e.g. EUR, USD, GBP."
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "Click",
+              "Display"
+            ],
+            "description": "Only sales attributed to a click or to a display. Default: both."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone of the days and hours, e.g. Europe/Paris or America/New_York. Default: the advertiser's time zone."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "csv",
+              "xml",
+              "excel"
+            ],
+            "default": "json",
+            "description": "Answer format. Keep json (default) so the rows can be read; csv, xml and excel come back as a file."
+          }
+        },
+        "required": [
+          "advertiser_ids",
+          "start_date",
+          "end_date",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2026-07/transactions/report",
+        "bodyMapping": {
+          "data": [
+            {
+              "type": "report",
+              "attributes": {
+                "advertiserIds": "$advertiser_ids",
+                "startDate": "$start_date",
+                "endDate": "$end_date",
+                "currency": "$currency",
+                "eventType": "$event_type",
+                "timezone": "$timezone",
+                "format": "$format"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_get_placements_report",
+      "description": "Performance per placement (publisher domain or app) and environment (Web, Android, iOS): displays, clicks, cost, and sales, revenue, CoS, ROAS, CPO and conversion rate after a click within 30 days (Pc30d) or a view within one day (Pv1d). Up to three months per call; reporting calls count against 40 per minute. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advertiser_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}( *, *[0-9]{1,20})*$",
+            "description": "One advertiser id or several separated by commas, e.g. 12345 or 12345,67890 (ids from criteo_list_advertisers)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the report, YYYY-MM-DD (the time part is ignored). At most two years back."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the report, YYYY-MM-DD, not before start_date."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency of the money columns, e.g. EUR, USD, GBP."
+          },
+          "dimensions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "AdsetId",
+                "AdsetName",
+                "AdvertiserId",
+                "AdvertiserName",
+                "CampaignId",
+                "CampaignName",
+                "Placement",
+                "Environment",
+                "AdChannel",
+                "SocialPlatform",
+                "CategoryId",
+                "CategoryName"
+              ]
+            },
+            "description": "How to group the rows, e.g. [\"Placement\", \"Environment\"]."
+          },
+          "metrics": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "Clicks",
+                "Displays",
+                "Cost",
+                "SalesPc30d",
+                "RevenuePc30d",
+                "CosPc30d",
+                "RoasPc30d",
+                "CpoPc30d",
+                "CvrPc30d",
+                "SalesPv1d",
+                "RevenuePv1d",
+                "CosPv1d",
+                "RoasPv1d",
+                "CpoPv1d",
+                "CvrPv1d"
+              ]
+            },
+            "description": "Metrics to return, e.g. [\"Displays\", \"Clicks\", \"Cost\"]."
+          },
+          "campaign_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}( *, *[0-9]{1,20})*$",
+            "description": "Only these campaign ids, comma-separated."
+          },
+          "ad_set_ids": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}( *, *[0-9]{1,20})*$",
+            "description": "Only these ad set ids, comma-separated."
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "Web",
+              "Android",
+              "Ios"
+            ],
+            "description": "Only this environment."
+          },
+          "placement": {
+            "type": "string",
+            "description": "Only placements whose name contains this text."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone of the days and hours, e.g. Europe/Paris or America/New_York. Default: the advertiser's time zone."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "json",
+              "csv",
+              "xml",
+              "excel"
+            ],
+            "default": "json",
+            "description": "Answer format. Keep json (default) so the rows can be read; csv, xml and excel come back as a file."
+          }
+        },
+        "required": [
+          "advertiser_ids",
+          "start_date",
+          "end_date",
+          "currency",
+          "dimensions",
+          "metrics"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2026-07/placements/report",
+        "bodyMapping": {
+          "data": [
+            {
+              "type": "report",
+              "attributes": {
+                "advertiserIds": "$advertiser_ids",
+                "startDate": "$start_date",
+                "endDate": "$end_date",
+                "currency": "$currency",
+                "dimensions": "$dimensions",
+                "metrics": "$metrics",
+                "campaignIds": "$campaign_ids",
+                "adsetIds": "$ad_set_ids",
+                "environment": "$environment",
+                "placement": "$placement",
+                "timezone": "$timezone",
+                "format": "$format"
+              }
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "criteo_start_ad_set",
+      "description": "Start one ad set so it delivers and spends again. Changes ad spend; installed switched off. Answers the ad set id, with errors and warnings per ad set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_set_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ad set id to start."
+          }
+        },
+        "required": [
+          "ad_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2026-07/marketing-solutions/ad-sets/start",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$ad_set_id",
+              "type": "AdSetId"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "criteo_stop_ad_set",
+      "description": "Stop (pause) one ad set: it stops delivering until it is started again. Changes ad spend and traffic; installed switched off. Answers the ad set id, with errors and warnings per ad set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_set_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ad set id to stop."
+          }
+        },
+        "required": [
+          "ad_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/2026-07/marketing-solutions/ad-sets/stop",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$ad_set_id",
+              "type": "AdSetId"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "criteo_update_ad_set_budget",
+      "description": "Set the budget amount of one ad set, in the advertiser currency, for its current budget renewal (daily, monthly, lifetime). Changes ad spend; installed switched off. Read the ad set first with criteo_get_ad_set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_set_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ad set id."
+          },
+          "budget_amount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "New budget amount in the advertiser currency."
+          }
+        },
+        "required": [
+          "ad_set_id",
+          "budget_amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/2026-07/marketing-solutions/ad-sets",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$ad_set_id",
+              "type": "PatchAdSetV26Q1",
+              "attributes": {
+                "budget": {
+                  "budgetAmount": {
+                    "value": "$budget_amount"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "criteo_update_ad_set_bid",
+      "description": "Set the bid amount of one ad set, in the advertiser currency (the meaning depends on its cost controller, e.g. cost per click or per order). Changes ad spend; installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ad_set_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ad set id."
+          },
+          "bid_amount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "New bid amount in the advertiser currency, at most 4 decimals."
+          }
+        },
+        "required": [
+          "ad_set_id",
+          "bid_amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/2026-07/marketing-solutions/ad-sets",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$ad_set_id",
+              "type": "PatchAdSetV26Q1",
+              "attributes": {
+                "bidding": {
+                  "bidAmount": {
+                    "value": "$bid_amount"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

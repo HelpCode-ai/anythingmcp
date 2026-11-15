@@ -1,0 +1,1373 @@
+{
+  "slug": "ukrposhta",
+  "name": "Ukrposhta",
+  "description": "Ukrposhta (Укрпошта) API for business customers in Ukraine: shipment tracking, shipments and PDF labels, domestic price estimates, route checks, clients and addresses, and the address classifier with post offices and opening hours. Creating and deleting shipments installed switched off. Contract bearers and counterparty token.",
+  "instructions": "## Ukrposhta\nThis connector works with the **Ukrposhta API** (Укрпошта, the national postal operator of Ukraine) at `https://www.ukrposhta.ua` for business customers with an API contract: tracking, shipments and their labels, price estimates, clients and addresses, and the address classifier (regions, localities, streets, postcodes and post offices). Creating and deleting shipments is installed switched off.\n\n**Setup**\n1. Sign a contract for the API with Ukrposhta (business customer service, api-support@ukrposhta.ua). With the contract you receive an annex with your production keys.\n2. Copy **PRODUCTION BEARER eCom** into `UKRPOSHTA_ECOM_BEARER`, **PRODUCTION BEARER StatusTracking** into `UKRPOSHTA_TRACKING_BEARER` and **PROD_COUNTERPARTY TOKEN** into `UKRPOSHTA_COUNTERPARTY_TOKEN`.\n\nThe sandbox keys (SANDBOX ...) do not work here: this connector calls the production host. The eCom bearer also opens the address classifier and the label service; tracking has its own bearer; the counterparty token identifies your account on calls about your clients and shipments.\n\n**Where to start**: `ukrposhta_track_shipment` or `ukrposhta_get_last_status` with a barcode. For the shipments of your account, `ukrposhta_get_shipment_by_barcode` or `ukrposhta_list_sender_shipments` with the sender's client uuid.\n\n**Tracking**: `ukrposhta_track_shipment` (all events), `ukrposhta_get_last_status`, `ukrposhta_get_last_statuses` (up to 50 barcodes) and `ukrposhta_get_shipment_route`. Pass `lang` en for English event names.\n\n**Shipments**: `ukrposhta_get_shipment`, `ukrposhta_get_shipment_by_barcode`, `ukrposhta_list_sender_shipments`, `ukrposhta_get_shipment_lifecycle`, `ukrposhta_list_shipment_groups`, `ukrposhta_list_group_shipments`, and `ukrposhta_get_label` (PDF). Before shipping, `ukrposhta_check_route` and `ukrposhta_calculate_domestic_price` (UAH, without your contract discounts).\n\n**Creating a shipment** follows Ukrposhta's order: `ukrposhta_create_address` for sender and recipient, `ukrposhta_create_client` for each (or reuse them: `ukrposhta_get_client`, `ukrposhta_find_clients_by_phone`, `ukrposhta_get_address`), then `ukrposhta_create_shipment`, then the label. `ukrposhta_create_shipment` and `ukrposhta_delete_shipment` are installed switched off: a created shipment is charged once handed in, and a deleted one cannot be restored. Addresses and clients cost nothing.\n\n**Address classifier**: `ukrposhta_search_regions`, `ukrposhta_search_districts`, `ukrposhta_search_cities`, `ukrposhta_search_streets`, `ukrposhta_get_house_postcode`, `ukrposhta_get_city_by_postcode`, and for post offices `ukrposhta_find_post_offices_by_postcode`, `ukrposhta_find_post_offices_near` and `ukrposhta_get_post_office_hours`. Answers come as `Entries.Entry` lists with upper-case field names; ids are strings.\n\n**Units and pitfalls**: weight in grams, sizes in cm, money in UAH. Delivery types: W2W post office to post office, W2D to the door, D2W and D2D from the door. A postcode marked `RESTRICTED_ACCESS` can only be a sender or return address. Statuses: CREATED (not handed in yet), REGISTERED, DELIVERING, IN_DEPARTMENT (waiting at the office), DELIVERED, RETURNING, RETURNED, CANCELLED, DELETED. Times are Kyiv local time.",
+  "aliases": [
+    "Укрпошта",
+    "Ukrposhta API",
+    "Ukrainian Post",
+    "UkrPoshta eCom"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "ukrposhta",
+  "docsUrl": "https://dev.ukrposhta.ua/documentation",
+  "requiredEnvVars": [
+    "UKRPOSHTA_ECOM_BEARER",
+    "UKRPOSHTA_TRACKING_BEARER",
+    "UKRPOSHTA_COUNTERPARTY_TOKEN"
+  ],
+  "envVarMeta": {
+    "UKRPOSHTA_ECOM_BEARER": {
+      "label": "eCom bearer",
+      "kind": "credential",
+      "secret": true,
+      "help": "PRODUCTION BEARER eCom from the annex to your Ukrposhta API contract (a UUID).",
+      "link": "https://dev.ukrposhta.ua/documentation",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+      "patternMessage": "Paste the bearer UUID only (8-4-4-4-12 characters), without the word Bearer."
+    },
+    "UKRPOSHTA_TRACKING_BEARER": {
+      "label": "Status tracking bearer",
+      "kind": "credential",
+      "secret": true,
+      "help": "PRODUCTION BEARER StatusTracking from the same annex (a UUID, different from the eCom bearer).",
+      "link": "https://dev.ukrposhta.ua/documentation",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+      "patternMessage": "Paste the bearer UUID only (8-4-4-4-12 characters), without the word Bearer."
+    },
+    "UKRPOSHTA_COUNTERPARTY_TOKEN": {
+      "label": "Counterparty token",
+      "kind": "credential",
+      "secret": true,
+      "help": "PROD_COUNTERPARTY TOKEN (user token) from the same annex. It identifies your account on calls about your clients and shipments.",
+      "link": "https://dev.ukrposhta.ua/documentation",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+      "patternMessage": "Paste the token UUID only (8-4-4-4-12 characters)."
+    }
+  },
+  "verifyHints": {
+    "401": "Ukrposhta refused the bearer. Check that you pasted the production eCom bearer (not the sandbox one) from your contract annex, and the StatusTracking bearer for tracking.",
+    "403": "Ukrposhta refused the call: the counterparty token does not match the bearer, or your contract does not include this service. Ask your Ukrposhta manager or api-support@ukrposhta.ua.",
+    "404": "Ukrposhta found no shipment, client or address with that id or barcode in your account.",
+    "rate_limited": "Ukrposhta is limiting the requests. Wait a little and try again with fewer calls."
+  },
+  "probe": {
+    "tool": "ukrposhta_find_post_offices_by_postcode",
+    "params": {
+      "postcode": "01001"
+    }
+  },
+  "prerequisites": "A business contract with Ukrposhta for API access; the annex lists the production eCom bearer, StatusTracking bearer and counterparty token. Partner-only: there is no open sign-up.",
+  "connector": {
+    "name": "Ukrposhta API",
+    "type": "REST",
+    "baseUrl": "https://www.ukrposhta.ua",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "ukrposhta_track_shipment",
+      "description": "Full status history of one shipment by barcode: per event step, date, index and name of the post office, event code and eventName (e.g. Acceptance, Arrival, Delivered), eventReason, country and mailType. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8,20}$",
+            "description": "Shipment barcode (tracking number), e.g. 0500100031143 or RA067022855UA."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "en"
+            ],
+            "description": "en for English event names. Leave it out for Ukrainian."
+          }
+        },
+        "required": [
+          "barcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/status-tracking/0.0.1/statuses",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_TRACKING_BEARER}}"
+        },
+        "queryParams": {
+          "barcode": "$barcode",
+          "lang": "$lang"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_last_status",
+      "description": "The latest status of one shipment by barcode: date, post office index and name, event code, eventName and eventReason. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8,20}$",
+            "description": "Shipment barcode (tracking number), e.g. 0500100031143 or RA067022855UA."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "en"
+            ],
+            "description": "en for English event names. Leave it out for Ukrainian."
+          }
+        },
+        "required": [
+          "barcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/status-tracking/0.0.1/statuses/last",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_TRACKING_BEARER}}"
+        },
+        "queryParams": {
+          "barcode": "$barcode",
+          "lang": "$lang"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_last_statuses",
+      "description": "The latest status of up to 50 shipments at once, plus the barcodes Ukrposhta does not know: per barcode date, post office, event code and eventName. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcodes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{8,20}$"
+            },
+            "description": "Barcodes, at most 50."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "en"
+            ],
+            "description": "en for English event names. Leave it out for Ukrainian."
+          }
+        },
+        "required": [
+          "barcodes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/status-tracking/0.0.1/statuses/last/with-not-found",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_TRACKING_BEARER}}"
+        },
+        "queryParams": {
+          "lang": "$lang"
+        },
+        "bodyMapping": {
+          "__raw": "$barcodes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_shipment_route",
+      "description": "Where a shipment travels from and to (country and locality) by barcode. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8,20}$",
+            "description": "Shipment barcode (tracking number), e.g. 0500100031143 or RA067022855UA."
+          }
+        },
+        "required": [
+          "barcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/status-tracking/0.0.1/barcodes/{barcode}/route",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_TRACKING_BEARER}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_shipment",
+      "description": "Read one shipment of your account by uuid: barcode, type, sender and recipient clients with addresses, deliveryType, parcels (weight, length, declaredPrice), postPay, deliveryPrice and calculationDescription, paidByRecipient, lifecycle status (CREATED, REGISTERED, DELIVERING, IN_DEPARTMENT, DELIVERED, RETURNING, RETURNED, CANCELLED, DELETED) and deliveryDate. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_uuid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "Shipment uuid."
+          }
+        },
+        "required": [
+          "shipment_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/shipments/{shipment_uuid}",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_shipment_by_barcode",
+      "description": "Read one shipment of your account by its barcode (same fields as ukrposhta_get_shipment). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{8,20}$",
+            "description": "Shipment barcode (tracking number), e.g. 0500100031143 or RA067022855UA."
+          }
+        },
+        "required": [
+          "barcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/shipments/barcode/{barcode}",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_list_sender_shipments",
+      "description": "List the shipments created for one sender client: uuid, barcode, recipient, deliveryType, parcels, prices and lifecycle status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender_uuid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "Sender client uuid (sender.uuid of a shipment, or from ukrposhta_create_client)."
+          }
+        },
+        "required": [
+          "sender_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/shipments",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}",
+          "senderUuid": "$sender_uuid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_shipment_lifecycle",
+      "description": "Current status of one shipment from the eCom side: shipmentUuid, shipmentBarcode, status (CREATED, REGISTERED, DELIVERING, IN_DEPARTMENT, DELIVERED, RETURNING, RETURNED, CANCELLED, DELETED) and statusDate. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{8,40}$",
+            "description": "Shipment uuid or barcode."
+          }
+        },
+        "required": [
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/shipments/{shipment}/lifecycle",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_list_shipment_groups",
+      "description": "List the shipment groups (registers for form 103a) of one client: uuid, name, type, created date, closed flag and number of shipments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_uuid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "Sender client uuid."
+          }
+        },
+        "required": [
+          "client_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/shipment-groups/clients/{client_uuid}",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_list_group_shipments",
+      "description": "List the shipments in one shipment group: uuid, barcode, recipient, parcels, prices and lifecycle status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_uuid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "Shipment group uuid (from ukrposhta_list_shipment_groups)."
+          }
+        },
+        "required": [
+          "group_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/shipment-groups/{group_uuid}/shipments",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_label",
+      "description": "Download the address label (sticker) of a shipment you created, as a PDF file: 100 x 100 mm by default, or on an A4 or A5 sheet. Printing a label costs nothing; the shipment is paid when handed in. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{8,40}$",
+            "description": "Shipment uuid or barcode."
+          },
+          "size": {
+            "type": "string",
+            "enum": [
+              "SIZE_A4",
+              "SIZE_A5"
+            ],
+            "description": "SIZE_A4 or SIZE_A5 to print on a sheet. Default: 100 x 100 mm label."
+          }
+        },
+        "required": [
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/forms/ecom/0.0.1/shipments/{shipment}/sticker",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_calculate_domestic_price",
+      "description": "Estimate the price of a shipment within Ukraine before creating it: deliveryPrice in UAH, rawDeliveryPrice, postPayDeliveryPrice, returnDeliveryPrice and calculationDescription. Discounts of your contract are only applied at creation. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Ukrainian postcode, 5 digits, e.g. 01001."
+          },
+          "to_postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Ukrainian postcode, 5 digits, e.g. 01001."
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Weight in grams."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Longest side in cm."
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Width in cm."
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Height in cm."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "EXPRESS",
+              "STANDARD",
+              "DOCUMENT",
+              "CARGO"
+            ],
+            "default": "STANDARD",
+            "description": "Service: EXPRESS (Ukrposhta Express), STANDARD (Ukrposhta Standard, default), DOCUMENT or CARGO."
+          },
+          "delivery_type": {
+            "type": "string",
+            "enum": [
+              "W2W",
+              "W2D",
+              "D2W",
+              "D2D"
+            ],
+            "default": "W2W",
+            "description": "W2W post office to post office (default), W2D post office to door, D2W door to post office, D2D door to door."
+          },
+          "declared_price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Declared value in UAH."
+          },
+          "post_pay": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Cash on delivery amount in UAH, to include its fee."
+          }
+        },
+        "required": [
+          "from_postcode",
+          "to_postcode",
+          "weight",
+          "length",
+          "width",
+          "height"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ecom/0.0.1/domestic/delivery-price",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "bodyMapping": {
+          "addressFrom": {
+            "postcode": "$from_postcode"
+          },
+          "addressTo": {
+            "postcode": "$to_postcode"
+          },
+          "type": "$type",
+          "deliveryType": "$delivery_type",
+          "weight": "$weight",
+          "length": "$length",
+          "width": "$width",
+          "height": "$height",
+          "declaredPrice": "$declared_price",
+          "postPay": "$post_pay",
+          "parcels": [
+            {
+              "weight": "$weight",
+              "length": "$length",
+              "width": "$width",
+              "height": "$height",
+              "declaredPrice": "$declared_price"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_check_route",
+      "description": "Check that Ukrposhta delivers between two postcodes: code (SUCCESS when available), description and mrtps (where the mobile post office of the village stands, 1 = none). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Ukrainian postcode, 5 digits, e.g. 01001."
+          },
+          "to_postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Ukrainian postcode, 5 digits, e.g. 01001."
+          }
+        },
+        "required": [
+          "from_postcode",
+          "to_postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/addresses/availability-checking/from/{from_postcode}/to/{to_postcode}",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_client",
+      "description": "Read one client (sender or recipient) of your account: uuid, type (INDIVIDUAL, PRIVATE_ENTREPRENEUR, COMPANY), name, firstName, lastName, addresses, phones, emails, edrpou or tin, bankAccount and postPayPaymentType. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_uuid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "Client uuid."
+          }
+        },
+        "required": [
+          "client_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/clients/{client_uuid}",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_find_clients_by_phone",
+      "description": "Find the clients of your account with a phone number: uuid, name, type, addresses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "pattern": "^\\+?[0-9]{9,15}$",
+            "description": "Phone number, e.g. 0671231234 or +380671231234."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{2}$",
+            "default": "UA",
+            "description": "Country of the number, ISO alpha-2 (default UA)."
+          }
+        },
+        "required": [
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/clients/phone",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}",
+          "phoneNumber": "$phone_number",
+          "countryISO3166": "$country"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_address",
+      "description": "Read an address created with ukrposhta_create_address: id, postcode, region, district, city, street, houseNumber, apartmentNumber, country and detailedInfo. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Address id."
+          }
+        },
+        "required": [
+          "address_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecom/0.0.1/addresses/{address_id}",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_create_address",
+      "description": "Create an address to use for a client or a shipment. Only the postcode is required; add street and house for door delivery. Free; answers the address id, which ukrposhta_create_client needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Ukrainian postcode, 5 digits, e.g. 01001."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region (oblast), e.g. Київська."
+          },
+          "district": {
+            "type": "string",
+            "description": "District, e.g. Київський."
+          },
+          "city": {
+            "type": "string",
+            "description": "City or village, e.g. Бровари."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street, e.g. Котляревського."
+          },
+          "house_number": {
+            "type": "string",
+            "description": "House number, e.g. 12."
+          },
+          "apartment_number": {
+            "type": "string",
+            "description": "Apartment number."
+          }
+        },
+        "required": [
+          "postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ecom/0.0.1/addresses",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "bodyMapping": {
+          "postcode": "$postcode",
+          "region": "$region",
+          "district": "$district",
+          "city": "$city",
+          "street": "$street",
+          "houseNumber": "$house_number",
+          "apartmentNumber": "$apartment_number"
+        }
+      }
+    },
+    {
+      "name": "ukrposhta_create_client",
+      "description": "Create a client (sender or recipient) on an address from ukrposhta_create_address. Individuals and private entrepreneurs need first_name and last_name, companies need name and edrpou. Free; answers the client uuid used by shipments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "INDIVIDUAL",
+              "PRIVATE_ENTREPRENEUR",
+              "COMPANY"
+            ],
+            "default": "INDIVIDUAL",
+            "description": "Client type (default INDIVIDUAL)."
+          },
+          "address_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Address id from ukrposhta_create_address."
+          },
+          "phone_number": {
+            "type": "string",
+            "pattern": "^\\+?[0-9]{9,15}$",
+            "description": "Phone, e.g. 0671231234."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name (individuals and private entrepreneurs)."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name (individuals and private entrepreneurs)."
+          },
+          "middle_name": {
+            "type": "string",
+            "description": "Patronymic."
+          },
+          "name": {
+            "type": "string",
+            "description": "Company name (companies)."
+          },
+          "edrpou": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "EDRPOU code of a company, 8 digits."
+          },
+          "tin": {
+            "type": "string",
+            "pattern": "^[0-9]{10}$",
+            "description": "Tax number (RNOKPP) of a private entrepreneur, 10 digits."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for the client."
+          }
+        },
+        "required": [
+          "address_id",
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ecom/0.0.1/clients",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        },
+        "bodyMapping": {
+          "type": "$type",
+          "addressId": "$address_id",
+          "phoneNumber": "$phone_number",
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "middleName": "$middle_name",
+          "name": "$name",
+          "edrpou": "$edrpou",
+          "tin": "$tin",
+          "email": "$email",
+          "externalId": "$external_id"
+        }
+      }
+    },
+    {
+      "name": "ukrposhta_create_shipment",
+      "description": "Create a domestic shipment from a sender client to a recipient client. It gets a barcode and a price, and is charged once handed in at the post office or picked up. Installed switched off. Check the price first with ukrposhta_calculate_domestic_price; print the label with ukrposhta_get_label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender_uuid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "Sender client uuid."
+          },
+          "recipient_uuid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "Recipient client uuid."
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Weight in grams."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Longest side in cm."
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Width in cm."
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Height in cm."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "EXPRESS",
+              "STANDARD",
+              "DOCUMENT",
+              "CARGO"
+            ],
+            "default": "STANDARD",
+            "description": "Service: EXPRESS (Ukrposhta Express), STANDARD (Ukrposhta Standard, default), DOCUMENT or CARGO."
+          },
+          "delivery_type": {
+            "type": "string",
+            "enum": [
+              "W2W",
+              "W2D",
+              "D2W",
+              "D2D"
+            ],
+            "default": "W2W",
+            "description": "W2W post office to post office (default), W2D post office to door, D2W door to post office, D2D door to door."
+          },
+          "declared_price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Declared value of the parcel in UAH."
+          },
+          "post_pay": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Cash on delivery amount in UAH."
+          },
+          "paid_by_recipient": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: the recipient pays the delivery."
+          },
+          "description": {
+            "type": "string",
+            "description": "Content description."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own order reference."
+          }
+        },
+        "required": [
+          "sender_uuid",
+          "recipient_uuid",
+          "weight",
+          "length"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ecom/0.0.1/shipments",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        },
+        "bodyMapping": {
+          "sender": {
+            "uuid": "$sender_uuid"
+          },
+          "recipient": {
+            "uuid": "$recipient_uuid"
+          },
+          "type": "$type",
+          "deliveryType": "$delivery_type",
+          "paidByRecipient": "$paid_by_recipient",
+          "postPay": "$post_pay",
+          "description": "$description",
+          "externalId": "$external_id",
+          "parcels": [
+            {
+              "weight": "$weight",
+              "length": "$length",
+              "width": "$width",
+              "height": "$height",
+              "declaredPrice": "$declared_price"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ukrposhta_delete_shipment",
+      "description": "Delete a shipment that is still in status CREATED (not yet handed in). Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_uuid": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+            "description": "Shipment uuid."
+          }
+        },
+        "required": [
+          "shipment_uuid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/ecom/0.0.1/shipments/{shipment_uuid}",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "token": "{{UKRPOSHTA_COUNTERPARTY_TOKEN}}"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ukrposhta_find_post_offices_by_postcode",
+      "description": "Post offices that serve a postcode: ID, PO_SHORT and PO_LONG (name), ADDRESS, PHONE, TYPE_LONG, LATITUDE, LONGITUDE, POSTTERMINAL, IS_AUTOMATED, LOCK_EN (active or closed) and the locality. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Ukrainian postcode, 5 digits, e.g. 01001."
+          }
+        },
+        "required": [
+          "postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_postoffices_by_postindex",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "pi": "$postcode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_find_post_offices_near",
+      "description": "Post offices near a point, nearest first: ID, name, address, postcode, distance, coordinates and type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": 44,
+            "maximum": 53,
+            "description": "Latitude, e.g. 50.4501."
+          },
+          "long": {
+            "type": "number",
+            "minimum": 22,
+            "maximum": 41,
+            "description": "Longitude, e.g. 30.5234."
+          },
+          "max_distance": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 5,
+            "description": "Search radius in km (default 5)."
+          }
+        },
+        "required": [
+          "lat",
+          "long"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_postoffices_by_geolocation",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "lat": "$lat",
+          "long": "$long",
+          "maxdistance": "$max_distance"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_post_office_hours",
+      "description": "Opening hours of a post office by postcode: per weekday the opening and closing time and breaks. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Ukrainian postcode, 5 digits, e.g. 01001."
+          },
+          "post_office_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Post office ID from ukrposhta_find_post_offices_by_postcode, to pick one office when the postcode has several."
+          }
+        },
+        "required": [
+          "postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_postoffices_openhours_by_postindex",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "pc": "$postcode",
+          "id": "$post_office_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_city_by_postcode",
+      "description": "The locality, district and region of a postcode, with their ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postcode": {
+            "type": "string",
+            "pattern": "^[0-9]{5}$",
+            "description": "Ukrainian postcode, 5 digits, e.g. 01001."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "UA",
+              "EN"
+            ],
+            "default": "UA",
+            "description": "Language of the names: UA (default) or EN."
+          }
+        },
+        "required": [
+          "postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_city_details_by_postcode",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "postcode": "$postcode",
+          "lang": "$lang"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_search_regions",
+      "description": "Find regions (oblasts) by part of the name, in Ukrainian or English: REGION_ID, REGION_UA, REGION_EN, KOATUU and KATOTTG codes. Leave both names out to list all regions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "region_name": {
+            "type": "string",
+            "description": "Part of the Ukrainian name, e.g. Київ."
+          },
+          "region_name_en": {
+            "type": "string",
+            "description": "Part of the English name, e.g. Kyiv."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_regions_by_region_ua",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "region_name": "$region_name",
+          "region_name_en": "$region_name_en"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_search_districts",
+      "description": "Find districts of a region by name: DISTRICT_ID, names in UA and EN, region. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "REGION_ID from ukrposhta_search_regions."
+          },
+          "district_name": {
+            "type": "string",
+            "description": "Part of the district name."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "UA",
+              "EN"
+            ],
+            "default": "UA",
+            "description": "Language of the names: UA (default) or EN."
+          },
+          "fuzzy": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: fuzzy search that tolerates typos. Default 0."
+          }
+        },
+        "required": [
+          "region_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_district_by_name",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "region_id": "$region_id",
+          "district_name": "$district_name",
+          "lang": "$lang",
+          "fuzzy": "$fuzzy"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_search_cities",
+      "description": "Find localities by name, optionally within a region and district: CITY_ID, names in UA and EN, type (city, village), district, region and postcodes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city_name": {
+            "type": "string",
+            "description": "Part of the locality name, e.g. Бровари or Brovary."
+          },
+          "region_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "REGION_ID to search in."
+          },
+          "district_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "DISTRICT_ID to search in."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "UA",
+              "EN"
+            ],
+            "default": "UA",
+            "description": "Language of the names: UA (default) or EN."
+          },
+          "fuzzy": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: fuzzy search that tolerates typos. Default 0."
+          }
+        },
+        "required": [
+          "city_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_city_by_name",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "city_name": "$city_name",
+          "region_id": "$region_id",
+          "district_id": "$district_id",
+          "lang": "$lang",
+          "fuzzy": "$fuzzy"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_search_streets",
+      "description": "Find streets of a locality by name: STREET_ID, names in UA and EN, street type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "CITY_ID from ukrposhta_search_cities."
+          },
+          "street_name": {
+            "type": "string",
+            "description": "Part of the street name."
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "UA",
+              "EN"
+            ],
+            "default": "UA",
+            "description": "Language of the names: UA (default) or EN."
+          },
+          "fuzzy": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: fuzzy search that tolerates typos. Default 0."
+          }
+        },
+        "required": [
+          "city_id",
+          "street_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_street_by_name",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "city_id": "$city_id",
+          "street_name": "$street_name",
+          "lang": "$lang",
+          "fuzzy": "$fuzzy"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ukrposhta_get_house_postcode",
+      "description": "The postcode of a house on a street: house number and POSTCODE. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "street_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "STREET_ID from ukrposhta_search_streets."
+          },
+          "house_number": {
+            "type": "string",
+            "description": "House number, e.g. 22 or 12А."
+          }
+        },
+        "required": [
+          "street_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/address-classifier-ws/get_addr_house_by_street_id",
+        "headers": {
+          "Authorization": "Bearer {{UKRPOSHTA_ECOM_BEARER}}"
+        },
+        "queryParams": {
+          "street_id": "$street_id",
+          "housenumber": "$house_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

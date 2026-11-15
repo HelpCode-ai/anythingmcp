@@ -1,0 +1,655 @@
+{
+  "slug": "squarespace-commerce",
+  "name": "Squarespace Commerce",
+  "description": "Squarespace Commerce APIs for one site: orders and fulfillment with tracking, inventory levels and stock adjustments, products and variants, customer profiles and contacts, and financial transactions. API key bearer.",
+  "instructions": "## Squarespace Commerce\nThis connector works with the **Squarespace Commerce APIs** at `https://api.squarespace.com` for one Squarespace site: orders and fulfillment, inventory, products (read), profiles and contacts (customers and subscribers) and financial transactions.\n\n**Setup (about 3 minutes)**\n1. Log in to the Squarespace site. In the left navigation open **Settings**, scroll to **Advanced** and click **Developer API Keys**. API keys need a **Commerce Advanced** plan.\n2. Click **Generate key**, name it, and choose the permissions: Orders (Read and Write to fulfill), Inventory (Read and Write to change stock), Products (Read Only), Profiles, Contacts and Transactions (Read Only).\n3. Copy the key into `SQUARESPACE_API_KEY`. Squarespace shows it only once; it does not expire while the site is active.\n\nEvery call carries `Authorization: Bearer` with the key and a `User-Agent` header, which Squarespace requires.\n\n**Where to start**: `squarespace_commerce_get_website` to confirm the site, then `squarespace_commerce_list_orders` with `fulfillment_status` PENDING for orders to ship.\n\n**Orders**: `squarespace_commerce_list_orders`, `squarespace_commerce_get_order`, and `squarespace_commerce_fulfill_order` (adds shipments with tracking and marks the order fulfilled; can email the customer). Use the order `id` in calls; `orderNumber` is what the customer sees. Refunds and cancellations are not part of the API.\n\n**Inventory**: `squarespace_commerce_list_inventory`, `squarespace_commerce_get_inventory`, `squarespace_commerce_adjust_inventory`. Every adjustment needs a fresh `idempotency_key` (a UUID): resending the same key does nothing, which makes retries safe.\n\n**Products**: `squarespace_commerce_list_products` and `squarespace_commerce_get_products` (Products API v2: types PHYSICAL, SERVICE, GIFT_CARD and DIGITAL; prices and stock on each variant). Product changes are not included.\n\n**People**: `squarespace_commerce_list_contacts`, `squarespace_commerce_search_contacts`, `squarespace_commerce_get_contact` (Contacts API) and the older `squarespace_commerce_list_profiles`, `squarespace_commerce_get_profiles` (Profiles API, in maintenance mode but still the one with order totals per customer).\n\n**Money**: `squarespace_commerce_list_transactions` and `squarespace_commerce_get_transactions` read payments, refunds and fees per order or donation; nothing here moves money.\n\n**Paging and dates**: lists return up to 50 records with `pagination.hasNextPage` and `pagination.nextPageCursor`; pass the cursor alone to get the next page. `modified_after` and `modified_before` must be given together and are UTC ISO 8601. Money values are objects with `currency` and `value` (a decimal string). Get-by-id tools take up to 50 ids separated by commas.\n\n**Rate limit**: 300 requests per minute per key; above that Squarespace answers 429 and blocks the key for one minute.",
+  "aliases": [
+    "Squarespace",
+    "Squarespace Commerce API",
+    "Squarespace Orders API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "squarespace-commerce",
+  "docsUrl": "https://developers.squarespace.com/commerce-apis/overview",
+  "requiredEnvVars": [
+    "SQUARESPACE_API_KEY"
+  ],
+  "envVarMeta": {
+    "SQUARESPACE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Squarespace, Settings, Advanced, Developer API Keys: generate a key with the Commerce API permissions you need and copy it (shown once).",
+      "link": "https://developers.squarespace.com/commerce-apis/authentication-and-permissions",
+      "pattern": "^[A-Za-z0-9_.+/=-]{20,200}$",
+      "patternMessage": "Paste only the API key, without Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Squarespace refused the API key. Generate a new key under Settings, Advanced, Developer API Keys and paste it; a key is shown only once.",
+      "field": "SQUARESPACE_API_KEY"
+    },
+    "403": "The key works but lacks the permission for this API. Generate a key with Read (or Read and Write) for Orders, Inventory, Products, Profiles, Contacts or Transactions as needed.",
+    "404": "Squarespace found no order, product, variant, profile or transaction with that id.",
+    "rate_limited": "Squarespace allows 300 requests per minute per key and then blocks it for one minute. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "squarespace_commerce_get_website",
+    "params": {}
+  },
+  "prerequisites": "A Squarespace site on the Commerce Advanced plan (needed for Developer API Keys) and an owner or admin who can generate keys. About 3 minutes.",
+  "connector": {
+    "name": "Squarespace Commerce APIs",
+    "type": "REST",
+    "baseUrl": "https://api.squarespace.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{SQUARESPACE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "squarespace_commerce_get_website",
+      "description": "Read basic information about the Squarespace site the API key belongs to: id, siteTitle, url, timeZone, currency, language and location. Needs no particular permission; a cheap check of the key.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/authorization/website"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_list_orders",
+      "description": "List orders, most recently modified first, 50 per page: id, orderNumber, createdOn, modifiedOn, channel, customerEmail, customerId, billingAddress, shippingAddress, fulfillmentStatus, lineItems (productName, sku, variantOptions, quantity, unitPricePaid), subtotal, shippingTotal, taxTotal, refundedTotal, grandTotal, fulfillments and formSubmission. Next page via pagination.nextPageCursor while hasNextPage is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fulfillment_status": {
+            "type": "string",
+            "description": "PENDING, FULFILLED or CANCELED.",
+            "enum": [
+              "PENDING",
+              "FULFILLED",
+              "CANCELED"
+            ]
+          },
+          "payment_states": {
+            "type": "string",
+            "description": "Comma-separated payment states: NOT_CHARGED, AUTHORIZED, PAID, REFUNDED, PENDING, FAILED, REFUND_PENDING, REFUND_FAILED, PARTIALLY_PAID. Default NOT_CHARGED, AUTHORIZED, PAID and REFUNDED."
+          },
+          "customer_id": {
+            "type": "string",
+            "description": "Only orders of this customer id (customerId of an order or a profile id)."
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only records modified after this UTC time, ISO 8601 such as 2026-01-01T00:00:00.000Z. Needs modified_before too; cannot be used with cursor."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only records modified before this UTC time, ISO 8601. Needs modified_after too; cannot be used with cursor."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: pagination.nextPageCursor of the previous answer. Send it alone; it cannot be combined with the other filters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/commerce/orders",
+        "queryParams": {
+          "fulfillmentStatus": "$fulfillment_status",
+          "paymentStates": "$payment_states",
+          "customerId": "$customer_id",
+          "modifiedAfter": "$modified_after",
+          "modifiedBefore": "$modified_before",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_get_order",
+      "description": "Read one order by id: the same fields as squarespace_commerce_list_orders, with all line items, discounts, internal notes and fulfillments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id (id of squarespace_commerce_list_orders, not orderNumber), a 24-character id such as 585d498fdee9f31a60284a38.",
+            "pattern": "^[A-Za-z0-9-]{8,64}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/commerce/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_fulfill_order",
+      "description": "Mark an order as fulfilled and add shipments with ship date, carrier, service, tracking number and tracking URL. should_send_notification true emails the customer. Answers 204; 409 when the order is already fulfilled or canceled.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, a 24-character id such as 585d498fdee9f31a60284a38.",
+            "pattern": "^[A-Za-z0-9-]{8,64}$"
+          },
+          "should_send_notification": {
+            "type": "boolean",
+            "description": "true: email the customer the shipment details.",
+            "default": false
+          },
+          "shipments": {
+            "type": "array",
+            "description": "Shipments, each with shipDate (ISO 8601 UTC), carrierName, service, trackingNumber and trackingUrl. Can be empty to only mark the order fulfilled.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shipDate": {
+                  "type": "string",
+                  "description": "Ship date, ISO 8601 UTC, e.g. 2026-08-25T15:00:00Z."
+                },
+                "carrierName": {
+                  "type": "string",
+                  "description": "Carrier, e.g. UPS."
+                },
+                "service": {
+                  "type": "string",
+                  "description": "Service level, e.g. Ground."
+                },
+                "trackingNumber": {
+                  "type": "string",
+                  "description": "Tracking number."
+                },
+                "trackingUrl": {
+                  "type": "string",
+                  "description": "Tracking link."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/1.0/commerce/orders/{order_id}/fulfillments",
+        "bodyMapping": {
+          "shouldSendNotification": "$should_send_notification",
+          "shipments": "$shipments"
+        }
+      }
+    },
+    {
+      "name": "squarespace_commerce_list_inventory",
+      "description": "List stock for all product variants, 50 per page: variantId, sku, descriptor (product name and options), isUnlimited and quantity. Next page via pagination.nextPageCursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: pagination.nextPageCursor of the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/commerce/inventory",
+        "queryParams": {
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_get_inventory",
+      "description": "Read real-time stock of specific variants: variantId, sku, descriptor, isUnlimited and quantity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variant_ids": {
+            "type": "string",
+            "description": "One variant id or up to 50 separated by commas.",
+            "pattern": "^[A-Za-z0-9-]{8,64}(,[A-Za-z0-9-]{8,64}){0,49}$"
+          }
+        },
+        "required": [
+          "variant_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/commerce/inventory/{variant_ids}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_adjust_inventory",
+      "description": "Change stock of variants in one call: increment or decrement by a quantity, set a finite quantity, or make variants unlimited. Needs a unique idempotency_key per change: repeating a key repeats nothing. Answers 204; 409 when a decrement would go below zero.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "description": "A new random value per adjustment, e.g. a UUID. Reusing it makes Squarespace skip the call as already done.",
+            "pattern": "^[A-Za-z0-9_-]{8,128}$"
+          },
+          "increment_operations": {
+            "type": "array",
+            "description": "Add stock: variantId and quantity.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "variantId": {
+                  "type": "string",
+                  "description": "Variant id (variantId of squarespace_commerce_list_inventory)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity for this operation.",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "decrement_operations": {
+            "type": "array",
+            "description": "Remove stock: variantId and quantity.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "variantId": {
+                  "type": "string",
+                  "description": "Variant id (variantId of squarespace_commerce_list_inventory)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity for this operation.",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "set_finite_operations": {
+            "type": "array",
+            "description": "Set stock to an exact quantity: variantId and quantity.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "variantId": {
+                  "type": "string",
+                  "description": "Variant id (variantId of squarespace_commerce_list_inventory)."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity for this operation.",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "set_unlimited_operations": {
+            "type": "array",
+            "description": "Variant ids to make unlimited.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "idempotency_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/1.0/commerce/inventory/adjustments",
+        "bodyMapping": {
+          "incrementOperations": "$increment_operations",
+          "decrementOperations": "$decrement_operations",
+          "setFiniteOperations": "$set_finite_operations",
+          "setUnlimitedOperations": "$set_unlimited_operations"
+        },
+        "headers": {
+          "Idempotency-Key": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "squarespace_commerce_list_products",
+      "description": "List products, 50 per page: id, type (PHYSICAL, SERVICE, GIFT_CARD, DIGITAL), storePageId, name, description, url, urlSlug, tags, isVisible, createdOn, modifiedOn, variants (id, sku, pricing with basePrice and salePrice, stock) and images. Next page via pagination.nextPageCursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Comma-separated product types: PHYSICAL, SERVICE, GIFT_CARD, DIGITAL."
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only records modified after this UTC time, ISO 8601 such as 2026-01-01T00:00:00.000Z. Needs modified_before too; cannot be used with cursor."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only records modified before this UTC time, ISO 8601. Needs modified_after too; cannot be used with cursor."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: pagination.nextPageCursor of the previous answer. Send it alone; it cannot be combined with the other filters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/commerce/products",
+        "queryParams": {
+          "type": "$type",
+          "modifiedAfter": "$modified_after",
+          "modifiedBefore": "$modified_before",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_get_products",
+      "description": "Read up to 50 products by id with their variants, pricing, stock, attributes and images.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "string",
+            "description": "One product id or up to 50 separated by commas.",
+            "pattern": "^[A-Za-z0-9-]{8,64}(,[A-Za-z0-9-]{8,64}){0,49}$"
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/commerce/products/{product_ids}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_list_profiles",
+      "description": "List profiles (customers, mailing list subscribers, donors), 50 per page: id, firstName, lastName, email, hasAccount, isCustomer, createdOn, address, acceptsMarketing and transactionsSummary (order count, totals). The Profiles API is in maintenance mode; the contacts tools are its successor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Semicolon-separated filters: `isCustomer,true`, `hasAccount,true` or `email,someone@example.com` (email cannot be combined with the others)."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "createdOn",
+              "id",
+              "email",
+              "lastName"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "asc or dsc (default dsc).",
+            "enum": [
+              "asc",
+              "dsc"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: pagination.nextPageCursor. Cannot be combined with other parameters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/profiles",
+        "queryParams": {
+          "filter": "$filter",
+          "sortField": "$sort_field",
+          "sortDirection": "$sort_direction",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_get_profiles",
+      "description": "Read up to 50 profiles by id: names, email, address, marketing consent and transactionsSummary.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "profile_ids": {
+            "type": "string",
+            "description": "One profile id or up to 50 separated by commas.",
+            "pattern": "^[A-Za-z0-9-]{8,64}(,[A-Za-z0-9-]{8,64}){0,49}$"
+          }
+        },
+        "required": [
+          "profile_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/profiles/{profile_ids}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_list_contacts",
+      "description": "List contacts (the successor of profiles): id, firstName, lastName, email, phone, createdOn, defaultShippingAddress and marketing preferences. Up to 1000 per page; next page via pagination.nextPageCursor.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Contacts per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: pagination.nextPageCursor of the previous answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_search_contacts",
+      "description": "Search contacts by name or email text, sorted as asked: the same fields as squarespace_commerce_list_contacts. Read-only although it is a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_string": {
+            "type": "string",
+            "description": "Text matched against name and email."
+          },
+          "sort_field": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "ID",
+              "CREATED_ON",
+              "EMAIL",
+              "ACCEPTS_MARKETING_JOINED_ON",
+              "FIRST_NAME",
+              "LAST_NAME",
+              "ORDER_COUNT",
+              "LAST_ORDER_ON"
+            ]
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "ASCENDING or DESCENDING.",
+            "enum": [
+              "ASCENDING",
+              "DESCENDING"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Contacts per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: pagination.nextPageCursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/contacts/query",
+        "bodyMapping": {
+          "searchString": "$search_string",
+          "sortField": "$sort_field",
+          "sortDirection": "$sort_direction",
+          "pageSize": "$page_size",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_get_contact",
+      "description": "Read one contact: names, email, phone, addresses and marketing preferences.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id, a 24-character id such as 585d498fdee9f31a60284a38.",
+            "pattern": "^[A-Za-z0-9-]{8,64}$"
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/contacts/{contact_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_list_transactions",
+      "description": "List financial transactions grouped per order or donation (a document), 50 per page: id, createdOn, modifiedOn, customerEmail, salesOrderId or donationId, total, totalSales, totalNetSales, totalNetPayment, totalTaxes, payments (provider, amount, refunds, processingFees) and salesLineItems. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "modified_after": {
+            "type": "string",
+            "description": "Only documents modified after this UTC time, ISO 8601."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only documents modified before this UTC time, ISO 8601."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: pagination.nextPageCursor."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/commerce/transactions",
+        "queryParams": {
+          "modifiedAfter": "$modified_after",
+          "modifiedBefore": "$modified_before",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "squarespace_commerce_get_transactions",
+      "description": "Read up to 50 transaction documents by id, with payments, refunds, fees and line items. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_ids": {
+            "type": "string",
+            "description": "One transaction document id or up to 50 separated by commas.",
+            "pattern": "^[A-Za-z0-9-]{8,64}(,[A-Za-z0-9-]{8,64}){0,49}$"
+          }
+        },
+        "required": [
+          "document_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1.0/commerce/transactions/{document_ids}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
