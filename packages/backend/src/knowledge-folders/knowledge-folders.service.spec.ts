@@ -142,7 +142,17 @@ describe('KnowledgeFoldersService.accessFor', () => {
     ]) {
       const access = await make({ member: member as any, roles: ['r-sales'] }).svc.accessFor(ORG, userId);
       expect([...access.ids]).toEqual(['hr']);
+      // Nobody's audience: a skill drafted for one member is not served.
+      expect(access.userId ?? null).toBeNull();
     }
+  });
+
+  it('carries the caller, so a skill drafted for one member reaches that member only', async () => {
+    expect((await make({ roles: ['r-sales'] }).svc.accessFor(ORG, 'u1')).userId).toBe('u1');
+    expect((await make({ member: { role: 'ADMIN', deactivatedAt: null } }).svc.accessFor(ORG, 'u-admin')).userId).toBe('u-admin');
+    const open = make({ rows: [{ id: 'a', parentId: null, name: 'A', description: null, roleIds: [] }] });
+    expect((await open.svc.accessFor(ORG, 'u1')).userId).toBe('u1');
+    expect((await open.svc.accessFor(ORG, undefined)).userId).toBeNull();
   });
 });
 

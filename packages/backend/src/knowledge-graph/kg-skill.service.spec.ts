@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { KgSkillService, skillKey } from './kg-skill.service';
+import { KgSkillService, audienceVisibility, skillKey } from './kg-skill.service';
 
 function okJson(body: any) {
   return { ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body };
@@ -345,6 +345,8 @@ describe('KgSkillService.getForCaller', () => {
       status: 'applied',
       kind: { not: 'code' },
       OR: [{ mcpServerId: { in: ['srv-1'] } }, { connectorId: { in: ['c-1'] } }],
+      // No known caller: only skills meant for everyone.
+      AND: [{ audienceUserId: null }],
     });
     expect(where.AND[1]).toEqual({ OR: [{ id: 's1' }, { title: { equals: 's1', mode: 'insensitive' } }] });
     expect(update).toHaveBeenCalledWith({
@@ -456,6 +458,7 @@ describe('KgSkillService with folders', () => {
     const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
     await svc.activeSkillsText(ORG, 'srv', [], 'auto', access(['f-sales']) as any);
     expect(findMany.mock.calls[0][0].where.AND).toEqual([
+      { audienceUserId: null },
       { OR: [{ folderId: null }, { folderId: { in: ['f-sales'] } }] },
     ]);
   });
@@ -464,7 +467,7 @@ describe('KgSkillService with folders', () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
     await svc.activeSkillsText(ORG, 'srv', [], 'auto', access(['f-sales', 'f-quotes'], true) as any);
-    expect(findMany.mock.calls[0][0].where.AND).toBeUndefined();
+    expect(findMany.mock.calls[0][0].where.AND).toEqual([{ audienceUserId: null }]);
   });
 
   it('groups the index by folder', async () => {
@@ -893,5 +896,95 @@ describe('KgSkillService code proposals are not served', () => {
         where: expect.objectContaining({ status: 'applied', kind: { not: 'code' } }),
       }),
     );
+  });
+});
+
+/** A learning project's draft is served to the member it is drafted for, nobody else. */
+describe('KgSkillService audience', () => {
+  const ORG = 'org-A';
+  const access = (userId?: string | null) => ({ organizationId: ORG, all: true, ids: new Set<string>(), folders: [], userId });
+  const forEveryone = { audienceUserId: null };
+  const forMember = (userId: string) => ({
+    OR: [
+      { audienceUserId: userId },
+      {
+        audienceUserId: null,
+        NOT: { publishedOfTopics: { some: { draftSkill: { audienceUserId: userId } } } },
+      },
+    ],
+  });
+
+  it('serves only skills for everyone when the caller is unknown', () => {
+    expect(audienceVisibility(undefined)).toEqual(forEveryone);
+    expect(audienceVisibility(null)).toEqual(forEveryone);
+    expect(audienceVisibility(access(null) as any)).toEqual(forEveryone);
+    expect(audienceVisibility(access('') as any)).toEqual(forEveryone);
+  });
+
+  it('serves a member their own drafts, and the draft instead of its published copy', () => {
+    expect(audienceVisibility(access('u-expert') as any)).toEqual(forMember('u-expert'));
+  });
+
+  it('applies on every path that serves skills', async () => {
+    const calls: any[] = [];
+    const record = (result: any) => jest.fn(async (q: any) => (calls.push(q.where), result));
+    const prisma = {
+      kgSkillSuggestion: {
+        findMany: record([]),
+        findFirst: record(null),
+        count: record(0),
+      },
+    };
+    const svc = new KgSkillService(prisma as any, {} as any);
+    const who = access('u-expert') as any;
+    await svc.activeSkillsText(ORG, 'srv', ['c1'], 'inline', who);
+    await svc.hasVisible(ORG, 'srv', ['c1'], who);
+    await svc.toolHints(ORG, 'srv', ['c1'], who);
+    await svc.listForCaller(ORG, 'srv', ['c1'], 'x', who);
+    await svc.getForCaller(ORG, 'srv', ['c1'], 's1', who);
+    expect(calls).toHaveLength(5);
+    for (const where of calls) {
+      expect(JSON.stringify(where)).toContain(JSON.stringify(forMember('u-expert')));
+    }
+
+    calls.length = 0;
+    // An API key without a user, a client-credentials token, another member.
+    await svc.activeSkillsText(ORG, 'srv', ['c1'], 'inline', access(null) as any);
+    await svc.hasVisible(ORG, 'srv', ['c1']);
+    await svc.listForCaller(ORG, 'srv', ['c1'], undefined, access('u-other') as any);
+    expect(JSON.stringify(calls[0])).toContain(JSON.stringify(forEveryone));
+    expect(JSON.stringify(calls[1])).toContain(JSON.stringify(forEveryone));
+    expect(JSON.stringify(calls[2])).toContain(JSON.stringify(forMember('u-other')));
+    expect(JSON.stringify(calls[2])).not.toContain('u-expert');
+  });
+
+  it('keeps drafts out of what generation tells the model and out of merges', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const svc = new KgSkillService(
+      {
+        toolInvocation: {
+          findMany: jest.fn().mockResolvedValue([
+            { intent: 'x', status: 'SUCCESS', tool: { name: 't', connector: { name: 'C' } } },
+          ]),
+        },
+        kgSkillSuggestion: { findMany },
+      } as any,
+      { isEnabled: async () => true } as any,
+    );
+    await svc.buildConnectorRequest(ORG);
+    expect(findMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ audienceUserId: null }));
+
+    process.env.KG_LLM_BASE_URL = 'http://localhost:11434/v1';
+    process.env.KG_LLM_MODEL = 'qwen2.5';
+    try {
+      findMany.mockClear();
+      await svc.consolidate(ORG);
+      expect(findMany.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ audienceUserId: null, source: { not: 'learning' } }),
+      );
+    } finally {
+      delete process.env.KG_LLM_BASE_URL;
+      delete process.env.KG_LLM_MODEL;
+    }
   });
 });

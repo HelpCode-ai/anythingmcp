@@ -1573,6 +1573,190 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "hasBody": false
   },
   {
+    "resource": "learning",
+    "action": "allowance",
+    "method": "GET",
+    "path": "/api/learning/allowance",
+    "summary": "How many learning projects this workspace's plan includes, and how many are open",
+    "admin": false,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "setLesson",
+    "method": "PATCH",
+    "path": "/api/learning/lessons/:id",
+    "summary": "Confirm, reject, reopen or reword one lesson",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "learning",
+    "action": "mine",
+    "method": "GET",
+    "path": "/api/learning/me",
+    "summary": "My learning projects in this workspace",
+    "admin": false,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "list",
+    "method": "GET",
+    "path": "/api/learning/projects",
+    "summary": "List the learning projects of this workspace",
+    "admin": false,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "create",
+    "method": "POST",
+    "path": "/api/learning/projects",
+    "summary": "Start a learning project for a member on an MCP server (waits for the member to accept)",
+    "admin": true,
+    "pathParams": [],
+    "hasBody": true
+  },
+  {
+    "resource": "learning",
+    "action": "remove",
+    "method": "DELETE",
+    "path": "/api/learning/projects/:id",
+    "summary": "Delete a learning project and its lessons. Published skills are kept",
+    "admin": true,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "get",
+    "method": "GET",
+    "path": "/api/learning/projects/:id",
+    "summary": "One learning project with its topics",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "update",
+    "method": "PATCH",
+    "path": "/api/learning/projects/:id",
+    "summary": "Change a learning project's name, folder, end date, labels or publishing",
+    "admin": true,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "learning",
+    "action": "consent",
+    "method": "POST",
+    "path": "/api/learning/projects/:id/consent",
+    "summary": "Accept a learning project as its member: from now on the lessons are kept",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "learning",
+    "action": "end",
+    "method": "POST",
+    "path": "/api/learning/projects/:id/end",
+    "summary": "End a learning project. Lessons and published skills are kept",
+    "admin": true,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "lessons",
+    "method": "GET",
+    "path": "/api/learning/projects/:id/lessons",
+    "summary": "The lessons of a learning project, newest first",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "pause",
+    "method": "POST",
+    "path": "/api/learning/projects/:id/pause",
+    "summary": "Pause a learning project: nothing is captured until it is resumed",
+    "admin": true,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "resume",
+    "method": "POST",
+    "path": "/api/learning/projects/:id/resume",
+    "summary": "Resume a paused learning project",
+    "admin": true,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "withdraw",
+    "method": "POST",
+    "path": "/api/learning/projects/:id/withdraw",
+    "summary": "Decline or stop a learning project as its member, optionally erasing what was not published",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "learning",
+    "action": "preview",
+    "method": "GET",
+    "path": "/api/learning/topics/:id/preview",
+    "summary": "The skill text publishing a topic would write, from its confirmed lessons",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "learning",
+    "action": "publish",
+    "method": "POST",
+    "path": "/api/learning/topics/:id/publish",
+    "summary": "Publish a topic's confirmed lessons as a skill for everyone on the MCP server",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
     "resource": "license",
     "action": "activateTrial",
     "method": "POST",

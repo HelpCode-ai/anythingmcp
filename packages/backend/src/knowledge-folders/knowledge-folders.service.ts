@@ -42,6 +42,12 @@ export interface FolderAccess {
   ids: Set<string>;
   /** The folders this caller may see, with their paths. */
   folders: FolderNode[];
+  /**
+   * The caller, when there is one. A skill drafted for one member
+   * (`audienceUserId`) is served to that member only; see
+   * `audienceVisibility` in kg-skill.service.
+   */
+  userId?: string | null;
 }
 
 export interface FolderActionContext {
@@ -179,16 +185,21 @@ export class KnowledgeFoldersService {
       all: true,
       ids: new Set(folders.map((f) => f.id)),
       folders,
+      userId: userId ?? null,
     });
     if (!folders.some((f) => f.roleIds.length > 0)) return all();
 
     let roleIds = new Set<string>();
+    // Known here at no extra cost: a non-member or a deactivated member is
+    // nobody's audience.
+    let activeMember = false;
     if (userId) {
       const member = await this.prisma.organizationMember.findUnique({
         where: { userId_organizationId: { userId, organizationId } },
         select: { role: true, deactivatedAt: true },
       });
       if (member && !member.deactivatedAt) {
+        activeMember = true;
         if (member.role === 'ADMIN') return all();
         const assignments = await this.prisma.userRoleAssignment.findMany({
           where: { userId, OR: [{ organizationId }, { organizationId: null }] },
@@ -219,6 +230,7 @@ export class KnowledgeFoldersService {
       all: false,
       ids: visible,
       folders: folders.filter((f) => visible.has(f.id)),
+      userId: activeMember ? userId : null,
     };
   }
 

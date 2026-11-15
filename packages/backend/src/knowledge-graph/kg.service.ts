@@ -16,6 +16,7 @@ import {
 } from '../knowledge-folders/knowledge-folders.service';
 import { KgObservationalService } from './kg-observational.service';
 import { KgLlmService } from './kg-llm.service';
+import { audienceVisibility } from './kg-skill.service';
 
 @Injectable()
 export class KgService {
@@ -725,8 +726,9 @@ export class KgService {
         organizationId,
         status: 'applied',
         ...(or.length ? { OR: or } : {}),
-        // Skills in folders limited to roles the caller lacks stay out.
-        AND: [folderVisibility(opts?.folders)],
+        // Skills in folders limited to roles the caller lacks stay out, and
+        // a member's draft is served to that member only.
+        AND: [folderVisibility(opts?.folders), audienceVisibility(opts?.folders)],
       },
       select: { id: true, title: true, whenToUse: true },
       take: 25,

@@ -104,6 +104,11 @@ export const OPENAPI_TAGS: ReadonlyArray<{ name: string; description: string }> 
       'Personal and company memory that every AI client shares: items, approval of company items, and access settings.',
   },
   {
+    name: 'Learning projects',
+    description:
+      'Learning turned on for one member on one MCP server: projects, the lessons kept from that member, publishing a topic as a skill, and the member\'s own consent.',
+  },
+  {
     name: 'Knowledge Graph',
     description:
       'How your connectors and tools relate, and the AI skills (procedures) agents follow: suggest, generate, create, apply or dismiss.',

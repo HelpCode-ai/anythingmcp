@@ -17,7 +17,7 @@ import {
 const MAX_INTENTS = 200;
 
 /** Where a skill came from; generation only ever replaces its own `llm` rows. */
-export type SkillSource = 'manual' | 'llm' | 'finder' | 'consolidation' | 'errors' | 'agent';
+export type SkillSource = 'manual' | 'llm' | 'finder' | 'consolidation' | 'errors' | 'agent' | 'learning';
 
 /** Longest procedure (`body`) a skill can carry. Served by skill_get only. */
 export const SKILL_BODY_MAX = 20_000;
@@ -53,6 +53,29 @@ interface SkillRow {
   folderId?: string | null;
 }
 
+/**
+ * Who a skill is served to. A skill drafted for one member
+ * (`audienceUserId`, a learning project's draft) is served to that member
+ * only; every other skill to everyone who may see its scope and folder. Fails
+ * closed: without a known caller only skills for everyone are served.
+ *
+ * The member a topic is drafted for sees the draft, which holds everything
+ * they taught, and not the published copy of the same topic next to it.
+ */
+export function audienceVisibility(access?: FolderAccess | null): Record<string, unknown> {
+  const userId = access?.userId;
+  if (!userId) return { audienceUserId: null };
+  return {
+    OR: [
+      { audienceUserId: userId },
+      {
+        audienceUserId: null,
+        NOT: { publishedOfTopics: { some: { draftSkill: { audienceUserId: userId } } } },
+      },
+    ],
+  };
+}
+
 /** The skills a caller may see: the server's own and its visible connectors'. */
 function visibleWhere(
   organizationId: string,
@@ -73,8 +96,9 @@ function visibleWhere(
       { mcpServerId: { in: serverIds.length ? serverIds : ['__none__'] } },
       { connectorId: { in: connectorIds.length ? connectorIds : ['__none__'] } },
     ],
-    // Skills in folders limited to roles the caller lacks are not there.
-    ...(Object.keys(inFolders).length ? { AND: [inFolders] } : {}),
+    // A draft is served to its member only; skills in folders limited to
+    // roles the caller lacks are not there.
+    AND: [audienceVisibility(folders), ...(Object.keys(inFolders).length ? [inFolders] : [])],
   };
 }
 
@@ -348,6 +372,8 @@ export class KgSkillService {
         organizationId,
         kind: { not: 'code' },
         status: { in: ['applied', 'dismissed'] },
+        // A member's draft is nobody else's business, the model provider's included.
+        audienceUserId: null,
         ...where,
       },
       select: { title: true, whenToUse: true, instruction: true, status: true },
@@ -701,9 +727,12 @@ export class KgSkillService {
 
     // Skills with a procedure are left out: the merge works on the short
     // rules only and would drop the procedure.
+    // Learned skills are rendered from their lessons: a merge would be undone
+    // by the next lesson, and a draft is nobody else's business.
+    const mergeable = { status: 'applied', body: null, source: { not: 'learning' }, audienceUserId: null };
     const where = mcpServerId
-      ? { organizationId, status: 'applied', mcpServerId, body: null }
-      : { organizationId, status: 'applied', mcpServerId: null, body: null };
+      ? { organizationId, mcpServerId, ...mergeable }
+      : { organizationId, mcpServerId: null, ...mergeable };
     const current = await this.prisma.kgSkillSuggestion.findMany({
       where,
       select: {
