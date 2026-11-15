@@ -349,7 +349,8 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
       metadata: {
         ...(/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug) ? { adapterSlug: slug } : {}),
         via: opts.via ?? 'mcp',
-        reason: installRefusalReason(out.body),
+        // `kind`: the key the event store keeps for why a setup failed.
+        kind: installRefusalReason(out.body),
       },
     });
   }

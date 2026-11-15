@@ -396,10 +396,10 @@ describe('ConnectorSetupService — install', () => {
     await service.install(ctx, { adapter: 'openplz' }, { via: 'post_approve' });
     await service.install(ctx, { adapter: 'Not A Slug!!' });
     expect(failed()).toEqual([
-      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'no-such-app', via: 'mcp', reason: 'unknown_app' } },
-      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'openplz', via: 'post_approve', reason: 'plan_limit' } },
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'no-such-app', via: 'mcp', kind: 'unknown_app' } },
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'openplz', via: 'post_approve', kind: 'plan_limit' } },
       // An id that is not a catalog id is not stored.
-      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { via: 'mcp', reason: 'unknown_app' } },
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { via: 'mcp', kind: 'unknown_app' } },
     ]);
 
     productEvents.log.mockClear();
