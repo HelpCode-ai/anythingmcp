@@ -32,7 +32,8 @@
       "knowledgeGraph": "Knowledge Graph",
       "aiSkills": "Skill IA",
       "memory": "Memoria",
-      "setup": "Setup e onboarding"
+      "setup": "Setup e onboarding",
+      "learning": "Progetti di apprendimento"
     },
     "settings": "Impostazioni",
     "switchWorkspace": "Cambia workspace",
@@ -3116,7 +3117,8 @@
       "hideHistory": "Nascondi la cronologia",
       "history": "Cronologia ({count, plural, one {# versione precedente} other {# versioni precedenti}})",
       "replaced": "sostituita il {date}",
-      "historyProcedure": "Procedura: {count, plural, one {# carattere} other {# caratteri}}"
+      "historyProcedure": "Procedura: {count, plural, one {# carattere} other {# caratteri}}",
+      "draftOnly": "Bozza: servita solo al suo membro"
     },
     "sources": {
       "llm": "generata dall’AI",
@@ -3124,7 +3126,8 @@
       "mergedByAi": "unita dall’AI",
       "errors": "appresa dagli errori corretti",
       "finder": "da Skills Finder",
-      "manual": "scritta a mano"
+      "manual": "scritta a mano",
+      "learning": "da un progetto di apprendimento"
     },
     "form": {
       "titlePlaceholder": "Titolo",
@@ -3934,5 +3937,166 @@
     "addPaymentBefore": "Aggiungi un metodo di pagamento: nessun addebito prima del {date}",
     "addPayment": "Aggiungi un metodo di pagamento",
     "upgrade": "Passa a un piano"
+  },
+  "learning": {
+    "title": "Progetti di apprendimento",
+    "intro": "Un progetto di apprendimento conserva ciò che un collega insegna all'AI su un server MCP: le sue correzioni e spiegazioni diventano skill per tutti. Nulla viene conservato prima che accetti, e può fermarsi in ogni momento.",
+    "loading": "Caricamento…",
+    "loadFailed": "Impossibile caricare i progetti di apprendimento",
+    "allowance": {
+      "unlimited": "Il tuo piano include progetti di apprendimento senza limite.",
+      "some": "{used} di {max} progetti di apprendimento in uso."
+    },
+    "upsell": {
+      "cloudTitle": "I progetti di apprendimento fanno parte dei piani Team ed Enterprise",
+      "cloudBody": "Conserva ciò che un collega esperto insegna all'AI prima che se ne vada: le sue correzioni diventano skill usate dagli assistenti AI di tutto il team. Team include un progetto, Enterprise non ha limiti.",
+      "cloudCta": "Vedi i piani",
+      "selfTitle": "I progetti di apprendimento fanno parte di AnythingMCP Enterprise",
+      "selfBody": "Conserva ciò che un collega esperto insegna all'AI prima che se ne vada: le sue correzioni diventano skill usate dagli assistenti AI di tutto il team. La prova di 30 giorni include un progetto.",
+      "contact": "Contattaci per Enterprise",
+      "key": "Inserisci una chiave di licenza"
+    },
+    "new": {
+      "button": "Nuovo progetto di apprendimento",
+      "title": "Nuovo progetto di apprendimento",
+      "name": "Nome",
+      "namePlaceholder": "es. Ferramenta per finestre vecchie",
+      "member": "Impara da",
+      "memberPlaceholder": "Scegli un membro",
+      "server": "Sul server MCP",
+      "serverPlaceholder": "Scegli un server MCP",
+      "folder": "Archivia le skill in",
+      "noFolder": "Nessuna cartella",
+      "endsAt": "Termina il (facoltativo)",
+      "tags": "Etichette (facoltative)",
+      "tagsHint": "Separate da virgole, es. finestre, ferramenta",
+      "publishMode": "Pubblicazione",
+      "publishManual": "Una persona pubblica ogni argomento",
+      "publishConfirmed": "Le lezioni confermate dal membro vengono pubblicate",
+      "showName": "Mostra il nome del membro a tutti, non solo agli admin",
+      "create": "Avvia e chiedi al membro",
+      "creating": "Avvio…",
+      "cancel": "Annulla",
+      "created": "Avviato. Il membro lo accetta in Impostazioni → Profilo; prima di allora non viene conservato nulla.",
+      "limitReached": "I progetti di apprendimento del tuo piano sono tutti in uso. Terminane o mettine in pausa uno per avviarne un altro."
+    },
+    "status": {
+      "draft": "In attesa del membro",
+      "active": "Attivo",
+      "paused": "In pausa",
+      "ended": "Terminato",
+      "overPlan": "Non incluso nel piano"
+    },
+    "card": {
+      "expert": "Impara da {name}",
+      "expertHidden": "Membro visibile solo agli admin",
+      "server": "su {name}",
+      "noServer": "il suo server MCP è stato eliminato",
+      "lessons": "{confirmed} confermate · {draft} da confermare",
+      "topics": "{count} argomento/i",
+      "open": "Apri",
+      "ends": "termina il {date}"
+    },
+    "empty": "Ancora nessun progetto di apprendimento.",
+    "detail": {
+      "back": "Tutti i progetti di apprendimento",
+      "notFound": "Progetto di apprendimento non trovato",
+      "tabs": {
+        "topics": "Argomenti",
+        "lessons": "Lezioni",
+        "settings": "Impostazioni"
+      },
+      "pause": "Metti in pausa",
+      "resume": "Riprendi",
+      "end": "Termina",
+      "delete": "Elimina",
+      "confirmEnd": "Terminare questo progetto di apprendimento? Le lezioni e le skill pubblicate restano; non potrà essere riavviato.",
+      "confirmDelete": "Eliminare questo progetto di apprendimento e tutte le sue lezioni? Le skill pubblicate restano.",
+      "waiting": "In attesa che {name} accetti in Impostazioni → Profilo. Prima di allora non viene conservato nulla.",
+      "waitingHidden": "In attesa che il membro accetti in Impostazioni → Profilo. Prima di allora non viene conservato nulla.",
+      "overPlan": "Questo progetto supera il numero incluso nel tuo piano, quindi non viene registrato nulla. Termina un altro progetto o passa a un piano superiore."
+    },
+    "topics": {
+      "empty": "Ancora nessuna lezione. Compaiono quando il membro corregge l'AI o le spiega qualcosa su questo server.",
+      "when": "Quando:",
+      "published": "Pubblicato il {date}",
+      "notPublished": "Non pubblicato",
+      "changes": "Modifiche confermate da pubblicare",
+      "counts": "{confirmed} confermate · {draft} da confermare",
+      "preview": "Anteprima",
+      "hidePreview": "Nascondi anteprima",
+      "publish": "Pubblica",
+      "publishing": "Pubblicazione…",
+      "publishedMsg": "Pubblicato: {count} lezione/i sono ora una skill per tutti su questo server.",
+      "nothing": "Ancora nulla di confermato da pubblicare.",
+      "dropped": "{count} lezione/i più vecchie non entravano nel testo e sono state lasciate fuori.",
+      "viewSkill": "Apri AI Skills"
+    },
+    "lessons": {
+      "filter": {
+        "all": "Tutte",
+        "draft": "Da confermare",
+        "confirmed": "Confermate",
+        "rejected": "Scartate"
+      },
+      "empty": "Nessuna lezione qui.",
+      "kind": {
+        "rule": "Regola",
+        "fact": "Fatto",
+        "correction": "Correzione",
+        "example": "Esempio"
+      },
+      "source": {
+        "model": "riportata dall'AI",
+        "diff": "vista nel lavoro",
+        "interview": "da un'intervista",
+        "manual": "modificata da un curatore"
+      },
+      "status": {
+        "draft": "Da confermare",
+        "confirmed": "Confermata",
+        "rejected": "Scartata",
+        "superseded": "Sostituita"
+      },
+      "before": "Invece di:",
+      "after": "Usa:",
+      "reason": "Perché:",
+      "askWhy": "Motivo non ancora indicato",
+      "seen": "detta {count}×",
+      "confirm": "Conferma",
+      "reject": "Scarta",
+      "reopen": "Riapri",
+      "edit": "Riformula",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "more": "Mostra altre"
+    },
+    "settings": {
+      "name": "Nome",
+      "folder": "Archivia le skill in",
+      "folderHint": "Vale per gli argomenti avviati da ora in poi.",
+      "endsAt": "Termina il",
+      "tags": "Etichette",
+      "publishMode": "Pubblicazione",
+      "showName": "Mostra il nome del membro a tutti, non solo agli admin",
+      "save": "Salva",
+      "saved": "Salvato."
+    },
+    "profile": {
+      "title": "Progetti di apprendimento",
+      "ask": "Il tuo admin chiede di conservare ciò che insegni all'AI sul server MCP “{server}”, per il progetto di apprendimento “{name}”.",
+      "notice": "Sul server MCP “{server}”, quando correggi l'AI o le spieghi come si fa il lavoro, l'AI lo salva come lezione per il progetto di apprendimento “{name}”. Le lezioni diventano skill che gli assistenti AI dei tuoi colleghi possono usare. Viene conservato: le lezioni. Non viene conservato: la conversazione, il tuo lavoro su altri server, alcun dato sul tuo rendimento. Confermi ogni lezione prima che venga condivisa. Admin ed editor del workspace possono leggere le lezioni. Puoi fermarti in ogni momento da questa pagina e cancellare tutto ciò che non è stato pubblicato.",
+      "nameHidden": "Il tuo nome è visibile solo agli admin.",
+      "nameShown": "Il tuo nome è mostrato con le skill apprese da te.",
+      "accept": "Accetta",
+      "decline": "Rifiuta",
+      "accepted": "Accettato. Aggiorna l'elenco dei tool di questo connettore nel tuo client AI per ricevere i tool di apprendimento.",
+      "active": "“{name}” è attivo su “{server}” dal {date}.",
+      "paused": "“{name}” è stato messo in pausa dal tuo admin.",
+      "stop": "Ferma",
+      "erase": "Cancella anche le mie lezioni non pubblicate",
+      "stopped": "Fermato.",
+      "failed": "Impossibile salvare la tua risposta"
+    }
   }
 }
