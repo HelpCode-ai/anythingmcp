@@ -112,8 +112,9 @@ export interface PendingOAuthFlow {
    * Facebook or Instagram sign-in of an Instagram connector
    * (meta-auth.controller.ts). 'iop' is a seller authorization at an Alibaba
    * IOP gateway: Lazada, Miravia, AliExpress (iop-auth.controller.ts).
+   * 'shein' is a SHEIN store authorization (shein-auth.controller.ts).
    */
-  provider?: 'shopee' | 'tiktok-shop' | 'tiktok-shop-install' | 'iop' | 'woocommerce' | 'woocommerce-outcome' | 'meta';
+  provider?: 'shopee' | 'tiktok-shop' | 'tiktok-shop-install' | 'iop' | 'shein' | 'woocommerce' | 'woocommerce-outcome' | 'meta';
   /**
    * A WooCommerce one-click key (woocommerce-auth.controller.ts): the
    * workspace the key may be written to, the shop address it must work on,

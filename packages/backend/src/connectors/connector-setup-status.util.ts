@@ -3,6 +3,7 @@ import { isMachineGrant } from './oauth-grant.util';
 import { shopeeNeedsAuthorization } from './engines/shopee-token.service';
 import { tiktokShopMissingAppVars, tiktokShopNeedsAuthorization } from './engines/tiktok-shop-token.service';
 import { iopNeedsAuthorization } from './engines/iop-token.service';
+import { sheinNeedsAuthorization } from './engines/shein-token.service';
 import { interpolateDeep, interpolateString } from '../common/env-interpolation.util';
 import { CALLER_CONTEXT_PREFIX } from '../common/caller-context.util';
 import {
@@ -185,6 +186,11 @@ export function computeSetupState(input: SetupStatusInput): SetupState {
   // And for a seller at an IOP gateway (HMAC with tokenProvider "iop":
   // Lazada, Miravia, AliExpress seller).
   if (iopNeedsAuthorization(input.authType, authConfig)) {
+    return { status: 'needs_authorization', missing: [] };
+  }
+  // And for a SHEIN shop (HMAC with tokenProvider "shein"): no stored
+  // openKeyId and secretKey yet.
+  if (sheinNeedsAuthorization(input.authType, authConfig)) {
     return { status: 'needs_authorization', missing: [] };
   }
   return { status: 'ready', missing: [] };

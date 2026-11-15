@@ -1548,6 +1548,10 @@
       "title": "Autorizzazione del negozio Shopee",
       "body": "Accedi con l'account del negozio e approva questa app. I token vengono salvati cifrati e rinnovati automaticamente. Autorizza di nuovo quando l'autorizzazione scade o il connettore lo chiede."
     },
+    "sheinShop": {
+      "title": "Autorizzazione del negozio SHEIN",
+      "body": "Accedi a SHEIN con l'account principale del negozio e approva l'app. SHEIN consegna quindi a questo connettore la chiave del negozio, che viene salvata cifrata. SHEIN non documenta né una durata fissa né un rinnovo: autorizza di nuovo quando SHEIN termina l'autorizzazione (il venditore scollega l'app, reimposta la chiave o l'autorizzazione scade) e il connettore lo chiede."
+    },
     "iopSeller": {
       "title": "Autorizzazione del venditore",
       "body": "Accedi con l'account venditore e approva l'app (Lazada, Miravia, AliExpress). La callback URL dell'app deve essere il tuo indirizzo AnythingMCP seguito da /api/iop-auth/callback. I token vengono salvati cifrati e rinnovati automaticamente; autorizza di nuovo quando l'autorizzazione scade o il connettore lo chiede."

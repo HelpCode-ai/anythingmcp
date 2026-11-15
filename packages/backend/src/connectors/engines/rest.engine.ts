@@ -9,6 +9,7 @@ import { createHash, createHmac, randomInt } from 'node:crypto';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
 import { decodeResponseBody } from '../binary-response.util';
+import { stringifyWithIntegerLiterals } from './json-integers.util';
 import { buildOAuth1Header } from './oauth1-signer';
 import { hmacJwtHeader, isHmacJwtSignature } from './hmac-jwt.util';
 import { OAuth2TokenService } from './oauth2-token.service';
@@ -22,6 +23,7 @@ import {
   shopCipherApplies,
 } from './tiktok-shop-token.service';
 import { IopTokenService, isIopAccessTokenRejected, isIopAuth } from './iop-token.service';
+import { SheinTokenService, isSheinAuth } from './shein-token.service';
 import { canRenewToken } from '../oauth-grant.util';
 import {
   LoginTokenService,
@@ -150,6 +152,7 @@ export class RestEngine {
     @Optional() private readonly shopeeTokens?: ShopeeTokenService,
     @Optional() private readonly tiktokShopTokens?: TikTokShopTokenService,
     @Optional() private readonly iopTokens?: IopTokenService,
+    @Optional() private readonly sheinTokens?: SheinTokenService,
   ) {}
 
   /**
@@ -186,6 +189,11 @@ export class RestEngine {
       // a 2xx body. Absent for almost every connector, which then behaves as
       // it always has. See response-error.util.ts.
       errorWhen?: unknown;
+      // The connector's `config.largeIntegers`: "string" parses a JSON answer
+      // with integers outside ±(2^53 - 1) as strings of their exact digits
+      // (SHEIN's 64-bit goodsId). Absent for every other connector, which
+      // parses exactly as before. See json-integers.util.ts.
+      largeIntegers?: unknown;
       // The connector's secret variable values, as substituted into the URL
       // and headers. Never sent anywhere: log lines mask them.
       logSecrets?: readonly string[];
@@ -227,6 +235,11 @@ export class RestEngine {
       // fetch it on the server, decompress and page it. See
       // download-follow.util.ts.
       download?: unknown;
+      // JSON body fields, by path (`infoList[].goodsId`), whose digit-string
+      // values go out as number literals with exactly those digits: for an
+      // API that wants a JSON number for a 64-bit id the tool takes as a
+      // string. Opt-in per tool; see json-integers.util.ts.
+      bodyIntegers?: string[];
     },
     params: Record<string, unknown>,
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
@@ -340,7 +353,13 @@ export class RestEngine {
       // always did, a file (image, PDF, …) becomes a BinaryBody instead of a
       // string of replacement characters. See binary-response.util.ts.
       responseType: 'arraybuffer',
-      transformResponse: [(data: unknown, headers?: unknown) => decodeResponseBody(data, headers)],
+      // A connector with `config.largeIntegers: "string"` keeps integers
+      // outside ±(2^53 - 1) as exact strings; every other one parses as before.
+      transformResponse: [
+        config.largeIntegers === 'string'
+          ? (data: unknown, headers?: unknown) => decodeResponseBody(data, headers, { largeIntegers: 'string' })
+          : (data: unknown, headers?: unknown) => decodeResponseBody(data, headers),
+      ],
       // Stop reading a body over the tool response limit instead of parsing
       // tens of MB on the event loop. See response-size-limit.ts. A tool may
       // raise it for a body whose bulk responseMapping.images takes out.
@@ -558,6 +577,23 @@ export class RestEngine {
       if (httpMethod === 'DELETE' && isEmptyBody(axiosConfig.data)) {
         delete axiosConfig.data;
       }
+      // Opt-in (endpointMapping.bodyIntegers): 64-bit ids the tool takes as
+      // digit strings go out as JSON number literals with the same digits,
+      // so nothing on the way converts them to a double. The body becomes
+      // its JSON text here, which is also what gets signed.
+      const bodyIntegers = endpointMapping.bodyIntegers;
+      if (
+        Array.isArray(bodyIntegers) &&
+        bodyIntegers.length > 0 &&
+        axiosConfig.data !== null &&
+        typeof axiosConfig.data === 'object' &&
+        (Array.isArray(axiosConfig.data) || Object.getPrototypeOf(axiosConfig.data) === Object.prototype)
+      ) {
+        axiosConfig.data = stringifyWithIntegerLiterals(axiosConfig.data, bodyIntegers);
+        if (!hasHeader(axiosConfig.headers, 'content-type')) {
+          axiosConfig.headers = { ...axiosConfig.headers, 'Content-Type': 'application/json' };
+        }
+      }
       if (xmlBody && typeof axiosConfig.data === 'string' && !hasHeader(axiosConfig.headers, 'content-type')) {
         axiosConfig.headers = {
           ...axiosConfig.headers,
@@ -582,6 +618,10 @@ export class RestEngine {
     // undefined for every other connector.
     const tiktokShop = isTikTokShopAuth(config.authType, config.authConfig);
     const iop = isIopAuth(config.authType, config.authConfig);
+    // A SHEIN connector signs with the shop's openKeyId and secretKey, which
+    // the provider fills into the signature block in memory, for this call
+    // only. Every other connector signs with its config as it is.
+    const shein = isSheinAuth(config.authType, config.authConfig);
     // A TikTok Shop connector without an App key of its own signs, renews and
     // reads its shops with the server's app: filled in here, in memory, for
     // this call (and its retry) only.
@@ -595,7 +635,8 @@ export class RestEngine {
         : iop
           ? await this.iopCredentialParams(config)
           : undefined;
-    this.applyHmacSignature(axiosConfig, tiktokShopConfig, hmacCredentials);
+    const signingConfig = shein ? this.sheinSigningConfig(config) : tiktokShopConfig;
+    this.applyHmacSignature(axiosConfig, signingConfig, hmacCredentials);
     for (const h of headerNames(axiosConfig.headers)) {
       if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
     }
@@ -718,6 +759,13 @@ export class RestEngine {
           rebuildBody(axiosConfig, buildBody);
           return withMeta(await outboundRequest(axiosConfig, outbound));
         }
+      }
+      // SHEIN no longer accepts the shop's key (openapi00004), or refused
+      // the signature: there is nothing to renew. Mark the connector when
+      // the key has ended and say what to do next to SHEIN's own error.
+      if (shein && this.sheinTokens) {
+        const hint = await this.sheinTokens.onRejected(config, error);
+        if (hint) (error as Error & { hint?: string }).hint = hint;
       }
       // A pasted token the provider ended for good (Meta 190 logged out,
       // expired, password changed): mark the connector, stop sending it,
@@ -1342,6 +1390,21 @@ export class RestEngine {
       throw new Error('IOP connectors (Lazada, Miravia, AliExpress seller) need the IOP token service, which is not available here.');
     }
     return this.iopTokens.getCredentialParams(config);
+  }
+
+  /**
+   * The config a SHEIN call signs with: the shop's openKeyId and secretKey
+   * filled into `${openKeyId}` / `${secretKey}` of the signature block. Only
+   * for `authType: HMAC` with `authConfig.tokenProvider: "shein"`; see
+   * shein-token.service.ts.
+   */
+  private sheinSigningConfig<T extends { authType: string; authConfig?: Record<string, unknown>; connectorId?: string }>(
+    config: T,
+  ): T {
+    if (!this.sheinTokens) {
+      throw new Error('SHEIN connectors need the SHEIN token service, which is not available here.');
+    }
+    return this.sheinTokens.signingConfig(config);
   }
 
   /**

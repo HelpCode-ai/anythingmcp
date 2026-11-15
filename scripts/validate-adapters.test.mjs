@@ -805,3 +805,106 @@ test('tokenProvider "iop": HMAC only, https gateway URLs, token paths and the IO
   assert.match(docs, /^#### Shop authorization \(token providers\)$/m);
   assert.match(docs, /`iop`/);
 });
+
+test('tokenProvider "shein": HMAC only, the app settings and SHEIN\'s signature with the shop\'s keys', () => {
+  const shein = () => ({
+    tokenProvider: 'shein',
+    shein: {
+      appId: '{{SHEIN_APP_ID}}',
+      appSecret: '{{SHEIN_APP_SECRET}}',
+      authorizeUrl: 'https://openapi-sem.sheincorp.com/#/empower',
+      tokenBaseUrl: '{{SHEIN_API_HOST}}',
+      tokenPath: '/open-api/auth/get-by-token',
+    },
+    signature: {
+      algorithm: 'sha256', encoding: 'hex-base64', secret: '${secretKey}${nonce}', nonceLength: 5,
+      template: '${openKeyId}&${timestamp}&${pathname}', timestampFormat: 'ms', headerName: 'x-lt-signature',
+      headerTemplate: '${nonce}${signature}', timestampHeader: 'x-lt-timestamp', extraHeaders: { 'x-lt-openKeyId': '${openKeyId}' },
+    },
+  });
+  const problems = (authConfig, authType = 'HMAC') => validatorModule.sheinTokenProviderProblems({ authType, authConfig });
+
+  // The documented shape passes; a literal https token base too.
+  assert.deepEqual(problems(shein()), []);
+  assert.deepEqual(problems({ ...shein(), shein: { ...shein().shein, tokenBaseUrl: 'https://openapi.sheincorp.com' } }), []);
+  // Connectors without the provider are not looked at, unless they use the shop's placeholders.
+  assert.deepEqual(problems({ signature: { secret: '{{KEY}}${nonce}', nonceLength: 5 } }), []);
+  assert.deepEqual(problems({ tokenProvider: 'iop' }), []);
+  assert.match(problems({ signature: shein().signature })[0], /need tokenProvider "shein"/);
+
+  assert.match(problems(shein(), 'API_KEY')[0], /only applies to HMAC/);
+  assert.match(problems({ tokenProvider: 'shein', signature: shein().signature })[0], /needs an authConfig.shein object/);
+
+  const broken = (edit) => {
+    const cfg = shein();
+    edit(cfg);
+    return problems(cfg);
+  };
+  for (const [edit, expected] of [
+    [(c) => { c.shein.authorizeUrl = 'http://openapi-sem.sheincorp.com/#/empower'; }, /authorizeUrl must be an https URL/],
+    [(c) => { c.shein.authorizeUrl = 'https://openapi-sem.sheincorp.com/#/empower?appid=1'; }, /must not carry a query/],
+    [(c) => { c.shein.tokenBaseUrl = 'http://openapi.sheincorp.com'; }, /tokenBaseUrl must be an https URL/],
+    [(c) => { c.shein.tokenBaseUrl = '{{A}}/x'; }, /tokenBaseUrl must be an https URL/],
+    [(c) => { c.shein.tokenPath = 'open-api/auth/get-by-token'; }, /tokenPath must be a path/],
+    [(c) => { c.shein.appId = ''; }, /needs authConfig.shein.appId/],
+    [(c) => { delete c.shein.appSecret; }, /needs authConfig.shein.appSecret/],
+    [(c) => { c.shein.refreshPath = '/x'; }, /authConfig.shein.refreshPath is not a known field/],
+    [(c) => { delete c.signature; }, /needs authConfig.signature/],
+    [(c) => { c.signature.encoding = 'hex'; }, /encoding "hex-base64"/],
+    [(c) => { c.signature.nonceLength = 6; }, /nonceLength 5/],
+    [(c) => { c.signature.timestampFormat = 's'; }, /timestampFormat "ms"/],
+    [(c) => { c.signature.placement = 'query'; }, /in a header/],
+    [(c) => { c.signature.secret = '{{SHEIN_SECRET_KEY}}${nonce}'; }, /signature.secret "\$\{secretKey\}\$\{nonce\}"/],
+    [(c) => { c.signature.template = '${openKeyId}&${timestamp}&${path}'; }, /signature.template/],
+    [(c) => { c.signature.headerTemplate = '${signature}'; }, /headerTemplate/],
+    [(c) => { c.signature.extraHeaders = { 'x-lt-openKeyId': '{{OPEN_KEY_ID}}' }; }, /x-lt-openKeyId/],
+  ]) {
+    const found = broken(edit);
+    assert.ok(found.some((p) => expected.test(p)), `${expected} -> ${JSON.stringify(found)}`);
+  }
+
+  const result = validateAdapter(
+    adapter({ connector: { type: 'REST', authType: 'HMAC', authConfig: { ...shein(), shein: { ...shein().shein, tokenPath: 'x' } } } }),
+    'good.json',
+    'de',
+  );
+  const sheinErrors = result.errors.filter((e) => e.rule === 'shein-token-provider');
+  assert.equal(sheinErrors.length, 1);
+  assert.equal(sheinErrors[0].path, 'connector.authConfig.shein');
+  assert.equal(sheinErrors[0].docs, 'shop-authorization-token-providers');
+  assert.match(docs, /`shein`/);
+});
+
+test('largeIntegers and bodyIntegers: "string" on a REST connector, body paths the bodyMapping writes', () => {
+  const tool = (endpointMapping) => ({ name: 'good_tool', description: 'x'.repeat(60), endpointMapping });
+  const make = (config, endpointMapping, type = 'REST') =>
+    validatorModule.largeIntegerProblems({ connector: { type, config }, tools: endpointMapping ? [tool(endpointMapping)] : [] });
+  const post = (bodyIntegers, extra = {}) => ({
+    method: 'POST', path: '/x', bodyMapping: { orderGoodsId: '$id', infoList: '$items', goodsIdList: '$ids' }, bodyIntegers, ...extra,
+  });
+
+  // Not set: nothing to check.
+  assert.deepEqual(make(undefined, { method: 'GET', path: '/x' }), []);
+  // The documented shapes pass.
+  assert.deepEqual(make({ largeIntegers: 'string' }, post(['orderGoodsId', 'infoList[].goodsId', 'goodsIdList[]'])), []);
+
+  assert.match(make({ largeIntegers: true })[0], /must be "string"/);
+  assert.match(make({ largeIntegers: 'string' }, undefined, 'GRAPHQL')[0], /only applies to REST/);
+  for (const [mapping, expected] of [
+    [post([]), /non-empty list/],
+    [post('orderGoodsId'), /non-empty list/],
+    [post(['infoList[]..goodsId']), /is not a body path/],
+    [post(['items[].goodsId']), /starts at "items", which the bodyMapping does not write/],
+    [{ method: 'GET', path: '/x', bodyIntegers: ['a'] }, /not a GET/],
+    [post(['orderGoodsId'], { bodyEncoding: 'form-urlencoded' }), /only applies to a JSON body/],
+  ]) {
+    const found = make(undefined, mapping);
+    assert.ok(found.some((p) => expected.test(p)), `${expected} -> ${JSON.stringify(found)}`);
+  }
+
+  const result = validateAdapter(adapter({ connector: { type: 'REST', authType: 'API_KEY', config: { largeIntegers: 'yes' } } }), 'good.json', 'de');
+  const found = result.errors.filter((e) => e.rule === 'large-integers');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].docs, 'large-integers-64-bit-ids');
+  assert.match(docs, /^### Large integers \(64-bit ids\)$/m);
+});
