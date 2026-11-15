@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ParsedTool } from './openapi.parser';
 import * as soap from 'soap';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
-import { outboundAxios } from '../../common/outbound-http';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import { outboundAxiosOptions } from '../../common/outbound-http';
 import { XMLParser } from 'fast-xml-parser';
 
 /** Keys describe() adds to a complex type's shape that are not elements. */
@@ -59,6 +60,37 @@ export function wsdlUrlForLog(wsdlUrl: string): string {
 }
 
 /**
+ * Why a document downloaded as a WSDL or XSD cannot be one, or null when it
+ * starts like XML. The `soap` library hands any body to its XML parser,
+ * which reads a large non-XML document (a 1.7 MB Swagger JSON) synchronously
+ * for seconds and blocks the process for every user before it fails.
+ */
+export function notXmlReason(body: unknown): string | null {
+  if (typeof body !== 'string') return null;
+  const first = body.search(/[^\s\uFEFF]/);
+  if (first === -1 || body[first] === '<') return null;
+  if (body[first] === '{' || body[first] === '[') {
+    return 'The URL returned JSON, not a WSDL (XML). If it is an OpenAPI or Swagger document, import it as OpenAPI instead.';
+  }
+  return 'The URL did not return a WSDL: the document is not XML.';
+}
+
+let wsdlAxios: AxiosInstance | null = null;
+
+/**
+ * How the `soap` library downloads WSDLs and XSDs (it only calls its
+ * `request` option as a function): through the guarded client, refusing a
+ * 200 that is not XML.
+ */
+async function requestWsdlDocument(config: AxiosRequestConfig): Promise<AxiosResponse> {
+  wsdlAxios ??= axios.create(outboundAxiosOptions());
+  const response = await wsdlAxios(config);
+  const reason = response.status === 200 ? notXmlReason(response.data) : null;
+  if (reason) throw new Error(reason);
+  return response;
+}
+
+/**
  * Download and parse a WSDL with the `soap` library, the one way every WSDL
  * is read (import, the engine's metadata fallback, the connection test).
  * The URL comes from the user: it is checked, and WSDL/XSD imports and
@@ -67,7 +99,7 @@ export function wsdlUrlForLog(wsdlUrl: string): string {
 export async function openWsdl(wsdlUrl: string): Promise<soap.Client> {
   await assertSafeOutboundUrl(wsdlUrl);
   return soap.createClientAsync(wsdlUrl, {
-    request: outboundAxios() as any,
+    request: requestWsdlDocument as any,
     // Without this the library answers from a process-wide cache that never
     // expires, so a changed WSDL was only seen after a restart (and every
     // WSDL ever read stayed in memory).
