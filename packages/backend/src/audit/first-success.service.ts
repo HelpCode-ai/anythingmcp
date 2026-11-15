@@ -10,6 +10,7 @@ import {
   offerLicenceState,
 } from '../license/card-trial-offer';
 import { CardTrialEligibilityService } from '../license/card-trial-eligibility.service';
+import { earliestDate, membersFirstSuccessAt } from './first-success-markers';
 
 /** Workspaces remembered as settled; forgetting one only costs one indexed read. */
 const SETTLED_MAX = 50_000;
@@ -26,8 +27,9 @@ const SETTLED_MAX = 50_000;
  *
  * - Stores the workspace's first success time (OrgSettings
  *   `first_successful_call_at`) if it is not stored yet. A workspace active
- *   before this shipped gets its real first success, read from
- *   tool_invocations once.
+ *   before this shipped gets its real first success, read once from
+ *   tool_invocations and from its members' first-success stamps (the rows
+ *   older than the Cloud retention are gone).
  * - If that first success is fresh (FIRST_SUCCESS_FRESH_MS) and the workspace
  *   is on the no-card trial, marks it eligible for the card-trial offer
  *   (OrgSettings `card_trial_offer_eligible_at` + the
@@ -109,13 +111,19 @@ export class FirstSuccessService {
     if (stored) return;
 
     // The earliest success, not necessarily this one: a workspace that was
-    // active before this shipped keeps the time it really activated.
-    const first = await this.prisma.toolInvocation.findFirst({
-      where: { organizationId, status: 'SUCCESS' },
-      orderBy: { createdAt: 'asc' },
-      select: { createdAt: true, connectorId: true, toolId: true },
-    });
-    const firstAt = first?.createdAt ?? new Date();
+    // active before this shipped keeps the time it really activated. Cloud
+    // deletes old rows, so the members' first-success stamps count too
+    // (earliest wins): a workspace that activated months ago and calls again
+    // now is not fresh.
+    const [first, membersFirst] = await Promise.all([
+      this.prisma.toolInvocation.findFirst({
+        where: { organizationId, status: 'SUCCESS' },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true, connectorId: true, toolId: true },
+      }),
+      membersFirstSuccessAt(this.prisma, organizationId),
+    ]);
+    const firstAt = earliestDate(first?.createdAt, membersFirst) ?? new Date();
     await this.prisma.orgSettings.createMany({
       data: [{ organizationId, key: FIRST_SUCCESS_KEY, value: firstAt.toISOString() }],
       skipDuplicates: true,
