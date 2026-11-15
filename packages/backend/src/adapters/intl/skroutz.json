@@ -1268,7 +1268,7 @@
         "properties": {
           "batch_id": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9]{6,64}$",
+            "pattern": "^[A-Za-z0-9_-]{6,64}$",
             "description": "Batch id returned by skroutz_update_products, e.g. `6a9810dcd4ff840001bf0f32`."
           }
         },
