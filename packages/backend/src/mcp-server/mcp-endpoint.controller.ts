@@ -16,6 +16,8 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
+import { LearningService, type ActiveLearning } from '../ee/learning/learning.service';
+import { learningFooter, learningInstruction, learningToolEntries } from '../ee/learning/learning-tools';
 import { McpServer, isLegacyRequest } from '@modelcontextprotocol/server';
 import {
   NodeStreamableHTTPServerTransport as StreamableHTTPServerTransport,
@@ -218,6 +220,10 @@ interface ToolSetParams {
    *  + the inlineCode role capability + a configured runner): offers
    *  code_execute over these connectors. */
   inlineCode?: { connectorIds: string[] };
+  /** Set when the caller is the member of an active learning project on this
+   *  server: offers learning_record / learning_review / learning_confirm and
+   *  reminds the model after a tool that changed something. */
+  learning?: ActiveLearning;
 }
 
 interface InvocationContext {
@@ -338,6 +344,7 @@ export class McpEndpointController {
     @Optional() productEvents?: ProductEventService,
     @Optional() prisma?: PrismaService,
     @Optional() private readonly refusals?: CrossWorkspaceRefusalStore,
+    @Optional() private readonly learning?: LearningService,
   ) {
     this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
     this.toolsListed = productEvents && prisma ? new ToolsListedRecorder(prisma, productEvents) : null;
@@ -1460,9 +1467,25 @@ export class McpEndpointController {
       mcpServerConfig.organizationId,
       user?.sub,
     );
-    const instructions = captureIntent
-      ? [content.instructions, INTENT_INSTRUCTION].filter(Boolean).join('\n\n')
-      : content.instructions;
+    // The caller's active learning project on this server, if they are the
+    // member of one (and accepted it): its tools and a note in the instructions.
+    const learning =
+      (await this.learning
+        ?.activeFor(mcpServerConfig.organizationId, user?.sub, serverId)
+        .catch((e: any) => {
+          this.logger.warn(`Learning project lookup failed on server ${serverId}: ${e?.message ?? e}`);
+          return null;
+        })) ?? undefined;
+    const instructions =
+      captureIntent || learning
+        ? [
+            content.instructions,
+            captureIntent ? INTENT_INSTRUCTION : null,
+            learning ? learningInstruction(learning) : null,
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+        : content.instructions;
 
     // A server/discover probe, once the caller may reach this server, reads
     // the name, capabilities and instructions only: answered without
@@ -1564,6 +1587,7 @@ export class McpEndpointController {
       memory: withFolders(await this.memory?.caller(mcpServerConfig.organizationId, user?.sub), folderAccess),
       folders: folderAccess,
       inlineCode,
+      learning,
     };
 
     // Register this server's tool surface onto the per-request McpServer.
@@ -1992,6 +2016,10 @@ export class McpEndpointController {
         memory: withFolders(await this.memory?.caller(serverOrganizationId, user?.sub), folderAccess),
         folders: folderAccess,
         inlineCode,
+        learning:
+          (await this.learning
+            ?.activeFor(serverOrganizationId, user?.sub, serverId)
+            .catch(() => null)) ?? undefined,
       });
       const signature = this.aggregateSig(entries);
       if (signature === session.signature) return; // nothing changed here
@@ -2123,15 +2151,26 @@ export class McpEndpointController {
         annotationsSignature(annotations),
       ].join('');
 
+      // A correction usually follows a tool that changed something: that is
+      // where the member of a learning project's model is reminded to keep it.
+      const footer =
+        [
+          resultFooter,
+          params.learning && annotations.readOnlyHint !== true ? learningFooter(params.learning) : null,
+        ]
+          .filter(Boolean)
+          .join('\n\n') || undefined;
+
       entries.push({
         name: exposedName,
-        sig,
+        // The footer is part of what a live session registered.
+        sig: footer ? `${sig}|${footer}` : sig,
         register: (mcpServer: McpServer) => {
           const withFooter = (r: any) => {
-            if (!resultFooter || r?.isError || !Array.isArray(r?.content)) return r;
+            if (!footer || r?.isError || !Array.isArray(r?.content)) return r;
             return {
               ...r,
-              content: [...r.content, { type: 'text' as const, text: resultFooter }],
+              content: [...r.content, { type: 'text' as const, text: footer }],
             };
           };
           const handler = async (args: any) => {
@@ -2392,6 +2431,20 @@ export class McpEndpointController {
     if (params.memory && this.memory && invocationContext.mcpServerId) {
       for (const entry of this.memoryEntries(params.memory, invocationContext, registeredNames)) {
         entries.push(entry);
+      }
+    }
+
+    // Learning project: offered to its member only, on its server only. A
+    // connector tool with the same name keeps its name.
+    if (params.learning && this.learning && invocationContext.mcpServerId) {
+      for (const entry of learningToolEntries(this.learning, params.learning)) {
+        if (registeredNames.has(entry.name)) continue;
+        registeredNames.add(entry.name);
+        entries.push({
+          name: entry.name,
+          sig: entry.sig,
+          register: (mcpServer: McpServer) => entry.register(mcpServer) as ToolHandle,
+        });
       }
     }
 

@@ -13,6 +13,7 @@ For the current shipped state, see the [latest release](https://github.com/HelpC
 - **File Search and File Share** (v0.52.0): a searchable index of SFTP, FTP/FTPS, WebDAV, S3 and network-share folders, with search, find, grep and read tools for every AI client, and temporary download links. [Docs](connectors/file-search.md)
 - **Code Mode** (v0.52.0): one short program that calls several tools, in an isolated runner with no secrets and no network; saved code tools turn a recurring chain into a single tool, which answers most of [tool composition (#986)](https://github.com/HelpCode-ai/anythingmcp/issues/986). [Docs](code-mode.md)
 - **Company memory** (Enterprise): facts and preferences saved from one AI client and found by every other, personal or company-wide, in folders with role limits. [Docs](memory.md)
+- **Learning projects** (Team and Enterprise): learning turned on for one member on one MCP server; their corrections become skills for everyone, after they agree and confirm. [Docs](learning-projects.md)
 - **AI skills v2**: on-demand skills and procedures with versions, folders and usage, learned from real requests and fixed errors and approved by an admin. [Docs](knowledge-graph.md#ai-skills)
 - **MCP resources** on per-server endpoints. [Docs](mcp-resources.md)
 - **Inbound webhooks**, first slice: Stripe events stored per connector and readable as a tool ([#988](https://github.com/HelpCode-ai/anythingmcp/issues/988) stays open for other providers).
