@@ -49,7 +49,7 @@ import { KgService } from '../knowledge-graph/kg.service';
 import { WebhookEventsService } from '../connectors/webhook-events.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
-import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
+import { bodyText, deriveErrorHint, hostFromAxiosConfig, hostFromUrl, ODOO_FIELD_HINT } from './error-hints';
 import { egressIps } from '../connectors/egress';
 import { envVarsForMcpTool, resolveMcpFixedArguments } from '../connectors/mcp-connector-config.util';
 import { processGauges } from '../common/process-vitals';
@@ -114,6 +114,14 @@ import {
   toolMaxResponseBytes,
 } from '../common/response-size-limit';
 import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth-status.service';
+import { deriveResultHint } from './result-hints';
+import {
+  isOdooModelName,
+  odooFieldAdvice,
+  odooFieldsFromFieldsGet,
+  parseOdooInvalidField,
+  type OdooField,
+} from '../adapters/odoo-field-suggestions';
 import {
   CREDENTIAL_REFUSED_CODE,
   CredentialRefusalTracker,
@@ -134,9 +142,18 @@ import {
  */
 export const COMPACT_RENDER_CHARS = 1_000_000;
 
+/** How long a model's field list is reused for the Odoo "did you mean" hint. */
+const ODOO_FIELDS_TTL_MS = 10 * 60 * 1000;
+/** The field list must not hold up the error it explains. */
+const ODOO_FIELDS_TIMEOUT_MS = 8_000;
+/** Field lists kept at most; beyond that the cache starts over (memory bound). */
+const ODOO_FIELDS_CACHE_MAX = 500;
+
 @Injectable()
 export class DynamicMcpTools {
   private readonly logger = new Logger(DynamicMcpTools.name);
+  /** Odoo field lists by connector (or user sign-in) and model, for odooModelFields. */
+  private readonly odooFieldLists = new Map<string, { at: number; fields: OdooField[] }>();
   /** Repeated 401s on read tools, recorded as the connector's credential status. */
   private readonly credentialRefusals = new CredentialRefusalTracker();
 
@@ -540,6 +557,13 @@ export class DynamicMcpTools {
     // An error message or an echoing API can quote them back (a URL with the
     // bot token in its path); they never reach the client or the log.
     const secretValues = this.connectorSecretValues(tool);
+    // The catalog adapter the connector was installed from: adapter-specific
+    // advice (result-hints.ts, error-hints.ts) is keyed on it.
+    const rawAdapterSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+    const adapterSlug = typeof rawAdapterSlug === 'string' && rawAdapterSlug ? rawAdapterSlug : undefined;
+    // Set once the request is built: reads a model's fields with this very
+    // connector and caller, for the "did you mean" of an unknown Odoo field.
+    let lookupOdooFields: ((model: string) => Promise<OdooField[] | undefined>) | undefined;
 
     try {
       const envVars = tool.connectorConfig.envVars || {};
@@ -722,6 +746,11 @@ export class DynamicMcpTools {
         applyEnvDefaults(tool.endpointMapping, paramsWithEnv, envVars),
       );
 
+      if (adapterSlug === 'odoo' || adapterSlug === 'odoo-jsonrpc') {
+        lookupOdooFields = (model) =>
+          this.odooModelFields(tool, model, engineConfig, interpolationVars, credentialKey);
+      }
+
       processGauges.inc('toolCallsInFlight');
       let engineOut: Awaited<ReturnType<DynamicMcpTools['executeWithEngine']>>;
       try {
@@ -849,6 +878,8 @@ export class DynamicMcpTools {
         toolName,
         meta,
         tool.endpointMapping?.queryParams,
+        // A success that needs explaining (an empty Telegram read).
+        deriveResultHint({ adapterSlug, toolName: tool.name, args: params, result }),
       );
 
       await this.auditService.logInvocation({
@@ -934,8 +965,6 @@ export class DynamicMcpTools {
       // for a refused credential, and the link to its page where the user
       // fixes it: a connector saved without a passing setup check otherwise
       // repeats the vendor's bare "API key not valid" on every call.
-      const rawSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
-      const adapterSlug = typeof rawSlug === 'string' && rawSlug ? rawSlug : undefined;
       const message = typeof error?.message === 'string' ? error.message : undefined;
       let hint = engineHint ?? deriveErrorHint({
         host:
@@ -962,6 +991,19 @@ export class DynamicMcpTools {
           typeof envVars.ODOO_DB === 'string' ? envVars.ODOO_DB : undefined,
         ).catch(() => undefined);
         if (advice) hint = `${advice} ${hint}`;
+      }
+      // Odoo "Invalid field": name the fields of that model that are close
+      // to the one asked for, instead of sending the assistant to list them
+      // all first. One extra read of the model's field list, cached; the
+      // general hint stays when it fails or says nothing.
+      if (hint === ODOO_FIELD_HINT && lookupOdooFields) {
+        const refused = parseOdooInvalidField(`${message ?? ''}\n${bodyText(errorDetail.responseBody)}`);
+        const model = refused?.model ?? params.model;
+        if (refused && isOdooModelName(model)) {
+          const fields = await lookupOdooFields(model).catch(() => undefined);
+          const advice = fields ? odooFieldAdvice(refused.field, model, fields) : undefined;
+          if (advice) hint = advice;
+        }
       }
       if (hint) errorDetail.hint = hint;
 
@@ -1055,6 +1097,66 @@ export class DynamicMcpTools {
   }
 
   /**
+   * The fields of an Odoo model, read with the connector's own
+   * `odoo_fields_get` tool and the credentials of the failed call (so a
+   * user's own sign-in sees what that user may see). Asked only after Odoo
+   * refused a field name, kept for ten minutes, and never logged as a call
+   * of the customer. `undefined` when the connector has no such tool, the
+   * read fails or takes too long: the caller then keeps its general hint.
+   */
+  private async odooModelFields(
+    tool: RegisteredTool,
+    model: string,
+    engineConfig: Record<string, unknown>,
+    interpolationVars: Record<string, string>,
+    credentialKey: string | undefined,
+  ): Promise<OdooField[] | undefined> {
+    const key = `${credentialKey ?? tool.connectorId}:${model}`;
+    const known = this.odooFieldLists.get(key);
+    if (known && Date.now() - known.at < ODOO_FIELDS_TTL_MS) return known.fields;
+
+    const fieldsTool = this.toolRegistry
+      .getToolsForConnectors?.([tool.connectorId])
+      .find((t) => t.name === 'odoo_fields_get');
+    if (!fieldsTool) return undefined;
+
+    const { endpointMapping } = interpolateConnectorConfig(
+      { baseUrl: tool.connectorConfig.baseUrl, headers: tool.connectorConfig.headers },
+      fieldsTool.endpointMapping,
+      interpolationVars,
+      { reservedPrefix: CALLER_CONTEXT_PREFIX },
+    );
+    const call = this.executeWithEngine(
+      fieldsTool.connectorType,
+      engineConfig,
+      endpointMapping,
+      this.applyDefaults(fieldsTool.parameters, { model, attributes: ['string', 'type'] }),
+      {
+        connectorConfig: tool.connectorConfig.config,
+        connectorId: tool.connectorId,
+        organizationId: tool.organizationId,
+      },
+    );
+    // Abandoned after the timeout: its late failure is nobody's error.
+    call.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tooSlow = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Odoo field list timed out')), ODOO_FIELDS_TIMEOUT_MS);
+      timer.unref?.();
+    });
+    try {
+      const { body } = await Promise.race([call, tooSlow]);
+      const fields = odooFieldsFromFieldsGet(body);
+      if (fields.length === 0) return undefined;
+      if (this.odooFieldLists.size >= ODOO_FIELDS_CACHE_MAX) this.odooFieldLists.clear();
+      this.odooFieldLists.set(key, { at: Date.now(), fields });
+      return fields;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
    * Turn a raw engine result into the MCP tool result.
    *
    * Two opt-in per-tool behaviours live here, in this order:
@@ -1086,6 +1188,8 @@ export class DynamicMcpTools {
     toolName: string,
     meta?: ResponseMeta,
     queryParams?: Record<string, unknown>,
+    /** Advice for this very answer (result-hints.ts), after the tool's own followUp. */
+    resultHint?: string,
   ): {
     result: {
       content: ToolResultContent;
@@ -1136,8 +1240,11 @@ export class DynamicMcpTools {
       ? attachResponseMeta(outcome.value, meta, queryParams)
       : outcome.value;
 
-    const hint = responseMapping?.followUp
-      ? `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`
+    const guidance = [responseMapping?.followUp, resultHint].filter(
+      (part): part is string => typeof part === 'string' && part.length > 0,
+    );
+    const hint = guidance.length
+      ? `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${guidance.join(' ')}`
       : '';
     // A large result is rendered compactly from the start: indenting a
     // multi-megabyte object (a page of 100 full WooCommerce orders) more than
