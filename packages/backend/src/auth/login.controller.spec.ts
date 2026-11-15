@@ -1055,10 +1055,14 @@ describe('LoginController', () => {
         picking = make(CLOUD);
       });
 
-      const showPage = async (c: LoginController = picking) => {
+      const showPage = async (c: LoginController = picking, userAgent?: string) => {
         const res = makeRes();
         await c.handleLogin(
-          makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: 'tok' }, headers: { host: 'mcp.test' } } as any),
+          makeReq({
+            cookies: { oauth_session: 's1' },
+            signedCookies: { login_csrf: 'tok' },
+            headers: { host: 'mcp.test', ...(userAgent ? { 'user-agent': userAgent } : {}) },
+          } as any),
           { email: 'a@b.com', password: 'pw', csrf: 'tok', action: 'approve' },
           res,
         );
@@ -1144,7 +1148,7 @@ describe('LoginController', () => {
         const flush = () => new Promise((r) => setImmediate(r));
 
         /** Runs the page's scripts against a minimal DOM built from the page. */
-        const run = async (fetchAnswer: () => Promise<unknown>) => {
+        const run = async (fetchAnswer: () => Promise<unknown>, touch = false) => {
           arrange();
           const page = (await showPage())._sent as string;
           const script = page.slice(page.indexOf('<script>') + 8, page.indexOf('</script>'));
@@ -1164,7 +1168,7 @@ describe('LoginController', () => {
           };
           const fetch = jest.fn(async () => ({ json: async () => fetchAnswer() }));
           const open = jest.fn();
-          const window = { fetch, JSON, open };
+          const window = { fetch, JSON, open, matchMedia: (q: string) => ({ matches: touch && q === '(pointer: coarse)' }) };
           require('vm').runInNewContext(script, {
             document: { getElementById: (id: string) => nodes[id] ?? null },
             navigator: {},
@@ -1226,6 +1230,34 @@ describe('LoginController', () => {
             'noopener',
           );
         });
+
+        it('opens no second tab on a touch device, whatever its user agent says', async () => {
+          const { nodes, open } = await run(async () => ({}), true);
+          expect(nodes.continue.listeners.click).toBeUndefined();
+          expect(open).not.toHaveBeenCalled();
+        });
+      });
+
+      // A second tab on a phone takes over and the authorization in the first
+      // one is never finished (about 200 codes a day were left unexchanged).
+      it.each([
+        ['iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'],
+        ['Android', 'Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36'],
+        ['iPad', 'Mozilla/5.0 (iPad; CPU OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'],
+      ])('goes straight back to Claude on %s, without a chat tab', async (_device, userAgent) => {
+        arrange();
+        const page = (await showPage(picking, userAgent))._sent as string;
+        expect(page).toContain('Continue to Claude');
+        expect(page).toContain('href="http://mcp.test/callback"');
+        expect(page).not.toContain('data-open-chat="');
+      });
+
+      it('keeps the chat tab on a desktop browser', async () => {
+        arrange();
+        const page = (
+          await showPage(picking, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36')
+        )._sent as string;
+        expect(page).toContain('href="http://mcp.test/callback" data-open-chat="https://claude.ai/new"');
       });
 
       it('opens a new chat only for a code sent to claude.ai', async () => {
