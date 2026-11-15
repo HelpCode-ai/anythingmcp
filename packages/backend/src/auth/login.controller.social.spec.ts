@@ -223,9 +223,9 @@ describe('LoginController — social sign-in on the MCP consent page', () => {
 
 /**
  * The page after Approve for an empty workspace links to the dashboard ("add
- * an app", "add a card"). Someone who signed in on the consent page with a
- * social provider has no dashboard session, so those links sign them in with
- * the same provider first instead of showing the sign-in form.
+ * an app", "add a payment method"). Someone who signed in on the consent page
+ * with a social provider has no dashboard session, so those links sign them
+ * in with the same provider first instead of showing the sign-in form.
  */
 describe('LoginController — dashboard links after a social sign-in on the consent page', () => {
   function offerController() {

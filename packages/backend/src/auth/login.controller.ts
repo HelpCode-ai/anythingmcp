@@ -1333,7 +1333,7 @@ export class LoginController {
     <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
       params.cardTrial
         ? `
-    <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a card now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
+    <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a payment method now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
         : ''
     }
     <script>

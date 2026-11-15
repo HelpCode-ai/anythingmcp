@@ -118,7 +118,7 @@ export function StarterPack({ token }: { token: string }) {
             href={startTrialPath('starter_pack')}
             className="font-medium text-[var(--brand)] hover:underline"
           >
-            Add a card for more
+            Add a payment method for more
           </Link>
           .
         </p>
