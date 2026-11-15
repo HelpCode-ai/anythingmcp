@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 784 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 785 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -92,7 +92,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-784 adapters, exposing 14,729 tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
+785 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
 
 | Category | Examples |
 |---|---|
@@ -3965,6 +3965,45 @@ rule. Connectors installed from the catalog follow the adapter's rules even if
 they were installed before the rules existed; a connector's own
 `config.errorWhen` overrides them, and `[]` switches the check off.
 
+### Large integers (64-bit ids)
+
+JSON numbers are doubles in JavaScript: an integer above 9007199254740991
+(2^53 - 1) is rounded when the answer is parsed, so a 64-bit id such as
+SHEIN's goodsId `5230236437987443003` comes back as `5230236437987443000`, and
+a JSON number in a tool call is rounded by the MCP client before it reaches
+the server. Two opt-ins, both off unless set
+(`packages/backend/src/connectors/engines/json-integers.util.ts`):
+
+- `connector.config.largeIntegers: "string"` (REST connectors): every
+  integer literal of a JSON answer outside ±(2^53 - 1) becomes a string with
+  its exact digits and sign. Everything else parses exactly as before:
+  safe integers, decimals and exponents stay numbers, numbers inside strings
+  are untouched, and a body that is not valid JSON is still handed back as
+  text. It applies wherever the engine reads the answer: the tool result, the
+  `errorWhen` rules, error bodies and the install check. A catalog connector
+  follows its adapter's setting, like `errorWhen`.
+- `endpointMapping.bodyIntegers` (a tool with a JSON body): body paths whose
+  values go out as JSON number literals written with exactly the digits the
+  tool received as text. `"orderGoodsId"` is a field, `"goodsIdList[]"` every
+  element of a list, `"infoList[].goodsId"` a field of every element. Declare
+  such parameters as strings (`"type": "string", "pattern": "^(0|[1-9][0-9]{0,19})$"`)
+  so no client turns them into numbers. A value that is not a whole number
+  is refused before anything is sent.
+
+```json
+"connector": { "type": "REST", "config": { "largeIntegers": "string" } },
+"endpointMapping": {
+  "method": "POST",
+  "path": "/open-api/order/import-batch-multiple-express",
+  "bodyMapping": { "orderNo": "$order_no", "infoList": "$items" },
+  "bodyIntegers": ["infoList[].goodsId"]
+}
+```
+
+`scripts/validate-adapters.mjs` checks both (rule `large-integers`):
+`"string"` on a REST connector, and paths that start at a field the
+bodyMapping writes, on a tool that is not a GET.
+
 ### Authentication
 
 Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
@@ -4269,6 +4308,7 @@ the marketplace refuses the refresh token. The connector page shows
 | `shopee` | Signed `auth_partner` link; callback `<SERVER_URL>/api/shopee/callback/<state>` | `access_token` and `shop_id` query parameters, signed |
 | `tiktok-shop` | `services.tiktokshop.com/open/authorize?service_id=...` (US: `services.us.tiktokshop.com`); callback `<SERVER_URL>/api/tiktok-shop/callback`, set as the app's Redirect URL | the access token in the `x-tts-access-token` header (not signed) and `shop_cipher` in the query (signed), except on `/authorization/`, `/seller/` and upload paths |
 | `iop` | The Alibaba IOP gateways (Lazada, Miravia, AliExpress seller): `authConfig.iop.authorizeUrl` with `response_type=code`, `client_id`, `redirect_uri` and `state`; callback `<SERVER_URL>/api/iop-auth/callback`, set as the app's callback URL | `access_token` query parameter, signed |
+| `shein` | SHEIN's store authorization: `authConfig.shein.authorizeUrl` (`https://openapi-sem.sheincorp.com/#/empower`) with `appid`, `redirectUrl` (the callback in Base64) and `state`; callback `<SERVER_URL>/api/shein-auth/callback` | the shop's `openKeyId` and `secretKey`, filled into `${openKeyId}` and `${secretKey}` of the signature block (nothing to renew) |
 
 The TikTok Shop provider reads the app key from `authConfig.appKey` (or the
 `app_key` query parameter), the secret from `signature.secret` and the Service
@@ -4364,6 +4404,64 @@ sends the seller to the authorize page. `scripts/validate-adapters.mjs`
 checks the block (rule `iop-token-provider`): `HMAC` only, https URLs, paths,
 and the IOP signature (`placement: "query"`, `encoding: "hex-upper"`,
 `timestampFormat: "ms"`, a template with `${sortedParams}`).
+
+The `shein` provider (`shein-token.service.ts`, `shein-auth.controller.ts`)
+follows SHEIN's "Store Authorization Application Manual". The seller opens the
+authorize page, signs in with the shop's main account and approves the app;
+SHEIN sends the browser back to the callback with `appid`, `tempToken` (valid
+for a few minutes) and `state`. The tempToken is exchanged at
+`tokenBaseUrl + tokenPath` (`POST /open-api/auth/get-by-token`, JSON body
+`{ "tempToken": … }`), signed with the app's id and secret (header
+`x-lt-appid` instead of `x-lt-openKeyId`). The answer's `secretKey` is
+decrypted with the app secret (AES-128-CBC, `shein-secret.util.ts`) and
+stored with `openKeyId`, `supplierId`, `supplierBusinessMode` and
+`authorizedAt`, encrypted with the rest of the authConfig.
+
+```json
+"authType": "HMAC",
+"authConfig": {
+  "tokenProvider": "shein",
+  "shein": {
+    "appId": "{{SHEIN_APP_ID}}",
+    "appSecret": "{{SHEIN_APP_SECRET}}",
+    "authorizeUrl": "https://openapi-sem.sheincorp.com/#/empower",
+    "tokenBaseUrl": "{{SHEIN_API_HOST}}",
+    "tokenPath": "/open-api/auth/get-by-token"
+  },
+  "signature": {
+    "algorithm": "sha256",
+    "encoding": "hex-base64",
+    "secret": "${secretKey}${nonce}",
+    "nonceLength": 5,
+    "template": "${openKeyId}&${timestamp}&${pathname}",
+    "timestampFormat": "ms",
+    "headerName": "x-lt-signature",
+    "headerTemplate": "${nonce}${signature}",
+    "timestampHeader": "x-lt-timestamp",
+    "extraHeaders": { "x-lt-openKeyId": "${openKeyId}" }
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `shein.appId` / `shein.appSecret` | The app's App ID and App Secret (SHEIN Open Platform, Application Management). They sign get-by-token and decrypt the shop's secretKey; seller calls never use them. |
+| `shein.authorizeUrl` | https URL of the authorize page, hash route included. The engine appends `?appid=…&redirectUrl=…&state=…` after it. |
+| `shein.tokenBaseUrl` | The API host of the app's type, an https URL or one variable: `https://openapi.sheincorp.com` (self-operated, semi-managed) or `https://openapi.sheincorp.cn` (fully managed, SHEIN-operated, other). |
+| `shein.tokenPath` | `/open-api/auth/get-by-token`. |
+
+Before each call the provider fills the stored keys into `${openKeyId}` and
+`${secretKey}` of `signature.secret`, `signature.template` and the values of
+`signature.extraHeaders`, in memory; the stored authConfig keeps the
+placeholders. A shop key does not expire on a schedule SHEIN documents and has
+no refresh. A call answered with `openapi00004` ("The user [...] has expired")
+marks the connector as needing a new authorization, with one email to the
+owner; `openapi00001` (signature refused, also what a key that changed
+elsewhere gives) only adds a hint to authorize again. The setup page fills
+`{{redirectUri}}` with `<SERVER_URL>/api/shein-auth/callback`.
+`scripts/validate-adapters.mjs` checks the block (rule
+`shein-token-provider`): `HMAC` only, the app settings, and SHEIN's signature
+with the two placeholders, which no other connector may use.
 
 #### Meta sign-in (Instagram connectors)
 

@@ -599,6 +599,7 @@ import * as servicem8 from './intl/servicem8.json';
 import * as servicenow from './intl/servicenow.json';
 import * as servicetitan from './intl/servicetitan.json';
 import * as sftp from './intl/sftp.json';
+import * as shein from './intl/shein.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopee from './intl/shopee.json';
@@ -1699,6 +1700,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   servicenow as unknown as AdapterDefinition,
   servicetitan as unknown as AdapterDefinition,
   sftp as unknown as AdapterDefinition,
+  shein as unknown as AdapterDefinition,
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopee as unknown as AdapterDefinition,

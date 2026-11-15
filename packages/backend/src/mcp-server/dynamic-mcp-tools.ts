@@ -65,7 +65,7 @@ import { getAdapter } from '../adapters/catalog';
 import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { ToolRateLimitService } from './tool-rate-limit.service';
-import { connectorErrorWhen } from '../connectors/error-when.util';
+import { connectorErrorWhen, connectorLargeIntegers } from '../connectors/error-when.util';
 import {
   isBinaryBody,
   readBinaryConfig,
@@ -647,6 +647,7 @@ export class DynamicMcpTools {
         connectorId: credentialKey ??
           (usesCallerContext(tool.connectorConfig.authConfig) ? undefined : tool.connectorId),
         errorWhen: connectorErrorWhen(tool.connectorConfig.config),
+        largeIntegers: connectorLargeIntegers(tool.connectorConfig.config),
         // Masked in the engines' log lines (a bot token in the URL path).
         logSecrets: secretValues,
         ...(proxyUrl ? { proxyUrl } : {}),

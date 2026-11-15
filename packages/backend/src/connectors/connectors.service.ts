@@ -49,7 +49,7 @@ import { EmailConnectorError } from './email/email-settings';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
 import { ConnectorAuthStatusService, authCredentialRef } from './engines/connector-auth-status.service';
 import { BearerTokenRenewalService, withTokenRenewal } from './engines/bearer-token-renewal.service';
-import { connectorErrorWhen } from './error-when.util';
+import { connectorErrorWhen, connectorLargeIntegers } from './error-when.util';
 import { ResponseBodyError } from './engines/response-error.util';
 import { metaLoginFlavourOfSlug } from './engines/meta-login.util';
 
@@ -578,6 +578,7 @@ export class ConnectorsService {
               // spent one, and its next refresh was refused as revoked.
               connectorId: credentialKey,
               errorWhen: connectorErrorWhen(connector.config),
+              largeIntegers: connectorLargeIntegers(connector.config),
               logSecrets,
             },
             { method: 'GET', path },
@@ -1077,6 +1078,7 @@ export class ConnectorsService {
       specUrl: connector.specUrl ?? undefined,
       connectorId: credentialKey ?? connector.id,
       errorWhen: connectorErrorWhen(connector.config),
+      largeIntegers: connectorLargeIntegers(connector.config),
       logSecrets: connectorSecretValues(connector),
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
         ? { proxyUrl: process.env.CONNECTOR_PROXY_URL }
