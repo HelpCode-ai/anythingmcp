@@ -568,12 +568,16 @@ export class ProductEventService {
 // `protocol`, `preset`, `files`: the File Search wizard (FILE_SEARCH_*):
 // a known protocol, a known product preset and a file count bucket; any
 // other value is dropped, so no host, path or exact count can be stored.
+// `attempt`: authorize_page_viewed, the value that makes reloads of one
+// authorization count once: a short lower-case base-36 number (the time the
+// pending authorization expires), and nothing else is kept.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer',
+  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer', 'attempt',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
+const ATTEMPT_PATTERN = /^[0-9a-z]{6,12}$/;
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
 /** The File Search wizard's product presets. */
 const KNOWN_PRESETS = new Set(['nextcloud', 'owncloud', 'synology', 'qnap', 'fritzbox', 'hetzner']);
@@ -623,6 +627,8 @@ function boundMetadata(
           ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
           : key === 'source'
             ? (KNOWN_CHECKOUT_SOURCES.has(metadata[key] as string) ? metadata[key] : null)
+            : key === 'attempt'
+              ? (typeof metadata[key] === 'string' && ATTEMPT_PATTERN.test(metadata[key] as string) ? metadata[key] : null)
             : ENUM_KEYS[key]
               ? (ENUM_KEYS[key]!.has(metadata[key] as string) ? metadata[key] : null)
               : metadata[key];

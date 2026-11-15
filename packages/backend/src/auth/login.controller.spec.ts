@@ -686,7 +686,7 @@ describe('LoginController', () => {
       await view('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36');
       const views = productEvents.log.mock.calls.map((c) => c[0]).filter((e) => e.event === 'authorize_page_viewed');
       expect(views).toHaveLength(2);
-      expect(views[0].metadata).toEqual({ client: 'Claude', device: 'phone', attempt: expect.stringMatching(/^[0-9a-z]{6,12}$/) });
+      expect(views[0].metadata).toEqual({ client: 'Claude', device: 'mobile', attempt: expect.stringMatching(/^[0-9a-z]{6,12}$/) });
       expect(views[1].metadata.device).toBe('desktop');
       // The same authorization: the same value, so a reload counts once.
       expect(views[1].metadata.attempt).toBe(views[0].metadata.attempt);
