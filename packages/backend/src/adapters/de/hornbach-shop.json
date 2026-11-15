@@ -1,0 +1,205 @@
+{
+  "slug": "hornbach-shop",
+  "name": "HORNBACH Shop",
+  "aliases": [
+    "Hornbach",
+    "Hornbach Baumarkt",
+    "Hornbach Onlineshop",
+    "hornbach.de"
+  ],
+  "description": "Search the HORNBACH online shop (DIY, tools, building materials, garden) from Claude, ChatGPT or Copilot through HORNBACH's official catalog endpoint for AI agents: product search with price filters and product lookup by article number, with prices, availability per seller and GTINs. Read-only, no account or API key; one country shop per connector (Germany, Austria, Switzerland, Netherlands, Luxembourg, Sweden, Czech Republic, Slovakia, Romania).",
+  "instructions": "## HORNBACH Shop\nThis connector reads the product catalog of the **HORNBACH online shops** (DIY and building supplies: power tools, building materials, garden, bathroom, paint, flooring) through HORNBACH's **official endpoint for AI agents**. HORNBACH publishes it under the Universal Commerce Protocol (UCP): a profile at `/.well-known/ucp` on each country shop and a REST endpoint at `/ucp` with two operations, catalog search and catalog lookup. It is read-only: there is no cart, checkout, order or customer account behind this endpoint.\n\n**Setup**: choose the country shop in `HORNBACH_SHOP_URL` (Germany is `https://www.hornbach.de`). No HORNBACH account, API key or sign-in is needed. Each shop has its own catalog, prices, currency and language; to use two countries, install the connector twice. Every call identifies AnythingMCP as the calling agent (the `UCP-Agent` header with AnythingMCP's agent profile) and sends a non-browser User-Agent; the connector adds both by itself, they never appear as tool parameters.\n\n**Bot protection**: HORNBACH refuses calls from data-centre addresses with a challenge page. On AnythingMCP Cloud both tools go through the connector proxy for that reason (the proxy calls count toward the workspace's hourly proxy limit). A self-hosted server calls HORNBACH directly; if it gets the challenge page, set `CONNECTOR_PROXY_URL` on the server.\n\n**Where to start**: `hornbach_shop_search_products` with what the user is looking for, written in the shop's language: \"Akkuschrauber 18V\" on the German, Austrian, Swiss and Luxembourg shops, \"boormachine\" on the Dutch shop, \"borrmaskin\" in Sweden, \"vrtačka\" in the Czech Republic. A GTIN (EAN) as the query finds that product too. Narrow by price with `price_min` and `price_max` and page with `cursor`. Then `hornbach_shop_lookup_products` with up to 20 article numbers to refresh price and availability, or to read a product the user names by its HORNBACH article number.\n\n**Field notes**:\n- Prices are integers in minor units (cents) of the shop's currency: `amount` 6695 with `currency` EUR is 66.95 EUR. The currency is EUR on the German, Austrian, Dutch, Luxembourg and Slovak shops, CHF in Switzerland, SEK in Sweden, CZK in the Czech Republic and RON in Romania. Divide by 100 before quoting a price. `price_min` and `price_max` take the same unit: 3000 on the German shop means up to 30.00 EUR.\n- `id` is the HORNBACH article number (for example `12802554`), the number at the end of the product URL. Lookup finds products by this number only: a GTIN or a SKU such as `12802554_ST` comes back as an info message with code `not_found`. To go from a GTIN to a product, search for the GTIN.\n- A search product lists one entry in `variants` per seller: `seller.name` \"HORNBACH Webshop DE\" (or CH, SE, ...) is the online shop, a second entry such as \"HORNBACH Bornheim Baumarkt\" is the shop's default store, not the user's nearest one, and marketplace partners appear under their own name. `availability.available` tells whether that seller offers it now. Lookup variants carry no seller; they give `availability.status` (for example `in_stock`). Stock in a particular local store is not available here.\n- GTINs are in `variants[].barcodes` (type `gtin`). `categories[].value` is the shop's category path, for example \"Maschinen, Werkzeug & Werkstatt > Maschinen > Akkuschrauber\". `media` lists the product images.\n- `url` is the product page on the shop: give it to the user to buy there or to pick a store.\n- Descriptions come as plain text in `description.plain`. The HTML copy, the image captions and the copies of description and images repeated in every variant are left out to keep answers small.\n- Paging: `pagination.has_next_page` and `pagination.cursor`. Pass the cursor with the same query and filters for the next page. A page holds 10 products unless `limit` says otherwise; the shop may return fewer.\n- UCP also defines a category filter, but HORNBACH's endpoint returned no products for category values in our tests, so the connector does not offer it: put the category words into the query instead. The `context.language` hint was ignored as well; search in the shop's main language.\n- If a call answers with an HTML page titled \"Client Challenge\" instead of JSON, HORNBACH's bot protection held the request back: wait a little and try again.",
+  "region": "de",
+  "category": "e-commerce",
+  "icon": "hornbach-shop",
+  "docsUrl": "https://www.hornbach.de/.well-known/ucp",
+  "prerequisites": "Nothing but the choice of a HORNBACH country shop: no account and no API key.",
+  "requiredEnvVars": [
+    "HORNBACH_SHOP_URL"
+  ],
+  "envVarMeta": {
+    "HORNBACH_SHOP_URL": {
+      "label": "HORNBACH country shop",
+      "kind": "address",
+      "secret": false,
+      "help": "The HORNBACH online shop to search: each one has its own catalog, prices, currency and language. The connector calls this address followed by /ucp.",
+      "example": "https://www.hornbach.de",
+      "link": "https://www.hornbach.de/.well-known/ucp",
+      "pattern": "^https://www\\.hornbach\\.(de|at|ch|nl|lu|se|cz|sk|ro)$",
+      "patternMessage": "Choose one of the HORNBACH country shops, for example https://www.hornbach.de (Germany), without a path.",
+      "options": [
+        { "value": "https://www.hornbach.de", "label": "Germany: www.hornbach.de (EUR)" },
+        { "value": "https://www.hornbach.at", "label": "Austria: www.hornbach.at (EUR)" },
+        { "value": "https://www.hornbach.ch", "label": "Switzerland: www.hornbach.ch (CHF)" },
+        { "value": "https://www.hornbach.nl", "label": "Netherlands: www.hornbach.nl (EUR)" },
+        { "value": "https://www.hornbach.lu", "label": "Luxembourg: www.hornbach.lu (EUR)" },
+        { "value": "https://www.hornbach.se", "label": "Sweden: www.hornbach.se (SEK)" },
+        { "value": "https://www.hornbach.cz", "label": "Czech Republic: www.hornbach.cz (CZK)" },
+        { "value": "https://www.hornbach.sk", "label": "Slovakia: www.hornbach.sk (EUR)" },
+        { "value": "https://www.hornbach.ro", "label": "Romania: www.hornbach.ro (RON)" }
+      ]
+    }
+  },
+  "verifyHints": {
+    "400": "HORNBACH refused the request. If the message mentions the UCP-Agent profile, that is on the AnythingMCP side, not a setting of yours: try again later.",
+    "403": "HORNBACH's bot protection refused this address. Wait a few minutes and try again.",
+    "404": "This HORNBACH shop has no catalog endpoint at /ucp. Choose one of the listed country shops.",
+    "429": "HORNBACH is limiting requests from this address. Wait a minute and try again.",
+    "rate_limited": "HORNBACH is limiting requests from this address. Wait a minute and try again.",
+    "unreachable": "The HORNBACH shop did not answer. Check the chosen country shop and try again later."
+  },
+  "probe": {
+    "tool": "hornbach_shop_search_products",
+    "params": {
+      "query": "Bosch",
+      "limit": 1
+    },
+    "failWhen": [
+      {
+        "matches": "Client Challenge",
+        "hint": "HORNBACH's bot protection answered with a challenge page instead of the catalog. Wait a few minutes and run the check again.",
+        "kind": "unreachable"
+      }
+    ]
+  },
+  "connector": {
+    "name": "HORNBACH Shop",
+    "type": "REST",
+    "baseUrl": "{{HORNBACH_SHOP_URL}}/ucp",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP/1.0 (+https://anythingmcp.com)",
+      "UCP-Agent": "profile=\"https://anythingmcp.com/.well-known/ucp\"",
+      "Request-Id": "00000000-0000-4000-8000-000000000000"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "ucp.status",
+          "equals": "error",
+          "messagePath": "messages[0].content",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "hornbach_shop_search_products",
+      "useProxy": true,
+      "description": "Search the HORNBACH online shop of the configured country by free text (words in the shop's language, a brand, or a GTIN). Returns up to `limit` products (10 by default), each with `id` (HORNBACH article number), `title`, `url` of the product page, plain-text `description`, `categories` (the shop's category path), `media` (image URLs), `price_range` (min and max) and `variants`: one per seller (the online shop, the default store, marketplace partners) with `seller.name`, `price`, `availability.available`, `sku` and GTIN in `barcodes`. All prices are integers in minor units (cents) of the shop's currency next to a currency code: EUR (Germany, Austria, Netherlands, Luxembourg, Slovakia), CHF (Switzerland), SEK (Sweden), CZK (Czech Republic) or RON (Romania); amount 6695 with EUR is 66.95 EUR. Paging: `pagination.has_next_page` and `pagination.cursor`; pass the cursor with the same query and filters for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "What to search for, in the shop's language (\"Akkuschrauber 18V\", \"Laminat Eiche\"), a brand (\"Bosch\") or a GTIN/EAN (\"4006825673906\")."
+          },
+          "price_min": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lowest price, in minor units (cents) of the shop's currency: 1000 on the German shop is 10.00 EUR."
+          },
+          "price_max": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Highest price, in minor units (cents) of the shop's currency: 5000 on the German shop is 50.00 EUR."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Products per page (default 10). The shop may return fewer."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The `pagination.cursor` of the previous page, to read the next one. Send the same query and price filters with it."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/catalog/search",
+        "bodyMapping": {
+          "query": "$query",
+          "filters": {
+            "price": {
+              "min": "$price_min",
+              "max": "$price_max"
+            }
+          },
+          "pagination": {
+            "limit": "$limit",
+            "cursor": "$cursor"
+          }
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "products[*].description.html",
+            "products[*].media[*].alt_text",
+            "products[*].variants[*].description",
+            "products[*].variants[*].media"
+          ],
+          "maxBytes": 400000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hornbach_shop_lookup_products",
+      "useProxy": true,
+      "description": "Look up one or more products of the configured HORNBACH shop by HORNBACH article number (the `id` from a search, the number at the end of a product URL), for current price and availability. Returns `products` with `id`, `title`, `url`, plain-text `description`, `categories`, `media`, `price_range` and `variants` (`price`, `availability.available` and `availability.status` such as in_stock, `sku`, GTIN in `barcodes`, and `inputs` naming the requested id it matched), plus `messages` with code `not_found` for every id the shop does not know. Only article numbers work: a GTIN or a SKU such as 12802554_ST is not found, so search for a GTIN instead. Prices are integers in minor units (cents) of the shop's currency (EUR, CHF, SEK, CZK or RON by country): amount 6695 with EUR is 66.95 EUR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,12}$"
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "HORNBACH article numbers, for example [\"12802554\", \"12080683\"]. Up to 20 per call."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/catalog/lookup",
+        "bodyMapping": {
+          "ids": "$ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "products[*].description.html",
+            "products[*].media[*].alt_text",
+            "products[*].variants[*].description",
+            "products[*].variants[*].media"
+          ],
+          "maxBytes": 400000
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
