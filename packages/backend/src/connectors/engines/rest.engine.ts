@@ -48,6 +48,8 @@ import { assertNoResponseBodyError, ResponseBodyError } from './response-error.u
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { containsMimeMarker, expandMimeMarkers } from './mime-message.util';
 import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
+import { FileUploadService } from '../../file-uploads/file-upload.service';
+import { isFileRef } from '../../file-uploads/file-upload-params';
 
 /**
  * RestEngine — executes HTTP calls to REST APIs.
@@ -153,6 +155,7 @@ export class RestEngine {
     @Optional() private readonly tiktokShopTokens?: TikTokShopTokenService,
     @Optional() private readonly iopTokens?: IopTokenService,
     @Optional() private readonly sheinTokens?: SheinTokenService,
+    @Optional() private readonly fileUploads?: FileUploadService,
   ) {}
 
   /**
@@ -165,6 +168,15 @@ export class RestEngine {
     params: Record<string, unknown>,
   ): Promise<unknown> {
     return (await this.executeWithMeta(config, endpointMapping, params)).body;
+  }
+
+  /** The file behind an `amcp-file:` reference, for a multipart part. */
+  private async resolveUploadedFile(ref: string, organizationId: string | undefined): Promise<FetchedFile> {
+    if (!this.fileUploads) {
+      throw new Error('File references (amcp-file:) are not available on this server. Pass a public URL to the file instead.');
+    }
+    const file = await this.fileUploads.resolveForEngine(ref, organizationId);
+    return { buffer: file.buffer, filename: sanitizeFilename(file.filename), contentType: file.contentType };
   }
 
   /**
@@ -180,6 +192,10 @@ export class RestEngine {
       authConfig?: Record<string, unknown>;
       headers?: Record<string, string>;
       connectorId?: string;
+      // The workspace that owns the connector. Lets a `__file` parameter take
+      // an uploaded file's reference (`amcp-file:<id>`), which only resolves
+      // inside the workspace that uploaded it.
+      organizationId?: string;
       // When set, route this request through the proxy / web-unblocker.
       // The caller (DynamicMcpTools) decides whether a proxy applies
       // (env present, tool opted in, license + rate-limit ok) and passes
@@ -534,9 +550,15 @@ export class RestEngine {
                 }
                 // An optional file the caller did not pass: leave the part out.
                 if (v.__file === undefined || v.__file === null || v.__file === '') continue;
+                const source = String(v.__file).trim();
                 fileEntries.push({
                   key: k,
-                  file: await fetchFileForUpload(String(v.__file)),
+                  // An `amcp-file:<id>` reference comes from our own storage
+                  // (file_upload_link), checked against the connector's
+                  // workspace; anything else is a URL to download.
+                  file: isFileRef(source)
+                    ? await this.resolveUploadedFile(source, config.organizationId)
+                    : await fetchFileForUpload(source),
                 });
               } else {
                 plainEntries.push([k, v]);

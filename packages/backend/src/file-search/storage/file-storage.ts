@@ -1,5 +1,6 @@
-import { createReadStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
@@ -22,6 +23,8 @@ import { usesVirtualHostedBuckets } from '../file-search-config';
 export interface FileStorage {
   readonly kind: 'local' | 's3';
   put(key: string, bytes: Buffer, contentType: string): Promise<void>;
+  /** Like put, from a stream of a known size (agent uploads, up to 200 MB). */
+  putStream(key: string, body: Readable, size: number, contentType: string): Promise<void>;
   open(key: string): Promise<{ stream: Readable; size?: number }>;
   delete(key: string): Promise<void>;
 }
@@ -51,6 +54,12 @@ export class LocalFileStorage implements FileStorage {
     const p = this.pathOf(key);
     await mkdir(dirname(p), { recursive: true, mode: 0o700 });
     await writeFile(p, bytes, { mode: 0o600 });
+  }
+
+  async putStream(key: string, body: Readable): Promise<void> {
+    const p = this.pathOf(key);
+    await mkdir(dirname(p), { recursive: true, mode: 0o700 });
+    await pipeline(body, createWriteStream(p, { mode: 0o600 }));
   }
 
   async open(key: string): Promise<{ stream: Readable; size?: number }> {
@@ -84,6 +93,15 @@ export class S3FileStorage implements FileStorage {
     assertKey(key);
     await this.client.send(
       new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: bytes, ContentType: contentType, ACL: 'private' }),
+    );
+  }
+
+  async putStream(key: string, body: Readable, size: number, contentType: string): Promise<void> {
+    assertKey(key);
+    // A single PUT with a known length (S3 allows up to 5 GB that way), so no
+    // multipart upload is left behind on an error.
+    await this.client.send(
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentLength: size, ContentType: contentType, ACL: 'private' }),
     );
   }
 

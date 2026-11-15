@@ -62,8 +62,15 @@ async function bootstrap() {
   // that look nothing like a content-type problem.
   // `verify` keeps the raw bytes of signed webhooks, whose HMAC must be
   // computed over the body exactly as sent.
+  // Agent file uploads stream their raw body themselves (up to 200 MB, see
+  // FileUploadService.receive): no parser may consume it first, whatever
+  // Content-Type curl sends (`--data-binary` defaults to form-urlencoded).
+  const skipUploads =
+    (parser: ReturnType<typeof json>) =>
+    (req: any, res: any, next: (err?: unknown) => void) =>
+      req.url?.startsWith('/api/uploads/u/') ? next() : parser(req, res, next);
   app.use(
-    json({
+    skipUploads(json({
       limit: '10mb',
       type: ['application/json', 'application/scim+json'],
       verify: (req: any, _res, buf) => {
@@ -71,9 +78,9 @@ async function bootstrap() {
           req.rawBody = buf;
         }
       },
-    }),
+    })),
   );
-  app.use(urlencoded({ extended: true, limit: '10mb' }));
+  app.use(skipUploads(urlencoded({ extended: true, limit: '10mb' })));
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 4000;

@@ -1786,3 +1786,108 @@ describe('McpEndpointController — stateless response framing', () => {
     expect(await init.text()).toContain('"serverInfo"');
   });
 });
+
+/**
+ * Agent file uploads: file_upload_link and file_public_url appear only on a
+ * server with a tool that sends a file, and the workspace comes from the
+ * session, never from the arguments.
+ */
+describe('McpEndpointController — file upload tools', () => {
+  const fileTool = {
+    id: 't-img',
+    connectorId: 'c-etsy',
+    organizationId: 'org-A',
+    name: 'etsy_add_listing_image',
+    description: 'Add a photo from a public image URL.',
+    parameters: { type: 'object', properties: { image_url: { type: 'string', description: 'Public image URL.' } } },
+    connectorConfig: { envVars: {} },
+    endpointMapping: { method: 'POST', path: '/images', bodyMapping: { image: { __file: '$image_url' } } },
+  };
+  const plainTool = {
+    ...fileTool,
+    id: 't-get',
+    name: 'etsy_get_shop',
+    parameters: { type: 'object', properties: {} },
+    endpointMapping: { method: 'GET', path: '/shop' },
+  };
+
+  function make(enabled = true) {
+    const uploads = {
+      enabled: jest.fn(() => enabled),
+      createLink: jest.fn().mockResolvedValue({ file_ref: 'amcp-file:0123456789abcdef01234567' }),
+      publicUrl: jest.fn().mockResolvedValue({ public_url: 'https://x/f' }),
+    };
+    const controller = new McpEndpointController(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      uploads as any,
+    );
+    return { controller: controller as any, uploads };
+  }
+
+  const params = (serverTools: any[]) => ({
+    serverTools,
+    allowedToolIds: null,
+    captureIntent: false,
+    kgEnabled: false,
+    invocationContext: {
+      organizationId: 'org-A',
+      userId: 'user-1',
+      authMethod: 'jwt',
+      mcpServerId: 'srv-1',
+      mcpServerName: 'Etsy',
+      connectorIds: ['c-etsy'],
+    },
+  });
+
+  function fakeServer() {
+    const tools = new Map<string, { meta: any; handler: any }>();
+    return {
+      tools,
+      registerTool: jest.fn((name, meta, handler) => {
+        tools.set(name, { meta, handler });
+        return { remove: jest.fn() };
+      }),
+    };
+  }
+
+  it('offers both tools on a server with a file tool and hints the file parameter', async () => {
+    const { controller, uploads } = make();
+    const entries = controller.planToolSet(params([fileTool, plainTool]));
+    const names = entries.map((e: any) => e.name);
+    expect(names).toEqual(expect.arrayContaining(['file_upload_link', 'file_public_url']));
+
+    const server = fakeServer();
+    entries.forEach((e: any) => e.register(server));
+    const imageParam = server.tools.get('etsy_add_listing_image')!.meta.inputSchema.image_url;
+    // Optional parameters wrap the described schema.
+    expect(imageParam.description ?? imageParam.unwrap?.().description).toContain('amcp-file:<id>');
+
+    await server.tools.get('file_upload_link')!.handler({ filename: 'cover.png', organizationId: 'org-EVIL' });
+    expect(uploads.createLink).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: 'org-A', userId: 'user-1', mcpServerId: 'srv-1', filename: 'cover.png' }),
+    );
+    await server.tools.get('file_public_url')!.handler({ file_ref: 'amcp-file:0123456789abcdef01234567' });
+    expect(uploads.publicUrl).toHaveBeenCalledWith('amcp-file:0123456789abcdef01234567', 'org-A');
+  });
+
+  it('offers nothing on a server without file tools, or when uploads are off', () => {
+    const names = (c: any, tools: any[]) => c.planToolSet(params(tools)).map((e: any) => e.name);
+    expect(names(make().controller, [plainTool])).not.toContain('file_upload_link');
+    expect(names(make(false).controller, [fileTool])).not.toContain('file_upload_link');
+  });
+});
