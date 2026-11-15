@@ -59,11 +59,11 @@ describe('ConnectorsService: credential status after an edit', () => {
     expect(authStatus.clear).toHaveBeenLastCalledWith('conn-gsc', { exceptRef: credentialRef('EAApasted') });
   });
 
-  it('reads only the type and the stored credential, not the tools, resources and prompts', async () => {
+  it('reads only the type, the stored credential and the base URL, not the tools, resources and prompts', async () => {
     await service.update('conn-gsc', { envVars: { A: '1' } });
     expect(findUnique).toHaveBeenCalledWith({
       where: { id: 'conn-gsc' },
-      select: { type: true, authConfig: true },
+      select: { type: true, authConfig: true, baseUrl: true },
     });
   });
 
