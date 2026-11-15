@@ -44,10 +44,11 @@ export interface ErrorHintInput {
   /**
    * The adapter's `verifyHints`: what the setup check says when this status
    * comes back. Used for a refused credential (401) that no rule here
-   * covers, so a connector saved without a passing check hears the same
-   * advice at its first call.
+   * covers, and for a refusal whose error code the adapter has a hint for,
+   * so a connector saved without a passing check hears the same advice at
+   * its first call.
    */
-  verifyHints?: Record<string, string | { hint: string; suggest?: string }>;
+  verifyHints?: Record<string, string | { hint: string; suggest?: string; field?: string }>;
   /** The connector's page in AnythingMCP, linked from a credential hint. */
   connectorPage?: string;
   /** AnythingMCP Cloud (DEPLOYMENT_MODE=cloud) rather than self-hosted. */
@@ -401,6 +402,18 @@ const SHOPIFY_NOT_INSTALLED_HINT =
   'open the app in the Shopify Dev Dashboard, click "Install app" and choose this ' +
   'store (the one in SHOPIFY_STORE), then the tools work. Tell the user exactly that.';
 
+// 89 of the 124 failed calls on Shopify connectors in the four weeks to
+// 15 November 2026: the app was released without the scope, and the model
+// kept asking for the same field.
+const SHOPIFY_MISSING_SCOPE_HINT =
+  'Shopify refused this field because the Dev Dashboard app has no access scope for it ' +
+  '(the message names the scope when Shopify says which; for orders, products and ' +
+  'customers it is `read_orders`, `read_products`, `read_customers`). Retrying or ' +
+  'rewording the query will not help. The store owner must open the app in the Shopify ' +
+  'Dev Dashboard, add the scope on the Versions page, click Release, and then approve ' +
+  'the new access for the store in the Shopify admin. Tell the user exactly that, with ' +
+  'the scope to add.';
+
 const SHOPIFY_PROTECTED_DATA_HINT =
   'Shopify withholds protected customer data (names, emails, phones, addresses) from ' +
   'an app until access is requested. Retrying or asking for other fields of the same ' +
@@ -662,6 +675,46 @@ export function bodyText(body: unknown): string {
   }
 }
 
+/**
+ * The error code a provider put in its refusal, when the answer names one:
+ * `app_not_installed` in `{"error":"app_not_installed",…}` or in Shopify's
+ * `Oauth error app_not_installed` page. Letters and underscores only, at
+ * most 40: a code, never a sentence, a number or a value someone typed.
+ */
+export function providerErrorCode(text: string | null | undefined): string | undefined {
+  if (!text) return undefined;
+  const head = text.slice(0, 4000);
+  const match =
+    /"(?:error|error_code|errorCode|code)"\s*:\s*"([A-Za-z][A-Za-z_]{2,39})"/.exec(head) ??
+    /\bOauth error ([a-z][a-z_]{2,39})\b/.exec(head);
+  return match?.[1];
+}
+
+type VerifyHint = string | { hint: string; suggest?: string; field?: string };
+
+/** The classifier's failure kinds (connector-error.util.ts), which `verifyHints` is also keyed by. */
+const FAILURE_KINDS = new Set(['auth_failed', 'bad_request', 'not_found', 'rate_limited', 'upstream_error', 'unreachable', 'error']);
+
+/**
+ * The adapter's hint filed under this provider error code, if it has one.
+ * A code that reads like a failure kind (`not_found` in the body of a
+ * missing record) is not one: those keys answer the classifier, not the
+ * provider.
+ */
+export function codeHint<T extends VerifyHint>(
+  hints: Record<string, T> | undefined,
+  code: string | undefined,
+): T | undefined {
+  if (!hints || !code || FAILURE_KINDS.has(code.toLowerCase())) return undefined;
+  // Own keys only: a code such as `constructor` must not reach the prototype.
+  const key = [code, code.toLowerCase()].find((k) => Object.prototype.hasOwnProperty.call(hints, k));
+  return key ? hints[key] : undefined;
+}
+
+function hintText(hint: VerifyHint | undefined): string | undefined {
+  return typeof hint === 'string' ? hint : hint?.hint;
+}
+
 function hostMatches(host: string | null | undefined, suffix: string): boolean {
   if (!host) return false;
   const h = host.toLowerCase();
@@ -676,6 +729,16 @@ export function deriveErrorHint(input: ErrorHintInput): string | undefined {
   const text = `${input.message ?? ''}\n${bodyText(input.body)}`;
   let hint = ruleHint(input, text);
   let credential = hint !== undefined && CREDENTIAL_HINTS.has(hint);
+  // A refusal the adapter's setup check has its own words for, under the
+  // provider's error code (Shopify's `shop_not_permitted`): the same advice
+  // at a call, for a connector saved without a passing check.
+  if (!hint) {
+    const ownText = hintText(codeHint(input.verifyHints, providerErrorCode(text)));
+    if (ownText) {
+      hint = `${ownText.trim()} Retrying will not help.`;
+      credential = true;
+    }
+  }
   // A refused credential no rule covers: the adapter's own setup-check advice,
   // so a connector saved without a passing check hears it at the first call.
   if (!hint && input.status === 401) {
@@ -870,6 +933,9 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
   }
   if (hostMatches(input.host, 'myshopify.com') && /not approved to access the \w+ object|protected-customer-data/i.test(text)) {
     return SHOPIFY_PROTECTED_DATA_HINT;
+  }
+  if (hostMatches(input.host, 'myshopify.com') && /ACCESS_DENIED|Access denied for \w+ field/.test(text)) {
+    return SHOPIFY_MISSING_SCOPE_HINT;
   }
 
   if (hostMatches(input.host, 'graph.facebook.com') || hostMatches(input.host, 'graph.instagram.com')) {

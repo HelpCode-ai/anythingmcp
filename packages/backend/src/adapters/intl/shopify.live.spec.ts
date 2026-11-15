@@ -119,6 +119,67 @@ describe('shopify adapter: static spec conformance', () => {
   });
 });
 
+describe('shopify adapter: setup guide, store field and refusal hints', () => {
+  const full = adapterJson as unknown as {
+    instructions: string;
+    envVarMeta: Record<string, { pattern?: string; patternMessage?: string }>;
+    verifyHints: Record<string, string | { hint: string; field?: string }>;
+    setupGuide: {
+      effort: string;
+      steps: Array<{ id: string; fields?: string[]; confirm?: string; values?: Array<{ label: string; value: string }> }>;
+    };
+  };
+
+  it('walks through the Dev Dashboard app in five steps and asks for the keys last', () => {
+    expect(full.setupGuide.effort).toBe('own_app');
+    expect(full.setupGuide.steps.map((s) => s.id)).toEqual(['store', 'create-app', 'access', 'install', 'keys']);
+    expect(full.setupGuide.steps.flatMap((s) => s.fields ?? []).sort()).toEqual([...a.requiredEnvVars].sort());
+    expect(full.setupGuide.steps[4].fields).toEqual(['SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET']);
+    // The three steps done at Shopify are confirmed before the next one opens.
+    for (const id of ['create-app', 'access', 'install']) {
+      expect(full.setupGuide.steps.find((s) => s.id === id)?.confirm).toBeTruthy();
+    }
+  });
+
+  it('gives the scopes of the table as one line to paste, in the guide and in the instructions', () => {
+    const table = full.instructions.slice(full.instructions.indexOf('## Scopes'), full.instructions.indexOf('For a read-only setup'));
+    const inTable = [...new Set([...table.matchAll(/\| `([a-z_`, ]+)` \|/g)].flatMap((m) => m[1].split(/`, `/)))].sort();
+    expect(inTable).toContain('read_merchant_managed_fulfillment_orders');
+    const line = full.setupGuide.steps.find((s) => s.id === 'access')!.values!.find((v) => v.label === 'Scopes')!.value;
+    expect(line.split(',').sort()).toEqual(inTable);
+    expect(full.instructions).toContain(`\`${line}\``);
+  });
+
+  it('takes the store as its name, its myshopify address or its admin address, and nothing else', () => {
+    const pattern = new RegExp(full.envVarMeta.SHOPIFY_STORE.pattern!);
+    for (const ok of ['acme-shop', 'Acme-Shop', 'acme-shop.myshopify.com', 'https://acme-shop.myshopify.com/admin', 'admin.shopify.com/store/acme-shop', 'https://admin.shopify.com/store/acme-shop/orders?x=1']) {
+      expect(`${ok}:${pattern.test(ok)}`).toBe(`${ok}:true`);
+    }
+    for (const bad of ['acme.com', 'https://acme.com', 'www.acme-shop.myshopify.com', 'admin.shopify.com', 'acme shop', '-acme', 'acme-shop.myshopify.com.evil.example']) {
+      expect(`${bad}:${pattern.test(bad)}`).toBe(`${bad}:false`);
+    }
+    expect(full.envVarMeta.SHOPIFY_STORE.patternMessage).toMatch(/does not work here/);
+  });
+
+  it('has its own words for each refusal of the token request, and for the statuses around it', () => {
+    expect(Object.keys(full.verifyHints).sort()).toEqual(
+      ['400', '401', '403', '404', 'app_not_installed', 'application_cannot_be_found', 'rate_limited', 'shop_not_permitted'].sort(),
+    );
+    expect(full.verifyHints.application_cannot_be_found).toMatchObject({ field: 'SHOPIFY_CLIENT_ID' });
+    expect(full.verifyHints['404']).toMatchObject({ field: 'SHOPIFY_STORE' });
+    // The setup page shows a hint as plain text: no Markdown in it.
+    for (const hint of Object.values(full.verifyHints)) {
+      expect(typeof hint === 'string' ? hint : hint.hint).not.toMatch(/\*\*|`/);
+    }
+  });
+
+  it('says who can create the app: the App developer role, not the permission of the legacy admin apps', () => {
+    expect(full.instructions).toMatch(/\*\*App developer\*\* role/);
+    expect(full.instructions).not.toMatch(/App development → Develop/);
+    expect(full.instructions).toMatch(/same Shopify organization/);
+  });
+});
+
 describe('shopify adapter: token exchange and query through the real engine', () => {
   let server: http.Server;
   let origin: string;

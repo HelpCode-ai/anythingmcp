@@ -1,6 +1,7 @@
 import {
   checkAdapterEnvValues,
   isRepeatedPaste,
+  normalizeAdapterEnvValue,
   normalizeAdapterEnvValues,
   optionProblem,
   placeholderReason,
@@ -62,6 +63,37 @@ describe('normalisation before the checks (shapes working connectors were saved 
     }
     const bare = checkAdapterEnvValues(getAdapter('bitrix24')!, prepare('bitrix24', { BITRIX24_WEBHOOK_URL: 'https://acme.bitrix24.com/' }));
     expect(bare.BITRIX24_WEBHOOK_URL).toMatch(/Inbound webhook/);
+  });
+
+  it('shopify: keeps the store name of what the browser shows, admin address included', () => {
+    const a = getAdapter('shopify')!;
+    for (const pasted of [
+      'acme-shop',
+      'Acme-Shop',
+      ' acme-shop ',
+      'acme-shop.myshopify.com',
+      'https://acme-shop.myshopify.com/admin',
+      'admin.shopify.com/store/acme-shop',
+      'https://admin.shopify.com/store/acme-shop/orders?selectedView=all',
+    ]) {
+      const typed = { SHOPIFY_STORE: pasted.trim() };
+      // The setup form sends the value as typed: the field's pattern lets it through.
+      expect(checkAdapterEnvValues(a, typed)).toEqual({});
+      const values = prepare('shopify', typed);
+      expect(values.SHOPIFY_STORE).toBe('acme-shop');
+      expect(checkAdapterEnvValues(a, values)).toEqual({});
+    }
+    // A chat install cleans each setting as it arrives.
+    const field = { name: 'SHOPIFY_STORE', label: 'Store', kind: 'address' } as Parameters<typeof normalizeAdapterEnvValue>[0];
+    expect(normalizeAdapterEnvValue(field, 'https://admin.shopify.com/store/acme-shop', 'shopify')).toBe('acme-shop');
+  });
+
+  it('shopify: a custom domain or another site is refused, saying what to enter', () => {
+    const a = getAdapter('shopify')!;
+    for (const wrong of ['acme.com', 'https://www.acme.com/products', 'admin.shopify.com', 'my shop']) {
+      const fields = checkAdapterEnvValues(a, { SHOPIFY_STORE: wrong });
+      expect(fields.SHOPIFY_STORE).toMatch(/own domain, such as acme\.com, does not work here/);
+    }
   });
 
   it('digisac: accepts an account on .digisac.io', () => {

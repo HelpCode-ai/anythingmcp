@@ -923,8 +923,9 @@ export interface AdapterMeta {
    *  next time it is authorized (oauth-authorize-settings.ts), so tools added
    *  later get the permissions they need. */
   previousOAuthScopes?: string[];
-  /** What to tell the user when the check fails, keyed by HTTP status ("404")
-   *  or failure kind ("auth_failed"); replaces the generic hint. `suggest`
+  /** What to tell the user when the check fails, keyed by HTTP status ("404"),
+   *  failure kind ("auth_failed") or the error code in the provider's answer
+   *  ("app_not_installed"); replaces the generic hint. `suggest`
    *  names another adapter to offer instead (e.g. the JSON-RPC Odoo for an
    *  instance older than 19). */
   verifyHints?: Record<string, VerifyHint>;

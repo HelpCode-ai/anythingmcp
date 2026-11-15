@@ -155,7 +155,30 @@ const NORMALISERS: Record<string, Record<string, (value: string) => string>> = {
   woocommerce: {
     WOOCOMMERCE_URL: normalizeWooCommerceUrl,
   },
+  // A Shopify store as the browser shows it, cut back to the myshopify name
+  // the API address is built from: `acme-shop.myshopify.com`, and the admin
+  // address `admin.shopify.com/store/acme-shop/orders`, which is on another
+  // host and so not covered by normalizeSubdomainVariables.
+  shopify: {
+    SHOPIFY_STORE: normalizeShopifyStore,
+  },
 };
+
+/**
+ * `acme-shop` for `Acme-Shop`, `acme-shop.myshopify.com`,
+ * `https://acme-shop.myshopify.com/admin` and
+ * `https://admin.shopify.com/store/acme-shop/products?x=1`. Anything else (a
+ * custom domain, free text) comes back as typed, for the field's pattern to
+ * refuse.
+ */
+export function normalizeShopifyStore(value: string): string {
+  const text = value.trim();
+  const admin = /^(?:https?:\/\/)?admin\.shopify\.com\/store\/([A-Za-z0-9][A-Za-z0-9-]*)(?:[/?#]|$)/i.exec(text);
+  if (admin) return admin[1].toLowerCase();
+  const own = /^(?:https?:\/\/)?([A-Za-z0-9][A-Za-z0-9-]*)\.myshopify\.com(?:[/?#:]|$)/i.exec(text);
+  if (own) return own[1].toLowerCase();
+  return /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(text) ? text.toLowerCase() : value;
+}
 
 /** The adapter fields a checker needs. */
 export type CheckedAdapter = Parameters<typeof describeAdapterEnvVars>[0];

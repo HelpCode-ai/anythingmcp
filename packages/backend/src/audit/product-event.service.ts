@@ -41,6 +41,8 @@ export const ProductEvents = {
    * on all of them; read in order they answer where a setup is abandoned:
    * opened, credentials refused (metadata.kind = auth_failed, invalid_input…),
    * sent to the provider's sign-in, finished, or kept as a draft / unverified.
+   * A refused check also carries metadata.code when the provider's answer
+   * names an error code (Shopify: app_not_installed, shop_not_permitted).
    * setup_started also carries metadata.device ('mobile' or 'desktop'), so
    * the steps of a workspace can be read per device.
    */
@@ -601,6 +603,9 @@ export class ProductEventService {
 // `match` = how the results matched (see CATALOG_SEARCH).
 // `status`, `toolName`, `error`: why a setup check or sign-in failed (the
 // provider's message, passed through scrubProviderMessage by the server);
+// `code`: the error code in the provider's refusal of a setup check
+// (`app_not_installed`), kept apart because `error` starts with our hint and
+// is cut before the provider's words; letters and underscores only.
 // `verified`: whether a completed setup made a successful call.
 // `source`: the entry point that led to /start-trial (start_trial_viewed,
 // start_trial_checkout_started); only the CHECKOUT_SOURCES values are kept.
@@ -625,8 +630,10 @@ export class ProductEventService {
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'step', 'index', 'field', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer', 'attempt',
+  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer', 'attempt', 'code',
 ] as const;
+/** A provider's error code: a short identifier, never a sentence or a pasted value. */
+const PROVIDER_CODE = /^[A-Za-z][A-Za-z_]{2,39}$/;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
 const ATTEMPT_PATTERN = /^[0-9a-z]{6,12}$/;
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
@@ -695,6 +702,8 @@ function boundMetadata(
             ? (KNOWN_CHECKOUT_SOURCES.has(metadata[key] as string) ? metadata[key] : null)
             : key === 'attempt'
               ? (typeof metadata[key] === 'string' && ATTEMPT_PATTERN.test(metadata[key] as string) ? metadata[key] : null)
+            : key === 'code'
+              ? (typeof metadata[key] === 'string' && PROVIDER_CODE.test(metadata[key] as string) ? metadata[key] : null)
             : ENUM_KEYS[key]
               ? (ENUM_KEYS[key]!.has(metadata[key] as string) ? metadata[key] : null)
               : metadata[key];

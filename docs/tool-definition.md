@@ -74,7 +74,17 @@ one, and never combine `options` with `"secret": true`:
 ```
 
 `verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
-`"unreachable"`) to what the setup check tells the user. A tool call that
+`"unreachable"`) to what the setup check tells the user. For a provider that
+answers every refusal with the same status and says which one in the body, a
+hint can be filed under that error code instead, and is tried first: Shopify's
+token request answers 400 with `{"error":"app_not_installed"}` or
+`{"error":"shop_not_permitted"}`, so the Shopify adapter has a hint under each
+of those names next to its `"400"`. The code is read from `"error"`, `"code"`,
+`"error_code"` or `"errorCode"` in the answer (letters and underscores, 3 to 40
+characters); the names of the failure kinds are never read as codes. A hint
+under a code is also given at a failed tool call that carries the code. A
+failed check records the code as `code` on the `setup_verify_failed` product
+event. A tool call that
 the API answers 401 uses the adapter's `"401"` (or `"auth_failed"`) hint too
 when no built-in rule matches, followed by a link to the connector's page,
 so a connector saved without a passing check hears the same advice. Hints are
@@ -800,7 +810,7 @@ adapter that signs in at the provider uses `authType: "OAUTH2"` with no
 `authConfig`; `connector.config.mcpOAuth` says how (dynamic registration,
 a client of the user's own from `{{VAR}}`s, scope, RFC 8707 resource). Both
 are described in [MCP Bridge](connectors/mcp-bridge.md#connector-settings-connectorconfig).
-`prerequisites` (an array of short sentences) lists what the user needs at
+`prerequisites` (a sentence or two, Markdown) says what the user needs at
 the vendor first; the setup page shows it above the form.
 `requiresIpAllowlist: true` marks an API that refuses every call from an
 address not registered with the provider (eMAG, Shopee, the Korean law API):

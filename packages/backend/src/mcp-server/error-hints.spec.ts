@@ -1,4 +1,5 @@
-import { deriveErrorHint, hostFromAxiosConfig } from './error-hints';
+import { codeHint, deriveErrorHint, hostFromAxiosConfig, providerErrorCode } from './error-hints';
+import { getAdapter } from '../adapters/catalog';
 
 describe('deriveErrorHint', () => {
   it('names the outbound address when a firewall in front of the API refuses the call', () => {
@@ -345,6 +346,51 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
     expect(deriveErrorHint({ host: 'example.com', status: 400, body: 'app_not_installed' })).toBeUndefined();
   });
 
+  it('names the scope to add when Shopify denies a field, the top failure of working Shopify connectors', () => {
+    // As stored for failed calls in Oct-Nov 2026: with and without the scope named.
+    const bare =
+      'GraphQL errors: [{"message":"Access denied for orders field.","locations":[{"line":1,"column":124}],"extensions":{"code":"ACCESS_DENIED","documentation":"https://shopify.dev/api/usage/access-scopes"},"path":["orders"]}]';
+    const named =
+      'GraphQL errors: [{"message":"Access denied for themes field. Required access: `read_themes` access scope.","extensions":{"code":"ACCESS_DENIED"}}]';
+    for (const message of [bare, named]) {
+      const hint = deriveErrorHint({ host: 'acme.myshopify.com', status: 200, message })!;
+      expect(hint).toMatch(/no access scope/);
+      expect(hint).toMatch(/Versions page, click Release/);
+      expect(hint).toMatch(/approve the new access/);
+      // Not the OAuth advice: a Shopify connector has no "Authorize with Provider".
+      expect(hint).not.toMatch(/Authorize with Provider/);
+    }
+    // Protected customer data is its own case, and another host is left alone.
+    expect(
+      deriveErrorHint({
+        host: 'acme.myshopify.com',
+        status: 200,
+        message: 'GraphQL errors: [{"message":"This app is not approved to access the Customer object.","extensions":{"code":"ACCESS_DENIED"}}]',
+      }),
+    ).toMatch(/API access requests/);
+    expect(deriveErrorHint({ host: 'api.example.com', status: 200, message: bare })).toBeUndefined();
+  });
+
+  it("gives the Shopify adapter's own words for a token refusal Shopify names by code", () => {
+    const verifyHints = getAdapter('shopify')!.verifyHints;
+    const refusal = (code: string) =>
+      deriveErrorHint({
+        host: 'acme.myshopify.com',
+        status: 400,
+        message: `400 Bad Request: Request failed with status code 400: body={"error":"${code}","error_description":"x"}`,
+        adapterSlug: 'shopify',
+        verifyHints,
+        connectorPage: 'https://amcp.example/connectors/c1',
+      })!;
+    expect(refusal('shop_not_permitted')).toMatch(/different Shopify organizations/);
+    expect(refusal('shop_not_permitted')).toMatch(/Retrying will not help\. The connector's settings are at https:\/\/amcp\.example\/connectors\/c1/);
+    expect(refusal('application_cannot_be_found')).toMatch(/no app with this Client ID/);
+    // The rule keyed on the host still answers first.
+    expect(refusal('app_not_installed')).toMatch(/Tell the user exactly that/);
+    // A code the adapter has no hint for: nothing is invented.
+    expect(refusal('something_else')).toBeUndefined();
+  });
+
   it('sends the Shopify owner to protected customer data access', () => {
     const hint = deriveErrorHint({
       host: 'acme.myshopify.com',
@@ -608,5 +654,40 @@ describe('Meta Graph API error 190', () => {
   it('stays quiet for other Meta errors and other hosts', () => {
     expect(deriveErrorHint({ host: graph, status: 400, body: { error: { code: 4, message: 'rate' } } })).toBeUndefined();
     expect(deriveErrorHint({ host: 'api.example.com', status: 400, body: body(467) })).toBeUndefined();
+  });
+});
+
+describe('providerErrorCode', () => {
+  it("reads the code out of a provider's refusal", () => {
+    expect(providerErrorCode('Request failed with status code 400: {"error":"app_not_installed","error_description":"The application is not installed on this shop."}')).toBe('app_not_installed');
+    expect(providerErrorCode('<title>400 - Oauth error shop_not_permitted</title>')).toBe('shop_not_permitted');
+    expect(providerErrorCode('{"errors":[{"extensions":{"code":"ACCESS_DENIED"}}]}')).toBe('ACCESS_DENIED');
+  });
+
+  it('takes no sentence, number or key for a code', () => {
+    expect(providerErrorCode('{"errors":"Not Found"}')).toBeUndefined();
+    expect(providerErrorCode('{"error":"Could not find the shop"}')).toBeUndefined();
+    expect(providerErrorCode('{"code":404}')).toBeUndefined();
+    expect(providerErrorCode(`{"error":"${'k9'.repeat(20)}"}`)).toBeUndefined();
+    expect(providerErrorCode(`{"error":"${'x'.repeat(41)}"}`)).toBeUndefined();
+    expect(providerErrorCode('')).toBeUndefined();
+    expect(providerErrorCode(undefined)).toBeUndefined();
+  });
+});
+
+describe('codeHint', () => {
+  const hints = { app_not_installed: 'Install it.', not_found: 'Wrong address.', '404': 'Wrong address.' };
+
+  it('finds the hint filed under the code, in either case', () => {
+    expect(codeHint(hints, 'app_not_installed')).toBe('Install it.');
+    expect(codeHint(hints, 'APP_NOT_INSTALLED')).toBe('Install it.');
+  });
+
+  it('leaves the failure kinds to the classifier and never reaches the prototype', () => {
+    // `not_found` in the body of a missing record is not a refused setup.
+    expect(codeHint(hints, 'not_found')).toBeUndefined();
+    expect(codeHint(hints, 'constructor')).toBeUndefined();
+    expect(codeHint(hints, undefined)).toBeUndefined();
+    expect(codeHint(undefined, 'app_not_installed')).toBeUndefined();
   });
 });
