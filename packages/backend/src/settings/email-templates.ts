@@ -193,6 +193,45 @@ export function connectorAuthEmail(
 }
 
 /**
+ * A connector whose saved key, token or password the API keeps refusing
+ * (credential-refusal-tracker.ts). Sent once to the owner of a workspace
+ * whose connector used to work: the calls fail in a chat they may not be
+ * watching. Unlike a revoked sign-in there is nothing to authorize again: new
+ * credentials have to be saved. Transactional: no unsubscribe line.
+ */
+export function connectorCredentialsRefusedEmail(
+  input: { name: string | null; connectorName: string; message: string; connectorUrl: string },
+  ctx: EmailBrandContext,
+): RenderedEmail {
+  const hi = greeting(input.name);
+  const connector = input.connectorName.trim() || 'A connector';
+  return build({
+    subject: `${connector} stopped working: its credentials were refused`,
+    preheader: 'Your AI client cannot use it until you save valid credentials.',
+    bodyHtml:
+      h1('A connector stopped working.', 'Its saved credentials were refused.') +
+      p(
+        `${esc(hi)} <strong style="font-weight:600;">${esc(connector)}</strong> worked before, and now the service behind it ` +
+          'refuses the key, token or password saved in the connector. Until valid ones are saved, your AI client gets an error on every call.',
+      ) +
+      p(esc(input.message)) +
+      button(input.connectorUrl, 'Update the credentials') +
+      small(
+        'The connector works again right after you save valid credentials; nothing else has to be set up. ' +
+          'We will not write again about it this week.',
+      ),
+    bodyText:
+      `${hi}\n\n"${connector}" worked before, and now the service behind it refuses the key, token or password saved in the connector. ` +
+      'Until valid ones are saved, your AI client gets an error on every call.\n\n' +
+      `${input.message}\n\n` +
+      `Update the credentials: ${input.connectorUrl}\n\n` +
+      'The connector works again right after you save valid credentials; nothing else has to be set up. ' +
+      'We will not write again about it this week.',
+    ctx,
+  });
+}
+
+/**
  * A plan change paused connectors, MCP servers or File Search folders above
  * the new plan's caps (PlanCapsService, Cloud). Sent once per downgrade to the
  * workspace admins. Transactional: it explains a change to their service.

@@ -623,6 +623,35 @@ const CREDENTIAL_HINTS = new Set<string>([
   WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT,
 ]);
 
+/**
+ * Hints that say the connector's own stored key or token was refused (not a
+ * missing permission, a wrong address or a scope): the ones a repeated
+ * refusal is recorded for (credential-refusal-tracker.ts).
+ */
+const REFUSED_KEY_HINTS = [
+  ODOO_EXPIRED_KEY_HINT,
+  ODOO_ACCESS_DENIED_HINT,
+  TELEGRAM_BAD_TOKEN_HINT,
+  GEMINI_KEY_HINT,
+  OPENAI_KEY_HINT,
+  TAVILY_KEY_HINT,
+  PERPLEXITY_KEY_HINT,
+  SERPAPI_KEY_HINT,
+  GOOGLE_API_KEY_HINT,
+  COMPANIES_HOUSE_KEY_HINT,
+  WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT,
+];
+
+/** True when `hint` (as returned by deriveErrorHint, link included) says the stored key was refused. */
+export function isRefusedKeyHint(hint: string | undefined): boolean {
+  return !!hint && REFUSED_KEY_HINTS.some((known) => hint.startsWith(known));
+}
+
+/** True when `hint` says the credential works but lacks a scope: re-authorizing fixes it, a new key does not. */
+export function isMissingScopeHint(hint: string | undefined): boolean {
+  return !!hint && hint.startsWith(MISSING_SCOPE_HINT);
+}
+
 export function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
