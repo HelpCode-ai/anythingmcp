@@ -207,6 +207,15 @@ export function fileSearchWizardPathFor(optionId: string, serverIds: readonly st
   return `/connectors/new/file-search?${q.toString()}`;
 }
 
+/**
+ * Whether the request comes from a phone or tablet browser, by its user agent.
+ * Used only to decide whether Continue may open a second tab.
+ */
+export function isPhoneUserAgent(userAgent: string | string[] | undefined): boolean {
+  const ua = Array.isArray(userAgent) ? userAgent.join(' ') : (userAgent ?? '');
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+}
+
 @ApiTags('MCP client sign-in')
 @Controller('auth')
 export class LoginController {
@@ -1234,6 +1243,7 @@ export class LoginController {
       this.renderFirstConnectorOffer({
         clientName: consent.clientName,
         redirectHost: consent.redirectHost,
+        onPhone: isPhoneUserAgent(req.headers['user-agent']),
         callbackUrl,
         welcomeUrl: dashboardLink('/welcome'),
         ...(pickerCsrf ? { pickerCsrf } : {}),
@@ -1290,6 +1300,8 @@ export class LoginController {
   private renderFirstConnectorOffer(params: {
     clientName: string;
     redirectHost?: string;
+    /** A phone or tablet browser: Continue must not open a second tab there. */
+    onPhone?: boolean;
     callbackUrl: string;
     welcomeUrl: string;
     cardTrial?: { endsAt: Date; url: string };
@@ -1304,9 +1316,14 @@ export class LoginController {
         ).replace(' ', '&nbsp;')
       : '';
     // Back in Claude, a new chat opens with the request typed in. Only for a
-    // code sent to claude.ai itself, where /new?q= is known to work.
+    // code sent to claude.ai itself, where /new?q= is known to work, and never
+    // on a phone: there the new tab (or the Claude app it opens) takes over
+    // and the authorization in this tab is never finished. From 2 November
+    // 2026, when the chat tab was added, to 15 November about 200
+    // authorization codes a day were never exchanged, against about 10 before,
+    // nearly all from phones.
     const host = (params.redirectHost ?? '').toLowerCase();
-    const opensChat = host === 'claude.ai';
+    const opensChat = host === 'claude.ai' && !params.onPhone;
     // Hidden until the script shows it: without JavaScript the page is the
     // same as before, and never more than one click from the chat.
     const picker = params.pickerCsrf
@@ -1416,6 +1433,11 @@ export class LoginController {
       var request = document.getElementById('example-request');
       var chat = cont && cont.getAttribute('data-open-chat');
       if (!chat || !request) return;
+      // A touch device that did not say so in its user agent (an iPad asking
+      // for the desktop site): no second tab there either.
+      try {
+        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
+      } catch (e) { /* no media queries: treated as a desktop */ }
       cont.addEventListener('click', function () {
         try {
           window.open(chat + '?q=' + encodeURIComponent(request.textContent || ''), '_blank', 'noopener');
