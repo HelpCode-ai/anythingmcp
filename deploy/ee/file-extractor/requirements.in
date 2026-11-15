@@ -17,3 +17,6 @@ pyxlsb==1.0.10
 # Security floor for a transitive dependency (beautifulsoup4, via extract-msg):
 # soupsieve < 4.0.0 has a polynomial-time selector match (Dependabot #134/#135).
 soupsieve>=4.0.0
+# Security floor for a transitive dependency (via fastapi): opentelemetry-api
+# <= 1.45.1 parses traceparent in quadratic time (Dependabot #143/#144).
+opentelemetry-api>=1.45.2
