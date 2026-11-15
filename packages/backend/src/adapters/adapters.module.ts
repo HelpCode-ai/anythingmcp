@@ -10,6 +10,7 @@ import { SetupLinksController } from './setup-links.controller';
 import { TikTokShopInstallController } from './tiktok-shop-install.controller';
 import { TelegramManagedBotController } from './telegram-managed-bot.controller';
 import { TelegramManagedBotService } from './telegram-managed-bot.service';
+import { TelegramClaimStore } from './telegram-claim.store';
 import { TELEGRAM_ONE_TAP } from './telegram-managed-bot';
 import { McpServerModule } from '../mcp-server/mcp-server.module';
 import { LicenseModule } from '../license/license.module';
@@ -30,6 +31,7 @@ import { SettingsModule } from '../settings/settings.module';
     AdaptersService,
     ConnectorSetupService,
     AppApprovalWatcherService,
+    TelegramClaimStore,
     TelegramManagedBotService,
     // The page after approving an AI client (auth/login.controller.ts) finds it by this token.
     { provide: TELEGRAM_ONE_TAP, useExisting: TelegramManagedBotService },

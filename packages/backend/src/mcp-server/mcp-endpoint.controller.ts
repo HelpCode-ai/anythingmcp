@@ -39,6 +39,7 @@ import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import { slugifyForPrefix } from '../connectors/graphql-builtins';
 import { SharedSetupRegistry, type SetupCallOptions } from './shared-setup';
 import { SharedToolCallRecorder, ToolsListedRecorder } from './shared-tool-calls';
+import { McpClientSeenRegistry } from './mcp-client-seen';
 import { ProductEventService } from '../audit/product-event.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -345,6 +346,7 @@ export class McpEndpointController {
     @Optional() prisma?: PrismaService,
     @Optional() private readonly refusals?: CrossWorkspaceRefusalStore,
     @Optional() private readonly learning?: LearningService,
+    @Optional() private readonly clientSeen?: McpClientSeenRegistry,
   ) {
     this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
     this.toolsListed = productEvents && prisma ? new ToolsListedRecorder(prisma, productEvents) : null;
@@ -977,11 +979,12 @@ export class McpEndpointController {
 
   /**
    * Records that a client listed the tools of the shared endpoint (see
-   * ToolsListedRecorder). Runs after the grant is resolved, so the workspace
-   * is the one this connection reaches. Never awaited.
+   * ToolsListedRecorder), and tells McpClientSeenRegistry. Runs after the
+   * grant is resolved, so the workspace is the one this connection reaches.
+   * Never awaited.
    */
   private noteToolsListed(req: Request): void {
-    if (!this.toolsListed) return;
+    if (!this.toolsListed && !this.clientSeen) return;
     const body = (req as any).body;
     if (!body || Array.isArray(body) || body.method !== 'tools/list') return;
     const user = (req as any).user;
@@ -993,9 +996,14 @@ export class McpEndpointController {
           ? grant.servers[0]?.organizationId
           : user?.organizationId;
     if (typeof organizationId !== 'string' || !organizationId) return;
-    void this.toolsListed.record({
+    const userId = typeof user?.sub === 'string' ? user.sub : null;
+    // On every listing, not once a day like the event: a listener hears that
+    // this workspace's client is connected now (the one-tap Telegram bot then
+    // tells its creator). It returns at once and cannot throw.
+    this.clientSeen?.notify({ organizationId, userId });
+    void this.toolsListed?.record({
       organizationId,
-      userId: typeof user?.sub === 'string' ? user.sub : null,
+      userId,
       oauthClientId: oauthClientId(user ?? {}),
     });
   }

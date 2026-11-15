@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 
 /**
  * A Telegram bot created with one tap, instead of a chat with @BotFather.
@@ -17,8 +17,20 @@ import { createHmac, randomBytes } from 'crypto';
  *
  * The suggested username carries a random code, and the connector keeps that
  * code's HMAC with an expiry in its `config` (no schema change): that is how
- * the update finds its connector. A user who changes the username in Telegram
- * cannot be matched; they paste the bot's token instead.
+ * the update finds its connector.
+ *
+ * A USERNAME THE USER CHANGED carries no code. Telegram still says who created
+ * the bot, so the page offers a second link, `t.me/<manager>?start=<code>`:
+ * pressing Start there sends the manager bot `/start <code>` from the user's
+ * own Telegram account. The setup is then connected to the bot that same
+ * account created through this manager, whichever of the two comes first (see
+ * telegram-claim.store.ts for what is remembered in between). Pasting the
+ * bot's token stays the last resort.
+ *
+ * AFTER THE BOT IS CONNECTED one step is left: the AI client's authorization
+ * is only finished by "Continue" on the page. The bot's welcome message says
+ * so, and when the client's first request arrives the bot writes once more:
+ * the assistant is connected (see TelegramManagedBotService.noteClientSeen).
  *
  * Pure functions only (settings, code, link, state); the work is in
  * TelegramManagedBotService.
@@ -47,9 +59,67 @@ export const SUGGESTED_BOT_NAME = 'My AnythingMCP bot';
 /** What the page suggests asking once the bot is connected. */
 export const TELEGRAM_CONNECTED_REQUEST = 'Send me a test message on Telegram.';
 
-/** The one message the new bot sends its creator. */
-export const WELCOME_TEXT =
-  'Your bot is connected to AnythingMCP. Go back to your AI assistant and ask: "Send me a test message on Telegram."';
+/** After a one-tap bot is connected, its AI client's first request is announced this long. */
+export const CLIENT_NOTICE_WINDOW_MS = 30 * 60 * 1000;
+
+/**
+ * The AI client's name as the messages quote it, or null for one that does
+ * not read like a name. It comes from the client's own registration, so only
+ * a short run of letters, digits, spaces and a few signs is kept.
+ */
+export function cleanClientName(name: unknown): string | null {
+  if (typeof name !== 'string') return null;
+  const clean = name.replace(/\s+/g, ' ').trim();
+  return /^[\p{L}\p{N}][\p{L}\p{N} .&+'()_-]{0,39}$/u.test(clean) ? clean : null;
+}
+
+/**
+ * The message the new bot sends its creator when it is connected. The AI
+ * client is not connected yet at that moment: its authorization is finished
+ * by "Continue" on the page, so the message sends the user back there and not
+ * to the chat.
+ */
+export function welcomeText(client?: string | null): string {
+  const button = client ? `"Continue to ${client}"` : 'Continue';
+  return `Your bot is connected to AnythingMCP. One step left: go back to the page you came from and tap ${button}.`;
+}
+
+/** Claude opens a new chat with a request typed in from this address. */
+export const CLAUDE_NEW_CHAT_URL = 'https://claude.ai/new';
+
+/**
+ * The second message, sent when the AI client's first request arrives: the
+ * assistant is connected, and what to ask it. `link`: for Claude, a new chat
+ * with that request typed in, sent as a button under the message.
+ */
+export function clientConnectedMessage(
+  client: string | null | undefined,
+  claude: boolean,
+): { text: string; link?: { label: string; url: string } } {
+  const text = `${client || 'Your AI assistant'} is now connected to AnythingMCP. Ask it: "${TELEGRAM_CONNECTED_REQUEST}"`;
+  if (!claude) return { text };
+  return {
+    text,
+    link: {
+      label: 'Open a new chat in Claude',
+      url: `${CLAUDE_NEW_CHAT_URL}?q=${encodeURIComponent(TELEGRAM_CONNECTED_REQUEST)}`,
+    },
+  };
+}
+
+/**
+ * What the manager bot answers in its own chat. One short line each, so
+ * nobody is left in an empty chat; a code that cannot be used gets the same
+ * line whatever the reason, so the answers say nothing about other setups.
+ */
+export const CLAIM_LINKED_TEXT = 'Your bot is connected to AnythingMCP. Go back to the page you came from and tap Continue there.';
+export const CLAIM_WAITING_TEXT =
+  'No new bot found for your Telegram account yet. Create it with the button on the AnythingMCP page: it is connected as soon as it exists.';
+export const CLAIM_INVALID_TEXT = 'This link is no longer valid. Go back to AnythingMCP to finish setting up Telegram.';
+export const CLAIM_ALREADY_TEXT = 'Telegram is already connected. Go back to the page you came from and tap Continue there.';
+export const CLAIM_FAILED_TEXT = 'Your bot could not be linked. Go back to the page and paste the bot’s token there.';
+export const MANAGER_GREETING_TEXT =
+  'This bot creates Telegram bots for AnythingMCP. Start from the AnythingMCP page that sent you here.';
 
 /** Telegram's rule for a bot token, as in the catalog adapter. */
 export const BOT_TOKEN_PATTERN = /^[0-9]+:[A-Za-z0-9_-]{30,}$/;
@@ -128,6 +198,52 @@ export function creationLink(managerUsername: string, code: string, name = SUGGE
   return `https://t.me/newbot/${encodeURIComponent(managerUsername)}/${suggestedUsername(code)}?name=${encodeURIComponent(name)}`;
 }
 
+/** Hex characters of the keyed check that follows the code in a `/start` parameter. */
+const CLAIM_CHECK_LENGTH = 16;
+
+/**
+ * What `/start` carries for a setup: the code, then a check keyed with the
+ * webhook secret. Anyone can write to the manager bot, and a setup code alone
+ * is eight hex characters (it has to fit a bot username): with the check a
+ * parameter cannot be guessed, and one that was not issued by this server is
+ * refused before anything is looked up.
+ */
+export function claimParameter(code: string, webhookSecret: string): string {
+  const check = createHmac('sha256', webhookSecret).update(`claim:${code.toLowerCase()}`).digest('hex');
+  return `${code.toLowerCase()}${check.slice(0, CLAIM_CHECK_LENGTH)}`;
+}
+
+/** The setup code of a `/start` parameter this server issued, or null. Constant time. */
+export function codeFromClaimParameter(parameter: unknown, webhookSecret: string): string | null {
+  if (typeof parameter !== 'string' || !/^[0-9a-f]{24}$/i.test(parameter)) return null;
+  const code = parameter.slice(0, 8).toLowerCase();
+  const given = Buffer.from(parameter.toLowerCase());
+  const expected = Buffer.from(claimParameter(code, webhookSecret));
+  return given.length === expected.length && timingSafeEqual(given, expected) ? code : null;
+}
+
+/**
+ * The link that opens the manager bot's chat with the setup's parameter:
+ * pressing Start there sends `/start <parameter>`, which tells the server
+ * which Telegram account belongs to the setup. For a bot whose username the
+ * user changed.
+ */
+export function claimLink(managerUsername: string, code: string, webhookSecret: string): string {
+  return `https://t.me/${encodeURIComponent(managerUsername)}?start=${claimParameter(code, webhookSecret)}`;
+}
+
+/**
+ * A `/start` sent to the manager bot: null for any other text, otherwise its
+ * parameter (`''` for a plain /start). Whether the parameter names a setup is
+ * for codeFromClaimParameter to say.
+ */
+export function parseStartCommand(text: unknown): { parameter: string } | null {
+  if (typeof text !== 'string' || text.length > 128) return null;
+  const match = /^\/start(?:@[A-Za-z0-9_]{1,64})?(?:\s+(\S+))?\s*$/.exec(text.trim());
+  if (!match) return null;
+  return { parameter: match[1] ?? '' };
+}
+
 /**
  * Where Telegram posts the manager bot's updates, or null when the server has
  * no public https address (Telegram only delivers to https).
@@ -169,6 +285,16 @@ export const MANAGER_WEBHOOK_PATH = '/api/telegram/manager-webhook';
  * - botUsername: the bot's username, shown on the page
  * - creatorHash: hashTelegramUserId of the user who created the bot
  * - welcomedAt: the welcome message was claimed (sent, or tried once)
+ * - claimHash, claimedAt: hashTelegramUserId of the Telegram account that
+ *   sent the manager bot `/start <code>` for this setup, and when. The first
+ *   account wins; only a bot that account created is ever connected
+ * - matched: 'claim' when the bot was found through that claim, not by its
+ *   username
+ * - claimOfferedAt: the page reported showing "Link your bot" (once)
+ * - client, claude: the AI client the page was shown for (cleanClientName),
+ *   and whether it is Claude: for the bot's two messages
+ * - clientNoticeAt: the "your assistant is connected" message was claimed
+ *   (sent, or tried once)
  */
 export interface ManagedBotState {
   codeHash?: string;
@@ -181,9 +307,25 @@ export interface ManagedBotState {
   botUsername?: string;
   creatorHash?: string;
   welcomedAt?: string;
+  claimHash?: string;
+  claimedAt?: string;
+  matched?: 'claim';
+  claimOfferedAt?: string;
+  client?: string;
+  claude?: true;
+  clientNoticeAt?: string;
 }
 
-const DATE_KEYS = ['expiresAt', 'startedAt', 'openedAt', 'connectedAt', 'welcomedAt'] as const;
+const DATE_KEYS = [
+  'expiresAt',
+  'startedAt',
+  'openedAt',
+  'connectedAt',
+  'welcomedAt',
+  'claimedAt',
+  'claimOfferedAt',
+  'clientNoticeAt',
+] as const;
 
 export function readManagedBotState(config: unknown): ManagedBotState | null {
   const raw = (config as Record<string, unknown> | null | undefined)?.[MANAGED_BOT_CONFIG_KEY];
@@ -198,6 +340,11 @@ export function readManagedBotState(config: unknown): ManagedBotState | null {
   if (typeof source.creatorHash === 'string' && /^[0-9a-f]{64}$/.test(source.creatorHash)) {
     out.creatorHash = source.creatorHash;
   }
+  if (typeof source.claimHash === 'string' && /^[0-9a-f]{64}$/.test(source.claimHash)) out.claimHash = source.claimHash;
+  if (source.matched === 'claim') out.matched = 'claim';
+  const client = cleanClientName(source.client);
+  if (client) out.client = client;
+  if (source.claude === true) out.claude = true;
   if (typeof source.userId === 'string' && source.userId) out.userId = source.userId;
   if (source.via === 'managed_bot' || source.via === 'pasted') out.via = source.via;
   if (typeof source.botUsername === 'string' && /^[A-Za-z0-9_]{5,32}$/.test(source.botUsername)) {
@@ -220,18 +367,38 @@ export function isEmptyTelegramConnector(c: { baseUrl: string | null; envVars: u
 /** What the page after approving an AI client needs from the service. */
 export interface TelegramOneTap {
   isEnabledFor(organizationId: string): boolean;
-  begin(input: { connectorId: string; organizationId: string; userId: string }): Promise<{ link: string; username: string } | null>;
+  begin(input: {
+    connectorId: string;
+    organizationId: string;
+    userId: string;
+    /** The AI client being connected: its name, and whether it is Claude. */
+    client?: { name: string; claude: boolean };
+  }): Promise<{ link: string; username: string; claimLink: string } | null>;
   status(input: {
     organizationId: string;
     userId: string;
     opened?: boolean;
+    /** The page shows "Link your bot" now (reported once). */
+    claimOffered?: boolean;
     device?: 'mobile' | 'desktop';
   }): Promise<TelegramOneTapStatus>;
   saveToken(input: { organizationId: string; userId: string; token: unknown }): Promise<TelegramTokenAnswer>;
 }
 
 export type TelegramOneTapStatus =
-  | { state: 'none' | 'waiting' | 'expired' }
+  | { state: 'none' | 'expired' }
+  | {
+      state: 'waiting';
+      /**
+       * A bot with another username was created through this manager since
+       * this setup's link was offered. Not tied to this user (Telegram does
+       * not say whose setup a bot is for): it only makes the page offer
+       * "Link your bot" at once instead of after a wait.
+       */
+      unmatched?: true;
+      /** The user's Telegram account is linked to this setup; its bot does not exist yet. */
+      claimed?: true;
+    }
   | {
       state: 'connected';
       /** `@username`, when known. */

@@ -1408,6 +1408,7 @@ export class LoginController {
     <h1>${client} is connected</h1>
     <p class="sub" id="first-sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
     <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
+    <p class="copied" id="request-copied" role="status" aria-live="polite"${params.onPhone ? ' data-phone="1"' : ''} hidden></p>
     <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
     <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}"${opensChat ? ' data-open-chat="https://claude.ai/new"' : ''} data-client="${client}">Continue to ${client}</a>
     <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
@@ -1507,6 +1508,32 @@ export class LoginController {
         } catch (e) { /* the authorization goes on regardless */ }
       });
     })();
+    // A phone gets no chat tab (see above), so the same tap copies the
+    // request instead, to paste in a new chat. Best effort and nothing more:
+    // the listener returns at once, never waits for the clipboard, never
+    // prevents the default action and opens nothing, so the browser follows
+    // the link exactly as it does without it. A refused clipboard changes
+    // nothing on the page.
+    (function () {
+      var cont = document.getElementById('continue');
+      var request = document.getElementById('example-request');
+      var note = document.getElementById('request-copied');
+      if (!cont || !request || !note || !navigator.clipboard || !navigator.clipboard.writeText) return;
+      var phone = note.getAttribute('data-phone') === '1';
+      try {
+        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) phone = true;
+      } catch (e) { /* no media queries: what the server saw decides */ }
+      if (!phone) return;
+      var clientName = cont.getAttribute('data-client') || 'your assistant';
+      cont.addEventListener('click', function () {
+        try {
+          navigator.clipboard.writeText(request.textContent || '').then(function () {
+            note.textContent = 'Copied. Paste it in a new chat in ' + clientName + '.';
+            note.hidden = false;
+          }, function () { /* refused: nothing else happens */ });
+        } catch (e) { /* the authorization goes on regardless */ }
+      });
+    })();
     </script>`;
     return renderAuthPage({
       title: `${params.clientName} is connected`,
@@ -1518,6 +1545,9 @@ export class LoginController {
   .example button.copy { width: auto; min-height: 30px; padding: 0 12px; font-size: 13px; font-weight: 500; flex: none;
              background: #fff; color: var(--text); border-color: var(--border-strong); }
   .example button.copy:hover { background: var(--surface); border-color: var(--brand); }
+  .copied { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.45; margin: -6px 0 14px; text-wrap: balance; }
+  .copied::before { content: '\\2713\\00a0'; color: var(--ok); font-weight: 700; }
+  .copied[hidden] { display: none; }
   .body { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
   .quick { border: 1px solid var(--border); border-radius: 12px; padding: 12px 12px 4px; margin: 0 0 18px; }
   .quick-title { font-size: 13px; font-weight: 500; color: var(--text); margin: 0 0 10px; }
@@ -1834,7 +1864,13 @@ export class LoginController {
     }
     const telegram =
       app.slug === TELEGRAM_SLUG && out.connectorId
-        ? await this.beginTelegramOneTap(req, { userId, organizationId, connectorId: out.connectorId, client: consent.clientName })
+        ? await this.beginTelegramOneTap(req, {
+            userId,
+            organizationId,
+            connectorId: out.connectorId,
+            client: consent.clientName,
+            redirectHost: consent.redirectHost,
+          })
         : null;
     return res.json({
       ok: true,
@@ -1848,13 +1884,15 @@ export class LoginController {
   /**
    * Telegram was just added without a token: where this instance has a
    * manager bot, the link that creates the user's bot in Telegram with one
-   * tap, and on a desktop its QR code. Null (the page stays as it is) when
-   * the feature is off for the workspace, or on any failure.
+   * tap, and the link that connects a bot whose username the user changed
+   * (`claim`: it opens the manager bot's chat with the setup's code); on a
+   * desktop also their QR codes. Null (the page stays as it is) when the
+   * feature is off for the workspace, or on any failure.
    */
   private async beginTelegramOneTap(
     req: Request,
-    setup: { userId: string; organizationId: string; connectorId: string; client: string },
-  ): Promise<{ link: string; qr?: string } | null> {
+    setup: { userId: string; organizationId: string; connectorId: string; client: string; redirectHost?: string },
+  ): Promise<{ link: string; claim: string; qr?: string; claimQr?: string } | null> {
     const service = this.telegramOneTap();
     if (!service?.isEnabledFor(setup.organizationId)) return null;
     try {
@@ -1862,6 +1900,9 @@ export class LoginController {
         connectorId: setup.connectorId,
         organizationId: setup.organizationId,
         userId: setup.userId,
+        // For the bot's messages: "tap Continue to <client>", and for Claude
+        // (the same test as the chat tab of Continue) a link to a new chat.
+        client: { name: setup.client, claude: (setup.redirectHost ?? '').toLowerCase() === 'claude.ai' },
       });
       if (!started) return null;
       const onPhone = isPhoneUserAgent(req.headers['user-agent']);
@@ -1873,7 +1914,11 @@ export class LoginController {
           metadata: { adapterSlug: TELEGRAM_SLUG, client: setup.client, device: onPhone ? 'mobile' : 'desktop' },
         })
         .catch(() => undefined);
-      return { link: started.link, ...(onPhone ? {} : { qr: telegramQrDataUri(started.link) }) };
+      return {
+        link: started.link,
+        claim: started.claimLink,
+        ...(onPhone ? {} : { qr: telegramQrDataUri(started.link), claimQr: telegramQrDataUri(started.claimLink) }),
+      };
     } catch (err) {
       this.logger.warn(`The one-tap Telegram bot could not be offered (${(err as Error)?.name || 'error'})`);
       return null;
@@ -1913,9 +1958,10 @@ export class LoginController {
   /**
    * The Telegram panel asks this every two seconds while its page is visible:
    * has the bot been created and its token stored? Read-only for the page,
-   * apart from noting the first click on the link (`opened`). Protected like
-   * a pick: the CSRF token against its signed cookie, the signed login cookie
-   * and the pending authorization.
+   * apart from noting the first click on the link (`opened`) and the first
+   * time "Link your bot" was shown (`offered`). Protected like a pick: the
+   * CSRF token against its signed cookie, the signed login cookie and the
+   * pending authorization.
    */
   @Post('first-app/telegram/status')
   // One page asks 30 times a minute; several people can share an address.
@@ -1923,7 +1969,7 @@ export class LoginController {
   @ApiExcludeEndpoint()
   async telegramOneTapStatus(
     @Req() req: Request,
-    @Body() body: { csrf?: unknown; opened?: unknown },
+    @Body() body: { csrf?: unknown; opened?: unknown; offered?: unknown },
     @Res() res: Response,
   ) {
     const caller = await this.firstAppTelegramCaller(req, body?.csrf);
@@ -1933,6 +1979,7 @@ export class LoginController {
         organizationId: caller.organizationId,
         userId: caller.userId,
         opened: body?.opened === true,
+        claimOffered: body?.offered === true,
         device: isPhoneUserAgent(req.headers['user-agent']) ? 'mobile' : 'desktop',
       });
       return res.json({
