@@ -478,11 +478,11 @@
     },
     {
       "name": "telegram_bot_get_updates",
-      "description": "Long-poll recent inbound messages (one-shot: pulls all updates since the last `offset+1`). For continuous inbound, use webhooks instead. Telegram queues updates for 24 hours if not consumed; consuming with this tool clears them.",
+      "description": "Read the messages the bot received in the last 24 hours (Telegram keeps them that long). Called without `offset`, it only reads: nothing is removed, and the same messages come back on the next call, so no confirmation is needed. Pass `offset` (the last update_id + 1) only to mark the earlier ones as handled: Telegram then stops returning them. To find a person's chat_id, read `message.chat.id` of their message. Fails with 409 while the bot has a webhook.",
       "parameters": {
         "type": "object",
         "properties": {
-          "offset": { "type": "integer", "description": "Return updates with update_id >= this value. Pass last_seen_id+1 to ack prior batch." },
+          "offset": { "type": "integer", "description": "Return updates with update_id >= this value. Leave it out to only read. Passing last_seen_id+1 marks the earlier updates as handled: they are not returned again." },
           "limit": { "type": "integer", "description": "Max updates 1-100 (default 100)." },
           "timeout": { "type": "integer", "minimum": 0, "maximum": 25, "description": "Long-poll wait in seconds 0-25 (default 0 = short poll). The call is cut off after 30 s, so a longer wait fails instead of returning updates." },
           "allowed_updates": { "type": "array", "description": "Update types to receive, e.g. ['message','callback_query']. Omit for all except chat_member." }
