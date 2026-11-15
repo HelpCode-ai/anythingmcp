@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { fileSearchSetupPath } from '@/lib/file-search-catalog';
 import { copyText } from '@/lib/clipboard';
 import { returnAssistant } from '@/lib/return-assistant';
+import { deviceKind } from '@/lib/paywall-tracking';
 import { addressFix, isPlainAddressField, switchSetupHref, withMissingScheme, type AddressFix } from '@/lib/address-fix';
 import { GuideIntro, GuideStepper, GuideStepView, GuideWaitPanel, StuckLink } from '@/components/connector-setup/setup-guide';
 import { SetupSuccess } from '@/components/connector-setup/setup-success';
@@ -247,7 +248,7 @@ function SetupContent() {
         } catch {}
         if (!started.current && !seen) {
           started.current = true;
-          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind, ...fromSource });
+          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind, device: deviceKind(), ...fromSource });
         }
       })
       .catch((e: Error) => setLoadError(e.message || t('notAvailable')));
@@ -508,6 +509,8 @@ function SetupContent() {
   /** Client-side checks: required fields and patterns (of `only`, in a guide step). */
   const validate = (only?: string[]): boolean => {
     const errs: Record<string, string> = {};
+    // A value of the wrong shape, as opposed to a required field left empty.
+    let wrongShape = false;
     for (const f of only ? fields.filter((x) => only.includes(x.name)) : fields) {
       if (hiddenField(f.name)) continue;
       const v = withMissingScheme(f, (values[f.name] ?? '').trim());
@@ -515,10 +518,14 @@ function SetupContent() {
       else if (f.options?.length) {
         // A fixed list of choices: anything else (a value stored before the
         // list existed, one handed over in a link) is not accepted.
-        if (v && !f.options.some((o) => o.value === v)) errs[f.name] = t('field.chooseOne');
+        if (v && !f.options.some((o) => o.value === v)) {
+          errs[f.name] = t('field.chooseOne');
+          wrongShape = true;
+        }
       } else if (v && f.pattern) {
         try {
           if (!new RegExp(f.pattern).test(v)) {
+            wrongShape = true;
             // Say what to change when the pattern tells it; the adapter's own words otherwise.
             const fix = isPlainAddressField(f) ? addressFix(f.pattern, v) : undefined;
             errs[f.name] = fix
@@ -531,8 +538,22 @@ function SetupContent() {
       }
     }
     setFieldErrors(errs);
-    if (Object.keys(errs).length > 0) showStepOf(Object.keys(errs));
-    return Object.keys(errs).length === 0;
+    const refused = Object.keys(errs);
+    if (refused.length > 0) {
+      // Nothing reaches the server from here, so without this event a key
+      // the page itself keeps refusing would be invisible. Names only.
+      const step = mode === 'guide' && stepIndex >= 0 ? info?.setupGuide?.steps[stepIndex] : undefined;
+      if (token) {
+        productEvents.track('setup_fields_refused', token, {
+          adapterSlug: slug,
+          kind: wrongShape ? 'format' : 'required',
+          field: refused.slice(0, 8).join(','),
+          ...(step ? { step: step.id, index: stepIndex + 1 } : {}),
+        });
+      }
+      showStepOf(refused);
+    }
+    return refused.length === 0;
   };
 
   /**
@@ -1174,6 +1195,9 @@ function SetupContent() {
           total={guide.steps.length}
           redirectUri={redirectUri}
           actionUrl={actionUrl && /^https:\/\/[^/\s]+/.test(actionUrl) ? actionUrl : null}
+          onActionOpened={() => {
+            if (token) productEvents.track('setup_step_action_opened', token, { adapterSlug: slug, step: step.id, index: at + 1 });
+          }}
           confirmed={!!confirmed[step.id]}
           onConfirm={(v) => setConfirmed((c) => ({ ...c, [step.id]: v }))}
         >

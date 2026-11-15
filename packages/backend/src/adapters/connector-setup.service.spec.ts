@@ -110,8 +110,8 @@ describe('ConnectorSetupService — find', () => {
       // Where to create the app, and how to show both addresses: a link to
       // tap and the callback alone in a code block to copy.
       for (const r of [etsy, installed]) {
-        expect(r.createTheAppAt).toBe('https://www.etsy.com/developers/register');
-        expect(r.showToTheUser).toMatch(/\[Create the app\]\(https:\/\/www\.etsy\.com\/developers\/register\)/);
+        expect(r.createTheAppAt).toBe('https://www.etsy.com/developers/register-seller-app');
+        expect(r.showToTheUser).toMatch(/\[Create the app\]\(https:\/\/www\.etsy\.com\/developers\/register-seller-app\)/);
         expect(r.showToTheUser).toMatch(/fenced code block/);
       }
       expect(openplz.createTheAppAt).toBeUndefined();

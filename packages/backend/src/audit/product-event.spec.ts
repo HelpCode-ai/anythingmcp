@@ -150,6 +150,80 @@ describe('POST /api/product-events — File Search wizard', () => {
   });
 });
 
+describe('POST /api/product-events — guided connector setup', () => {
+  // The setup page sent `step` and `index` from its first day, and the
+  // allow-list dropped both: every step event said only which adapter. These
+  // go through the real service, so a field outside the list fails here.
+  it('keeps which step was shown, left and opened at the provider', async () => {
+    const { controller, req, stored } = build();
+    for (const event of ['setup_step_viewed', 'setup_step_completed', 'setup_step_action_opened']) {
+      await controller.record(req, { event, metadata: { adapterSlug: 'etsy', step: 'create-app', index: 1 } });
+    }
+    expect(stored().map((e: any) => [e.event, e.metadata])).toEqual([
+      ['setup_step_viewed', { adapterSlug: 'etsy', step: 'create-app', index: 1 }],
+      ['setup_step_completed', { adapterSlug: 'etsy', step: 'create-app', index: 1 }],
+      ['setup_step_action_opened', { adapterSlug: 'etsy', step: 'create-app', index: 1 }],
+    ]);
+  });
+
+  it('drops a step that is not a step id and an index that is not a position', async () => {
+    const { controller, req, stored } = build();
+    const view = (metadata: Record<string, unknown>) => controller.record(req, { event: 'setup_step_viewed', metadata });
+    await view({ adapterSlug: 'etsy', step: 'Keys: abcdefghijklmnopqrstuvwx', index: 2 });
+    await view({ adapterSlug: 'etsy', step: 'keys', index: '2' });
+    await view({ adapterSlug: 'etsy', step: 'keys', index: 51 });
+    await view({ adapterSlug: 'etsy', step: 'keys', index: 1.5 });
+    expect(stored().map((e: any) => e.metadata)).toEqual([
+      { adapterSlug: 'etsy', index: 2 },
+      { adapterSlug: 'etsy', step: 'keys' },
+      { adapterSlug: 'etsy', step: 'keys' },
+      { adapterSlug: 'etsy', step: 'keys' },
+    ]);
+  });
+
+  it('keeps the names of the fields the page refused, never a value', async () => {
+    const { controller, req, stored } = build();
+    const refused = (metadata: Record<string, unknown>) => controller.record(req, { event: 'setup_fields_refused', metadata });
+    await refused({ adapterSlug: 'etsy', step: 'keys', index: 2, kind: 'format', field: 'ETSY_CLIENT_ID,ETSY_CLIENT_SECRET' });
+    await refused({ adapterSlug: 'etsy', kind: 'required', field: 'ETSY_CLIENT_SECRET' });
+    // What was typed into the field instead of its name.
+    await refused({ adapterSlug: 'etsy', kind: 'format', field: 'abcdefghijklmnopqrstuvwx:1a2b3c4d5e' });
+    await refused({ adapterSlug: 'etsy', kind: 'format', field: 'etsy_client_id' });
+    expect(stored().map((e: any) => e.metadata)).toEqual([
+      { adapterSlug: 'etsy', step: 'keys', index: 2, kind: 'format', field: 'ETSY_CLIENT_ID,ETSY_CLIENT_SECRET' },
+      { adapterSlug: 'etsy', kind: 'required', field: 'ETSY_CLIENT_SECRET' },
+      { adapterSlug: 'etsy', kind: 'format' },
+      { adapterSlug: 'etsy', kind: 'format' },
+    ]);
+  });
+
+  it('keeps a coarse device on the opening of a setup', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, { event: 'setup_started', metadata: { adapterSlug: 'etsy', kind: 'oauth_browser', device: 'mobile' } });
+    await controller.record(req, { event: 'setup_started', metadata: { adapterSlug: 'etsy', kind: 'oauth_browser', device: 'iPhone' } });
+    expect(stored().map((e: any) => e.metadata)).toEqual([
+      { adapterSlug: 'etsy', kind: 'oauth_browser', device: 'mobile' },
+      { adapterSlug: 'etsy', kind: 'oauth_browser' },
+    ]);
+  });
+
+  it('records the connector page asking to finish a setup', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, {
+      event: 'setup_finish_prompt_viewed',
+      metadata: { adapterSlug: 'etsy', connectorId: 'c1', kind: 'needs_input' },
+    });
+    expect(stored()).toEqual([
+      expect.objectContaining({
+        event: 'setup_finish_prompt_viewed',
+        userId: 'u1',
+        organizationId: 'org-1',
+        metadata: { adapterSlug: 'etsy', connectorId: 'c1', kind: 'needs_input' },
+      }),
+    ]);
+  });
+});
+
 describe('scrubProviderMessage', () => {
   it('drops query strings, masks given secrets and token-like runs, caps the length', () => {
     expect(scrubProviderMessage('GET https://x.example/api?appid=abc failed', [])).toBe('GET https://x.example/api failed');
