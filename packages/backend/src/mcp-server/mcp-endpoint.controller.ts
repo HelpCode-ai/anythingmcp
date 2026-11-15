@@ -36,7 +36,7 @@ import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import { slugifyForPrefix } from '../connectors/graphql-builtins';
 import { SharedSetupRegistry, type SetupCallOptions } from './shared-setup';
-import { SharedToolCallRecorder } from './shared-tool-calls';
+import { SharedToolCallRecorder, ToolsListedRecorder } from './shared-tool-calls';
 import { ProductEventService } from '../audit/product-event.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -340,10 +340,12 @@ export class McpEndpointController {
     @Optional() private readonly refusals?: CrossWorkspaceRefusalStore,
   ) {
     this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
+    this.toolsListed = productEvents && prisma ? new ToolsListedRecorder(prisma, productEvents) : null;
   }
 
   /** Records which shared /mcp tools a workspace calls (once a day per tool). */
   private readonly sharedCalls: SharedToolCallRecorder | null;
+  private readonly toolsListed: ToolsListedRecorder | null;
 
   /** The caller's knowledge-folder access in a workspace (null without the module). */
   private async folderAccessFor(organizationId: string, userId?: string | null) {
@@ -440,6 +442,7 @@ export class McpEndpointController {
       return;
     }
     const visible = await this.attachVisibleTools(req);
+    this.noteToolsListed(req);
     // The fixed tool set (see shared-toolset.ts). Operator credentials
     // (`visible === null`) keep the direct tools: they only exist on a
     // single-tenant self-hosted box.
@@ -963,6 +966,31 @@ export class McpEndpointController {
       },
     });
     return true;
+  }
+
+  /**
+   * Records that a client listed the tools of the shared endpoint (see
+   * ToolsListedRecorder). Runs after the grant is resolved, so the workspace
+   * is the one this connection reaches. Never awaited.
+   */
+  private noteToolsListed(req: Request): void {
+    if (!this.toolsListed) return;
+    const body = (req as any).body;
+    if (!body || Array.isArray(body) || body.method !== 'tools/list') return;
+    const user = (req as any).user;
+    const grant = (req as { mcpGrant?: ResolvedGrant | null }).mcpGrant ?? null;
+    const organizationId =
+      grant?.mode === 'organization'
+        ? grant.organizationId
+        : grant?.mode === 'servers'
+          ? grant.servers[0]?.organizationId
+          : user?.organizationId;
+    if (typeof organizationId !== 'string' || !organizationId) return;
+    void this.toolsListed.record({
+      organizationId,
+      userId: typeof user?.sub === 'string' ? user.sub : null,
+      oauthClientId: oauthClientId(user ?? {}),
+    });
   }
 
   /**

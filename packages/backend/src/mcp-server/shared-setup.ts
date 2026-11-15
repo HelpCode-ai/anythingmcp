@@ -52,6 +52,11 @@ export interface SetupCallOptions {
 export interface SetupCallResult {
   body: unknown;
   isError?: boolean;
+  /**
+   * The connector an install created. For the server's own callers (the page
+   * after approving an AI client); never part of `body`, which goes to the chat.
+   */
+  connectorId?: string;
 }
 
 export interface SharedSetupProvider {

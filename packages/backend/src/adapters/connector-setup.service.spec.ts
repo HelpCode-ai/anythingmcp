@@ -1,4 +1,4 @@
-import { ConnectorSetupService, SETUP_LINK_RETENTION_MS } from './connector-setup.service';
+import { ConnectorSetupService, SETUP_LINK_RETENTION_MS, installRefusalReason } from './connector-setup.service';
 import { AdaptersService } from './adapters.service';
 import { describeAdapterEnvVars } from './env-var-meta';
 import { encrypt } from '../common/crypto/encryption.util';
@@ -382,6 +382,44 @@ describe('ConnectorSetupService — install', () => {
       { addressMayWait: true },
     );
     expect(adapters.inspectWooCommerceAddress).toHaveBeenCalledWith('https://shop.example.com');
+  });
+
+  // setup_install_failed: an install that added nothing, with a reason code
+  // and never the refusal text (it can repeat what the model sent).
+  it('records a refused install with a reason code, and nothing for a successful one', async () => {
+    const { service, ctx, licenseGuard, productEvents } = build();
+    const failed = () =>
+      productEvents.log.mock.calls.map(([e]: any) => e).filter((e: any) => e.event === 'setup_install_failed');
+
+    await service.install(ctx, { adapter: 'no-such-app' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new Error('Trial limit reached (2 connectors).'));
+    await service.install(ctx, { adapter: 'openplz' }, { via: 'post_approve' });
+    await service.install(ctx, { adapter: 'Not A Slug!!' });
+    expect(failed()).toEqual([
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'no-such-app', via: 'mcp', reason: 'unknown_app' } },
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { adapterSlug: 'openplz', via: 'post_approve', reason: 'plan_limit' } },
+      // An id that is not a catalog id is not stored.
+      { event: 'setup_install_failed', userId: 'u1', organizationId: ctx.organizationId, metadata: { via: 'mcp', reason: 'unknown_app' } },
+    ]);
+
+    productEvents.log.mockClear();
+    const ok = await service.install(ctx, { adapter: 'openplz' });
+    expect(ok.isError).toBeFalsy();
+    expect(failed()).toHaveLength(0);
+  });
+
+  it('reads the reason of a refusal from the answer the assistant got', () => {
+    expect(installRefusalReason({ error: "No catalog connector 'x'. Use setup_find_connectors to get its id." })).toBe('unknown_app');
+    expect(installRefusalReason({ error: 'SFTP is a File Search connector and is set up in the File Search wizard, not from the chat.', setupUrl: 'https://x' })).toBe('file_search_wizard');
+    expect(installRefusalReason({ error: "'FOO' is not a setting of Odoo. Settings: ODOO_URL." })).toBe('unknown_setting');
+    expect(installRefusalReason({ error: "'Bot token' is a secret and is never taken from the chat. Install without it." })).toBe('secret_in_chat');
+    expect(installRefusalReason({ error: "'Shop address' contains what looks like a password, API key or token." })).toBe('secret_in_chat');
+    expect(installRefusalReason({ error: "'Region' must be one of: eu, us." })).toBe('invalid_setting');
+    expect(installRefusalReason({ error: "'Shop address' does not look right." })).toBe('invalid_setting');
+    expect(installRefusalReason({ error: 'At most 10 connectors an hour can be installed from a chat.' })).toBe('too_many_installs');
+    expect(installRefusalReason({ error: 'Trial limit reached (2 connectors).', upgradeUrl: 'https://x/start-trial' })).toBe('plan_limit');
+    expect(installRefusalReason({ error: 'Something else went wrong.' })).toBe('other');
+    expect(installRefusalReason(undefined)).toBe('other');
   });
 
   it('respects the trial limit', async () => {
