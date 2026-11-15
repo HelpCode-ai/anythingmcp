@@ -171,6 +171,11 @@ export const TELEGRAM_PANEL_SCRIPT = `
         paste.hidden = true;
         if (qr) qr.hidden = true;
         if (out.request) request.textContent = out.request;
+        // The page opened on "your workspace has no apps yet": no longer true.
+        var sub = document.getElementById('first-sub');
+        var body = document.getElementById('first-body');
+        if (sub) sub.textContent = 'Telegram is ready. Continue to ' + clientName + ' and ask, for example:';
+        if (body) body.hidden = true;
         if (out.startUrl) {
           // A bot can only write to someone who pressed Start in its chat.
           create.setAttribute('href', out.startUrl);
