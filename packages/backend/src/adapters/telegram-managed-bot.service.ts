@@ -12,6 +12,7 @@ import {
   BOT_TOKEN_PATTERN,
   MANAGED_BOT_CONFIG_KEY,
   MANAGED_BOT_TTL_MS,
+  TELEGRAM_DEFAULT_CHAT_VAR,
   TELEGRAM_SLUG,
   TELEGRAM_TOKEN_VAR,
   WELCOME_TEXT,
@@ -84,7 +85,10 @@ type ConnectorRow = { id: string; organizationId: string; baseUrl: string; envVa
  * - no webhook is set on the user's bot: the connector's own
  *   telegram_bot_get_updates would stop working. To greet the user, its
  *   updates are read without an offset, which confirms none of them;
- * - tokens are never logged, and no Telegram id or name is stored or logged.
+ * - the creator's chat id is stored once, as the connector's default chat
+ *   (encrypted with its other variables, shown and editable in its
+ *   settings): without it "send me a message" has nobody to go to. Tokens
+ *   and Telegram ids are never logged, and no name is stored.
  */
 @Injectable()
 export class TelegramManagedBotService implements TelegramOneTap, OnApplicationBootstrap {
@@ -436,12 +440,14 @@ export class TelegramManagedBotService implements TelegramOneTap, OnApplicationB
       return 'token_refused';
     }
 
-    const stored = await this.storeToken(row, token);
+    const botUsername = typeof bot.username === 'string' ? bot.username : undefined;
+    const creatorId = typeof creator?.id === 'number' && Number.isSafeInteger(creator.id) && creator.id > 0 ? creator.id : null;
+    // A person's chat with a bot has that person's id: the creator becomes
+    // the connector's default chat, so "send me a message" works at once.
+    const stored = await this.storeToken(row, token, creatorId);
     if (stored === 'has_token') return 'connector_has_token';
     if (stored !== 'stored') return 'retry';
 
-    const botUsername = typeof bot.username === 'string' ? bot.username : undefined;
-    const creatorId = typeof creator?.id === 'number' && Number.isSafeInteger(creator.id) ? creator.id : null;
     const claimed = await this.patchState(
       row,
       {
@@ -502,7 +508,11 @@ export class TelegramManagedBotService implements TelegramOneTap, OnApplicationB
    * variable, variables encrypted at rest, tools reloaded), on a connector
    * read again in its workspace and still without a token.
    */
-  private async storeToken(row: ConnectorRow, token: string): Promise<'stored' | 'has_token' | 'failed'> {
+  private async storeToken(
+    row: ConnectorRow,
+    token: string,
+    defaultChatId: number | null = null,
+  ): Promise<'stored' | 'has_token' | 'failed'> {
     try {
       const connector = await this.prisma.connector.findFirst({
         where: { id: row.id, organizationId: row.organizationId },
@@ -517,7 +527,14 @@ export class TelegramManagedBotService implements TelegramOneTap, OnApplicationB
           encryptionKey: getRequiredSecret('ENCRYPTION_KEY', this.config.get<string>('ENCRYPTION_KEY')),
         },
         connector,
-        { ...stored, [TELEGRAM_TOKEN_VAR]: token },
+        {
+          ...stored,
+          [TELEGRAM_TOKEN_VAR]: token,
+          // Never over a default chat the workspace chose itself.
+          ...(defaultChatId !== null && !stored[TELEGRAM_DEFAULT_CHAT_VAR]
+            ? { [TELEGRAM_DEFAULT_CHAT_VAR]: String(defaultChatId) }
+            : {}),
+        },
       );
       return 'stored';
     } catch (err) {

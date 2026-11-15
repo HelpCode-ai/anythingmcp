@@ -54,7 +54,7 @@ import { egressIps } from '../connectors/egress';
 import { envVarsForMcpTool, resolveMcpFixedArguments } from '../connectors/mcp-connector-config.util';
 import { processGauges } from '../common/process-vitals';
 import { recordToolCall } from '../common/metrics';
-import { applySchemaDefaults } from '../common/schema-defaults.util';
+import { applyEnvDefaults, applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { EmailEngine } from '../connectors/engines/email.engine';
@@ -715,7 +715,12 @@ export class DynamicMcpTools {
       );
 
       // Apply JSON Schema defaults for missing params
-      const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
+      // A parameter left out takes the variable the tool names for it
+      // (endpointMapping.envDefaults), before the schema's own defaults.
+      const mergedParams = this.applyDefaults(
+        tool.parameters,
+        applyEnvDefaults(tool.endpointMapping, paramsWithEnv, envVars),
+      );
 
       processGauges.inc('toolCallsInFlight');
       let engineOut: Awaited<ReturnType<DynamicMcpTools['executeWithEngine']>>;

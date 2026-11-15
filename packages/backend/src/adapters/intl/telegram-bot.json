@@ -3,12 +3,13 @@
   "name": "Telegram Bot",
   "aliases": ["BotFather"],
   "description": "Send Telegram messages, photos, albums, documents, audio, video, animations, stickers, contacts, venues, locations and polls from any AI agent via the Telegram Bot API, react to and pin messages, and manage group titles, invite links and forum topics. Bot-token auth. Outbound plus a lightweight read of recent updates (no long-polling).",
-  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret**: anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes: `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !`; agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching: reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**Albums**: `telegram_bot_send_album` sends 2 to 10 photos and videos as one grouped message (or 2 to 10 documents, or 2 to 10 audio files). Put the caption on the first item. If Telegram answers `failed to send message #N with the error message WEBPAGE_CURL_FAILED`, it could not download item N: the URL must be public and point straight at the file, not at a web page.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_bot_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself, outside the MCP request/response model. Telegram delivers updates to a webhook or to getUpdates, never both: while a webhook is set, `telegram_bot_get_updates` answers 409 Conflict. `telegram_bot_get_webhook_info` shows the webhook; `telegram_bot_remove_webhook` (switched off at install) deletes it, which stops whatever service receives it.\n\n**Tools**: `telegram_bot_get_me` checks the token and returns the bot's id and username. Sending: `telegram_bot_send_message` (text), `telegram_bot_send_photo`, `telegram_bot_send_document`, `telegram_bot_send_audio` (music player), `telegram_bot_send_voice` (voice note), `telegram_bot_send_video`, `telegram_bot_send_animation` (GIF), `telegram_bot_send_album`, `telegram_bot_send_sticker`, `telegram_bot_send_location`, `telegram_bot_send_venue`, `telegram_bot_send_contact` and `telegram_bot_send_poll`; each one delivers to the chat at once. `telegram_bot_edit_message_text` changes a message the bot sent, `telegram_bot_delete_message` removes one. `telegram_bot_edit_message_caption` changes the caption of a media message, `telegram_bot_react_to_message` sets the bot's emoji reaction on a message. `telegram_bot_get_chat` reads a chat's title, type and description. Chat management (the bot must be an administrator with the matching right): `telegram_bot_pin_message`, `telegram_bot_unpin_chat_message`, `telegram_bot_rename_chat`, `telegram_bot_update_chat_description`, `telegram_bot_create_chat_invite_link` and `telegram_bot_add_forum_topic` (returns the message_thread_id of the new topic). `telegram_bot_fetch_sticker_set` reads a sticker or custom emoji set by name, for the file_id to send with `telegram_bot_send_sticker`. `telegram_bot_create_sticker_set` packages existing images into a new set owned by a user (name ending in `_by_<bot username>`) and `telegram_bot_extend_sticker_set` adds one more.\n\n**Business accounts**: when a Telegram Business user connects the bot to their account, the bot receives a `business_connection` update whose `id` is the business connection id (inbound business messages carry it too). Pass it as `business_connection_id` to the send tools and to `telegram_bot_edit_message_text` to write on behalf of that account; the bot then needs the reply right on the connection, and Telegram only lets it answer chats active in the last 24 hours.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores.\n\n**Files the bot received**: a message in `telegram_bot_get_updates` carries a `file_id` (`photo[-1]` is the largest size, or `document`, `voice`, `video`). `telegram_bot_get_file` turns it into a `file_path`, and `telegram_bot_download_file` fetches the file. An image comes back as an image the assistant can see, any other file as an attachment. A `file_id` only works with the bot that received the file, and the Bot API serves files up to 20 MB.",
+  "instructions": "This connector uses the official Telegram Bot API (https://core.telegram.org/bots/api).\n\n**Setup**:\n1. In Telegram, open chat with **@BotFather** → `/newbot` → pick a display name and a username ending in `bot`.\n2. BotFather replies with an HTTP API token like `123456789:ABCDEFghijklmnopqrstuvwxyz`. **Treat as a secret**: anyone with it can send as your bot.\n3. Set `TELEGRAM_BOT_TOKEN` to the full token.\n\n**Authentication model** (Telegram-specific): the bot token goes in the URL path, NOT in a header. The base URL is `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` and every endpoint is appended as `/methodName`. The adapter substitutes the token via the `{{TELEGRAM_BOT_TOKEN}}` env-var template in `baseUrl`.\n\n**chat_id model**: every Telegram chat (user, group, channel) has a numeric `chat_id`. For groups and channels the bot must be ADDED first; for users, the user must have sent a `/start` to the bot at least once (Telegram's privacy rule). Once you have a chat_id (extract it from `getUpdates`), pin it.\n\n**Default chat**: when the connector has a default chat (`TELEGRAM_DEFAULT_CHAT_ID`, filled in by itself for a bot created in one tap), the send tools write there when `chat_id` is left out, so \"send me a test message\" needs no chat_id. Without one, a send without `chat_id` fails: ask the user to press Start in the bot's chat, read their chat id with `telegram_bot_get_updates`, and tell them they can save it as the default chat in the connector's settings.\n\n**Channels**: for **public channels** you can also pass `@channelusername` (with the `@`) instead of a numeric chat_id. Private channels REQUIRE the numeric ID, which always starts with `-100`.\n\n**Markdown vs HTML**: messages support 3 parse modes: `MarkdownV2` (current, escape special chars), `HTML` (`<b>`, `<i>`, `<a href>`), or no formatting. Telegram's `MarkdownV2` requires escaping `_ * [ ] ( ) ~ ` > # + - = | { } . !`; agents that don't escape will get 400 'can't parse entities'. The HTML mode is easier for agents to compose safely.\n\n**File send model**: media tools (sendPhoto, sendDocument, sendAudio, etc.) accept the media as:\n  - **HTTPS URL** (recommended on AnythingMCP): Telegram fetches it server-side. URL must be ≤ 5MB for photos, ≤ 20MB for documents via URL.\n  - **file_id**: a string returned from a previous send (caching: reuse the same file_id to re-send the same content without re-uploading).\n  - **multipart binary**: NOT supported by this connector in a single tool call. Pre-upload elsewhere and pass the resulting URL or file_id.\n\n**Albums**: `telegram_bot_send_album` sends 2 to 10 photos and videos as one grouped message (or 2 to 10 documents, or 2 to 10 audio files). Put the caption on the first item. If Telegram answers `failed to send message #N with the error message WEBPAGE_CURL_FAILED`, it could not download item N: the URL must be public and point straight at the file, not at a web page.\n\n**getUpdates vs webhooks**: this connector exposes `telegram_bot_get_updates` (long-polling pull) for one-shot reading of recent inbound messages. For continuous inbound stream (chatbot), use Telegram's webhook (setWebhook) and host the receiver yourself, outside the MCP request/response model. Telegram delivers updates to a webhook or to getUpdates, never both: while a webhook is set, `telegram_bot_get_updates` answers 409 Conflict. `telegram_bot_get_webhook_info` shows the webhook; `telegram_bot_remove_webhook` (switched off at install) deletes it, which stops whatever service receives it.\n\n**Tools**: `telegram_bot_get_me` checks the token and returns the bot's id and username. Sending: `telegram_bot_send_message` (text), `telegram_bot_send_photo`, `telegram_bot_send_document`, `telegram_bot_send_audio` (music player), `telegram_bot_send_voice` (voice note), `telegram_bot_send_video`, `telegram_bot_send_animation` (GIF), `telegram_bot_send_album`, `telegram_bot_send_sticker`, `telegram_bot_send_location`, `telegram_bot_send_venue`, `telegram_bot_send_contact` and `telegram_bot_send_poll`; each one delivers to the chat at once. `telegram_bot_edit_message_text` changes a message the bot sent, `telegram_bot_delete_message` removes one. `telegram_bot_edit_message_caption` changes the caption of a media message, `telegram_bot_react_to_message` sets the bot's emoji reaction on a message. `telegram_bot_get_chat` reads a chat's title, type and description. Chat management (the bot must be an administrator with the matching right): `telegram_bot_pin_message`, `telegram_bot_unpin_chat_message`, `telegram_bot_rename_chat`, `telegram_bot_update_chat_description`, `telegram_bot_create_chat_invite_link` and `telegram_bot_add_forum_topic` (returns the message_thread_id of the new topic). `telegram_bot_fetch_sticker_set` reads a sticker or custom emoji set by name, for the file_id to send with `telegram_bot_send_sticker`. `telegram_bot_create_sticker_set` packages existing images into a new set owned by a user (name ending in `_by_<bot username>`) and `telegram_bot_extend_sticker_set` adds one more.\n\n**Business accounts**: when a Telegram Business user connects the bot to their account, the bot receives a `business_connection` update whose `id` is the business connection id (inbound business messages carry it too). Pass it as `business_connection_id` to the send tools and to `telegram_bot_edit_message_text` to write on behalf of that account; the bot then needs the reply right on the connection, and Telegram only lets it answer chats active in the last 24 hours.\n\n**Rate limits**: 30 messages/sec to different chats, 1 msg/sec to the same chat, 20 messages/minute to the same group. On 429, honor the `retry_after` in the response.\n\n**Out of scope**: payments, inline mode, callback query answers (these usually require a long-running webhook), passport, game scores.\n\n**Files the bot received**: a message in `telegram_bot_get_updates` carries a `file_id` (`photo[-1]` is the largest size, or `document`, `voice`, `video`). `telegram_bot_get_file` turns it into a `file_path`, and `telegram_bot_download_file` fetches the file. An image comes back as an image the assistant can see, any other file as an attachment. A `file_id` only works with the bot that received the file, and the Bot API serves files up to 20 MB.",
   "region": "intl",
   "category": "messaging",
   "icon": "telegram",
   "docsUrl": "https://core.telegram.org/bots/api",
   "requiredEnvVars": ["TELEGRAM_BOT_TOKEN"],
+  "optionalEnvVars": ["TELEGRAM_DEFAULT_CHAT_ID"],
   "verifyHints": {
     "401": "Telegram refused the bot token. Copy it again from @BotFather (send /mybots, pick the bot, API Token): the whole value, digits, colon and the part after it. A token that was revoked or regenerated stops working.",
     "404": "Telegram did not recognise the bot token's format. Paste the full token from @BotFather, like 123456789:AAH..., with nothing before or after it."
@@ -22,8 +23,19 @@
       "example": "123456789:AAH...",
       "pattern": "^[0-9]+:[A-Za-z0-9_-]{30,}$",
       "link": "https://t.me/BotFather"
+    },
+    "TELEGRAM_DEFAULT_CHAT_ID": {
+      "label": "Default chat ID",
+      "kind": "setting",
+      "help": "The chat the bot writes to when a request names none, e.g. \"send me a message\". Usually your own chat with the bot: a number. A bot created in one tap fills it in by itself.",
+      "example": "123456789",
+      "pattern": "^(-?[0-9]{1,20}|@[A-Za-z][A-Za-z0-9_]{3,31})$",
+      "patternMessage": "Use the numeric chat ID (groups and channels start with -100), or @channelusername for a public channel."
     }
   },
+  "instructionFacts": [
+    "This workspace's default Telegram chat has chat_id {{TELEGRAM_DEFAULT_CHAT_ID}}: it is the person who set the bot up, unless they changed it. Use it when the user says \"me\" or names no chat; the send tools use it by themselves when chat_id is left out."
+  ],
   "setupGuide": {
     "effort": "api_key",
     "minutes": 2,
@@ -107,11 +119,11 @@
     },
     {
       "name": "telegram_bot_send_message",
-      "description": "Send a text message to a chat. Required: chat_id + text. Use parse_mode='HTML' for safe formatting (`<b>`, `<i>`, `<code>`, `<a href>`). reply_to_message_id quotes a prior message.",
+      "description": "Send a text message to a chat. Required: text, and chat_id unless the workspace has a default chat (then leaving it out writes to the person who set the bot up). Use parse_mode='HTML' for safe formatting (`<b>`, `<i>`, `<code>`, `<a href>`). reply_to_message_id quotes a prior message.",
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Numeric chat_id OR '@channelusername' for public channels. For users, they must have started the bot first." },
+          "chat_id": { "type": "string", "description": "Numeric chat_id OR '@channelusername' for public channels. For users, they must have started the bot first. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set." },
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "text": { "type": "string", "description": "Message text, max 4096 chars. For longer, split into multiple sends." },
           "parse_mode": { "type": "string", "description": "MarkdownV2, HTML, or omit for no formatting. HTML is safer for agents." },
@@ -120,11 +132,12 @@
           "reply_to_message_id": { "type": "integer", "description": "Quote a prior message by its message_id." },
           "reply_markup": { "type": "object", "description": "Inline keyboard or reply keyboard markup. See Telegram docs for InlineKeyboardMarkup shape." }
         },
-        "required": ["chat_id", "text"]
+        "required": ["text"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendMessage",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -143,7 +156,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Chat ID or @channelusername." },
+          "chat_id": { "type": "string", "description": "Chat ID or @channelusername. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set." },
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "photo": { "type": "string", "description": "Either a public HTTPS URL OR a file_id from a prior send." },
           "caption": { "type": "string", "description": "Caption ≤1024 chars." },
@@ -151,11 +164,12 @@
           "disable_notification": { "type": "boolean", "description": "Silent send." },
           "reply_to_message_id": { "type": "integer", "description": "Reply target message_id." }
         },
-        "required": ["chat_id", "photo"]
+        "required": ["photo"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendPhoto",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -173,7 +187,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Chat ID or @channelusername." },
+          "chat_id": { "type": "string", "description": "Chat ID or @channelusername. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set." },
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "document": { "type": "string", "description": "Public HTTPS URL or file_id." },
           "caption": { "type": "string", "description": "Caption ≤1024 chars." },
@@ -181,11 +195,12 @@
           "disable_notification": { "type": "boolean", "description": "Silent." },
           "reply_to_message_id": { "type": "integer", "description": "Reply target." }
         },
-        "required": ["chat_id", "document"]
+        "required": ["document"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendDocument",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -203,7 +218,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Chat ID or @channelusername." },
+          "chat_id": { "type": "string", "description": "Chat ID or @channelusername. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set." },
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "audio": { "type": "string", "description": "HTTPS URL or file_id." },
           "caption": { "type": "string", "description": "Optional caption." },
@@ -212,11 +227,12 @@
           "title": { "type": "string", "description": "Track title." },
           "disable_notification": { "type": "boolean", "description": "Silent." }
         },
-        "required": ["chat_id", "audio"]
+        "required": ["audio"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendAudio",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -235,17 +251,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Chat ID." },
+          "chat_id": { "type": "string", "description": "Chat ID. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set." },
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "voice": { "type": "string", "description": "HTTPS URL of an OGG-Opus file OR a file_id." },
           "caption": { "type": "string", "description": "Optional caption." },
           "duration": { "type": "integer", "description": "Duration in seconds." }
         },
-        "required": ["chat_id", "voice"]
+        "required": ["voice"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendVoice",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -261,7 +278,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Chat ID." },
+          "chat_id": { "type": "string", "description": "Chat ID. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set." },
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "video": { "type": "string", "description": "HTTPS URL of MP4 or file_id." },
           "caption": { "type": "string", "description": "Caption ≤1024 chars." },
@@ -271,11 +288,12 @@
           "supports_streaming": { "type": "boolean", "description": "If true, video is streamable." },
           "parse_mode": { "type": "string", "description": "Markup mode for caption." }
         },
-        "required": ["chat_id", "video"]
+        "required": ["video"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendVideo",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -295,18 +313,19 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Chat ID." },
+          "chat_id": { "type": "string", "description": "Chat ID. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set." },
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "latitude": { "type": "number", "description": "Latitude decimal degrees." },
           "longitude": { "type": "number", "description": "Longitude decimal degrees." },
           "live_period": { "type": "integer", "description": "Seconds the location stays live (60-86400). Omit for static." },
           "horizontal_accuracy": { "type": "number", "description": "Accuracy in meters (0-1500)." }
         },
-        "required": ["chat_id", "latitude", "longitude"]
+        "required": ["latitude", "longitude"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendLocation",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -323,7 +342,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": { "type": "string", "description": "Chat ID." },
+          "chat_id": { "type": "string", "description": "Chat ID. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set." },
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "question": { "type": "string", "description": "Poll question (1-300 chars)." },
           "options": { "type": "array", "description": "Array of 2-10 string options." },
@@ -334,11 +353,12 @@
           "explanation": { "type": "string", "description": "Explanation shown when a quiz answer is wrong (≤200 chars)." },
           "open_period": { "type": "integer", "description": "Seconds before the poll auto-closes (5-600)." }
         },
-        "required": ["chat_id", "question", "options"]
+        "required": ["question", "options"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendPoll",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -485,7 +505,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set."},
           "media": {"type": "array", "minItems": 2, "maxItems": 10, "description": "Album items, e.g. [{\"type\": \"photo\", \"media\": \"https://example.com/1.jpg\", \"caption\": \"<b>New in</b>\", \"parse_mode\": \"HTML\"}, {\"type\": \"photo\", \"media\": \"https://example.com/2.jpg\"}]. type is photo, video, document or audio; media is an HTTPS URL or file_id.", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": ["photo", "video", "document", "audio"], "description": "Kind of item."}, "media": {"type": "string", "description": "HTTPS URL (photos up to 5 MB, other files up to 20 MB) or file_id."}, "caption": {"type": "string", "description": "Caption, at most 1024 characters."}, "parse_mode": {"type": "string", "description": "HTML or MarkdownV2 for the caption."}, "has_spoiler": {"type": "boolean", "description": "Hide a photo or video behind a spoiler."}}, "required": ["type", "media"]}},
           "disable_notification": {"type": "boolean", "description": "Silent send."},
           "protect_content": {"type": "boolean", "description": "If true, the message cannot be forwarded or saved."},
@@ -493,11 +513,12 @@
           "reply_parameters": {"type": "object", "description": "Reply target, e.g. {\"message_id\": 42}."},
           "business_connection_id": {"type": "string", "description": "Business connection id, to send on behalf of a connected business account."}
         },
-        "required": ["chat_id", "media"]
+        "required": ["media"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendMediaGroup",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "media": "$media",
@@ -515,7 +536,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set."},
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "animation": {"type": "string", "description": "HTTPS URL of a GIF or MP4 (up to 20 MB) or a file_id."},
           "caption": {"type": "string", "description": "Caption, at most 1024 characters."},
@@ -524,11 +545,12 @@
           "disable_notification": {"type": "boolean", "description": "Silent send."},
           "reply_parameters": {"type": "object", "description": "Reply target, e.g. {\"message_id\": 42}."}
         },
-        "required": ["chat_id", "animation"]
+        "required": ["animation"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendAnimation",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -547,17 +569,18 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set."},
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "sticker": {"type": "string", "description": "Sticker file_id, or HTTPS URL of a .WEBP file."},
           "disable_notification": {"type": "boolean", "description": "Silent send."},
           "reply_parameters": {"type": "object", "description": "Reply target, e.g. {\"message_id\": 42}."}
         },
-        "required": ["chat_id", "sticker"]
+        "required": ["sticker"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendSticker",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -590,7 +613,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set."},
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "phone_number": {"type": "string", "description": "Phone number, ideally in international format, e.g. +4915112345678."},
           "first_name": {"type": "string", "description": "Contact's first name."},
@@ -598,11 +621,12 @@
           "vcard": {"type": "string", "description": "Extra data as a vCard, up to 2048 bytes."},
           "disable_notification": {"type": "boolean", "description": "Silent send."}
         },
-        "required": ["chat_id", "phone_number", "first_name"]
+        "required": ["phone_number", "first_name"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendContact",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",
@@ -620,7 +644,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "chat_id": {"type": "string", "description": "Chat ID or @channelusername."},
+          "chat_id": {"type": "string", "description": "Chat ID or @channelusername. Leave it out to write to the workspace's default chat (the person who set the bot up, unless changed), when one is set."},
           "business_connection_id": { "type": "string", "description": "Business connection id, to send on behalf of a connected business account." },
           "latitude": {"type": "number", "description": "Latitude in decimal degrees."},
           "longitude": {"type": "number", "description": "Longitude in decimal degrees."},
@@ -629,11 +653,12 @@
           "google_place_id": {"type": "string", "description": "Optional Google Places id."},
           "disable_notification": {"type": "boolean", "description": "Silent send."}
         },
-        "required": ["chat_id", "latitude", "longitude", "title", "address"]
+        "required": ["latitude", "longitude", "title", "address"]
       },
       "endpointMapping": {
         "method": "POST",
         "path": "/sendVenue",
+        "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
         "bodyMapping": {
           "chat_id": "$chat_id",
           "business_connection_id": "$business_connection_id",

@@ -149,6 +149,26 @@ JSON-Schema `parameters` when it accepts input. Parameter properties should
 include descriptions for the model. `"enabled": false` installs a tool switched
 off, for writes a workspace should turn on deliberately.
 
+`endpointMapping.envDefaults` fills a parameter the caller left out from a
+connector variable, for a value that is the same on nearly every call of one
+workspace and that a model cannot know (the chat a bot writes to):
+
+```json
+"endpointMapping": {
+  "method": "POST",
+  "path": "/sendMessage",
+  "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
+  "bodyMapping": { "chat_id": "$chat_id", "text": "$text" }
+}
+```
+
+The parameter must be one the tool declares and does not list in `required`;
+say in its description what leaving it out does. The variable must be a
+non-secret one the adapter declares (usually in `optionalEnvVars`): its value
+is sent as a plain argument. A value the caller gives always wins, and a
+variable that is not set leaves the call as it was. The default is applied
+before the schema's own `default`s, on a tool call and on "Run test" alike.
+
 See [connector configuration](#connector)
 and [authentication](#authentication) for the nested connector fields.
 

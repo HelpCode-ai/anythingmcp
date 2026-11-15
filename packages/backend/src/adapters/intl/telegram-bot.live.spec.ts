@@ -3,6 +3,7 @@ import * as adapter from './telegram-bot.json';
 import { RestEngine } from '../../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { applyEnvDefaults } from '../../common/schema-defaults.util';
 
 /** Live: RUN_TELEGRAM_BOT_LIVE=1 npx jest src/adapters/intl/telegram-bot.live.spec.ts */
 
@@ -81,6 +82,56 @@ describe('telegram-bot adapter — static spec conformance', () => {
  * token before the method, so a probe with a bogus token answers 401 for any
  * method name.
  */
+describe('telegram-bot adapter: the default chat', () => {
+  type SendTool = {
+    name: string;
+    parameters: { required?: string[]; properties: Record<string, { description?: string }> };
+    endpointMapping: { envDefaults?: Record<string, string> };
+  };
+  const tools = (adapter as unknown as { tools: SendTool[] }).tools;
+  const sends = tools.filter((t) => /^telegram_bot_send_/.test(t.name));
+
+  // "Send me a test message" names no chat: a bot created in one tap knows
+  // who made it, and every send tool then writes there by itself.
+  it('lets every send tool leave chat_id out and fills it from TELEGRAM_DEFAULT_CHAT_ID', () => {
+    expect(sends.map((t) => t.name)).toEqual(expect.arrayContaining(['telegram_bot_send_message', 'telegram_bot_send_photo']));
+    expect(sends.length).toBeGreaterThanOrEqual(13);
+    for (const tool of sends) {
+      expect([tool.name, tool.endpointMapping.envDefaults]).toEqual([tool.name, { chat_id: 'TELEGRAM_DEFAULT_CHAT_ID' }]);
+      expect(tool.parameters.required ?? []).not.toContain('chat_id');
+      expect(tool.parameters.properties.chat_id.description).toMatch(/Leave it out/);
+    }
+    const send = sends.find((t) => t.name === 'telegram_bot_send_message')!;
+    const env = { TELEGRAM_BOT_TOKEN: '1:x', TELEGRAM_DEFAULT_CHAT_ID: '555001' };
+    expect(applyEnvDefaults(send.endpointMapping, { text: 'hi' }, env)).toEqual({ text: 'hi', chat_id: '555001' });
+    expect(applyEnvDefaults(send.endpointMapping, { text: 'hi', chat_id: '-100200' }, env).chat_id).toBe('-100200');
+  });
+
+  it('keeps chat_id required where a wrong chat would change or delete something', () => {
+    const others = tools.filter((t) => 'chat_id' in t.parameters.properties && !sends.includes(t));
+    expect(others.length).toBeGreaterThan(5);
+    for (const tool of others) {
+      expect([tool.name, tool.parameters.required]).toEqual([tool.name, expect.arrayContaining(['chat_id'])]);
+      expect(tool.endpointMapping.envDefaults).toBeUndefined();
+    }
+  });
+
+  it('declares the default chat as an optional, non-secret setting and tells the model about it', () => {
+    const meta = adapter as unknown as {
+      optionalEnvVars: string[];
+      envVarMeta: Record<string, { kind: string; secret?: boolean; pattern: string }>;
+      instructionFacts: string[];
+    };
+    expect(meta.optionalEnvVars).toEqual(['TELEGRAM_DEFAULT_CHAT_ID']);
+    expect(meta.envVarMeta.TELEGRAM_DEFAULT_CHAT_ID.kind).toBe('setting');
+    expect(meta.envVarMeta.TELEGRAM_DEFAULT_CHAT_ID.secret).toBeUndefined();
+    const pattern = new RegExp(meta.envVarMeta.TELEGRAM_DEFAULT_CHAT_ID.pattern);
+    for (const ok of ['555001', '-1001234567890', '@my_channel']) expect(pattern.test(ok)).toBe(true);
+    for (const bad of ['', 'me', '12 34', 'https://t.me/x']) expect(pattern.test(bad)).toBe(false);
+    expect(meta.instructionFacts.join(' ')).toContain('{{TELEGRAM_DEFAULT_CHAT_ID}}');
+  });
+});
+
 describe('telegram-bot adapter: albums and media sends', () => {
   const BASE = 'https://api.telegram.org/bot123:abc';
   const engine = new RestEngine({} as OAuth2TokenService, {} as LoginTokenService);

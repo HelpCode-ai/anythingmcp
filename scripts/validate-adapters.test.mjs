@@ -908,3 +908,25 @@ test('largeIntegers and bodyIntegers: "string" on a REST connector, body paths t
   assert.equal(found[0].docs, 'large-integers-64-bit-ids');
   assert.match(docs, /^### Large integers \(64-bit ids\)$/m);
 });
+
+test('envDefaults must name an optional tool parameter and a declared, non-secret variable', () => {
+  const tool = (envDefaults, required = ['text']) => ({
+    name: 'good_send', description: 'x'.repeat(60),
+    parameters: { type: 'object', required, properties: {
+      chat: { type: 'string', description: 'chat' }, text: { type: 'string', description: 'text' },
+    } },
+    endpointMapping: { method: 'POST', path: '/send', bodyMapping: { chat: '$chat', text: '$text' }, envDefaults },
+  });
+  const check = (envDefaults, required) => validateAdapter(adapter({
+    optionalEnvVars: ['GOOD_CHAT'], envVarMeta: { GOOD_KEY: { label: 'Key', kind: 'credential', secret: true } },
+    tools: [tool(envDefaults, required)],
+  }), 'good.json', 'de').errors.filter((e) => e.rule === 'env-defaults');
+
+  assert.deepEqual(check({ chat: 'GOOD_CHAT' }), []);
+  assert.match(check(['chat'])[0].message, /must map a tool parameter/);
+  assert.match(check({ channel: 'GOOD_CHAT' })[0].message, /no parameter "channel"/);
+  assert.match(check({ chat: 'GOOD_CHAT' }, ['chat', 'text'])[0].message, /is required/);
+  assert.match(check({ chat: 'OTHER' })[0].message, /not a non-secret variable/);
+  assert.match(check({ chat: 'GOOD_KEY' })[0].message, /not a non-secret variable/);
+  assert.equal(check({ chat: 'OTHER' })[0].docs, 'tools');
+});
