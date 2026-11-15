@@ -19,7 +19,7 @@ import { NetworkNote } from '@/components/connector-setup/network-note';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { SetupStatusBanner, SetupStatusPill, finishSetupHref } from '@/components/setup-status';
-import { AuthStatusBanner, AuthStatusPill } from '@/components/auth-status';
+import { AuthStatusBanner, AuthStatusPill, isCredentialsRefused } from '@/components/auth-status';
 import { MetaSignInBanner, type MetaSignInStatus } from '@/components/meta-sign-in-banner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -228,6 +228,7 @@ export default function ConnectorDetailPage() {
   const { usage: planUsage, reload: reloadPlanUsage } = usePlanUsage();
   const pausedByPlan = pausedByPlanSets(planUsage).connectors.has(id);
   const tSwap = useTranslations('planSwap');
+  const tAuthStatus = useTranslations('authStatus');
   const [swap, setSwap] = useState<{ axis: SwapAxis; max: number | null; activate?: () => Promise<void> } | null>(null);
 
   const [connector, setConnector] = useState<any>(null);
@@ -1024,6 +1025,25 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  /**
+   * Where a hand-built connector keeps its credentials: its variables when it
+   * has any, else the details form. Opened and brought into view from the
+   * "credentials refused" notice, with the first field focused.
+   */
+  const openCredentials = () => {
+    const inVariables = envVarEntries.length > 0;
+    if (inVariables) setShowEnvVars(true);
+    else setEditing(true);
+    const targetId = inVariables ? 'connector-variables' : 'connector-details';
+    requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' });
+      target.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+    });
+  };
+
   const handleSaveEnvVars = async () => {
     if (!token) return;
     setSavingEnvVars(true);
@@ -1407,7 +1427,24 @@ export default function ConnectorDetailPage() {
         </div>
 
         <SetupStatusBanner connector={connector} />
-        <AuthStatusBanner connector={connector} />
+        <AuthStatusBanner
+          connector={connector}
+          action={
+            isCredentialsRefused(connector) ? (
+              connector.config?.adapterSlug ? (
+                // A catalog connector: its setup page asks for the credentials
+                // again, with the provider's own help, and checks them.
+                <Link href={finishSetupHref(connector)} className={cn(buttonVariants({ size: 'sm' }))}>
+                  {tAuthStatus('banner.updateCredentials')}
+                </Link>
+              ) : (
+                <Button size="sm" onClick={openCredentials}>
+                  {tAuthStatus('banner.updateCredentials')}
+                </Button>
+              )
+            ) : undefined
+          }
+        />
 
         {metaSignIn && (
           <MetaSignInBanner
@@ -1584,7 +1621,7 @@ export default function ConnectorDetailPage() {
 
         {/* Connector Details */}
         {connector.type !== 'FILE_SEARCH' && (
-        <Card className="p-[22px]">
+        <Card id="connector-details" className="scroll-mt-6 p-[22px]">
           <h3 className="text-sm font-semibold mb-4">{t('details.title')}</h3>
           {editing ? (
             <div className="space-y-4 max-w-md">
@@ -2280,7 +2317,7 @@ export default function ConnectorDetailPage() {
 
         {/* Environment Variables */}
         {connector.type !== 'FILE_SEARCH' && (
-        <Card className="p-[22px]">
+        <Card id="connector-variables" className="scroll-mt-6 p-[22px]">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold">{t('env.title')}</h3>

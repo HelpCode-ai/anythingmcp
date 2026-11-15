@@ -2,25 +2,24 @@ import {
   CredentialRefusalTracker,
   REFUSALS_BEFORE_MARK,
   credentialRefusedMessage,
+  marksAt,
 } from './credential-refusal-tracker';
 
 describe('CredentialRefusalTracker', () => {
-  it('asks for a mark at the threshold, not before, and again every 100 refusals', () => {
+  it('counts the refusals in a row of each connector', () => {
     const t = new CredentialRefusalTracker();
-    const asked: number[] = [];
-    for (let i = 1; i <= 205; i++) {
-      const n = t.refused('c1');
-      if (n !== undefined) asked.push(n);
-    }
-    expect(asked).toEqual([REFUSALS_BEFORE_MARK, 100, 200]);
+    expect(t.refused('c1')).toBe(1);
+    expect(t.refused('c1')).toBe(2);
+    expect(t.refused('c2')).toBe(1);
+    expect(t.refused('c1')).toBe(3);
   });
 
   it('starts over after a call that worked', () => {
     const t = new CredentialRefusalTracker();
-    for (let i = 1; i < REFUSALS_BEFORE_MARK; i++) expect(t.refused('c1')).toBeUndefined();
+    t.refused('c1');
+    t.refused('c1');
     expect(t.succeeded('c1')).toBe(true);
-    for (let i = 1; i < REFUSALS_BEFORE_MARK; i++) expect(t.refused('c1')).toBeUndefined();
-    expect(t.refused('c1')).toBe(REFUSALS_BEFORE_MARK);
+    expect(t.refused('c1')).toBe(1);
   });
 
   it('asks to clear once per connector, and again after new refusals', () => {
@@ -33,18 +32,28 @@ describe('CredentialRefusalTracker', () => {
     expect(t.succeeded('c1')).toBe(false);
   });
 
-  it('keeps connectors apart', () => {
-    const t = new CredentialRefusalTracker();
-    for (let i = 1; i < REFUSALS_BEFORE_MARK; i++) t.refused('c1');
-    expect(t.refused('c2')).toBeUndefined();
-    expect(t.refused('c1')).toBe(REFUSALS_BEFORE_MARK);
+});
+
+describe('marksAt', () => {
+  it('asks for a mark at the threshold, not before, and again every 100 refusals', () => {
+    const asked: number[] = [];
+    for (let count = 1; count <= 205; count++) if (marksAt(count)) asked.push(count);
+    expect(asked).toEqual([REFUSALS_BEFORE_MARK, 100, 200]);
+  });
+
+  it('marks after three refusals: people stop trying sooner than five', () => {
+    expect(REFUSALS_BEFORE_MARK).toBe(3);
   });
 });
 
 describe('credentialRefusedMessage', () => {
   it('says what happened, then the advice', () => {
-    expect(credentialRefusedMessage(5, 'Create a new key.')).toBe(
+    expect(credentialRefusedMessage(5, 'Create a new key.', 401)).toBe(
       "The API refused this connector's saved credentials on 5 calls in a row (HTTP 401). Create a new key.",
+    );
+    // A refusal that is not an HTTP 401 (Telegram's 404, Odoo's Access Denied in a 200) names no status.
+    expect(credentialRefusedMessage(3, 'Copy the token again.')).toBe(
+      "The API refused this connector's saved credentials on 3 calls in a row. Copy the token again.",
     );
     expect(credentialRefusedMessage(5, undefined)).toMatch(/enter valid ones in the connector's settings/);
     expect(credentialRefusedMessage(5, 'x'.repeat(2000)).length).toBe(1000);
