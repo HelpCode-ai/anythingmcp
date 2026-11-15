@@ -254,6 +254,7 @@ export default function ConnectorDetailPage() {
   const [signInLink, setSignInLink] = useState<'' | 'starting' | 'manual'>('');
   const signInLinkHandled = useRef(false);
   const oauthCardRef = useRef<HTMLDivElement>(null);
+  const signInButtonFocused = useRef(false);
   // The stored client id as written ("{{ETSY_CLIENT_ID}}"); null until loaded.
   const [oauthClientIdRaw, setOauthClientIdRaw] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
@@ -1100,16 +1101,20 @@ export default function ConnectorDetailPage() {
     if (!waitsForSignIn) return;
     setSignInLink('starting');
     void handleOAuthAuthorize().then((leaving) => {
-      if (leaving) return;
-      // Could not start: bring the button into view instead.
-      setSignInLink('manual');
-      requestAnimationFrame(() => {
-        oauthCardRef.current?.scrollIntoView({ block: 'center' });
-        oauthCardRef.current?.querySelector('button')?.focus();
-      });
+      // Could not start: bring the button into view instead (effect below).
+      if (!leaving) setSignInLink('manual');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connector, oauthClientIdRaw, token, searchParams]);
+
+  // The button is disabled while the sign-in starts and a disabled button
+  // takes no focus: wait for the render that enables it again.
+  useEffect(() => {
+    if (signInLink !== 'manual' || authorizing || signInButtonFocused.current) return;
+    signInButtonFocused.current = true;
+    oauthCardRef.current?.scrollIntoView({ block: 'center' });
+    oauthCardRef.current?.querySelector('button')?.focus();
+  }, [signInLink, authorizing]);
 
   // "Back" from the provider can restore this page exactly as it was left:
   // the "opening the sign-in" line would then stand there with nothing going on.
