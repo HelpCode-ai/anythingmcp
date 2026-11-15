@@ -716,6 +716,7 @@ What to know:
 
 - **One manager bot per server.** A bot has one webhook: a second server started with the same token takes it over, and the first one stops receiving updates.
 - **Trying it on one workspace.** Set `TELEGRAM_MANAGED_BOT_ORG_IDS` to a comma-separated list of organization ids: only those see the button.
+- **The creator becomes the default chat.** Telegram says who created the bot; that person's chat id is stored as the connector's `TELEGRAM_DEFAULT_CHAT_ID` (a variable of the connector, encrypted like the others, shown and editable in its settings). The send tools write there when a call names no chat, so "send me a test message" works without looking up a chat id. A connector set up with a pasted token has no default chat until its owner enters one.
 - **The user's bot gets no webhook.** The connector's own `telegram_bot_get_updates` keeps working. To greet the user once after they press **Start**, the server reads the new bot's updates without confirming any of them.
 - **Cloud and self-hosted.** The settings are read in both modes. The page that offers the button (shown after approving an AI client, to a workspace with no connectors) exists on Cloud only today, so a self-hosted instance sees no change yet.
 - **Outbound calls.** `api.telegram.org`, with the manager bot's token (start-up, and once per created bot) and with the user's new bot's token (the welcome message).
@@ -3937,6 +3938,26 @@ Each entry in `tools` needs a string `name`, a useful `description`, and its
 JSON-Schema `parameters` when it accepts input. Parameter properties should
 include descriptions for the model. `"enabled": false` installs a tool switched
 off, for writes a workspace should turn on deliberately.
+
+`endpointMapping.envDefaults` fills a parameter the caller left out from a
+connector variable, for a value that is the same on nearly every call of one
+workspace and that a model cannot know (the chat a bot writes to):
+
+```json
+"endpointMapping": {
+  "method": "POST",
+  "path": "/sendMessage",
+  "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
+  "bodyMapping": { "chat_id": "$chat_id", "text": "$text" }
+}
+```
+
+The parameter must be one the tool declares and does not list in `required`;
+say in its description what leaving it out does. The variable must be a
+non-secret one the adapter declares (usually in `optionalEnvVars`): its value
+is sent as a plain argument. A value the caller gives always wins, and a
+variable that is not set leaves the call as it was. The default is applied
+before the schema's own `default`s, on a tool call and on "Run test" alike.
 
 See [connector configuration](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#connector>)
 and [authentication](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#authentication>) for the nested connector fields.

@@ -26,6 +26,8 @@ import { createHmac, randomBytes } from 'crypto';
 
 export const TELEGRAM_SLUG = 'telegram-bot';
 export const TELEGRAM_TOKEN_VAR = 'TELEGRAM_BOT_TOKEN';
+/** The chat the send tools write to when a call names none (the adapter's `envDefaults`). */
+export const TELEGRAM_DEFAULT_CHAT_VAR = 'TELEGRAM_DEFAULT_CHAT_ID';
 
 /** Injection token of the service, for modules that cannot import the adapters' module. */
 export const TELEGRAM_ONE_TAP = 'TELEGRAM_ONE_TAP';

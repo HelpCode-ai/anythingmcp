@@ -358,15 +358,17 @@ describe('TelegramManagedBotService', () => {
       // Written by the setup page's own writer, to this connector only.
       expect(t.connectors.update).toHaveBeenCalledTimes(1);
       expect(t.connectors.update.mock.calls[0][0]).toBe(row.id);
-      expect(t.connectors.update.mock.calls[0][1].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN });
+      // With the creator's chat as the default chat: "send me a message" needs no chat id.
+      expect(t.connectors.update.mock.calls[0][1].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN, TELEGRAM_DEFAULT_CHAT_ID: String(CREATOR_ID) });
       expect(t.mcpServer.reloadConnectorTools).toHaveBeenCalledWith(row.id);
-      expect(t.rows[0].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN });
+      expect(t.rows[0].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN, TELEGRAM_DEFAULT_CHAT_ID: String(CREATOR_ID) });
 
       const state = t.stateOf(row);
       expect(state.connectedAt).toBe(new Date(T0).toISOString());
       expect(state.via).toBe('managed_bot');
       expect(state.botUsername).toBe(`amcp_${code}_bot`);
-      // Neither the token nor the creator's Telegram id is kept in the config.
+      // Neither the token nor the creator's Telegram id is kept in the config:
+      // the id lives with the connector's variables, encrypted like them.
       const config = JSON.stringify(t.rows[0].config);
       expect(config).not.toContain(BOT_TOKEN);
       expect(config).not.toContain(String(CREATOR_ID));
@@ -385,13 +387,24 @@ describe('TelegramManagedBotService', () => {
       expect(t.events('telegram_bot_unmatched')).toHaveLength(0);
     });
 
+    it('stores only the token when Telegram does not say who created the bot', async () => {
+      const t = setup();
+      await t.service.register();
+      const row = t.addConnector();
+      const { code } = await t.begin(row);
+      const update = t.managedBot(`amcp_${code}_bot`) as { managed_bot: { user?: unknown } };
+      delete update.managed_bot.user;
+      expect(await t.service.handleUpdate(update)).toBe('connected');
+      expect(t.rows[0].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN });
+    });
+
     it('matches whatever case Telegram reports the username in', async () => {
       const t = setup();
       await t.service.register();
       const row = t.addConnector();
       const { code } = await t.begin(row);
       expect(await t.service.handleUpdate(t.managedBot(`AMCP_${code.toUpperCase()}_Bot`))).toBe('connected');
-      expect(t.rows[0].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN });
+      expect(t.rows[0].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN, TELEGRAM_DEFAULT_CHAT_ID: String(CREATOR_ID) });
     });
 
     it('takes the second announcement of the same bot as done: one token write, one event', async () => {
@@ -434,7 +447,7 @@ describe('TelegramManagedBotService', () => {
         },
       });
       expect(outcome).toBe('connected');
-      expect(t.rows[0].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN });
+      expect(t.rows[0].envVars).toEqual({ TELEGRAM_BOT_TOKEN: BOT_TOKEN, TELEGRAM_DEFAULT_CHAT_ID: String(CREATOR_ID) });
     });
 
     it('logs a bot whose username carries no code as unmatched, once, and writes nothing', async () => {
