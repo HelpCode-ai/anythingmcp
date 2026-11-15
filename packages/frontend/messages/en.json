@@ -953,14 +953,17 @@
     "pill": {
       "signInExpired": "Sign-in expired",
       "tokenRefused": "Token refused",
+      "credentialsRefused": "Key refused",
       "expiresSoon": "Token expires soon"
     },
     "banner": {
       "signInRefused": "The provider refused the sign-in, so tool calls stop here until you authorize again.",
       "tokenRefused": "The provider refused the access token, so tool calls stop here until you save a new one.",
+      "credentialsRefused": "Every tool call of this connector fails until you save valid credentials.",
       "expiresOn": "The access token stops working on {date}.",
       "expiresSoon": "The access token stops working soon.",
-      "since": "Since {date}"
+      "since": "Since {date}",
+      "updateCredentials": "Update credentials"
     }
   },
   "authTypes": {

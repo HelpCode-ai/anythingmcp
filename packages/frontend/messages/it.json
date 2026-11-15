@@ -953,14 +953,17 @@
     "pill": {
       "signInExpired": "Accesso scaduto",
       "tokenRefused": "Token rifiutato",
+      "credentialsRefused": "Chiave rifiutata",
       "expiresSoon": "Il token scade presto"
     },
     "banner": {
       "signInRefused": "Il provider ha rifiutato l'accesso, quindi le chiamate agli strumenti si fermano finché non autorizzi di nuovo.",
       "tokenRefused": "Il provider ha rifiutato il token di accesso, quindi le chiamate agli strumenti si fermano finché non ne salvi uno nuovo.",
+      "credentialsRefused": "Ogni chiamata agli strumenti di questo connettore fallisce finché non salvi credenziali valide.",
       "expiresOn": "Il token di accesso smette di funzionare il {date}.",
       "expiresSoon": "Il token di accesso smetterà presto di funzionare.",
-      "since": "Dal {date}"
+      "since": "Dal {date}",
+      "updateCredentials": "Aggiorna credenziali"
     }
   },
   "authTypes": {
