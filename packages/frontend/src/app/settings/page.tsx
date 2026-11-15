@@ -11,6 +11,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useToast } from '@/components/toast';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { LearningProjectsCard } from '@/components/learning-projects-card';
 import { StatusPill } from '@/components/ui/badge';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ActiveSubscriptionNotice, subscribedWorkspacesOf, type SubscribedWorkspace } from '@/components/active-subscription-notice';
@@ -514,6 +515,9 @@ export default function SettingsPage() {
           )}
         </Card>
       )}
+
+      {/* Learning projects: only for a member an admin started one for. */}
+      {token && <LearningProjectsCard token={token} />}
 
       {/* Change Password */}
       <Card className="p-[22px]">

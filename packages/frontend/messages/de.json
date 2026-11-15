@@ -32,7 +32,8 @@
       "knowledgeGraph": "Knowledge Graph",
       "aiSkills": "KI-Skills",
       "memory": "Gedächtnis",
-      "setup": "Einrichtung & Onboarding"
+      "setup": "Einrichtung & Onboarding",
+      "learning": "Lernprojekte"
     },
     "settings": "Einstellungen",
     "switchWorkspace": "Workspace wechseln",
@@ -3116,7 +3117,8 @@
       "hideHistory": "Verlauf ausblenden",
       "history": "Verlauf ({count, plural, one {# frühere Version} other {# frühere Versionen}})",
       "replaced": "ersetzt am {date}",
-      "historyProcedure": "Ablauf: {count, plural, one {# Zeichen} other {# Zeichen}}"
+      "historyProcedure": "Ablauf: {count, plural, one {# Zeichen} other {# Zeichen}}",
+      "draftOnly": "Entwurf: nur für das Mitglied"
     },
     "sources": {
       "llm": "von KI erstellt",
@@ -3124,7 +3126,8 @@
       "mergedByAi": "von KI zusammengeführt",
       "errors": "aus behobenen Fehlern gelernt",
       "finder": "aus dem Skills Finder",
-      "manual": "von Hand geschrieben"
+      "manual": "von Hand geschrieben",
+      "learning": "aus einem Lernprojekt"
     },
     "form": {
       "titlePlaceholder": "Titel",
@@ -3934,5 +3937,166 @@
     "addPaymentBefore": "Zahlungsmethode hinterlegen: keine Abbuchung vor dem {date}",
     "addPayment": "Zahlungsmethode hinterlegen",
     "upgrade": "Jetzt upgraden"
+  },
+  "learning": {
+    "title": "Lernprojekte",
+    "intro": "Ein Lernprojekt bewahrt, was eine Kollegin oder ein Kollege der KI auf einem MCP-Server beibringt: Korrekturen und Erklärungen werden zu Skills für alle. Nichts wird gespeichert, bevor die Person zustimmt, und sie kann jederzeit aufhören.",
+    "loading": "Wird geladen…",
+    "loadFailed": "Die Lernprojekte konnten nicht geladen werden",
+    "allowance": {
+      "unlimited": "Ihr Tarif enthält Lernprojekte ohne Begrenzung.",
+      "some": "{used} von {max} Lernprojekten in Verwendung."
+    },
+    "upsell": {
+      "cloudTitle": "Lernprojekte gehören zu den Tarifen Team und Enterprise",
+      "cloudBody": "Bewahren Sie, was erfahrene Mitarbeitende der KI beibringen, bevor sie gehen: Ihre Korrekturen werden zu Skills, die die KI-Assistenten des ganzen Teams nutzen. Team enthält ein Projekt, Enterprise ist unbegrenzt.",
+      "cloudCta": "Tarife ansehen",
+      "selfTitle": "Lernprojekte gehören zu AnythingMCP Enterprise",
+      "selfBody": "Bewahren Sie, was erfahrene Mitarbeitende der KI beibringen, bevor sie gehen: Ihre Korrekturen werden zu Skills, die die KI-Assistenten des ganzen Teams nutzen. Die 30-tägige Evaluierung enthält ein Projekt.",
+      "contact": "Kontakt zu Enterprise",
+      "key": "Lizenzschlüssel eingeben"
+    },
+    "new": {
+      "button": "Neues Lernprojekt",
+      "title": "Neues Lernprojekt",
+      "name": "Name",
+      "namePlaceholder": "z. B. Beschläge für alte Fenster",
+      "member": "Lernen von",
+      "memberPlaceholder": "Mitglied wählen",
+      "server": "Auf dem MCP-Server",
+      "serverPlaceholder": "MCP-Server wählen",
+      "folder": "Skills ablegen in",
+      "noFolder": "Kein Ordner",
+      "endsAt": "Endet am (optional)",
+      "tags": "Labels (optional)",
+      "tagsHint": "Durch Kommas getrennt, z. B. Fenster, Beschläge",
+      "publishMode": "Veröffentlichung",
+      "publishManual": "Eine Person veröffentlicht jedes Thema",
+      "publishConfirmed": "Vom Mitglied bestätigte Lektionen werden veröffentlicht",
+      "showName": "Namen des Mitglieds allen zeigen, nicht nur Admins",
+      "create": "Starten und Mitglied fragen",
+      "creating": "Wird gestartet…",
+      "cancel": "Abbrechen",
+      "created": "Gestartet. Das Mitglied stimmt unter Einstellungen → Profil zu; vorher wird nichts gespeichert.",
+      "limitReached": "Alle Lernprojekte Ihres Tarifs sind in Verwendung. Beenden oder pausieren Sie eines, um ein weiteres zu starten."
+    },
+    "status": {
+      "draft": "Wartet auf das Mitglied",
+      "active": "Aktiv",
+      "paused": "Pausiert",
+      "ended": "Beendet",
+      "overPlan": "Nicht im Tarif"
+    },
+    "card": {
+      "expert": "Lernt von {name}",
+      "expertHidden": "Mitglied nur für Admins sichtbar",
+      "server": "auf {name}",
+      "noServer": "der MCP-Server wurde gelöscht",
+      "lessons": "{confirmed} bestätigt · {draft} zu bestätigen",
+      "topics": "{count} Thema/Themen",
+      "open": "Öffnen",
+      "ends": "endet am {date}"
+    },
+    "empty": "Noch kein Lernprojekt.",
+    "detail": {
+      "back": "Alle Lernprojekte",
+      "notFound": "Lernprojekt nicht gefunden",
+      "tabs": {
+        "topics": "Themen",
+        "lessons": "Lektionen",
+        "settings": "Einstellungen"
+      },
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "end": "Beenden",
+      "delete": "Löschen",
+      "confirmEnd": "Dieses Lernprojekt beenden? Lektionen und veröffentlichte Skills bleiben erhalten; es kann nicht erneut gestartet werden.",
+      "confirmDelete": "Dieses Lernprojekt mit allen Lektionen löschen? Veröffentlichte Skills bleiben erhalten.",
+      "waiting": "Wartet darauf, dass {name} unter Einstellungen → Profil zustimmt. Vorher wird nichts gespeichert.",
+      "waitingHidden": "Wartet darauf, dass das Mitglied unter Einstellungen → Profil zustimmt. Vorher wird nichts gespeichert.",
+      "overPlan": "Dieses Projekt liegt über der Anzahl, die Ihr Tarif enthält, daher wird nichts erfasst. Beenden Sie ein anderes Projekt oder wechseln Sie den Tarif."
+    },
+    "topics": {
+      "empty": "Noch keine Lektionen. Sie erscheinen, wenn das Mitglied die KI auf diesem Server korrigiert oder ihr etwas erklärt.",
+      "when": "Wann:",
+      "published": "Veröffentlicht am {date}",
+      "notPublished": "Nicht veröffentlicht",
+      "changes": "Bestätigte Änderungen zu veröffentlichen",
+      "counts": "{confirmed} bestätigt · {draft} zu bestätigen",
+      "preview": "Vorschau",
+      "hidePreview": "Vorschau ausblenden",
+      "publish": "Veröffentlichen",
+      "publishing": "Wird veröffentlicht…",
+      "publishedMsg": "Veröffentlicht: {count} Lektion(en) sind jetzt ein Skill für alle auf diesem Server.",
+      "nothing": "Noch nichts Bestätigtes zu veröffentlichen.",
+      "dropped": "{count} ältere Lektion(en) passten nicht in den Text und wurden weggelassen.",
+      "viewSkill": "AI Skills öffnen"
+    },
+    "lessons": {
+      "filter": {
+        "all": "Alle",
+        "draft": "Zu bestätigen",
+        "confirmed": "Bestätigt",
+        "rejected": "Abgelehnt"
+      },
+      "empty": "Keine Lektionen hier.",
+      "kind": {
+        "rule": "Regel",
+        "fact": "Fakt",
+        "correction": "Korrektur",
+        "example": "Beispiel"
+      },
+      "source": {
+        "model": "von der KI gemeldet",
+        "diff": "in der Arbeit beobachtet",
+        "interview": "aus einem Interview",
+        "manual": "von einer Kuratorin oder einem Kurator bearbeitet"
+      },
+      "status": {
+        "draft": "Zu bestätigen",
+        "confirmed": "Bestätigt",
+        "rejected": "Abgelehnt",
+        "superseded": "Ersetzt"
+      },
+      "before": "Statt:",
+      "after": "Verwenden:",
+      "reason": "Warum:",
+      "askWhy": "Noch kein Grund angegeben",
+      "seen": "{count}× gesagt",
+      "confirm": "Bestätigen",
+      "reject": "Ablehnen",
+      "reopen": "Wieder öffnen",
+      "edit": "Umformulieren",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "more": "Mehr anzeigen"
+    },
+    "settings": {
+      "name": "Name",
+      "folder": "Skills ablegen in",
+      "folderHint": "Gilt für Themen, die ab jetzt begonnen werden.",
+      "endsAt": "Endet am",
+      "tags": "Labels",
+      "publishMode": "Veröffentlichung",
+      "showName": "Namen des Mitglieds allen zeigen, nicht nur Admins",
+      "save": "Speichern",
+      "saved": "Gespeichert."
+    },
+    "profile": {
+      "title": "Lernprojekte",
+      "ask": "Ihr Admin möchte bewahren, was Sie der KI auf dem MCP-Server „{server}“ beibringen, für das Lernprojekt „{name}“.",
+      "notice": "Wenn Sie auf dem MCP-Server „{server}“ die KI korrigieren oder erklären, wie die Arbeit gemacht wird, speichert die KI das als Lektion für das Lernprojekt „{name}“. Aus Lektionen werden Skills, die die KI-Assistenten Ihrer Kolleginnen und Kollegen nutzen können. Gespeichert werden: die Lektionen. Nicht gespeichert werden: das Gespräch selbst, Ihre Arbeit auf anderen Servern und Kennzahlen zu Ihrer Arbeit. Sie bestätigen jede Lektion, bevor sie geteilt wird. Admins und Editoren des Workspace können die Lektionen lesen. Sie können auf dieser Seite jederzeit aufhören und alles löschen, was nicht veröffentlicht wurde.",
+      "nameHidden": "Ihr Name ist nur für Admins sichtbar.",
+      "nameShown": "Ihr Name wird bei den von Ihnen gelernten Skills angezeigt.",
+      "accept": "Zustimmen",
+      "decline": "Ablehnen",
+      "accepted": "Zugestimmt. Aktualisieren Sie die Tool-Liste dieses Konnektors in Ihrem KI-Client, um die Lern-Tools zu erhalten.",
+      "active": "„{name}“ ist auf „{server}“ seit {date} aktiv.",
+      "paused": "„{name}“ wurde von Ihrem Admin pausiert.",
+      "stop": "Aufhören",
+      "erase": "Auch meine nicht veröffentlichten Lektionen löschen",
+      "stopped": "Beendet.",
+      "failed": "Ihre Antwort konnte nicht gespeichert werden"
+    }
   }
 }

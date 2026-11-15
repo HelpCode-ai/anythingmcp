@@ -1599,7 +1599,7 @@ export interface KgSkill {
   kind?: string;
   /** For a `code` proposal: the candidate code tool an admin approves. */
   payload?: KgCodeProposalPayload | null;
-  /** manual | llm | finder | agent */
+  /** manual | llm | finder | agent | learning */
   source?: string;
   /** Optional full procedure (markdown), served on demand by skill_get. */
   body?: string | null;
@@ -1609,7 +1609,159 @@ export interface KgSkill {
   folderId?: string | null;
   /** For a merge proposal: the active skills applying it deactivates. */
   replaces?: string[];
+  /** Free labels; a learned skill carries `learned` and its project's labels. */
+  tags?: string[];
+  /** Set on a learning project's draft: only this member's AI is served it. */
+  audienceUserId?: string | null;
+  learningProjectId?: string | null;
 }
+
+// ── Learning projects (#1695) ──────────────────────────────────────────────
+
+export type LearningProjectStatus = 'draft' | 'active' | 'paused' | 'ended';
+export type LearningLessonStatus = 'draft' | 'confirmed' | 'rejected' | 'superseded';
+
+/** What the workspace's plan includes, and how many projects are open. */
+export interface LearningAllowance {
+  /** null = no limit; 0 = not in this plan. */
+  max: number | null;
+  /** The Enterprise parts are included. */
+  full: boolean;
+  plan: string;
+  used: number;
+}
+
+export interface LearningLessonCounts {
+  draft: number;
+  confirmed: number;
+  rejected: number;
+}
+
+export interface LearningProject {
+  id: string;
+  name: string;
+  status: LearningProjectStatus;
+  /** Open, but past the number the plan includes: nothing is captured. */
+  overPlan: boolean;
+  publishMode: 'manual' | 'confirmed';
+  tags: string[];
+  showExpertName: boolean;
+  /** Null for viewers who may not see who the project learns from. */
+  expert: { id: string; name: string | null; email?: string } | null;
+  mcpServer: { id: string; name: string } | null;
+  folder: { id: string; name: string } | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  consentAt: string | null;
+  createdAt: string;
+  topics: number;
+  lessons: LearningLessonCounts;
+}
+
+export interface LearningTopic {
+  id: string;
+  title: string;
+  whenToUse: string;
+  draftSkillId: string | null;
+  publishedSkillId: string | null;
+  publishedAt: string | null;
+  lessons: LearningLessonCounts;
+  /** Confirmed lessons changed since the last publication. */
+  unpublished: boolean;
+}
+
+export type LearningProjectDetail = Omit<LearningProject, 'topics'> & { topics: LearningTopic[] };
+
+export interface LearningLesson {
+  id: string;
+  projectId: string;
+  topicId: string;
+  kind: 'rule' | 'fact' | 'correction' | 'example';
+  text: string;
+  detail: { before?: string; after?: string; reason?: string; tool?: string; needsReason?: boolean } | null;
+  status: LearningLessonStatus;
+  source: 'model' | 'diff' | 'interview' | 'manual';
+  seenCount: number;
+  confirmedAt: string | null;
+  createdAt: string;
+  topic?: { title: string };
+}
+
+/** One of the caller's own learning projects (profile page). */
+export interface MyLearningProject {
+  id: string;
+  name: string;
+  status: LearningProjectStatus;
+  mcpServer: { id: string; name: string } | null;
+  consentAt: string | null;
+  endsAt: string | null;
+  showExpertName: boolean;
+}
+
+export interface LearningProjectInput {
+  name: string;
+  userId: string;
+  mcpServerId: string;
+  folderId?: string | null;
+  endsAt?: string | null;
+  tags?: string[];
+  publishMode?: 'manual' | 'confirmed';
+  showExpertName?: boolean;
+}
+
+export const learning = {
+  allowance: (token: string) => request<LearningAllowance>('/api/learning/allowance', { token }),
+  list: (token: string) =>
+    request<{ allowance: LearningAllowance; projects: LearningProject[] }>('/api/learning/projects', { token }),
+  get: (token: string, id: string) => request<LearningProjectDetail>(`/api/learning/projects/${id}`, { token }),
+  create: (token: string, body: LearningProjectInput) =>
+    request<{ id: string }>('/api/learning/projects', { token, method: 'POST', body }),
+  update: (token: string, id: string, body: Partial<Omit<LearningProjectInput, 'userId' | 'mcpServerId'>>) =>
+    request<{ id: string }>(`/api/learning/projects/${id}`, { token, method: 'PATCH', body }),
+  setStatus: (token: string, id: string, action: 'pause' | 'resume' | 'end') =>
+    request<{ id: string; status: LearningProjectStatus }>(`/api/learning/projects/${id}/${action}`, {
+      token,
+      method: 'POST',
+    }),
+  remove: (token: string, id: string) =>
+    request<{ ok: boolean; lessons: number }>(`/api/learning/projects/${id}`, { token, method: 'DELETE' }),
+  lessons: (
+    token: string,
+    id: string,
+    params: { status?: LearningLessonStatus; topicId?: string; take?: number; skip?: number } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    if (params.topicId) qs.set('topicId', params.topicId);
+    if (params.take != null) qs.set('take', String(params.take));
+    if (params.skip != null) qs.set('skip', String(params.skip));
+    return request<{ items: LearningLesson[]; total: number; take: number; skip: number }>(
+      `/api/learning/projects/${id}/lessons?${qs.toString()}`,
+      { token },
+    );
+  },
+  setLesson: (token: string, lessonId: string, body: { status?: 'draft' | 'confirmed' | 'rejected'; text?: string }) =>
+    request<LearningLesson>(`/api/learning/lessons/${lessonId}`, { token, method: 'PATCH', body }),
+  preview: (token: string, topicId: string) =>
+    request<{ topic: { id: string; title: string }; instruction: string; body: string | null; included: number; dropped: number }>(
+      `/api/learning/topics/${topicId}/preview`,
+      { token },
+    ),
+  publish: (token: string, topicId: string) =>
+    request<{ skillId: string; lessons: number; dropped: number }>(`/api/learning/topics/${topicId}/publish`, {
+      token,
+      method: 'POST',
+    }),
+  mine: (token: string) => request<MyLearningProject[]>('/api/learning/me', { token }),
+  consent: (token: string, id: string, notice: string) =>
+    request<{ id: string }>(`/api/learning/projects/${id}/consent`, { token, method: 'POST', body: { notice } }),
+  withdraw: (token: string, id: string, erase: boolean) =>
+    request<{ ok: boolean; erased: number }>(`/api/learning/projects/${id}/withdraw`, {
+      token,
+      method: 'POST',
+      body: { erase },
+    }),
+};
 
 export interface KnowledgeFolder {
   id: string;
