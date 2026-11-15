@@ -23,5 +23,11 @@ the repository.
   sign-on, SCIM and role sync (Enterprise) are active only with an
   Enterprise licence key (or an existing Business key), during the trial,
   or during the transition period of an upgraded instance.
+- `learning/` — learning projects: learning turned on for one member on one
+  MCP server, whose corrections become skills with their origin recorded.
+  Loaded everywhere; active with a Team or Enterprise plan on AnythingMCP
+  Cloud, and with an Enterprise licence key (or during the evaluation) on a
+  self-hosted instance. The tables and the skill columns are part of the AGPL
+  schema; without this module nothing writes to them.
 
 For licensing questions, contact info@helpcode.ai.

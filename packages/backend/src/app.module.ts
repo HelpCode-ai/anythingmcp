@@ -49,6 +49,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { PublicStatsModule } from './public-stats/public-stats.module';
 import { CloudModule } from './ee/cloud/cloud.module';
 import { LicensingModule } from './ee/licensing/licensing.module';
+import { LearningModule } from './ee/learning/learning.module';
 import { SupportModule } from './ee/support/support.module';
 import { supportModuleEnabled } from './ee/support/support-config';
 import { getRequiredSecret } from './common/secrets.util';
@@ -187,6 +188,7 @@ if (useOAuth) {
     LicenseModule,
     PlanCapsModule,
     LicensingModule,
+    LearningModule,
 
     // Cloud-specific modules (conditionally loaded)
     ...cloudImports,

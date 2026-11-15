@@ -45,6 +45,7 @@ model Organization {
   memoryItems          MemoryItem[]
   knowledgeFolders     KnowledgeFolder[]
   kgSkills             KgSkillSuggestion[]
+  learningProjects     LearningProject[]
   securityEvents       SecurityEvent[]
   productEvents        ProductEvent[]
   webhookEvents        WebhookEvent[]
@@ -197,6 +198,11 @@ model User {
   scimGroupMemberships    IdentityProviderGroupMember[]
   mcpConnectionGrants     McpConnectionGrant[]
   memoryItems             MemoryItem[]                  @relation("MemoryOwner")
+  // Learning projects (#1695): the projects this user is the expert of, the
+  // skills learned from them, and the draft skills only they can see.
+  learningProjects        LearningProject[]             @relation("LearningExpert")
+  skillsLearnedFrom       KgSkillSuggestion[]           @relation("SkillOrigin")
+  skillDrafts             KgSkillSuggestion[]           @relation("SkillAudience")
   fileShares              FileShare[]                   @relation("FileShareCreator")
 
   @@index([organizationId])
@@ -760,11 +766,12 @@ model McpServerConfig {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  connectors      McpServerConnector[]
-  apiKeys         McpApiKey[]
-  toolInvocations ToolInvocation[]
-  kgSkills        KgSkillSuggestion[]
-  codeRuns        CodeRun[]
+  connectors       McpServerConnector[]
+  apiKeys          McpApiKey[]
+  toolInvocations  ToolInvocation[]
+  kgSkills         KgSkillSuggestion[]
+  codeRuns         CodeRun[]
+  learningProjects LearningProject[]
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -1689,11 +1696,138 @@ model KgSkillSuggestion {
   folderId      String?          @map("folder_id")
   folder        KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: NoAction)
 
+  // ── Learned skills (#1695) ──
+  // The learning project a `learning` skill was built from. The skill stays
+  // when the project goes.
+  learningProjectId String?          @map("learning_project_id")
+  learningProject   LearningProject? @relation(fields: [learningProjectId], references: [id], onDelete: SetNull)
+  // The member the skill was learned from. Shown to admins only.
+  originUserId      String?          @map("origin_user_id")
+  originUser        User?            @relation("SkillOrigin", fields: [originUserId], references: [id], onDelete: SetNull)
+  // Set on a draft: only this member is served the skill. Null = everyone
+  // who may see its scope and folder. A draft goes with its member.
+  audienceUserId    String?          @map("audience_user_id")
+  audienceUser      User?            @relation("SkillAudience", fields: [audienceUserId], references: [id], onDelete: Cascade)
+  // Free labels, e.g. ["learned", "windows"]. Lower case, at most 10.
+  tags              Json             @default("[]")
+  draftOfTopics     LearningTopic[]  @relation("TopicDraftSkill")
+  publishedOfTopics LearningTopic[]  @relation("TopicPublishedSkill")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([organizationId])
+  @@index([audienceUserId])
   @@map("kg_skill_suggestions")
+}
+
+// ── Learning projects (#1695) ───────────────────────────────────────────────
+// An admin turns learning on for ONE member on ONE MCP server. What that
+// member teaches the AI client there is kept as lessons; the lessons of a
+// topic are rendered into one skill. Nothing is captured before the member
+// consents (`consentAt`), and the member can withdraw at any time.
+model LearningProject {
+  id              String           @id @default(cuid())
+  organizationId  String           @map("organization_id")
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name            String
+  // The expert. SetNull: the lessons outlive the account, without the person.
+  userId          String?          @map("user_id")
+  user            User?            @relation("LearningExpert", fields: [userId], references: [id], onDelete: SetNull)
+  // SetNull, not cascade: deleting a server must not delete what was learned
+  // on it. A project without a server is never active.
+  mcpServerId     String?          @map("mcp_server_id")
+  mcpServer       McpServerConfig? @relation(fields: [mcpServerId], references: [id], onDelete: SetNull)
+  // Where the learned skills are filed. NO ACTION like the other folder
+  // links: the folder service moves projects to the parent before a delete.
+  folderId        String?          @map("folder_id")
+  folder          KnowledgeFolder? @relation(fields: [folderId], references: [id], onDelete: NoAction)
+  // draft (waiting for the member's consent) | active | paused | ended
+  status          String           @default("draft")
+  // manual (a person publishes) | confirmed (confirmed lessons publish)
+  publishMode     String           @default("manual") @map("publish_mode")
+  tags            Json             @default("[]")
+  // { showExpertName?: boolean, rawRetentionDays?: number }
+  settings        Json             @default("{}")
+  startsAt        DateTime?        @map("starts_at")
+  endsAt          DateTime?        @map("ends_at")
+  consentAt       DateTime?        @map("consent_at")
+  // The notice the member accepted, as it was shown.
+  consentNotice   String?          @map("consent_notice") @db.Text
+  createdByUserId String?          @map("created_by_user_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  topics  LearningTopic[]
+  lessons LearningLesson[]
+  skills  KgSkillSuggestion[]
+
+  @@index([organizationId, status])
+  @@index([userId, mcpServerId])
+  @@map("learning_projects")
+}
+
+// One topic of a project = one skill. `draftSkill` holds every lesson and is
+// served to the expert only; `publishedSkill` holds the confirmed lessons as
+// of the last publication and is served to everyone.
+model LearningTopic {
+  id               String             @id @default(cuid())
+  organizationId   String             @map("organization_id")
+  projectId        String             @map("project_id")
+  project          LearningProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title            String
+  // The title reduced to letters and digits, so "Old windows" and
+  // "old  windows!" are one topic.
+  key              String
+  whenToUse        String             @default("") @map("when_to_use") @db.Text
+  draftSkillId     String?            @map("draft_skill_id")
+  draftSkill       KgSkillSuggestion? @relation("TopicDraftSkill", fields: [draftSkillId], references: [id], onDelete: SetNull)
+  publishedSkillId String?            @map("published_skill_id")
+  publishedSkill   KgSkillSuggestion? @relation("TopicPublishedSkill", fields: [publishedSkillId], references: [id], onDelete: SetNull)
+  publishedAt      DateTime?          @map("published_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lessons LearningLesson[]
+
+  @@unique([projectId, key])
+  @@index([organizationId])
+  @@map("learning_topics")
+}
+
+// One thing the expert taught: a rule, a fact, a correction or a worked
+// example. Lessons are never rewritten: a correction supersedes the earlier
+// lesson, so every sentence of a learned skill has an origin.
+model LearningLesson {
+  id                String          @id @default(cuid())
+  organizationId    String          @map("organization_id")
+  projectId         String          @map("project_id")
+  project           LearningProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  topicId           String          @map("topic_id")
+  topic             LearningTopic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  kind              String // rule | fact | correction | example
+  text              String          @db.Text
+  // { before?, after?, reason?, tool?, needsReason? }
+  detail            Json            @default("{}")
+  // Hash of the normalised text: the same lesson reported again is counted
+  // on the row (`seenCount`), not stored twice.
+  textHash          String          @map("text_hash")
+  status            String          @default("draft") // draft | confirmed | rejected | superseded
+  supersededById    String?         @map("superseded_by_id")
+  source            String          @default("model") // model | diff | interview | manual
+  seenCount         Int             @default(1) @map("seen_count")
+  confirmedAt       DateTime?       @map("confirmed_at")
+  confirmedByUserId String?         @map("confirmed_by_user_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([topicId, textHash])
+  @@index([projectId, status])
+  @@index([organizationId])
+  @@map("learning_lessons")
 }
 
 // Earlier content of a workspace skill, written when an edit changes it.
@@ -1817,8 +1951,9 @@ model KnowledgeFolder {
   createdAt      DateTime          @default(now()) @map("created_at")
   updatedAt      DateTime          @updatedAt @map("updated_at")
 
-  skills      KgSkillSuggestion[]
-  memoryItems MemoryItem[]
+  skills           KgSkillSuggestion[]
+  memoryItems      MemoryItem[]
+  learningProjects LearningProject[]
 
   @@index([organizationId])
   @@index([parentId])

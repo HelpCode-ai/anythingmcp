@@ -27,6 +27,7 @@ function make(opts: {
     knowledgeFolder: { update: jest.fn(), delete: jest.fn() },
     kgSkillSuggestion: { updateMany: jest.fn() },
     memoryItem: { updateMany: jest.fn() },
+    learningProject: { updateMany: jest.fn() },
   };
   const prisma: any = {
     knowledgeFolder: {
@@ -55,6 +56,7 @@ function make(opts: {
       groupBy: jest.fn(async () => []),
       findMany: jest.fn(async () => []),
     },
+    learningProject: { count: jest.fn(async () => 0) },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
   const edition: any = {
@@ -188,6 +190,11 @@ describe('KnowledgeFoldersService changes', () => {
       where: { organizationId: ORG, folderId: 'quotes' },
       data: { folderId: 'sales' },
     });
+    // A learning project keeps filing its skills where the folder went.
+    expect(tx.learningProject.updateMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, folderId: 'quotes' },
+      data: { folderId: 'sales' },
+    });
     expect(tx.knowledgeFolder.delete).toHaveBeenCalledWith({ where: { id: 'quotes' } });
   });
 
@@ -271,6 +278,15 @@ describe('KnowledgeFoldersService never widens access by accident', () => {
     prisma.kgSkillSuggestion.count = jest.fn(async () => 2);
     prisma.memoryItem.count = jest.fn(async () => 0);
     await expect(svc.remove(ORG, 'sales')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('refuses deleting a limited folder that a learning project files into', async () => {
+    const { svc, prisma } = make();
+    prisma.kgSkillSuggestion.count = jest.fn(async () => 0);
+    prisma.memoryItem.count = jest.fn(async () => 0);
+    prisma.learningProject.count = jest.fn(async () => 1);
+    await expect(svc.remove(ORG, 'sales')).rejects.toThrow(/still holds 1 item/);
+    expect(prisma.learningProject.count).toHaveBeenCalledWith({ where: { organizationId: ORG, folderId: 'sales' } });
   });
 
   it('hands a deleted limited folder\'s limit down to its subfolders', async () => {
