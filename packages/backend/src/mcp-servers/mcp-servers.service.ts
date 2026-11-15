@@ -7,6 +7,7 @@ import {
 } from '../knowledge-graph/kg-skill.service';
 import { KnowledgeFoldersService } from '../knowledge-folders/knowledge-folders.service';
 import { connectorInstructions } from '../adapters/instruction-facts';
+import { appApprovalAnnounced } from '../adapters/app-approval-watch';
 import { McpSessionManager } from './mcp-session.manager';
 import {
   connectorWhere,
@@ -485,20 +486,27 @@ export class McpServersService {
    * organization. Fails closed: an unknown server yields nothing.
    */
   /**
-   * Name of each connector, and whether it carries notes for the model. For
-   * the shared endpoint's tool set; the ids come from the caller's already
-   * scoped tools.
+   * Name of each connector, whether it carries notes for the model, and
+   * whether its provider approved the user's app while the watch has not seen
+   * the sign-in (read from the row, because the watcher writes that state
+   * without reloading the tool registry). For the shared endpoint's tool set;
+   * the ids come from the caller's already scoped tools.
    */
   async getConnectorSummaries(
     connectorIds: string[],
-  ): Promise<Array<{ id: string; name: string; hasGuide: boolean }>> {
+  ): Promise<Array<{ id: string; name: string; hasGuide: boolean; appApproved?: boolean }>> {
     const ids = [...new Set(connectorIds)];
     if (ids.length === 0) return [];
     const rows = await this.prisma.connector.findMany({
       where: { id: { in: ids } },
-      select: { id: true, name: true, instructions: true },
+      select: { id: true, name: true, instructions: true, config: true },
     });
-    return rows.map((r) => ({ id: r.id, name: r.name, hasGuide: !!r.instructions }));
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      hasGuide: !!r.instructions,
+      ...(appApprovalAnnounced(r.config) ? { appApproved: true } : {}),
+    }));
   }
 
   /**

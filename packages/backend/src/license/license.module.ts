@@ -8,6 +8,7 @@ import { LicenseWallService } from './license-wall.service';
 import { RetentionLicenceClient } from './retention-licence.client';
 import { InvoiceEmailService } from './invoice-email.service';
 import { TrialExtensionController } from './trial-extension.controller';
+import { AppApprovalTrialExtensionService } from './app-approval-trial-extension.service';
 import { ReactivationController } from './reactivation.controller';
 import { SettingsModule } from '../settings/settings.module';
 import { UsersModule } from '../users/users.module';
@@ -24,6 +25,7 @@ import { PlanFitService } from './plan-fit.service';
     CardTrialOfferService,
     LicenseWallService,
     RetentionLicenceClient,
+    AppApprovalTrialExtensionService,
     InvoiceEmailService,
     PlanFitService,
   ],
@@ -33,6 +35,7 @@ import { PlanFitService } from './plan-fit.service';
     CardTrialEligibilityService,
     CardTrialOfferService,
     RetentionLicenceClient,
+    AppApprovalTrialExtensionService,
     PlanFitService,
   ],
 })
