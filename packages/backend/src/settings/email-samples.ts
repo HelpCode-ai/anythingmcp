@@ -9,6 +9,7 @@ import {
   planCapsAppliedEmail,
   cardTrialOfferEmail,
   connectorAuthEmail,
+  connectorCredentialsRefusedEmail,
   existingAccountEmail,
   invitationEmail,
   licenseKeyEmail,
@@ -89,6 +90,20 @@ export const EMAIL_SAMPLES: EmailSample[] = [
           connectorName: n.other,
           message:
             "Google revoked the sign-in 7 days after it was granted. This happens when the OAuth app in your Google Cloud project is in 'Testing'. Publish it ('In production') under APIs & Services → OAuth consent screen, then click Authorize with Provider again.",
+          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
+        },
+        ctx,
+      ),
+  },
+  {
+    id: 'connector-credentials-refused',
+    render: (ctx, n) =>
+      connectorCredentialsRefusedEmail(
+        {
+          name: n.name,
+          connectorName: n.other,
+          message:
+            "The API refused this connector's saved credentials on 3 calls in a row (HTTP 401). Odoo refused the API key (\"Invalid apikey\"). Since Odoo 18 keys expire, and the key dialog preselects a Duration of 1 Day, so a key that worked yesterday has most likely expired. Create a new one under My Profile → Account Security → New API Key.",
           connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
         },
         ctx,

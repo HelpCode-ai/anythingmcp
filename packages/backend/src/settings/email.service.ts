@@ -20,6 +20,7 @@ import {
   appApprovedReminderEmail,
   cloudPageUrl,
   connectorAuthEmail,
+  connectorCredentialsRefusedEmail,
   connectorAddedFromSupportEmail,
   planCapsAppliedEmail,
   existingAccountEmail,
@@ -895,7 +896,14 @@ export class EmailService {
    */
   async sendConnectorAuthEmail(
     to: string,
-    input: { name: string | null; connectorName: string; message: string; connectorPath: string },
+    input: {
+      name: string | null;
+      connectorName: string;
+      message: string;
+      connectorPath: string;
+      /** `credentials`: a saved key the API keeps refusing, not a sign-in to renew. */
+      kind?: 'sign_in' | 'credentials';
+    },
     organizationId?: string,
   ): Promise<boolean> {
     const transport = await this.createTransporter(organizationId);
@@ -904,7 +912,8 @@ export class EmailService {
       return false;
     }
     const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '') || this.cloudUrl();
-    const email = connectorAuthEmail(
+    const template = input.kind === 'credentials' ? connectorCredentialsRefusedEmail : connectorAuthEmail;
+    const email = template(
       {
         name: input.name,
         connectorName: input.connectorName,
