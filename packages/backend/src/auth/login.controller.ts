@@ -14,7 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
-import { randomBytes, timingSafeEqual, createHmac } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { resolveDashboardSessionUser, type SessionUser } from './dashboard-session.util';
@@ -331,7 +331,6 @@ export class LoginController {
     // Only inside a pending authorization: a bookmark or a crawler on this
     // address is not somebody connecting an AI client.
     if (consent) {
-      const sessionId = typeof req.cookies?.oauth_session === 'string' ? req.cookies.oauth_session : '';
       void this.productEvents
         ?.log({
           event: ProductEvents.AUTHORIZE_PAGE_VIEWED,
@@ -339,12 +338,10 @@ export class LoginController {
             client: consent.clientName,
             device: isPhoneUserAgent(req.headers['user-agent']) ? 'phone' : 'desktop',
             // Reloads and the return from a social sign-in show the page
-            // again: the same attempt, counted once by this value.
-            // Keyed, so the value cannot be recomputed from a session id.
-            attempt: createHmac('sha256', process.env.ENCRYPTION_KEY || 'authorize-attempt')
-              .update(sessionId)
-              .digest('hex')
-              .slice(0, 12),
+            // again: the same attempt, counted once by this value. It is
+            // the moment the pending authorization expires, set once when
+            // it starts; nothing of the session itself is stored.
+            ...(consent.expiresAt ? { attempt: consent.expiresAt.toString(36) } : {}),
           },
         })
         .catch(() => undefined);
