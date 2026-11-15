@@ -1,0 +1,1526 @@
+{
+  "slug": "microsoft-advertising",
+  "name": "Microsoft Advertising",
+  "description": "Read Microsoft Advertising (Bing Ads) through the Bing Ads API v13: ad accounts, campaigns, ad groups, ads, keywords, budgets, targeting, negative keywords and conversion goals, plus Ad Insight data: auction insights against competitors, performance change insights, budget, bid and keyword opportunities, historical search counts and Keyword Planner ideas. 22 read-only tools, OAuth2 with a developer token.",
+  "instructions": "## Microsoft Advertising\nThis connector reads **Microsoft Advertising** (formerly Bing Ads) through the JSON REST endpoints of the **Bing Ads API v13**: Customer Management and Customer Billing (`clientcenter.api.bingads.microsoft.com`), Campaign Management (`campaign.api.bingads.microsoft.com`) and Ad Insight (`adinsight.api.bingads.microsoft.com`). Every tool only reads: nothing creates, pauses or changes campaigns, budgets, bids, keywords or ads, and nothing spends money. The AI sees exactly what the signed-in Microsoft Advertising user sees.\n\n**Setup (one-time, about 15 minutes)**\n1. Open https://entra.microsoft.com, **App registrations, New registration**. Supported account types: **Any Entra ID Tenant + Personal Microsoft accounts** (older screens: accounts in any organizational directory and personal Microsoft accounts). The connector signs in through the `common` endpoint, as Microsoft recommends for the Bing Ads API, so a single-tenant app fails with AADSTS50194.\n2. **Redirect URI**: platform **Web**, `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `your AnythingMCP URL/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match exactly (AADSTS50011 otherwise).\n3. **Certificates & secrets, New client secret**: copy the secret **Value** (shown once) and note its expiry date.\n4. In Microsoft Advertising, sign in as a **Super Admin**, open **Settings, Developer settings** (https://ads.microsoft.com/cc/Settings/DevSettings), choose the user and **Request token**. The universal developer token works for any user; it gives no extra rights.\n5. Paste the Application (client) ID into `MICROSOFT_ADS_CLIENT_ID`, the secret value into `MICROSOFT_ADS_CLIENT_SECRET` and the token into `MICROSOFT_ADS_DEVELOPER_TOKEN`, and install.\n6. On the connector page click **Authorize with Provider** and sign in with a Microsoft Advertising user (multi-factor authentication is required by Microsoft). The scope is `https://ads.microsoft.com/msads.manage offline_access`; the refresh token is stored encrypted and access tokens (about one hour) are renewed automatically.\n\nIf the sign-in fails with **AADSTS650052**, the Microsoft Advertising application is missing from your organisation's directory: an Entra administrator adds the service principal of app id `d42ffc93-c136-491d-b4fd-6f18168c68fd` (Microsoft Advertising) once, or adds the delegated permission `msads.manage` of that API to your app registration.\n\n**Where to start**\n1. `microsoft_advertising_get_user`: the signed-in user (`User.Id`) and `CustomerRoles`, one per manager account (customer) with its `CustomerId` and `AccountIds`.\n2. `microsoft_advertising_list_accounts`: the ad accounts with `Id`, `Name`, `Number` and status. `microsoft_advertising_search_accounts` with field `UserId` and the user id returns the same accounts with `ParentCustomerId`, `CurrencyCode` and `TimeZone`; `microsoft_advertising_get_account` reads one.\n3. Every campaign and Ad Insight tool needs both `customer_id` (the account's `ParentCustomerId`, or the `CustomerId` of the role) and `account_id`. They are sent as the `CustomerId` and `CustomerAccountId` headers, and a mismatch answers error 106 or 1102. Ids are stable: reuse them within a conversation.\n\n**Ids**: the account id is a number such as `180012345`; the account **number** shown in the web UI (`F149ABCD`) is not accepted where an id is asked. All ids travel as strings of digits.\n\n**Structure (Campaign Management)**: `microsoft_advertising_list_campaigns` (the API alone returns only Search campaigns; this tool asks for Search, Shopping, Audience and PerformanceMax by default), `microsoft_advertising_get_campaigns`, `microsoft_advertising_list_ad_groups`, `microsoft_advertising_list_ads`, `microsoft_advertising_list_keywords`, `microsoft_advertising_get_budgets`, `microsoft_advertising_list_negative_keywords`, `microsoft_advertising_list_campaign_criterions` (locations, devices, ad schedule, audiences), `microsoft_advertising_list_conversion_goals` and `microsoft_advertising_list_uet_tags`. These return settings, statuses, budgets and bids, never clicks or spend.\n\n**Performance (Ad Insight)**: the reads that return numbers as JSON.\n- `microsoft_advertising_get_auction_insights`: impression share, overlap rate, above rate, top of page rate and outranking share against each competing domain over a date range.\n- `microsoft_advertising_get_performance_insights`: what changed (impressions, clicks, spend, conversions), why, and what to do, for up to one month.\n- `microsoft_advertising_get_budget_opportunities`, `microsoft_advertising_get_bid_opportunities`, `microsoft_advertising_get_keyword_opportunities`: Microsoft's suggestions with estimated extra clicks, impressions and cost. They are suggestions only; nothing is applied.\n- `microsoft_advertising_get_historical_search_counts` and `microsoft_advertising_get_keyword_ideas`: market research (Keyword Planner) for keywords and seed phrases. `location_id` 190 is the United States; other location ids appear in `microsoft_advertising_list_campaign_criterions` with criterion_type Location.\n- `microsoft_advertising_get_monthly_spend`: spend of one calendar month, only for accounts billed by monthly invoice.\n\n**Not included**: the Reporting API (campaign, keyword and search term reports with clicks, impressions, spend and conversions per day). It is asynchronous and delivers a ZIP file, which this connector cannot open. For those figures use the Microsoft Advertising web UI or its scheduled reports.\n\n**Reading the answers**\n- Money (`DailyBudget`, `Amount`, `CpcBid.Amount`, `SuggestedBid`, `CurrentBudget`) is in the **account currency**, as a plain decimal: read `CurrencyCode` from `microsoft_advertising_search_accounts` or `microsoft_advertising_get_account` before quoting amounts.\n- Rates in auction insights are fractions: 0.25 means 25 percent.\n- Dates in Ad Insight requests are separate year, month and day numbers; work them out from today's date. Performance insights accept at most one month; daily historical search counts go back 45 days, weekly 15 weeks, monthly 24 months.\n- Campaign `Status` values include Active, Paused, BudgetPaused, BudgetAndManualPaused and Suspended; ads and keywords also carry an `EditorialStatus` (Disapproved means the ad or keyword does not serve).\n- Lists that take ids accept up to 100 per call (ad groups 1,000); `PartialErrors` names ids that could not be read.\n\n**Limits and errors**\n- Campaign Management and Ad Insight limit calls per user per minute: error 117 CallRateExceeded means wait 60 seconds.\n- 105 InvalidCredentials: wrong developer token or access token (a sandbox token such as BBD37VB98 does not work on production). 109 AuthenticationTokenExpired or 3101 OAuthTokenInvalid: authorize again.\n- 106 UserIsNotAuthorized: the user has no access to that customer or account. 1029 or 1030: customer_id or account_id missing. 1102: invalid account id. 516 EntityIdFilterMismatch: a campaign id of a type not in `campaign_types`.\n- `microsoft_advertising_get_monthly_spend` refuses credit card and prepaid accounts.",
+  "aliases": [
+    "Bing Ads",
+    "Microsoft Ads",
+    "Bing Ads API",
+    "Microsoft Advertising API"
+  ],
+  "region": "intl",
+  "category": "advertising",
+  "icon": "microsoft-advertising",
+  "docsUrl": "https://learn.microsoft.com/en-us/advertising/guides/?view=bingads-13",
+  "requiredEnvVars": [
+    "MICROSOFT_ADS_CLIENT_ID",
+    "MICROSOFT_ADS_CLIENT_SECRET",
+    "MICROSOFT_ADS_DEVELOPER_TOKEN"
+  ],
+  "appRegistrationUrl": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  "envVarMeta": {
+    "MICROSOFT_ADS_CLIENT_ID": {
+      "label": "Application (client) ID",
+      "kind": "credential",
+      "help": "Microsoft Entra admin center, App registrations, your app, Overview: Application (client) ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "The Application (client) ID is a GUID like 00001111-aaaa-2222-bbbb-3333cccc4444."
+    },
+    "MICROSOFT_ADS_CLIENT_SECRET": {
+      "label": "Client secret value",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same app, Certificates & secrets, New client secret: copy the Value column (shown once), not the Secret ID.",
+      "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the secret Value without spaces (about 40 characters), not the Secret ID."
+    },
+    "MICROSOFT_ADS_DEVELOPER_TOKEN": {
+      "label": "Developer token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Microsoft Advertising, Settings, Developer settings: request a token as a Super Admin and copy it. One universal token works for every user.",
+      "link": "https://ads.microsoft.com/cc/Settings/DevSettings",
+      "pattern": "^[A-Za-z0-9]{8,40}$",
+      "patternMessage": "The developer token is a string of letters and digits without spaces."
+    }
+  },
+  "prerequisites": "A Microsoft Advertising account, a **developer token** (requested once by a Super Admin under Settings, Developer settings) and an app registration in Microsoft Entra (free, about 10 minutes) for *any Entra ID tenant and personal Microsoft accounts*, with the redirect URI below and a client secret. The sign-in must be done by a Microsoft Advertising user with multi-factor authentication.",
+  "verifyHints": {
+    "401": "Microsoft refused the sign-in or the developer token (error 105 InvalidCredentials, 109 AuthenticationTokenExpired, 3101 OAuthTokenInvalid). Check MICROSOFT_ADS_DEVELOPER_TOKEN, then click Authorize with Provider again; if the client secret has expired, create a new one first.",
+    "403": "The signed-in user has no access to this customer or ad account (error 106 UserIsNotAuthorized). Check customer_id and account_id with microsoft_advertising_get_user and microsoft_advertising_list_accounts.",
+    "404": "Microsoft found no such operation or entity. Check the account, campaign or ad group id.",
+    "rate_limited": "Microsoft Advertising is throttling this user (error 117 CallRateExceeded): wait 60 seconds and try again."
+  },
+  "probe": {
+    "tool": "microsoft_advertising_get_user",
+    "params": {}
+  },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 15,
+    "examples": [
+      "Which of my Microsoft Ads campaigns are limited by budget?",
+      "Who competes with me in the auctions this month?",
+      "Find keyword ideas for trail running shoes in the United States"
+    ],
+    "needs": [
+      "A Microsoft Advertising account and a user with the Super Admin role (for the developer token)",
+      "Access to Microsoft Entra (Azure) to register an app"
+    ],
+    "why": "Microsoft Advertising only lets tools in through an app registered in Microsoft Entra plus a developer token from your Microsoft Advertising settings. Both are free; the token does not grant extra rights: the AI sees what the signed-in user sees.",
+    "steps": [
+      {
+        "id": "register-app",
+        "title": "Register an app in Microsoft Entra",
+        "body": "Open App registrations and choose **New registration**. Give it a name, pick the account type below, and add the redirect URI as platform **Web**.",
+        "action": {
+          "label": "Open App registrations",
+          "url": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
+        },
+        "values": [
+          {
+            "label": "Name",
+            "value": "AnythingMCP Microsoft Advertising"
+          },
+          {
+            "label": "Supported account types",
+            "value": "Any Entra ID Tenant + Personal Microsoft accounts",
+            "pick": true,
+            "note": "Older screens word it as accounts in any organizational directory and personal Microsoft accounts."
+          },
+          {
+            "label": "Redirect URI (Web)",
+            "value": "{{redirectUri}}"
+          }
+        ],
+        "confirm": "I registered the app with this redirect URI",
+        "problems": [
+          {
+            "q": "Microsoft says the reply URL does not match (AADSTS50011)",
+            "a": "Open the app, Authentication, and paste the redirect URI again exactly, as platform Web."
+          },
+          {
+            "q": "Sign-in later fails with AADSTS50194 or AADSTS50020",
+            "a": "The app was registered for one organisation only. In the app, Authentication, Supported account types, choose any organizational directory and personal Microsoft accounts."
+          }
+        ]
+      },
+      {
+        "id": "client-secret",
+        "title": "Copy the client ID and create a secret",
+        "body": "On the app **Overview** copy the Application (client) ID. Then open **Certificates & secrets**, choose **New client secret** and copy its **Value** (shown once). Note when it expires: the connector stops working on that day until you paste a new one.",
+        "fields": [
+          "MICROSOFT_ADS_CLIENT_ID",
+          "MICROSOFT_ADS_CLIENT_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "Which value is the secret?",
+            "a": "The Value column, not the Secret ID. If you left the page, create a new secret."
+          }
+        ]
+      },
+      {
+        "id": "developer-token",
+        "title": "Get your developer token",
+        "body": "Sign in to Microsoft Advertising as a **Super Admin**, open Developer settings, choose the user and **Request token**. Copy the token. A universal token works for every user of your company.",
+        "action": {
+          "label": "Open Developer settings",
+          "url": "https://ads.microsoft.com/cc/Settings/DevSettings"
+        },
+        "fields": [
+          "MICROSOFT_ADS_DEVELOPER_TOKEN"
+        ],
+        "problems": [
+          {
+            "q": "I do not see Developer settings",
+            "a": "Only a Super Admin of the customer can request a token. Ask one to request it, or to give you that role."
+          },
+          {
+            "q": "Microsoft refuses the token later (error 105)",
+            "a": "Use a production token: the sandbox token BBD37VB98 only works with sandbox accounts, which this connector does not reach."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Microsoft Advertising (Bing Ads API v13, REST)",
+    "type": "REST",
+    "baseUrl": "https://campaign.api.bingads.microsoft.com/CampaignManagement/v13",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MICROSOFT_ADS_CLIENT_ID}}",
+      "clientSecret": "{{MICROSOFT_ADS_CLIENT_SECRET}}",
+      "authorizationUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+      "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      "scopes": "https://ads.microsoft.com/msads.manage offline_access"
+    },
+    "headers": {
+      "DeveloperToken": "{{MICROSOFT_ADS_DEVELOPER_TOKEN}}",
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "microsoft_advertising_get_user",
+      "description": "Read the signed-in Microsoft Advertising user: User (Id, UserName, Name, ContactInfo.Email, UserLifeCycleStatus) and CustomerRoles, one entry per manager account (customer) the user can reach, with CustomerId, RoleId and AccountIds (the ad account ids the role covers; empty means every account of that customer). Start here: CustomerId is the customer_id and User.Id the user id for microsoft_advertising_search_accounts. Leave user_id empty for yourself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Another user to read, by id. Leave empty for the signed-in user."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://clientcenter.api.bingads.microsoft.com/CustomerManagement/v13/User/Query",
+        "bodyMapping": {
+          "UserId": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_accounts",
+      "description": "List the ad accounts the signed-in user can access, with Id (the account_id for every campaign and insight tool), Name, Number (the F149ABCD style number shown in the web UI), AccountLifeCycleStatus (Active, Inactive, Pause, Pending, Suspended, Draft) and PauseReason. Without customer_id the customer is taken from the user's credentials. Currency, time zone and the owning customer id come from microsoft_advertising_search_accounts or microsoft_advertising_get_account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Limit the list to one manager account (customer). Leave empty to use the signed-in user's customer."
+          },
+          "only_parent_accounts": {
+            "type": "boolean",
+            "description": "true returns only accounts that belong directly to the customer, not accounts linked from other customers (agency links). Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://clientcenter.api.bingads.microsoft.com/CustomerManagement/v13/AccountsInfo/Query",
+        "bodyMapping": {
+          "CustomerId": "$customer_id",
+          "OnlyParentAccounts": "$only_parent_accounts"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_search_accounts",
+      "description": "Search ad accounts with their full settings: Id, Name, Number, ParentCustomerId (the customer_id to send with that account), CurrencyCode (all money in campaign and insight tools is in this currency), TimeZone, Language, AccountLifeCycleStatus, PauseReason, PaymentMethodType and LinkedAgencies. One filter per call: UserId Equals (the User.Id from microsoft_advertising_get_user lists every account the user can reach), CustomerId Equals, AccountId Equals or In, AccountName Contains or Equals, AccountNumber Contains, Equals or In. For In, separate several values with commas. Paged with page_index from 0, at most 1,000 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "UserId",
+              "CustomerId",
+              "AccountId",
+              "AccountName",
+              "AccountNumber"
+            ],
+            "description": "What to filter on."
+          },
+          "operator": {
+            "type": "string",
+            "enum": [
+              "Equals",
+              "Contains",
+              "In"
+            ],
+            "default": "Equals",
+            "description": "Equals for ids; Contains for part of a name or number; In for a comma-separated list of account ids or numbers."
+          },
+          "value": {
+            "type": "string",
+            "description": "The value to match, e.g. a user id, a customer id, part of an account name."
+          },
+          "page_index": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Zero-based page number."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Accounts per page, at most 1,000."
+          }
+        },
+        "required": [
+          "field",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://clientcenter.api.bingads.microsoft.com/CustomerManagement/v13/Accounts/Search",
+        "bodyMapping": {
+          "Predicates": [
+            {
+              "Field": "$field",
+              "Operator": "$operator",
+              "Value": "$value"
+            }
+          ],
+          "PageInfo": {
+            "Index": "$page_index",
+            "Size": "$page_size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_account",
+      "description": "Read one ad account by id: Name, Number, ParentCustomerId, CurrencyCode, TimeZone, Language, AccountLifeCycleStatus, PauseReason, AccountFinancialStatus, PaymentMethodType, BillToCustomerId and BusinessAddress. Use it to learn the currency and time zone before reporting money or dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id (a number), from microsoft_advertising_list_accounts."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://clientcenter.api.bingads.microsoft.com/CustomerManagement/v13/Account/Query",
+        "bodyMapping": {
+          "AccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_monthly_spend",
+      "description": "Read how much an ad account spent in one calendar month, as Amount in the account currency. The current month returns month-to-date spend; a future month is refused; a past month without data returns 0; credits larger than the spend give a negative amount. Only for accounts billed by invoice (monthly invoicing): credit card and prepaid accounts are refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id (a number), from microsoft_advertising_list_accounts."
+          },
+          "month": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "description": "The month as YYYY-MM, e.g. 2026-10."
+          }
+        },
+        "required": [
+          "account_id",
+          "month"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://clientcenter.api.bingads.microsoft.com/CustomerBilling/v13/AccountMonthlySpend/Query",
+        "bodyMapping": {
+          "AccountId": "$account_id",
+          "MonthYear": "$month"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_campaigns",
+      "description": "List the campaigns of an ad account: Id, Name, CampaignType, Status (Active, Paused, BudgetPaused, BudgetAndManualPaused, Suspended), BudgetType (DailyBudgetStandard, DailyBudgetAccelerated), DailyBudget (account currency), BudgetId (shared budget, see microsoft_advertising_get_budgets), BiddingScheme (Type such as EnhancedCpc, MaxClicks, MaxConversions, TargetCpa with its targets), TimeZone, Languages, StartDate, EndDate and Settings. No performance numbers: this API returns structure only. Deleted campaigns are not returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "campaign_types": {
+            "type": "string",
+            "default": "Search, Shopping, Audience, PerformanceMax",
+            "description": "Campaign types to return, comma-separated: Search, Shopping, Audience, PerformanceMax, Hotel, App, DynamicSearchAds. The API alone would return only Search campaigns; the default here asks for the four common types. If the API refuses a type the account cannot use, retry with fewer, e.g. `Search`."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Campaigns/QueryByAccountId",
+        "bodyMapping": {
+          "AccountId": "$account_id",
+          "CampaignType": "$campaign_types"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_campaigns",
+      "description": "Read up to 100 campaigns of an ad account by id, with the same fields as microsoft_advertising_list_campaigns. Ids of a type not listed in campaign_types fail with EntityIdFilterMismatch (516); PartialErrors names ids that could not be read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "campaign_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Campaign ids, from microsoft_advertising_list_campaigns."
+          },
+          "campaign_types": {
+            "type": "string",
+            "default": "Search, Shopping, Audience, PerformanceMax",
+            "description": "Campaign types to return, comma-separated: Search, Shopping, Audience, PerformanceMax, Hotel, App, DynamicSearchAds. The API alone would return only Search campaigns; the default here asks for the four common types. If the API refuses a type the account cannot use, retry with fewer, e.g. `Search`."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "campaign_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Campaigns/QueryByIds",
+        "bodyMapping": {
+          "AccountId": "$account_id",
+          "CampaignIds": "$campaign_ids",
+          "CampaignType": "$campaign_types"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_ad_groups",
+      "description": "List the ad groups of one campaign: Id, Name, Status (Active, Paused, Expired, Deleted), CpcBid.Amount (default max CPC in the account currency), BiddingScheme, Language, Network, StartDate and EndDate (Day, Month, Year), AdRotation and the bid adjustments. Structure only, no performance numbers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The campaign id, from microsoft_advertising_list_campaigns."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/AdGroups/QueryByCampaignId",
+        "bodyMapping": {
+          "CampaignId": "$campaign_id"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_ads",
+      "description": "List the ads of one ad group: Id, Type, Status (Active, Paused, Deleted), EditorialStatus (Active, Disapproved, Inactive, ActiveLimited), FinalUrls, TrackingUrlTemplate and the ad text by type (Headlines and Descriptions with their pinned positions for responsive search ads, Path1 and Path2; images and texts for responsive (audience) ads). Ask for fewer ad_types to keep the answer short.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "ad_group_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad group id, from microsoft_advertising_list_ad_groups."
+          },
+          "ad_types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ResponsiveSearch",
+                "ExpandedText",
+                "Text",
+                "Product",
+                "DynamicSearch",
+                "AppInstall",
+                "ResponsiveAd",
+                "Hotel"
+              ]
+            },
+            "minItems": 1,
+            "default": [
+              "ResponsiveSearch",
+              "ExpandedText",
+              "Text",
+              "Product",
+              "DynamicSearch",
+              "AppInstall",
+              "ResponsiveAd",
+              "Hotel"
+            ],
+            "description": "Ad types to return. Default all of them."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "ad_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Ads/QueryByAdGroupId",
+        "bodyMapping": {
+          "AdGroupId": "$ad_group_id",
+          "AdTypes": "$ad_types"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_keywords",
+      "description": "List the keywords of one ad group: Id, Text, MatchType (Exact, Phrase, Broad), Bid.Amount (max CPC in the account currency; empty means the ad group default bid), Status (Active, Paused, Deleted, Inactive), EditorialStatus, FinalUrls and Param1 to Param3. No Quality Score or clicks here: this API returns structure only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "ad_group_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad group id, from microsoft_advertising_list_ad_groups."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "ad_group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Keywords/QueryByAdGroupId",
+        "bodyMapping": {
+          "AdGroupId": "$ad_group_id"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_budgets",
+      "description": "Read the shared budgets of an ad account: Id, Name, Amount (daily, account currency), BudgetType (DailyBudgetStandard or DailyBudgetAccelerated) and AssociationCount (how many campaigns share it). Leave budget_ids empty for every shared budget of the account. Campaigns with their own budget show it as DailyBudget in microsoft_advertising_list_campaigns instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "budget_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "maxItems": 100,
+            "description": "Up to 100 budget ids (BudgetId of a campaign). Leave empty for all shared budgets."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Budgets/QueryByIds",
+        "bodyMapping": {
+          "BudgetIds": "$budget_ids"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_negative_keywords",
+      "description": "List the negative keywords set directly on one campaign or ad group: EntityNegativeKeywords with EntityId, EntityType and NegativeKeywords (Id, Text, MatchType Exact or Phrase). Negative keyword lists shared across campaigns are not included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "Campaign",
+              "AdGroup"
+            ],
+            "default": "Campaign",
+            "description": "Whether entity_id is a campaign or an ad group."
+          },
+          "entity_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The campaign id or ad group id."
+          },
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "Required when entity_type is AdGroup: the campaign that contains the ad group. Ignored for campaigns."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "entity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/NegativeKeywords/QueryByEntityIds",
+        "bodyMapping": {
+          "EntityIds": [
+            "${entity_id}"
+          ],
+          "EntityType": "$entity_type",
+          "ParentEntityId": "$campaign_id"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_campaign_criterions",
+      "description": "List one kind of targeting of a campaign: Location (LocationId, DisplayName, LocationType, with bid adjustments; negative criterions are excluded places), Radius, Device, DayTime (ad schedule), Age, Gender, LocationIntent, Audience, Webpage and more. Each entry has Id, Type (BiddableCampaignCriterion or NegativeCampaignCriterion), Status, Criterion and CriterionBid (multiplier in percent). Location ids found here can be reused in microsoft_advertising_get_keyword_ideas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The campaign id, from microsoft_advertising_list_campaigns."
+          },
+          "criterion_type": {
+            "type": "string",
+            "enum": [
+              "Location",
+              "Radius",
+              "LocationIntent",
+              "Device",
+              "DayTime",
+              "Age",
+              "Gender",
+              "Audience",
+              "Webpage",
+              "ProductScope",
+              "CompanyName",
+              "Industry",
+              "JobFunction"
+            ],
+            "default": "Location",
+            "description": "The one kind of criterion to read."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/CampaignCriterions/QueryByIds",
+        "bodyMapping": {
+          "CampaignId": "$campaign_id",
+          "CriterionType": "$criterion_type"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_conversion_goals",
+      "description": "List the conversion goals (conversion tracking) available to the account: Id, Name, Type (Url, Event, Duration, PagesViewedPerVisit, AppInstall, OfflineConversion, InStoreTransaction), Status, TrackingStatus (e.g. TagUnverified, NoRecentConversions, RecordingConversions, InactiveDueToTagUnavailable), TagId (UET tag), Revenue, CountType, ConversionWindowInMinutes, Scope (account or customer) and ExcludeFromBidding. Use it to audit whether conversion tracking works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "conversion_goal_types": {
+            "type": "string",
+            "default": "Url, Duration, PagesViewedPerVisit, Event, AppInstall, OfflineConversion, InStoreTransaction",
+            "description": "Goal types to return, comma-separated. Default all common types."
+          },
+          "conversion_goal_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "maxItems": 100,
+            "description": "Up to 100 goal ids. Leave empty for all goals of the given types."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ConversionGoals/QueryByIds",
+        "bodyMapping": {
+          "ConversionGoalIds": "$conversion_goal_ids",
+          "ConversionGoalTypes": "$conversion_goal_types"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_list_uet_tags",
+      "description": "List the UET (Universal Event Tracking) tags of the customer: Id, Name, Description, TrackingStatus (Unverified, Active, Inactive) and CustomerShare. TrackingScript holds the JavaScript snippet for the website. Leave tag_ids empty for all tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "maxItems": 100,
+            "description": "Up to 100 UET tag ids. Leave empty for all."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/UetTags/QueryByIds",
+        "bodyMapping": {
+          "TagIds": "$tag_ids"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_budget_opportunities",
+      "description": "Read Microsoft's budget suggestions for campaigns limited by budget: Opportunities with CampaignId, CurrentBudget, RecommendedBudget (based on the last 15 days), BudgetType, IncreaseInClicks, IncreaseInImpressions, PercentageIncreaseInClicks and PercentageIncreaseInImpressions, and BudgetPoints (weekly impressions, clicks and cost estimates at several budget amounts). Money in the account currency. Leave campaign_id empty for the whole account; an empty list means no campaign is limited by budget.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "One campaign. Leave empty for every campaign of the account."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://adinsight.api.bingads.microsoft.com/AdInsight/v13/BudgetOpportunities/Query",
+        "bodyMapping": {
+          "CampaignId": "$campaign_id"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_bid_opportunities",
+      "description": "Read keyword bid suggestions that would lift ads to a better position: Opportunities with AdGroupId, CampaignId, KeywordId, MatchType, CurrentBid, SuggestedBid and the estimated weekly increases in clicks, impressions and cost. Only suggestions within 100 percent of the current bid are returned. Leave campaign_id and ad_group_id empty for the whole account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "One campaign. Leave empty for the whole account (then ad_group_id must be empty too)."
+          },
+          "ad_group_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "One ad group of that campaign. Leave empty for the whole campaign."
+          },
+          "opportunity_type": {
+            "type": "string",
+            "enum": [
+              "FirstPage",
+              "MainLine",
+              "MainLine1"
+            ],
+            "default": "MainLine",
+            "description": "Position goal: FirstPage (any first page position), MainLine (above the organic results), MainLine1 (the very first ad)."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://adinsight.api.bingads.microsoft.com/AdInsight/v13/BidOpportunities/Query",
+        "bodyMapping": {
+          "CampaignId": "$campaign_id",
+          "AdGroupId": "$ad_group_id",
+          "OpportunityType": "$opportunity_type"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_keyword_opportunities",
+      "description": "Read new keyword suggestions for existing campaigns and ad groups: Opportunities with CampaignId, CampaignName, AdGroupId, AdGroupName, SuggestedKeyword, MatchType, SuggestedBid, MonthlySearches, Competition and estimated increases in clicks, impressions and cost. Only for ad groups in English with ads and keywords. Leave campaign_id and ad_group_id empty for the whole account.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "One campaign. Leave empty for the whole account (then ad_group_id must be empty too)."
+          },
+          "ad_group_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "One ad group of that campaign. Leave empty for the whole campaign."
+          },
+          "opportunity_type": {
+            "type": "string",
+            "enum": [
+              "BroadMatch",
+              "CampaignContext",
+              "BroadMatch, CampaignContext"
+            ],
+            "default": "BroadMatch, CampaignContext",
+            "description": "BroadMatch suggests broad match keywords from marketplace data; CampaignContext uses the campaign's keywords, landing page and ads."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://adinsight.api.bingads.microsoft.com/AdInsight/v13/KeywordOpportunities/Query",
+        "bodyMapping": {
+          "CampaignId": "$campaign_id",
+          "AdGroupId": "$ad_group_id",
+          "OpportunityType": "$opportunity_type"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_auction_insights",
+      "description": "Compare the account, campaigns, ad groups or keywords with the other advertisers in the same auctions over a date range: Result.Entries, one per competing DisplayDomain (your own shows as You), each with AggregatedKpi ImpressionShare, OverlapRate, AboveRate, TopOfPageRate, AbsoluteTopOfPageRate, OutrankingShare (fractions, 0.25 = 25 percent) and AveragePosition; plus UsedImpressions and UsedKeywords. Not segmented by day or device.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "Account",
+              "Campaign",
+              "AdGroup",
+              "Keyword"
+            ],
+            "default": "Account",
+            "description": "Level of the comparison."
+          },
+          "entity_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "maxItems": 200,
+            "description": "Up to 200 campaign, ad group or keyword ids, required for those levels. Leave empty for Account."
+          },
+          "start_year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "description": "Year of the first day, e.g. 2026."
+          },
+          "start_month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Month of the first day, 1 to 12."
+          },
+          "start_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "Day of the first day, 1 to 31."
+          },
+          "end_year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "description": "Year of the last day (inclusive), e.g. 2026."
+          },
+          "end_month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Month of the last day (inclusive), 1 to 12."
+          },
+          "end_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "Day of the last day (inclusive), 1 to 31."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "start_year",
+          "start_month",
+          "start_day",
+          "end_year",
+          "end_month",
+          "end_day"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://adinsight.api.bingads.microsoft.com/AdInsight/v13/AuctionInsightData/Query",
+        "bodyMapping": {
+          "EntityType": "$entity_type",
+          "EntityIds": "$entity_ids",
+          "SearchParameters": [
+            {
+              "Type": "DateRangeSearchParameter",
+              "StartDate": {
+                "Day": "$start_day",
+                "Month": "$start_month",
+                "Year": "$start_year"
+              },
+              "EndDate": {
+                "Day": "$end_day",
+                "Month": "$end_month",
+                "Year": "$end_year"
+              }
+            }
+          ]
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_performance_insights",
+      "description": "Explain notable changes in performance over up to one month: Result entries with Date, EntityType, EntityId (account or campaign id), KPIType (impression, click, spend, and conversion at account level), Description, RootCauses (what happened) and Actions (what to do), each as a message with its arguments. An empty Result means no notable change was detected.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "Account",
+              "Campaign"
+            ],
+            "default": "Account",
+            "description": "Account-level or campaign-level insights."
+          },
+          "start_year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "description": "Year of the first day, e.g. 2026."
+          },
+          "start_month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Month of the first day, 1 to 12."
+          },
+          "start_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "Day of the first day, 1 to 31."
+          },
+          "end_year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "description": "Year of the last day (at most one month after the first), e.g. 2026."
+          },
+          "end_month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Month of the last day (at most one month after the first), 1 to 12."
+          },
+          "end_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "Day of the last day (at most one month after the first), 1 to 31."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "start_year",
+          "start_month",
+          "start_day",
+          "end_year",
+          "end_month",
+          "end_day"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://adinsight.api.bingads.microsoft.com/AdInsight/v13/PerformanceInsightsDetailData/QueryByAccountId",
+        "bodyMapping": {
+          "EntityType": "$entity_type",
+          "StartDate": {
+            "Day": "$start_day",
+            "Month": "$start_month",
+            "Year": "$start_year"
+          },
+          "EndDate": {
+            "Day": "$end_day",
+            "Month": "$end_month",
+            "Year": "$end_year"
+          }
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_historical_search_counts",
+      "description": "Count how often keywords were searched on Bing and partner sites in the past: KeywordSearchCounts with Keyword and SearchCountsByAttributes per Device, each holding HistoricalSearchCounts (SearchCount per DayMonthAndYear period). Weekly periods start on Sunday; Monthly snaps to whole months. Market research only, nothing in the account changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "Up to 1,000 keywords, each at most 100 characters."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "Danish",
+              "Dutch",
+              "English",
+              "Finnish",
+              "French",
+              "German",
+              "Italian",
+              "Norwegian",
+              "Portuguese",
+              "SimplifiedChinese",
+              "Spanish",
+              "Swedish",
+              "TraditionalChinese"
+            ],
+            "default": "English",
+            "description": "Language the keywords are written in."
+          },
+          "countries": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z]{2}$"
+            },
+            "description": "Two-letter country codes the searches come from, e.g. US, GB, DE; each must support the language. Leave empty for every country of that language."
+          },
+          "time_period_rollup": {
+            "type": "string",
+            "enum": [
+              "Daily",
+              "Weekly",
+              "Monthly"
+            ],
+            "default": "Monthly",
+            "description": "Daily covers up to 45 days back, Weekly up to 15 weeks, Monthly up to 24 months."
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Computers",
+                "Smartphones",
+                "Tablets",
+                "NonSmartphones"
+              ]
+            },
+            "default": [
+              "Computers",
+              "Smartphones",
+              "Tablets"
+            ],
+            "description": "Device types to count separately."
+          },
+          "start_year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "description": "Year of the first day, e.g. 2026."
+          },
+          "start_month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Month of the first day, 1 to 12."
+          },
+          "start_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "Day of the first day, 1 to 31."
+          },
+          "end_year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "description": "Year of the last day (not after today), e.g. 2026."
+          },
+          "end_month": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Month of the last day (not after today), 1 to 12."
+          },
+          "end_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "Day of the last day (not after today), 1 to 31."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "keywords",
+          "start_year",
+          "start_month",
+          "start_day",
+          "end_year",
+          "end_month",
+          "end_day"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://adinsight.api.bingads.microsoft.com/AdInsight/v13/HistoricalSearchCount/Query",
+        "bodyMapping": {
+          "Keywords": "$keywords",
+          "Language": "$language",
+          "PublisherCountries": "$countries",
+          "StartDate": {
+            "Day": "$start_day",
+            "Month": "$start_month",
+            "Year": "$start_year"
+          },
+          "EndDate": {
+            "Day": "$end_day",
+            "Month": "$end_month",
+            "Year": "$end_year"
+          },
+          "TimePeriodRollup": "$time_period_rollup",
+          "Devices": "$devices"
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_advertising_get_keyword_ideas",
+      "description": "Keyword Planner: get keyword ideas and their search volume for seed keywords in one location: KeywordIdeas with Keyword, MonthlySearchCounts (the last 12 months, most recent first), Competition (Low, Medium, High), SuggestedBid (account currency), AdImpressionShare and Relevance. With expand_ideas false only the seed keywords are measured. Can return up to about 3,000 ideas: use a few focused seeds. Last month's data can take up to 72 hours to appear.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The manager account (customer) id that owns the ad account, sent as the CustomerId header. Take it from CustomerRoles[].CustomerId of microsoft_advertising_get_user or from ParentCustomerId of microsoft_advertising_search_accounts."
+          },
+          "account_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "description": "The ad account id, a number such as 180012345 (not the account number like F149ABCD shown in the web UI), sent as the CustomerAccountId header. Take it from microsoft_advertising_list_accounts."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Seed keywords or phrases, e.g. [\"running shoes\", \"trail running\"]."
+          },
+          "expand_ideas": {
+            "type": "boolean",
+            "default": true,
+            "description": "true returns new ideas related to the seeds; false returns metrics for the seeds only."
+          },
+          "language": {
+            "type": "string",
+            "default": "English",
+            "description": "Language name such as English, French or German."
+          },
+          "location_id": {
+            "type": "string",
+            "pattern": "^[0-9]+$",
+            "default": "190",
+            "description": "Microsoft Advertising location id: 190 is the United States. Ids of places a campaign already targets come from microsoft_advertising_list_campaign_criterions (criterion_type Location)."
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "OwnedAndOperatedAndSyndicatedSearch",
+              "OwnedAndOperatedOnly"
+            ],
+            "default": "OwnedAndOperatedAndSyndicatedSearch",
+            "description": "Search network: Microsoft sites and partners, or Microsoft sites only."
+          }
+        },
+        "required": [
+          "customer_id",
+          "account_id",
+          "queries"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://adinsight.api.bingads.microsoft.com/AdInsight/v13/KeywordIdeas/Query",
+        "bodyMapping": {
+          "ExpandIdeas": "$expand_ideas",
+          "IdeaAttributes": [
+            "Keyword",
+            "Competition",
+            "MonthlySearchCounts",
+            "SuggestedBid",
+            "AdImpressionShare",
+            "Relevance"
+          ],
+          "SearchParameters": [
+            {
+              "Type": "QuerySearchParameter",
+              "Queries": "$queries"
+            },
+            {
+              "Type": "LanguageSearchParameter",
+              "Languages": [
+                {
+                  "Type": "LanguageCriterion",
+                  "Language": "$language"
+                }
+              ]
+            },
+            {
+              "Type": "LocationSearchParameter",
+              "Locations": [
+                {
+                  "Type": "LocationCriterion",
+                  "LocationId": "$location_id"
+                }
+              ]
+            },
+            {
+              "Type": "NetworkSearchParameter",
+              "Network": {
+                "Type": "NetworkCriterion",
+                "Network": "$network"
+              }
+            }
+          ]
+        },
+        "headers": {
+          "CustomerId": "$customer_id",
+          "CustomerAccountId": "$account_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
