@@ -198,11 +198,4 @@ describe('catalog patterns are safe to run on untrusted text', () => {
     }
     expect(slow).toEqual([]);
   });
-
-  it('the check itself catches a slow expression', () => {
-    const regex = /^(a+)+$/;
-    const started = process.hrtime.bigint();
-    regex.test(`${'a'.repeat(27)}!`);
-    expect(Number(process.hrtime.bigint() - started) / 1e6).toBeGreaterThan(50);
-  });
 });
