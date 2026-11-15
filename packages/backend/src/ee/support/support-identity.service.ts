@@ -8,6 +8,7 @@ import { compactError } from './support-redact';
 import { getAdapter } from '../../adapters/catalog';
 import { isMachineGrant } from '../../connectors/oauth-grant.util';
 import { findUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
+import { workspaceFirstSuccessAt } from '../../audit/first-success-markers';
 
 /** Contact attributes shown to agents and read by the triage. All strings. */
 export type SupportContactAttributes = Record<string, string>;
@@ -27,6 +28,12 @@ const MAX_NAMES = 15;
 const ISSUES_MAX_CHARS = 900;
 const LINKS_MAX_CHARS = 1500;
 const MAX_SERVERS = 5;
+
+/** Days Cloud keeps tool_invocations, read like KgCronService.retention() does. */
+function invocationRetentionDays(): number {
+  const v = parseInt(process.env.INVOCATION_RETENTION_DAYS || '', 10);
+  return Number.isFinite(v) ? v : 90;
+}
 
 /**
  * Builds the signed identity the Libredesk widget exchanges for a verified
@@ -150,19 +157,29 @@ export class SupportIdentityService {
     if (serverUrls) attrs.mcp_server_urls = serverUrls;
     attrs.connector_issues = await this.connectorIssues(organizationId, connectors);
     // "never" with connectors installed is the most common blocker: no AI
-    // client is connected to the workspace's MCP server yet.
+    // client is connected to the workspace's MCP server yet. A workspace
+    // whose calls are all older than the kept history is not "never".
     attrs.last_tool_call = await this.lastToolCall(organizationId);
     return attrs;
   }
 
-  /** Day of the workspace's latest successful tool call, or "never". */
+  /**
+   * Day of the workspace's latest successful tool call (YYYY-MM-DD). With no
+   * SUCCESS row left but a stored first-success marker, the calls were
+   * deleted: on Cloud by the retention (INVOCATION_RETENTION_DAYS, 90 by
+   * default), so "more than N days ago"; otherwise "not in the call history"
+   * (a deleted tool takes its rows along). "never" only without any marker.
+   */
   private async lastToolCall(organizationId: string): Promise<string> {
     const last = await this.prisma.toolInvocation.findFirst({
       where: { organizationId, status: 'SUCCESS' },
       orderBy: { createdAt: 'desc' },
       select: { createdAt: true },
     });
-    return last?.createdAt instanceof Date ? last.createdAt.toISOString().slice(0, 10) : 'never';
+    if (last?.createdAt instanceof Date) return last.createdAt.toISOString().slice(0, 10);
+    if (!(await workspaceFirstSuccessAt(this.prisma, organizationId))) return 'never';
+    const days = invocationRetentionDays();
+    return this.deployment.isCloud() && days > 0 ? `more than ${days} days ago` : 'not in the call history';
   }
 
   /**

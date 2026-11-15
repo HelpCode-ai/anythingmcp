@@ -373,7 +373,16 @@ describe('LicenseService — cancellation carries the workspace\'s use', () => {
 
   function withUsage(
     made: ReturnType<typeof makeService>,
-    { stored, firstCall }: { stored?: string | null; firstCall?: Date | null },
+    {
+      stored,
+      firstCall,
+      members = [],
+    }: {
+      stored?: string | null;
+      firstCall?: Date | null;
+      /** Members with their first-success stamp and when they joined. */
+      members?: Array<{ joinedAt: Date; firstSuccessfulInvocationAt: Date }>;
+    },
   ) {
     const prisma = made.prisma as any;
     prisma.orgSettings = {
@@ -381,6 +390,11 @@ describe('LicenseService — cancellation carries the workspace\'s use', () => {
     };
     prisma.toolInvocation = {
       findFirst: jest.fn(async () => (firstCall ? { createdAt: firstCall } : null)),
+    };
+    prisma.organizationMember = {
+      findMany: jest.fn(async () =>
+        members.map((m) => ({ joinedAt: m.joinedAt, user: { firstSuccessfulInvocationAt: m.firstSuccessfulInvocationAt } })),
+      ),
     };
     return prisma;
   }
@@ -409,6 +423,39 @@ describe('LicenseService — cancellation carries the workspace\'s use', () => {
     expect(prisma.toolInvocation.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { organizationId: 'org-1', status: 'SUCCESS' } }),
     );
+  });
+
+  it("uses the members' first-success stamps once the old rows were deleted by the retention", async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    // The oldest row left is recent; a member's stamp keeps the real first call.
+    const prisma = withUsage(made, {
+      firstCall: new Date('2026-11-10T08:00:00Z'),
+      members: [
+        { joinedAt: new Date('2026-06-01T00:00:00Z'), firstSuccessfulInvocationAt: new Date('2026-08-15T09:00:00Z') },
+        { joinedAt: new Date('2026-06-01T00:00:00Z'), firstSuccessfulInvocationAt: new Date('2026-07-02T09:00:00Z') },
+      ],
+    });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody().usage).toEqual({ firstSuccessfulCallAt: '2026-07-02T09:00:00.000Z' });
+    expect(prisma.organizationMember.findMany.mock.calls[0][0].where).toMatchObject({ organizationId: 'org-1' });
+  });
+
+  it('counts a member stamp even when no row is left at all', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    withUsage(made, {
+      members: [{ joinedAt: new Date('2026-06-01T00:00:00Z'), firstSuccessfulInvocationAt: new Date('2026-07-02T09:00:00Z') }],
+    });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody().usage).toEqual({ firstSuccessfulCallAt: '2026-07-02T09:00:00.000Z' });
+  });
+
+  it('ignores a member stamp older than the membership (a call made in another workspace)', async () => {
+    const made = makeService({ isCloud: true, licenses: cloudLicence() });
+    withUsage(made, {
+      members: [{ joinedAt: new Date('2026-09-01T00:00:00Z'), firstSuccessfulInvocationAt: new Date('2026-07-02T09:00:00Z') }],
+    });
+    await made.svc.createBillingPortalSession('org-1', undefined, 'cancel');
+    expect(sentBody().usage).toEqual({ firstSuccessfulCallAt: null });
   });
 
   it('says so when the workspace never made a successful call', async () => {
