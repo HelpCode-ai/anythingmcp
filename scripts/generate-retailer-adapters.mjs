@@ -44,7 +44,7 @@ const REVIEWED_SOURCE_SHA256 = 'd0aaf1f1c6b33531b648d3444d5741dd6fb48d2a7dd9ced1
 const COUNTRY = {
   AT: 'Austria', BE: 'Belgium', CA: 'Canada', CH: 'Switzerland', CZ: 'the Czech Republic', DE: 'Germany',
   DK: 'Denmark', ES: 'Spain', FR: 'France', GB: 'the United Kingdom', HU: 'Hungary', IE: 'Ireland', IT: 'Italy',
-  LU: 'Luxembourg', NL: 'the Netherlands', NO: 'Norway', PL: 'Poland', PT: 'Portugal', RO: 'Romania',
+  HR: 'Croatia', LU: 'Luxembourg', NL: 'the Netherlands', NO: 'Norway', PL: 'Poland', PT: 'Portugal', RO: 'Romania', SI: 'Slovenia',
   SE: 'Sweden', SK: 'Slovakia', US: 'the United States',
 };
 
