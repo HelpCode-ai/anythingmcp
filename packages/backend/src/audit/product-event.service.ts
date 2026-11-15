@@ -91,6 +91,11 @@ export const ProductEvents = {
   AUTHORIZATION_CODE_EXCHANGED: 'authorization_code_exchanged',
   MCP_TOOLS_LISTED: 'mcp_tools_listed',
   /**
+   * An install asked for from a chat or the picker that added no connector,
+   * with a reason code (connector-setup.service.ts). Server only.
+   */
+  SETUP_INSTALL_FAILED: 'setup_install_failed',
+  /**
    * A new account (created minutes before) authorized one of AnythingMCP's
    * plugins in OpenAI's plugin directory; metadata.directory = 'chatgpt',
    * metadata.plugin = the plugin endpoint ('chatgpt-app', 'file-search').
@@ -399,6 +404,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.AUTHORIZATION_CODE_ISSUED,
   ProductEvents.AUTHORIZATION_CODE_EXCHANGED,
   ProductEvents.MCP_TOOLS_LISTED,
+  ProductEvents.SETUP_INSTALL_FAILED,
   ProductEvents.DIRECTORY_SIGNUP,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
   ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,

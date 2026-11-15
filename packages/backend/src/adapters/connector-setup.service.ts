@@ -118,6 +118,23 @@ function providerApp(definition: {
  * - the trial's connector limit, and INSTALLS_PER_HOUR per user;
  * - every install is recorded as a security event.
  */
+/**
+ * Why an install from the chat was refused, as a short code read from the
+ * answer the assistant got. Order matters: the first match wins.
+ */
+export function installRefusalReason(body: unknown): string {
+  const b = (body ?? {}) as { error?: unknown; upgradeUrl?: unknown; setupUrl?: unknown };
+  const text = typeof b.error === 'string' ? b.error : '';
+  if (/^No catalog connector/.test(text)) return 'unknown_app';
+  if (/File Search wizard/.test(text)) return 'file_search_wizard';
+  if (/is not a setting of/.test(text)) return 'unknown_setting';
+  if (/is a secret and is never taken|looks like a password, API key or token/.test(text)) return 'secret_in_chat';
+  if (/must be one of:|does not look right/.test(text)) return 'invalid_setting';
+  if (/connectors an hour can be installed/.test(text)) return 'too_many_installs';
+  if (typeof b.upgradeUrl === 'string' || /limit reached|no active licence|trial/i.test(text)) return 'plan_limit';
+  return 'other';
+}
+
 @Injectable()
 export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit {
   private readonly logger = new Logger(ConnectorSetupService.name);
@@ -297,6 +314,46 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   // ── Install ───────────────────────────────────────────────────────────
 
   async install(
+    ctx: SetupContext,
+    args: { adapter?: string; settings?: Record<string, unknown> },
+    opts: SetupCallOptions = {},
+  ): Promise<SetupCallResult> {
+    const out = await this.installOnce(ctx, args, opts);
+    if (out.isError) this.recordInstallRefused(ctx, args, opts, out);
+    return out;
+  }
+
+  /**
+   * `setup_install_failed`: an install asked for from a chat (or the picker
+   * after approval) that did not add a connector, with the reason as a short
+   * code. A successful one already logs `setup_completed`. Together they say
+   * how many found an app and tried to add it, and why it did not work; an
+   * app that was found and never asked for leaves neither.
+   *
+   * Only the code and the catalog id are kept: the refusal texts can repeat a
+   * setting name or an address the model sent.
+   */
+  private recordInstallRefused(
+    ctx: SetupContext,
+    args: { adapter?: string },
+    opts: SetupCallOptions,
+    out: SetupCallResult,
+  ): void {
+    const slug = String(args.adapter ?? '').trim().toLowerCase();
+    // log() catches its own failures: a refused install is answered regardless.
+    void this.productEvents.log({
+      event: ProductEvents.SETUP_INSTALL_FAILED,
+      userId: ctx.userId,
+      organizationId: ctx.organizationId,
+      metadata: {
+        ...(/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug) ? { adapterSlug: slug } : {}),
+        via: opts.via ?? 'mcp',
+        reason: installRefusalReason(out.body),
+      },
+    });
+  }
+
+  private async installOnce(
     ctx: SetupContext,
     args: { adapter?: string; settings?: Record<string, unknown> },
     opts: SetupCallOptions = {},
