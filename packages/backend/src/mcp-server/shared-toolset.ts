@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
-import { listAdapters } from '../adapters/catalog';
+import { getAdapter, listAdapters } from '../adapters/catalog';
 import { RegisteredTool, isListable } from './tool-registry';
 import { deriveToolAnnotations } from './tool-annotations';
 import { flattenToolSchema, jsonSchemaToZodShape, stripEnvVarParams } from './tool-schema.util';
@@ -429,6 +429,39 @@ export interface ConnectorSummary {
   id: string;
   name: string;
   hasGuide: boolean;
+  /**
+   * The provider approved the app the user created for this connector (Etsy:
+   * the app left Pending) and the sign-in was not seen since. Together with a
+   * connector that still waits for its authorization, the tools say it first.
+   */
+  appApproved?: boolean;
+}
+
+/** A connector whose app was approved and whose sign-in is still missing. */
+interface ApprovedApp {
+  connectorId: string;
+  name: string;
+  /** The provider, e.g. "Etsy". */
+  provider: string;
+  finishSignInUrl: string;
+}
+
+const APP_APPROVED_HINT =
+  "The provider approved the user's app for these connectors; only the sign-in is left. Before anything else, tell the user and show them the finishSignInUrl as a clickable link: it starts the provider's sign-in, and the connector's tools work as soon as they approve the access there.";
+
+/**
+ * The `appApproved` block of the answers that describe the workspace: the
+ * approval came by email days after the user asked, and most never opened it,
+ * so the chat says it before anything else, with the email's link.
+ */
+function appApprovedBlock(approved: ApprovedApp[]): Record<string, unknown> {
+  if (approved.length === 0) return {};
+  return {
+    appApproved: {
+      connectors: approved.map((a) => ({ name: a.name, provider: a.provider, finishSignInUrl: a.finishSignInUrl })),
+      hint: APP_APPROVED_HINT,
+    },
+  };
 }
 
 /** An ended trial, as anythingmcp_list_connectors reports it. */
@@ -464,6 +497,11 @@ export interface SharedToolsetDeps {
   kgLookup(query: string, connectorIds: string[]): Promise<unknown | null>;
   /** Dashboard page of one connector, where the user finishes its setup. */
   connectorUrl(connectorId: string): string;
+  /**
+   * That page, opened so that the provider's sign-in starts by itself: the
+   * link of the "your app was approved" email. Without it, connectorUrl.
+   */
+  signInUrl?(connectorId: string): string;
   /**
    * Connector setup from the chat, already bound to this caller; absent when
    * the caller may not install connectors (or the instance does not offer it).
@@ -625,6 +663,35 @@ export function registerSharedToolset(
   const connectorName = (byId: Map<string, ConnectorSummary>, id: string) =>
     byId.get(id)?.name ?? id;
 
+  /**
+   * The pending connector of `t`, when its provider approved the user's app
+   * and only the sign-in is left; undefined for every other pending one.
+   */
+  const approvedApp = (byId: Map<string, ConnectorSummary>, t: RegisteredTool): ApprovedApp | undefined => {
+    if (t.setupStatus !== 'needs_authorization' || !byId.get(t.connectorId)?.appApproved) return undefined;
+    const slug = t.connectorConfig?.config?.adapterSlug;
+    const name = connectorName(byId, t.connectorId);
+    return {
+      connectorId: t.connectorId,
+      name,
+      provider: (typeof slug === 'string' ? getAdapter(slug)?.name : undefined) ?? name,
+      finishSignInUrl: (deps.signInUrl ?? deps.connectorUrl)(t.connectorId),
+    };
+  };
+  /** Every such connector among the pending ones, by name. */
+  const approvedApps = (byId: Map<string, ConnectorSummary>): ApprovedApp[] =>
+    [...new Map(pending.map((t) => [t.connectorId, t])).values()]
+      .map((t) => approvedApp(byId, t))
+      .filter((a): a is ApprovedApp => !!a)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  /** What a pending connector still needs and where the user finishes it. */
+  const whatIsLeft = (byId: Map<string, ConnectorSummary>, t: RegisteredTool) => {
+    const approved = approvedApp(byId, t);
+    return approved
+      ? { whatIsMissing: `${approved.provider} approved the app; only the sign-in is left`, finishSetupUrl: approved.finishSignInUrl }
+      : { whatIsMissing: describeSetupStatus(t.setupStatus), finishSetupUrl: deps.connectorUrl(t.connectorId) };
+  };
+
   // Measurement: which of these tools a connection calls at all. Never lets a
   // failure reach the call itself.
   const called: CallReporter = (tool, inner) => {
@@ -682,10 +749,11 @@ export function registerSharedToolset(
     const unfinished = pending.find((t) => t.name === name);
     if (unfinished) {
       const byId = await connectorsById();
+      const left = whatIsLeft(byId, unfinished);
       return {
         error: json(
           {
-            error: `'${name}' belongs to the connector '${connectorName(byId, unfinished.connectorId)}', which is not set up yet (${describeSetupStatus(unfinished.setupStatus)}). Give the user this link to finish it: ${deps.connectorUrl(unfinished.connectorId)}`,
+            error: `'${name}' belongs to the connector '${connectorName(byId, unfinished.connectorId)}', which is not set up yet (${left.whatIsMissing}). Give the user this link to finish it: ${left.finishSetupUrl}`,
           },
           true,
         ),
@@ -746,10 +814,11 @@ export function registerSharedToolset(
       return {
         notReadyYet: waiting.map((t) => ({
           connector: connectorName(byId, t.connectorId),
-          whatIsMissing: describeSetupStatus(t.setupStatus),
-          finishSetupUrl: deps.connectorUrl(t.connectorId),
+          ...whatIsLeft(byId, t),
         })),
-        hint: 'This app is added but its setup is not finished. Give the user the finishSetupUrl as a clickable link first: they enter the credentials or sign in to the app there, never in the chat.',
+        hint: waiting.some((t) => approvedApp(byId, t))
+          ? "The provider approved the user's app; only the sign-in is left. Tell the user first and give them the finishSetupUrl as a clickable link: it starts the provider's sign-in."
+          : 'This app is added but its setup is not finished. Give the user the finishSetupUrl as a clickable link first: they enter the credentials or sign in to the app there, never in the chat.',
       };
     }
     if (!deps.setup) {
@@ -888,13 +957,13 @@ export function registerSharedToolset(
         .map((t) => ({
           name: connectorName(byId, t.connectorId),
           status: t.setupStatus,
-          whatIsMissing: describeSetupStatus(t.setupStatus),
-          finishSetupUrl: deps.connectorUrl(t.connectorId),
+          ...whatIsLeft(byId, t),
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
       const paused = await deps.pausedByPlan?.().catch(() => null);
       return json({
         ...(await trialEndedBlock(deps)),
+        ...appApprovedBlock(approvedApps(byId)),
         connectors,
         ...(paused?.connectors.length
           ? {
@@ -1137,12 +1206,27 @@ export function registerSharedToolset(
         [workspaceGuide, ids.includes(SETUP_CONNECTOR_ID) ? SETUP_GUIDE : undefined]
           .filter(Boolean)
           .join('\n\n') || undefined;
-      if (!guide) return json({ guide: null, note: 'The workspace has no notes for these connectors.' });
+      // An approved app that still waits for its sign-in is said first, in
+      // the guide of the whole workspace (not in one connector's notes).
+      const approved = args.connector ? [] : approvedApps(await connectorsById().catch(() => new Map<string, ConnectorSummary>()));
+      if (!guide) {
+        return json({
+          ...appApprovedBlock(approved),
+          guide: null,
+          note: 'The workspace has no notes for these connectors.',
+        });
+      }
       const text =
         guide.length > GUIDE_MAX_CHARS
           ? `${guide.slice(0, GUIDE_MAX_CHARS)}\n\n[truncated: pass "connector" for one connector's notes]`
           : guide;
-      return { content: [{ type: 'text' as const, text }] };
+      const first = approved
+        .map(
+          (a) =>
+            `Before anything else: ${a.provider} approved the user's app for the connector '${a.name}'; only the sign-in is left. Tell the user and show this link: ${a.finishSignInUrl}`,
+        )
+        .join('\n');
+      return { content: [{ type: 'text' as const, text: first ? `${first}\n\n${text}` : text }] };
     },
   );
 

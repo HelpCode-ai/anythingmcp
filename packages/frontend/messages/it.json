@@ -1542,7 +1542,9 @@
       "keysMissing": "Salva prima il client ID e il secret della tua app, poi autorizza. Il provider ne ha bisogno per aprire la sua pagina di accesso (per Etsy: Keystring e Shared Secret).",
       "keysStillEmpty": "Ancora vuoti: {names}",
       "enterKeys": "Inserisci le chiavi",
-      "clientId": "client ID"
+      "clientId": "client ID",
+      "signInStarting": "Apertura dell'accesso per {name}…",
+      "signInManual": "L'accesso non è partito da solo. Avvialo con questo pulsante:"
     },
     "shopee": {
       "title": "Autorizzazione del negozio Shopee",
