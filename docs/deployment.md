@@ -439,6 +439,7 @@ What to know:
 
 - **One manager bot per server.** A bot has one webhook: a second server started with the same token takes it over, and the first one stops receiving updates.
 - **Trying it on one workspace.** Set `TELEGRAM_MANAGED_BOT_ORG_IDS` to a comma-separated list of organization ids: only those see the button.
+- **The creator becomes the default chat.** Telegram says who created the bot; that person's chat id is stored as the connector's `TELEGRAM_DEFAULT_CHAT_ID` (a variable of the connector, encrypted like the others, shown and editable in its settings). The send tools write there when a call names no chat, so "send me a test message" works without looking up a chat id. A connector set up with a pasted token has no default chat until its owner enters one.
 - **The user's bot gets no webhook.** The connector's own `telegram_bot_get_updates` keeps working. To greet the user once after they press **Start**, the server reads the new bot's updates without confirming any of them.
 - **Cloud and self-hosted.** The settings are read in both modes. The page that offers the button (shown after approving an AI client, to a workspace with no connectors) exists on Cloud only today, so a self-hosted instance sees no change yet.
 - **Outbound calls.** `api.telegram.org`, with the manager bot's token (start-up, and once per created bot) and with the user's new bot's token (the welcome message).

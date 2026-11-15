@@ -638,6 +638,34 @@ function hasNestedParamRef(value) {
 }
 
 /**
+ * `endpointMapping.envDefaults` fills a parameter the caller left out from a
+ * connector variable: `{ "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" }`. The
+ * parameter must be one the tool has and does not require (a required one is
+ * never left out), the variable one the adapter declares or looks up, and
+ * never a secret: its value is sent as a plain argument and shows in the log.
+ */
+function envDefaultErrors(adapter, tool, base) {
+  const defaults = tool.endpointMapping?.envDefaults;
+  if (defaults === undefined) return [];
+  const rule = 'env-defaults';
+  const at = `${base}.endpointMapping.envDefaults`;
+  if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults)) {
+    return [error(rule, at, 'envDefaults must map a tool parameter to a variable name', 'Use { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" }.', 'tools')];
+  }
+  const errors = [];
+  const params = tool.parameters?.properties ?? {};
+  const required = Array.isArray(tool.parameters?.required) ? tool.parameters.required : [];
+  const known = new Set([...declaredVars(adapter), ...Object.keys(adapter.derivedEnvVars ?? {})]);
+  for (const [param, variable] of Object.entries(defaults)) {
+    if (!(param in params)) errors.push(error(rule, `${at}.${param}`, `tool "${tool.name}" has no parameter "${param}"`, 'Name a parameter the tool declares.', 'tools'));
+    else if (required.includes(param)) errors.push(error(rule, `${at}.${param}`, `parameter "${param}" of tool "${tool.name}" is required, so its default is never used`, 'Remove it from "required", and say in its description what leaving it out does.', 'tools'));
+    const secret = adapter.envVarMeta?.[variable]?.secret === true || adapter.envVarMeta?.[variable]?.kind === 'credential';
+    if (typeof variable !== 'string' || !known.has(variable) || secret) errors.push(error(rule, `${at}.${param}`, `"${variable}" is not a non-secret variable of this adapter`, 'Name a setting the adapter declares in requiredEnvVars or optionalEnvVars; a secret is never used as a default.', 'tools'));
+  }
+  return errors;
+}
+
+/**
  * The GraphQL engine (packages/backend/src/connectors/engines/graphql.engine.ts)
  * builds `variables` from exactly two places: `endpointMapping.queryParams`, one
  * flat entry per variable whose value is `"$param"` or a literal, or the whole
@@ -1079,6 +1107,7 @@ export function validateAdapter(adapter, file, region) {
     for (const problem of xmlTemplateBlockProblems(tool.endpointMapping)) {
       errors.push(error('xml-template-blocks', `${base}.endpointMapping.bodyTemplate`, problem, 'Open a block with a parameter name and close it with the same name, on a mapping with bodyEncoding "xml".', 'xml-bodies'));
     }
+    errors.push(...envDefaultErrors(adapter, tool, base));
     if (adapter.connector?.type === 'GRAPHQL') errors.push(...graphqlVariableErrors(adapter, tool, base));
   }
   // Last, so existing warnings keep their order.

@@ -1888,6 +1888,8 @@ describe('LoginController', () => {
             const nodes: Record<string, Node> = {
               'copy-request': node(),
               'example-request': node({}, 'Connect my Telegram bot to AnythingMCP.'),
+              'first-sub': node({}, 'Your workspace has no apps yet.'),
+              'first-body': node({}, 'Claude finds the connector and sets it up with you.'),
               'quick-apps': picker,
               'quick-status': node(),
               'other-app': node(),
@@ -2062,6 +2064,9 @@ describe('LoginController', () => {
 
             expect(t.nodes['tg-status'].textContent).toBe('Telegram is connected: @amcp_1a2b3c4d_bot.');
             expect(t.nodes['example-request'].textContent).toBe('Send me a test message on Telegram.');
+            // The opening lines said the workspace has no apps: no longer true.
+            expect(t.nodes['first-sub'].textContent).toBe('Telegram is ready. Continue to Claude and ask, for example:');
+            expect(t.nodes['first-body'].hidden).toBe(true);
             expect(t.nodes['tg-setup'].attrs['data-state']).toBe('connected');
             expect(t.nodes['tg-create'].hidden).toBe(true);
             expect(t.nodes['tg-qr'].hidden).toBe(true);

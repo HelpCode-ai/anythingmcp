@@ -1403,9 +1403,9 @@ export class LoginController {
     const card = `
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
     <h1>${client} is connected</h1>
-    <p class="sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
+    <p class="sub" id="first-sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
     <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
-    <p class="body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
+    <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
     <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}"${opensChat ? ' data-open-chat="https://claude.ai/new"' : ''} data-client="${client}">Continue to ${client}</a>
     <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
       params.cardTrial
