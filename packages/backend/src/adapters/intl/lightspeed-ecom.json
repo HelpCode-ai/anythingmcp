@@ -1,0 +1,1133 @@
+{
+  "slug": "lightspeed-ecom",
+  "name": "Lightspeed eCom (C-Series)",
+  "description": "Lightspeed eCom C-Series webshops (formerly SEOshop): orders and order lines, shipments with tracking, invoices, products, variants with prices and stock, and customers. API key and secret on the EU or US cluster.",
+  "instructions": "## Lightspeed eCom (C-Series)\nThis connector works with the **Lightspeed eCom API** of Lightspeed eCom C-Series webshops (formerly SEOshop): the shop, orders and order lines, shipments, invoices (read-only), products, variants (prices and stock) and customers. It is not the Lightspeed Retail point of sale: use the Lightspeed Retail X-Series connector for that.\n\n**Setup (about 3 minutes)**\n1. In the eCom back office open **Settings, Store settings, Developers** and click **New API key**; give it a name. The Developers section is only on Advanced and Professional plans.\n2. Switch the key on and tick the permissions the tools need (read and write for orders, shipments, products and customers; read alone is enough for the read tools). Save.\n3. Copy the **API key** into `LIGHTSPEED_ECOM_API_KEY` and the **API secret** (click Show) into `LIGHTSPEED_ECOM_API_SECRET`.\n4. Choose the cluster of your shop: **EU** (`api.webshopapp.com`, shops outside North America) or **US** (`api.shoplightspeed.com`). Enter a language code of the shop, such as `en`, `nl` or `de`, in `LIGHTSPEED_ECOM_LANGUAGE`: texts are read and written in that language.\n\nThe connector sends the key and secret with HTTP Basic authentication.\n\n**Where to start**: `lightspeed_ecom_get_shop` to confirm the shop and its languages, then `lightspeed_ecom_list_orders` and `lightspeed_ecom_get_order` with `lightspeed_ecom_list_order_products` for the lines.\n\n**Orders and shipping**: `lightspeed_ecom_list_orders`, `lightspeed_ecom_count_orders`, `lightspeed_ecom_get_order`, `lightspeed_ecom_list_order_products`, `lightspeed_ecom_update_order` (hold, payment and shipment status, custom status, memo, ready for pickup). Ship with `lightspeed_ecom_list_shipments`, `lightspeed_ecom_get_shipment` and `lightspeed_ecom_update_shipment` (status shipped plus tracking code). `lightspeed_ecom_cancel_order` is installed switched off. Invoices are read with `lightspeed_ecom_list_invoices`; refunds and credit notes are not included.\n\n**Catalog**: `lightspeed_ecom_list_products`, `lightspeed_ecom_count_products`, `lightspeed_ecom_get_product`, `lightspeed_ecom_update_product`. Prices, codes and stock live on variants: `lightspeed_ecom_list_variants` (find by SKU, EAN or article code), `lightspeed_ecom_get_variant`, `lightspeed_ecom_update_variant`.\n\n**Customers**: `lightspeed_ecom_list_customers` (filter by email) and `lightspeed_ecom_get_customer`.\n\n**Paging and dates**: lists take `page` from 1 and `limit` up to 250 (default 50); `since_id` suits incremental syncs. Date filters use `YYYY-MM-DD HH:MM:SS`; answers carry ISO 8601 times. Ids are numbers.\n\n**Rate limits**: per shop API key 300 calls per 5 minutes, 3,000 per hour and 12,000 per day, and at most 20 per second. Above that the API answers 429; wait and retry, and prefer `count` calls and filters over reading everything.",
+  "aliases": [
+    "Lightspeed eCom",
+    "Lightspeed C-Series",
+    "SEOshop",
+    "WebshopApp"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "lightspeed-ecom",
+  "docsUrl": "https://developers.lightspeedhq.com/ecom/introduction/introduction/",
+  "requiredEnvVars": [
+    "LIGHTSPEED_ECOM_CLUSTER",
+    "LIGHTSPEED_ECOM_LANGUAGE",
+    "LIGHTSPEED_ECOM_API_KEY",
+    "LIGHTSPEED_ECOM_API_SECRET"
+  ],
+  "envVarMeta": {
+    "LIGHTSPEED_ECOM_CLUSTER": {
+      "label": "Cluster",
+      "kind": "address",
+      "help": "The data centre of your shop: EU for shops outside North America (back office on webshopapp.com), US for North American shops (shoplightspeed.com).",
+      "link": "https://developers.lightspeedhq.com/ecom/introduction/authentication/",
+      "options": [
+        {
+          "value": "https://api.webshopapp.com",
+          "label": "EU (api.webshopapp.com)"
+        },
+        {
+          "value": "https://api.shoplightspeed.com",
+          "label": "US (api.shoplightspeed.com)"
+        }
+      ]
+    },
+    "LIGHTSPEED_ECOM_LANGUAGE": {
+      "label": "Shop language",
+      "kind": "setting",
+      "help": "A two-letter language code of your shop, such as en, nl, de or fr. Texts are read and written in this language.",
+      "example": "en",
+      "pattern": "^[a-z]{2}$",
+      "patternMessage": "Enter a two-letter language code in lower case, e.g. en."
+    },
+    "LIGHTSPEED_ECOM_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Back office, Settings, Store settings, Developers: open your API key and copy the API key.",
+      "link": "https://developers.lightspeedhq.com/ecom/introduction/authentication/",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste only the API key: letters and digits, no spaces."
+    },
+    "LIGHTSPEED_ECOM_API_SECRET": {
+      "label": "API secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown under the API key's details after clicking Show.",
+      "link": "https://developers.lightspeedhq.com/ecom/introduction/authentication/",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste only the API secret: letters and digits, no spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Lightspeed refused the API key and secret. Copy both again from Settings, Store settings, Developers, check that the key is switched on, and that the cluster (EU or US) is the one of your shop.",
+      "field": "LIGHTSPEED_ECOM_API_KEY"
+    },
+    "403": "The key works but lacks the permission for this resource. Tick read (and write) for it on the API key in Settings, Store settings, Developers.",
+    "404": {
+      "hint": "Lightspeed found no shop, order, product or customer here. Check the cluster and the language code, which must be a language of your shop.",
+      "field": "LIGHTSPEED_ECOM_LANGUAGE"
+    },
+    "rate_limited": "Lightspeed allows 300 calls per 5 minutes, 3,000 per hour and 12,000 per day per shop key. Wait and try again."
+  },
+  "probe": {
+    "tool": "lightspeed_ecom_get_shop",
+    "params": {}
+  },
+  "prerequisites": "A Lightspeed eCom C-Series webshop on an Advanced or Professional plan, with back office access to Settings, Store settings, Developers. About 3 minutes.",
+  "connector": {
+    "name": "Lightspeed eCom API",
+    "type": "REST",
+    "baseUrl": "{{LIGHTSPEED_ECOM_CLUSTER}}/{{LIGHTSPEED_ECOM_LANGUAGE}}",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{LIGHTSPEED_ECOM_API_KEY}}",
+      "password": "{{LIGHTSPEED_ECOM_API_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "lightspeed_ecom_get_shop",
+      "description": "Read the shop's settings: id, title, mainDomain, currencies, languages (codes usable as the language of this connector), country, timezone and the selected theme. A cheap call to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shop.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_list_orders",
+      "description": "List orders, newest first: id, number, createdAt, status, paymentStatus, shipmentStatus, priceIncl, priceExcl, currency, customer and address fields, and links to the order's products, shipments and invoices. Up to 250 per page; filter by customer, number or dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "integer",
+            "description": "Only orders of this customer id."
+          },
+          "number": {
+            "type": "string",
+            "description": "Order number as shown to the customer, e.g. ORD00042."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only orders with an id above this one (for incremental syncs).",
+            "minimum": 0
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only orders created after this time, YYYY-MM-DD HH:MM:SS in the shop's time zone."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only orders created before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only orders changed after this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only orders changed before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,createdAt,number,status. Smaller answers, same call cost."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders.json",
+        "queryParams": {
+          "customer": "$customer",
+          "number": "$number",
+          "limit": "$limit",
+          "page": "$page",
+          "since_id": "$since_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_count_orders",
+      "description": "Count orders, optionally created or changed within a time window: answers with count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at_min": {
+            "type": "string",
+            "description": "Only orders created after this time, YYYY-MM-DD HH:MM:SS in the shop's time zone."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only orders created before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only orders changed after this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only orders changed before this time, YYYY-MM-DD HH:MM:SS."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/count.json",
+        "queryParams": {
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_get_order",
+      "description": "Read one order: number, status, paymentStatus, shipmentStatus, customer contact and company, billing and shipping address, shipment method, payment method, totals incl. and excl. tax, discount, memo, and links to its products, shipments, invoices and events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Numeric order id, e.g. 1623550.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_list_order_products",
+      "description": "List the lines of an order: productId, variantId, productTitle, variantTitle, articleCode, ean, sku, quantityOrdered, quantityShipped, priceIncl, priceExcl, weight and the custom fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Numeric order id, e.g. 1623550.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/products.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_update_order",
+      "description": "Change an order: put it on hold or take it off hold, set paymentStatus (not_paid, partially_paid, paid) or shipmentStatus (not_shipped, shipped), choose a custom status, write the merchant memo, or mark a pickup order as ready. Only the fields given change. Cancelling is a separate tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Numeric order id, e.g. 1623550.",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "description": "on_hold or off_hold.",
+            "enum": [
+              "on_hold",
+              "off_hold"
+            ]
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "Payment status to record.",
+            "enum": [
+              "not_paid",
+              "partially_paid",
+              "paid"
+            ]
+          },
+          "shipment_status": {
+            "type": "string",
+            "description": "Shipment status to record.",
+            "enum": [
+              "not_shipped",
+              "shipped"
+            ]
+          },
+          "custom_status_id": {
+            "type": "integer",
+            "description": "Id of a custom order status set up in the back office."
+          },
+          "memo": {
+            "type": "string",
+            "description": "Merchant memo (internal note) on the order."
+          },
+          "is_ready_for_pickup": {
+            "type": "boolean",
+            "description": "true: mark a pickup order as ready for pickup."
+          },
+          "do_notify_reminder": {
+            "type": "boolean",
+            "description": "true: email the customer a payment reminder."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}.json",
+        "bodyMapping": {
+          "order": {
+            "status": "$status",
+            "paymentStatus": "$payment_status",
+            "shipmentStatus": "$shipment_status",
+            "customStatusId": "$custom_status_id",
+            "memo": "$memo",
+            "isReadyForPickup": "$is_ready_for_pickup",
+            "doNotifyReminder": "$do_notify_reminder"
+          }
+        }
+      }
+    },
+    {
+      "name": "lightspeed_ecom_cancel_order",
+      "description": "Cancel an order (status cancelled), optionally emailing the customer. Cannot be undone from the API. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Numeric order id, e.g. 1623550.",
+            "minimum": 1
+          },
+          "do_notify_cancelled": {
+            "type": "boolean",
+            "description": "true: email the customer that the order was cancelled."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}.json",
+        "bodyMapping": {
+          "order": {
+            "status": "cancelled",
+            "doNotifyCancelled": "$do_notify_cancelled"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "lightspeed_ecom_list_shipments",
+      "description": "List shipments: id, number, status (not_shipped, shipped, cancelled), trackingCode, createdAt, and links to the order and its products. Filter by order, customer or number. Up to 250 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "description": "Only shipments of this order id."
+          },
+          "customer": {
+            "type": "integer",
+            "description": "Only shipments of this customer id."
+          },
+          "number": {
+            "type": "string",
+            "description": "Shipment number."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only shipments with an id above this one (for incremental syncs).",
+            "minimum": 0
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only shipments created after this time, YYYY-MM-DD HH:MM:SS in the shop's time zone."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only shipments created before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only shipments changed after this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only shipments changed before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,createdAt,number,status. Smaller answers, same call cost."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments.json",
+        "queryParams": {
+          "order": "$order",
+          "customer": "$customer",
+          "number": "$number",
+          "limit": "$limit",
+          "page": "$page",
+          "since_id": "$since_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_get_shipment",
+      "description": "Read one shipment: number, status, trackingCode, shipping address, the order it belongs to and the products in it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "description": "Numeric shipment id, e.g. 1623550.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_update_shipment",
+      "description": "Mark a shipment as shipped (or back to not_shipped) and add its tracking code, optionally emailing the customer the tracking code or that the order is ready for pickup.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "description": "Numeric shipment id, e.g. 1623550.",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "description": "shipped or not_shipped.",
+            "enum": [
+              "shipped",
+              "not_shipped"
+            ]
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Tracking code from the carrier, e.g. 3SMF2209773."
+          },
+          "do_notify_shipped": {
+            "type": "boolean",
+            "description": "true: email the customer that the shipment left."
+          },
+          "do_notify_tracking_code": {
+            "type": "boolean",
+            "description": "true: email the customer the tracking code."
+          },
+          "do_notify_ready_for_pickup": {
+            "type": "boolean",
+            "description": "true: email the customer that the order is ready for pickup."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/shipments/{shipment_id}.json",
+        "bodyMapping": {
+          "shipment": {
+            "status": "$status",
+            "trackingCode": "$tracking_code",
+            "doNotifyShipped": "$do_notify_shipped",
+            "doNotifyTrackingCode": "$do_notify_tracking_code",
+            "doNotifyReadyForPickup": "$do_notify_ready_for_pickup"
+          }
+        }
+      }
+    },
+    {
+      "name": "lightspeed_ecom_list_products",
+      "description": "List products: id, url, title, fulltitle, description, visibility (visible, hidden, auto), brand, supplier, createdAt, updatedAt, image and links to the variants. Prices and stock are on the variants. Up to 250 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand": {
+            "type": "integer",
+            "description": "Only products of this brand id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only products with an id above this one (for incremental syncs).",
+            "minimum": 0
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only products created after this time, YYYY-MM-DD HH:MM:SS in the shop's time zone."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only products created before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only products changed after this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only products changed before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,createdAt,number,status. Smaller answers, same call cost."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products.json",
+        "queryParams": {
+          "brand": "$brand",
+          "limit": "$limit",
+          "page": "$page",
+          "since_id": "$since_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_count_products",
+      "description": "Count products, optionally created or changed within a time window: answers with count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at_min": {
+            "type": "string",
+            "description": "Only products created after this time, YYYY-MM-DD HH:MM:SS in the shop's time zone."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only products created before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only products changed after this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only products changed before this time, YYYY-MM-DD HH:MM:SS."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/count.json",
+        "queryParams": {
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_get_product",
+      "description": "Read one product: title, fulltitle, description, content (long HTML description), url, visibility, brand, supplier, delivery date, images, tags and its variants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Numeric product id, e.g. 1623550.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_update_product",
+      "description": "Change a product's texts and settings in the connector's language: title, fulltitle, description (at most 255 characters), content (long HTML), url slug, visibility, brand, supplier or delivery date. Only the fields given change. Price and stock are changed on variants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Numeric product id, e.g. 1623550.",
+            "minimum": 1
+          },
+          "visibility": {
+            "type": "string",
+            "description": "visible, hidden or auto (visible while in stock).",
+            "enum": [
+              "visible",
+              "hidden",
+              "auto"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Product title; the URL keeps its slug."
+          },
+          "fulltitle": {
+            "type": "string",
+            "description": "Full product title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description, at most 255 characters.",
+            "maxLength": 255
+          },
+          "content": {
+            "type": "string",
+            "description": "Long description as HTML."
+          },
+          "url": {
+            "type": "string",
+            "description": "URL slug, e.g. lookin-sharp-tee."
+          },
+          "brand": {
+            "type": "integer",
+            "description": "Brand id."
+          },
+          "supplier": {
+            "type": "integer",
+            "description": "Supplier id."
+          },
+          "deliverydate": {
+            "type": "integer",
+            "description": "Delivery date id (a delivery time set up in the back office)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}.json",
+        "bodyMapping": {
+          "product": {
+            "visibility": "$visibility",
+            "title": "$title",
+            "fulltitle": "$fulltitle",
+            "description": "$description",
+            "content": "$content",
+            "url": "$url",
+            "brand": "$brand",
+            "supplier": "$supplier",
+            "deliverydate": "$deliverydate"
+          }
+        }
+      }
+    },
+    {
+      "name": "lightspeed_ecom_list_variants",
+      "description": "List variants (the sellable items): id, title, articleCode, ean, sku, priceExcl, priceIncl, priceCost, oldPriceIncl, stockTracking, stockLevel, stockAlert, weight and the product link. Filter by product, article code, EAN or SKU. Up to 250 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "integer",
+            "description": "Only variants of this product id."
+          },
+          "article_code": {
+            "type": "string",
+            "description": "Merchant article code."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN barcode."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only variants with an id above this one (for incremental syncs).",
+            "minimum": 0
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only variants created after this time, YYYY-MM-DD HH:MM:SS in the shop's time zone."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only variants created before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only variants changed after this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only variants changed before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,createdAt,number,status. Smaller answers, same call cost."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/variants.json",
+        "queryParams": {
+          "product": "$product",
+          "article_code": "$article_code",
+          "ean": "$ean",
+          "sku": "$sku",
+          "limit": "$limit",
+          "page": "$page",
+          "since_id": "$since_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_get_variant",
+      "description": "Read one variant: title, codes (articleCode, ean, sku, hs), prices incl. and excl. tax, cost price, old prices, stock settings and level, purchase minimum and maximum, weight, size and options.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "integer",
+            "description": "Numeric variant id, e.g. 1623550.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/variants/{variant_id}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_update_variant",
+      "description": "Change a variant: prices (priceExcl or priceIncl, cost price, old prices for a strike-through), stock level and stock tracking, stock alert and minimums, codes (articleCode, ean, sku), title or weight in grams. Only the fields given change. With multishop the stock level is the total of all shops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "variant_id": {
+            "type": "integer",
+            "description": "Numeric variant id, e.g. 1623550.",
+            "minimum": 1
+          },
+          "price_excl": {
+            "type": "number",
+            "description": "Price excluding tax."
+          },
+          "price_incl": {
+            "type": "number",
+            "description": "Price including tax."
+          },
+          "price_cost": {
+            "type": "number",
+            "description": "Cost price, internal only."
+          },
+          "old_price_excl": {
+            "type": "number",
+            "description": "Old price excluding tax, shown crossed out."
+          },
+          "old_price_incl": {
+            "type": "number",
+            "description": "Old price including tax, shown crossed out."
+          },
+          "stock_level": {
+            "type": "integer",
+            "description": "Actual stock level."
+          },
+          "stock_tracking": {
+            "type": "string",
+            "description": "disabled (no tracking), enabled (tracking, no backorders) or indicator (tracking, backorders allowed).",
+            "enum": [
+              "disabled",
+              "enabled",
+              "indicator"
+            ]
+          },
+          "stock_alert": {
+            "type": "integer",
+            "description": "Alert when the stock falls below this level."
+          },
+          "stock_minimum": {
+            "type": "integer",
+            "description": "Preferred minimum stock level."
+          },
+          "stock_buy_minimum": {
+            "type": "integer",
+            "description": "Minimum order quantity."
+          },
+          "stock_buy_maximum": {
+            "type": "integer",
+            "description": "Maximum order quantity."
+          },
+          "article_code": {
+            "type": "string",
+            "description": "Merchant article code."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN barcode."
+          },
+          "sku": {
+            "type": "string",
+            "description": "SKU."
+          },
+          "title": {
+            "type": "string",
+            "description": "Variant title, e.g. Size M."
+          },
+          "weight": {
+            "type": "integer",
+            "description": "Weight in grams."
+          }
+        },
+        "required": [
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/variants/{variant_id}.json",
+        "bodyMapping": {
+          "variant": {
+            "priceExcl": "$price_excl",
+            "priceIncl": "$price_incl",
+            "priceCost": "$price_cost",
+            "oldPriceExcl": "$old_price_excl",
+            "oldPriceIncl": "$old_price_incl",
+            "stockLevel": "$stock_level",
+            "stockTracking": "$stock_tracking",
+            "stockAlert": "$stock_alert",
+            "stockMinimum": "$stock_minimum",
+            "stockBuyMinimum": "$stock_buy_minimum",
+            "stockBuyMaximum": "$stock_buy_maximum",
+            "articleCode": "$article_code",
+            "ean": "$ean",
+            "sku": "$sku",
+            "title": "$title",
+            "weight": "$weight"
+          }
+        }
+      }
+    },
+    {
+      "name": "lightspeed_ecom_list_customers",
+      "description": "List customers: id, email, firstname, lastname, phone, mobile, companyName, isCompany, addressBilling and addressShipping fields, language, createdAt and lastOnlineAt. Filter by email. Up to 250 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact email address."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only customers with an id above this one (for incremental syncs).",
+            "minimum": 0
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only customers created after this time, YYYY-MM-DD HH:MM:SS in the shop's time zone."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only customers created before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only customers changed after this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only customers changed before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,createdAt,number,status. Smaller answers, same call cost."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers.json",
+        "queryParams": {
+          "email": "$email",
+          "limit": "$limit",
+          "page": "$page",
+          "since_id": "$since_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_get_customer",
+      "description": "Read one customer: contact details, company and VAT number, billing and shipping address, newsletter and confirmation flags, customer groups and links to the customer's orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Numeric customer id, e.g. 1623550.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lightspeed_ecom_list_invoices",
+      "description": "List invoices: id, number, status, isVatShifted, priceIncl, priceExcl, createdAt, the order and customer links and the invoice document link. Filter by order, customer or number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "description": "Only invoices of this order id."
+          },
+          "customer": {
+            "type": "integer",
+            "description": "Only invoices of this customer id."
+          },
+          "number": {
+            "type": "string",
+            "description": "Invoice number."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 250.",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only invoices with an id above this one (for incremental syncs).",
+            "minimum": 0
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only invoices created after this time, YYYY-MM-DD HH:MM:SS in the shop's time zone."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Only invoices created before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only invoices changed after this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Only invoices changed before this time, YYYY-MM-DD HH:MM:SS."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Comma-separated fields to return, e.g. id,createdAt,number,status. Smaller answers, same call cost."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices.json",
+        "queryParams": {
+          "order": "$order",
+          "customer": "$customer",
+          "number": "$number",
+          "limit": "$limit",
+          "page": "$page",
+          "since_id": "$since_id",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

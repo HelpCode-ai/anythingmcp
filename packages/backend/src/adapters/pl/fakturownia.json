@@ -1,0 +1,1330 @@
+{
+  "slug": "fakturownia",
+  "name": "Fakturownia",
+  "description": "Fakturownia.pl invoicing API for Polish businesses: invoices with PDF and KSeF status, proforma invoices, clients, products, recorded payments, warehouses and warehouse documents. Issuing, sending, cancelling and deleting invoices are switched off. API token and account prefix.",
+  "instructions": "## Fakturownia\nThis connector works with the **Fakturownia.pl API** (`https://YOUR_PREFIX.fakturownia.pl`), the Polish online invoicing service: invoices and other documents (read, PDF, KSeF status), proforma invoices, clients, products, recorded payments, warehouses and warehouse documents, departments and categories.\n\n**Setup (about 2 minutes)**\n1. Sign in to Fakturownia and open **Ustawienia, Ustawienia konta, Integracja** (Settings, Account settings, Integration).\n2. Under **Kod autoryzacyjny API** (API authorization code) copy the token, or generate one first. Paste it into `FAKTUROWNIA_API_TOKEN`.\n3. Enter the prefix of your account address into `FAKTUROWNIA_DOMAIN`: for `https://mojafirma.fakturownia.pl` it is `mojafirma`.\n\nAPI access is part of the paid plans (and of the trial). The token acts as the user who created it and is sent as the `api_token` query parameter on every call.\n\n**Where to start**: `fakturownia_list_invoices` (this month by default), then `fakturownia_get_invoice` for the lines and `fakturownia_get_invoice_pdf` for the document. `fakturownia_list_clients` and `fakturownia_list_products` find ids for new documents.\n\n**Invoices (read)**: `fakturownia_list_invoices`, `fakturownia_get_invoice`, `fakturownia_get_invoice_pdf`, `fakturownia_get_invoice_ksef_status`, `fakturownia_list_recurring_invoices`. Filter with period (this_month, last_month, last_12_months, all, or more with date_from and date_to); search_date_type picks issue, payment or sale date. Cost invoices: income no.\n\n**Proformas**: `fakturownia_create_proforma` creates a proforma (not a tax document, never sent to KSeF, nothing e-mailed). Turning it into a VAT invoice is done in Fakturownia or with `fakturownia_create_invoice`.\n\n**Switched off at install** (they issue, change or remove legal documents, or contact customers): `fakturownia_create_invoice`, `fakturownia_update_invoice`, `fakturownia_change_invoice_status`, `fakturownia_send_invoice_by_email`, `fakturownia_cancel_invoice`, `fakturownia_delete_invoice`, `fakturownia_create_payment` and `fakturownia_delete_client`. A VAT invoice is a tax document; in an account connected to KSeF it may be submitted to the national e-invoicing system, which cannot be undone (mistakes need a correction invoice). Turn these tools on only deliberately. No tool moves money.\n\n**Clients and products**: `fakturownia_list_clients` (search by name, e-mail, short name, NIP or external_id), `fakturownia_get_client`, `fakturownia_create_client`, `fakturownia_update_client`; `fakturownia_list_products`, `fakturownia_get_product`, `fakturownia_create_product`, `fakturownia_update_product`. Products take a gross price and a tax rate; the net price is computed.\n\n**Payments, stock, settings**: `fakturownia_list_payments` (recorded payments, read-only), `fakturownia_list_warehouses`, `fakturownia_list_warehouse_documents`, `fakturownia_get_warehouse_document`, `fakturownia_list_departments` (issuers: department_id), `fakturownia_list_categories`.\n\n**Field notes**: ids are numbers. Amounts are decimals in the document currency (default PLN). Tax rates are numbers (23, 8, 5, 0) or the texts zw (exempt) and np (not subject). Statuses: issued, sent, paid, partial, rejected. KSeF state (`gov_status`): ok means accepted with a KSeF number in `gov_id`; processing, send_error and others are explained in `gov_error_messages`. Each invoice has a `token`: the link `/invoice/TOKEN` opens it without login, so do not share it carelessly.\n\n**Paging and limits**: lists take page from 1 and per_page up to 100; a shorter page is the last. Fakturownia does not publish its rate limits; a 429 means wait and retry later. Some refusals come back with HTTP 200 and `\"status\": \"error\"`, which the connector reports as a failed call.",
+  "aliases": [
+    "Fakturownia.pl"
+  ],
+  "region": "pl",
+  "category": "accounting",
+  "icon": "fakturownia",
+  "docsUrl": "https://github.com/fakturownia/API",
+  "requiredEnvVars": [
+    "FAKTUROWNIA_DOMAIN",
+    "FAKTUROWNIA_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "FAKTUROWNIA_DOMAIN": {
+      "label": "Account prefix",
+      "kind": "address",
+      "help": "The first part of your Fakturownia address: for https://mojafirma.fakturownia.pl enter mojafirma.",
+      "link": "https://github.com/fakturownia/API",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$",
+      "patternMessage": "Enter only the prefix, for example mojafirma, without https:// or .fakturownia.pl."
+    },
+    "FAKTUROWNIA_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Ustawienia, Ustawienia konta, Integracja: Kod autoryzacyjny API. Generate it there if it is empty.",
+      "link": "https://github.com/fakturownia/API#api-token",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the token without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Fakturownia refused the API token. Copy it again from Ustawienia, Ustawienia konta, Integracja (Kod autoryzacyjny API), and check that the account prefix matches the account of that token.",
+      "field": "FAKTUROWNIA_API_TOKEN"
+    },
+    "403": "The token is valid but its user may not do this (user permissions or plan). Check the user rights in Fakturownia.",
+    "404": {
+      "hint": "Nothing found. If every call answers 404, the account prefix is wrong: for https://mojafirma.fakturownia.pl enter mojafirma.",
+      "field": "FAKTUROWNIA_DOMAIN"
+    },
+    "unreachable": {
+      "hint": "No Fakturownia account answers at this prefix. Enter only the first part of your address.",
+      "field": "FAKTUROWNIA_DOMAIN"
+    },
+    "rate_limited": "Fakturownia limited the requests. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "fakturownia_list_clients",
+    "params": {
+      "per_page": 1
+    }
+  },
+  "prerequisites": "A Fakturownia.pl account on a plan with API access (all paid plans and the trial) and its API authorization code. About 2 minutes.",
+  "connector": {
+    "name": "Fakturownia API",
+    "type": "REST",
+    "baseUrl": "https://{{FAKTUROWNIA_DOMAIN}}.fakturownia.pl",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api_token": "{{FAKTUROWNIA_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "equals": "error",
+          "messagePath": "message",
+          "messageMatches": "logged in|zalogowa|token|autoryz",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "equals": "error",
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "fakturownia_list_invoices",
+      "description": "List invoices and other sales or cost documents, newest first by default: id, number, kind, status (issued, sent, paid, partial, rejected), issue_date, sell_date, payment_to, paid_date, price_net, price_tax, price_gross, paid, currency, buyer_name, buyer_tax_no, client_id, gov_status (KSeF) and the public token. Lines only with include_positions. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Time window on search_date_type: this_month, last_month, last_30_days, last_12_months, this_year, last_year, all, or more together with date_from and date_to.",
+            "enum": [
+              "this_month",
+              "last_month",
+              "last_30_days",
+              "last_12_months",
+              "this_year",
+              "last_year",
+              "all",
+              "more"
+            ],
+            "default": "this_month"
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start date YYYY-MM-DD, used with period more.",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End date YYYY-MM-DD, used with period more.",
+            "format": "date"
+          },
+          "search_date_type": {
+            "type": "string",
+            "description": "Which date period filters on: issue_date (default), paid_date or transaction_date (sale date).",
+            "enum": [
+              "issue_date",
+              "paid_date",
+              "transaction_date"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "description": "Only this document kind, for example vat, proforma, correction or receipt.",
+            "enum": [
+              "vat",
+              "proforma",
+              "bill",
+              "receipt",
+              "advance",
+              "final",
+              "correction",
+              "invoice_other",
+              "vat_margin",
+              "kp",
+              "kw",
+              "estimate",
+              "vat_mp",
+              "vat_rr",
+              "correction_note",
+              "accounting_note",
+              "client_order",
+              "dw",
+              "wnt",
+              "wdt",
+              "import_service",
+              "import_service_eu",
+              "import_products",
+              "export_products"
+            ]
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only documents of this client id (numeric).",
+            "minimum": 1
+          },
+          "number": {
+            "type": "string",
+            "description": "Only the document with this exact number, for example `FV 12/11/2026`."
+          },
+          "invoice_ids": {
+            "type": "string",
+            "description": "Comma-separated invoice ids to fetch, for example `123,456`."
+          },
+          "income": {
+            "type": "string",
+            "description": "no: cost invoices (expenses) instead of sales documents.",
+            "enum": [
+              "no",
+              "yes"
+            ]
+          },
+          "include_positions": {
+            "type": "boolean",
+            "description": "true adds the invoice lines (positions) to every document."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort field: number, updated_at, issue_date, payment_to, paid_date, price_gross, buyer_name and others; add .desc for descending, for example `updated_at.desc`."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. A page shorter than per_page is the last one.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices.json",
+        "queryParams": {
+          "period": "$period",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "search_date_type": "$search_date_type",
+          "kind": "$kind",
+          "client_id": "$client_id",
+          "number": "$number",
+          "invoice_ids": "$invoice_ids",
+          "income": "$income",
+          "include_positions": "$include_positions",
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_get_invoice",
+      "description": "Get one invoice with its lines: number, kind, status, dates, seller and buyer data, positions (name, quantity, prices, tax), totals, paid amount, payment_type, currency, description, client_id, department_id and token (public preview link /invoice/TOKEN). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id (numeric).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_get_invoice_ksef_status",
+      "description": "Read the KSeF (Polish national e-invoicing system) state of one invoice: gov_status (ok, processing, send_error, server_error, offline, not_connected and others), gov_id (KSeF number), gov_send_date, gov_error_messages and the verification link. Read-only, does not submit anything.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id (numeric).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}.json",
+        "queryParams": {
+          "fields[invoice]": "gov_status,gov_id,gov_send_date,gov_error_messages,gov_verification_link,gov_link,gov_corrected_invoice_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_get_invoice_pdf",
+      "description": "Download the PDF of one invoice, attached as a file (up to 4 MB).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id (numeric).",
+            "minimum": 1
+          },
+          "print_option": {
+            "type": "string",
+            "description": "original (default), copy, original_and_copy or duplicate.",
+            "enum": [
+              "original",
+              "copy",
+              "original_and_copy",
+              "duplicate"
+            ]
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}.pdf",
+        "queryParams": {
+          "print_option": "$print_option"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_list_recurring_invoices",
+      "description": "List recurring invoice definitions: id, name, invoice_id (the template), start_date, every (for example 1m), next_invoice_date, end_date, send_email and buyer_email. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. A page shorter than per_page is the last one.",
+            "minimum": 1,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/recurrings.json",
+        "queryParams": {
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_create_proforma",
+      "description": "Create a proforma invoice (an offer or payment request, not a tax document and never sent to KSeF). Give client_id or buyer data, and the lines. Returns the new document with id, number and token. Nothing is e-mailed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Existing client id (numeric).",
+            "minimum": 1
+          },
+          "buyer_name": {
+            "type": "string",
+            "description": "Buyer name, when no client_id is given."
+          },
+          "buyer_tax_no": {
+            "type": "string",
+            "description": "Buyer NIP or other tax number."
+          },
+          "buyer_email": {
+            "type": "string",
+            "description": "Buyer e-mail (stored only, nothing is sent)."
+          },
+          "buyer_street": {
+            "type": "string",
+            "description": "Buyer street and number."
+          },
+          "buyer_post_code": {
+            "type": "string",
+            "description": "Buyer postal code, for example 00-001."
+          },
+          "buyer_city": {
+            "type": "string",
+            "description": "Buyer city."
+          },
+          "buyer_country": {
+            "type": "string",
+            "description": "Buyer country, ISO 3166 code such as PL."
+          },
+          "issue_date": {
+            "type": "string",
+            "description": "Issue date YYYY-MM-DD (default today).",
+            "format": "date"
+          },
+          "payment_to_kind": {
+            "type": "string",
+            "description": "Payment term in days (for example \"14\"), \"off\" for none, or \"other_date\" with payment_to."
+          },
+          "payment_to": {
+            "type": "string",
+            "description": "Due date YYYY-MM-DD, with payment_to_kind other_date.",
+            "format": "date"
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency code (default the account currency, usually PLN)."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Document language, for example pl or en."
+          },
+          "department_id": {
+            "type": "integer",
+            "description": "Issuing company or department (Settings, Company data) id (numeric).",
+            "minimum": 1
+          },
+          "description": {
+            "type": "string",
+            "description": "Notes printed on the document."
+          },
+          "positions": {
+            "type": "array",
+            "description": "Invoice lines. Each line: name (or product_id), quantity, total_price_gross (or price_net), tax (23, 8, 5, 0, \"zw\" or \"np\"), optionally quantity_unit, discount and gtu_code.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "positions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices.json",
+        "bodyMapping": {
+          "invoice": {
+            "kind": "proforma",
+            "client_id": "$client_id",
+            "buyer_name": "$buyer_name",
+            "buyer_tax_no": "$buyer_tax_no",
+            "buyer_email": "$buyer_email",
+            "buyer_street": "$buyer_street",
+            "buyer_post_code": "$buyer_post_code",
+            "buyer_city": "$buyer_city",
+            "buyer_country": "$buyer_country",
+            "issue_date": "$issue_date",
+            "payment_to_kind": "$payment_to_kind",
+            "payment_to": "$payment_to",
+            "currency": "$currency",
+            "lang": "$lang",
+            "department_id": "$department_id",
+            "description": "$description",
+            "positions": "$positions"
+          }
+        }
+      }
+    },
+    {
+      "name": "fakturownia_create_invoice",
+      "description": "Issue a new document of any kind (VAT invoice, receipt, correction, advance, final and others). A VAT invoice is a tax document; with KSeF active in the account it may be submitted to KSeF, which cannot be undone. Returns the document with id and number. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice": {
+            "type": "object",
+            "description": "Invoice fields as in the Fakturownia API: kind, number (leave out for automatic), issue_date, sell_date, payment_to_kind or payment_to, client_id or buyer_name and buyer_tax_no, department_id, currency, positions (list of name or product_id, quantity, total_price_gross, tax). For example `{\"kind\":\"vat\",\"client_id\":1,\"payment_to_kind\":14,\"positions\":[{\"product_id\":5,\"quantity\":2}]}`."
+          }
+        },
+        "required": [
+          "invoice"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices.json",
+        "bodyMapping": {
+          "invoice": "$invoice"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fakturownia_update_invoice",
+      "description": "Change an existing invoice (partial: only the fields sent). Lines are changed by their id; a line with `_destroy` 1 is removed. Editing an issued tax document has legal effect and a document already in KSeF needs a correction instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id (numeric).",
+            "minimum": 1
+          },
+          "invoice": {
+            "type": "object",
+            "description": "Fields to change, for example `{\"buyer_email\":\"a@b.pl\",\"positions\":[{\"id\":321,\"quantity\":3}]}`."
+          }
+        },
+        "required": [
+          "invoice_id",
+          "invoice"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/invoices/{invoice_id}.json",
+        "bodyMapping": {
+          "invoice": "$invoice"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fakturownia_change_invoice_status",
+      "description": "Set the status of an invoice: issued, sent, paid, partial or rejected. Marking it paid changes the books and the paid amount (no money moves). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id (numeric).",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "issued",
+              "sent",
+              "paid",
+              "partial",
+              "rejected"
+            ]
+          }
+        },
+        "required": [
+          "invoice_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{invoice_id}/change_status.json",
+        "queryParams": {
+          "status": "$status"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fakturownia_send_invoice_by_email",
+      "description": "E-mail an invoice to the buyer (or the given addresses) from Fakturownia. With KSeF active, a VAT invoice to a company can only be sent once it has a KSeF number. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id (numeric).",
+            "minimum": 1
+          },
+          "email_to": {
+            "type": "string",
+            "description": "Recipient addresses, comma-separated, up to 5. Leave out to use the buyer e-mail."
+          },
+          "email_cc": {
+            "type": "string",
+            "description": "CC addresses, comma-separated."
+          },
+          "email_pdf": {
+            "type": "boolean",
+            "description": "true attaches the PDF instead of only a link."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{invoice_id}/send_by_email.json",
+        "queryParams": {
+          "email_to": "$email_to",
+          "email_cc": "$email_cc",
+          "email_pdf": "$email_pdf"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fakturownia_cancel_invoice",
+      "description": "Cancel an invoice with an optional reason. A cancelled tax document stays in the register; one already in KSeF needs a correction invoice instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice to cancel id (numeric).",
+            "minimum": 1
+          },
+          "cancel_reason": {
+            "type": "string",
+            "description": "Reason shown on the cancelled document."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/cancel.json",
+        "bodyMapping": {
+          "cancel_invoice_id": "$invoice_id",
+          "cancel_reason": "$cancel_reason"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fakturownia_delete_invoice",
+      "description": "Delete an invoice permanently. Cannot be undone and breaks the numbering; never use it for documents already in KSeF. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice to delete id (numeric).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/invoices/{invoice_id}.json"
+      },
+      "enabled": false
+    },
+    {
+      "name": "fakturownia_list_clients",
+      "description": "List or search clients (buyers): id, name, shortcut, tax_no, email, phone, street, post_code, city, country, bank_account, external_id, note and default payment terms. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Search by name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Search by e-mail."
+          },
+          "shortcut": {
+            "type": "string",
+            "description": "Search by short name."
+          },
+          "tax_no": {
+            "type": "string",
+            "description": "Search by NIP or other tax number."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Find the client with this external id (from another system)."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. A page shorter than per_page is the last one.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients.json",
+        "queryParams": {
+          "name": "$name",
+          "email": "$email",
+          "shortcut": "$shortcut",
+          "tax_no": "$tax_no",
+          "external_id": "$external_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_get_client",
+      "description": "Get one client by id: name, tax_no, address, e-mail, phone, bank account, external_id, discount, payment_to_kind, default currency, note and tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Client id (numeric).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/{client_id}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_create_client",
+      "description": "Add a client (buyer) with name, tax number, address and contact data. Returns the client with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Company or person name."
+          },
+          "tax_no": {
+            "type": "string",
+            "description": "NIP or other tax number."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "post_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country, ISO 3166 code such as PL."
+          },
+          "person": {
+            "type": "string",
+            "description": "Contact person."
+          },
+          "bank_account": {
+            "type": "string",
+            "description": "Bank account number."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Id of this client in another system."
+          },
+          "payment_to_kind": {
+            "type": "string",
+            "description": "Default payment term in days, for example \"14\"."
+          },
+          "note": {
+            "type": "string",
+            "description": "Internal note."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients.json",
+        "bodyMapping": {
+          "client": {
+            "name": "$name",
+            "tax_no": "$tax_no",
+            "email": "$email",
+            "phone": "$phone",
+            "street": "$street",
+            "post_code": "$post_code",
+            "city": "$city",
+            "country": "$country",
+            "person": "$person",
+            "bank_account": "$bank_account",
+            "external_id": "$external_id",
+            "payment_to_kind": "$payment_to_kind",
+            "note": "$note"
+          }
+        }
+      }
+    },
+    {
+      "name": "fakturownia_update_client",
+      "description": "Change a client (only the fields sent). Existing invoices keep the buyer data they were issued with.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Client id (numeric).",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "tax_no": {
+            "type": "string",
+            "description": "NIP or other tax number."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "post_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country, ISO 3166 code."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "External id."
+          },
+          "note": {
+            "type": "string",
+            "description": "Internal note."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/clients/{client_id}.json",
+        "bodyMapping": {
+          "client": {
+            "name": "$name",
+            "tax_no": "$tax_no",
+            "email": "$email",
+            "phone": "$phone",
+            "street": "$street",
+            "post_code": "$post_code",
+            "city": "$city",
+            "country": "$country",
+            "external_id": "$external_id",
+            "note": "$note"
+          }
+        }
+      }
+    },
+    {
+      "name": "fakturownia_delete_client",
+      "description": "Delete a client from the client list. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Client to delete id (numeric).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/clients/{client_id}.json"
+      },
+      "enabled": false
+    },
+    {
+      "name": "fakturownia_list_products",
+      "description": "List products and services: id, name, code, ean_code, price_net, price_gross, tax, currency, quantity_unit, stock level (warehouse_quantity, with warehouse_id), service flag, description and updated_at. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Only products added or changed since this date (YYYY-MM-DD).",
+            "format": "date"
+          },
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Show the stock of this warehouse id (numeric).",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. A page shorter than per_page is the last one.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products.json",
+        "queryParams": {
+          "date_from": "$date_from",
+          "warehouse_id": "$warehouse_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_get_product",
+      "description": "Get one product by id: name, code, EAN, prices, tax, unit, stock (per warehouse with warehouse_id), category and description.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id (numeric).",
+            "minimum": 1
+          },
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Show the stock of this warehouse id (numeric).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}.json",
+        "queryParams": {
+          "warehouse_id": "$warehouse_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_create_product",
+      "description": "Add a product or service. Give the gross price and the tax rate; Fakturownia computes the net price. Returns the product with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Product name as printed on invoices."
+          },
+          "code": {
+            "type": "string",
+            "description": "Product code (SKU)."
+          },
+          "ean_code": {
+            "type": "string",
+            "description": "EAN barcode."
+          },
+          "price_gross": {
+            "type": "number",
+            "description": "Gross unit price."
+          },
+          "tax": {
+            "type": "string",
+            "description": "VAT rate: 23, 8, 5, 0, \"zw\" (exempt) or \"np\" (not subject)."
+          },
+          "quantity_unit": {
+            "type": "string",
+            "description": "Unit, for example szt. or godz."
+          },
+          "service": {
+            "type": "boolean",
+            "description": "true for a service (no stock)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products.json",
+        "bodyMapping": {
+          "product": {
+            "name": "$name",
+            "code": "$code",
+            "ean_code": "$ean_code",
+            "price_gross": "$price_gross",
+            "tax": "$tax",
+            "quantity_unit": "$quantity_unit",
+            "service": "$service",
+            "description": "$description"
+          }
+        }
+      }
+    },
+    {
+      "name": "fakturownia_update_product",
+      "description": "Change a product (only the fields sent). Price changes apply to new invoices only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id (numeric).",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "code": {
+            "type": "string",
+            "description": "Product code (SKU)."
+          },
+          "ean_code": {
+            "type": "string",
+            "description": "EAN barcode."
+          },
+          "price_gross": {
+            "type": "number",
+            "description": "Gross unit price."
+          },
+          "tax": {
+            "type": "string",
+            "description": "VAT rate: 23, 8, 5, 0, \"zw\" or \"np\"."
+          },
+          "quantity_unit": {
+            "type": "string",
+            "description": "Unit."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}.json",
+        "bodyMapping": {
+          "product": {
+            "name": "$name",
+            "code": "$code",
+            "ean_code": "$ean_code",
+            "price_gross": "$price_gross",
+            "tax": "$tax",
+            "quantity_unit": "$quantity_unit",
+            "description": "$description"
+          }
+        }
+      }
+    },
+    {
+      "name": "fakturownia_list_payments",
+      "description": "List payments recorded in Fakturownia (bank and cash receipts linked to invoices): id, name, price, currency, paid, paid_date, kind, invoice_id and description; with include invoices, the linked invoices. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "description": "invoices: add the linked invoices to every payment.",
+            "enum": [
+              "invoices"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. A page shorter than per_page is the last one.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/banking/payments.json",
+        "queryParams": {
+          "include": "$include",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_create_payment",
+      "description": "Record a payment against one or more invoices (bookkeeping only, no money moves). It changes the paid amount and status of the invoices. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Payment title."
+          },
+          "price": {
+            "type": "number",
+            "description": "Amount."
+          },
+          "invoice_ids": {
+            "type": "array",
+            "description": "Invoice ids the payment settles.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "true when the money has arrived."
+          },
+          "paid_date": {
+            "type": "string",
+            "description": "Payment date YYYY-MM-DD.",
+            "format": "date"
+          },
+          "description": {
+            "type": "string",
+            "description": "Note."
+          }
+        },
+        "required": [
+          "name",
+          "price",
+          "invoice_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/banking/payments.json",
+        "bodyMapping": {
+          "banking_payment": {
+            "name": "$name",
+            "price": "$price",
+            "invoice_ids": "$invoice_ids",
+            "paid": "$paid",
+            "paid_date": "$paid_date",
+            "description": "$description",
+            "kind": "api"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "fakturownia_list_warehouses",
+      "description": "List warehouses: id, name, kind, description. Use the id with the product tools to read stock per warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. A page shorter than per_page is the last one.",
+            "minimum": 1,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses.json",
+        "queryParams": {
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_list_warehouse_documents",
+      "description": "List warehouse documents (PZ goods received, WZ goods issued, MM transfers): id, kind, number, issue_date, warehouse_id, client_id, invoice_ids and totals. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Time window, as for invoices.",
+            "enum": [
+              "this_month",
+              "last_month",
+              "last_30_days",
+              "last_12_months",
+              "this_year",
+              "last_year",
+              "all",
+              "more"
+            ]
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Start date YYYY-MM-DD, with period more.",
+            "format": "date"
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End date YYYY-MM-DD, with period more.",
+            "format": "date"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1. A page shorter than per_page is the last one.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Rows per page, at most 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouse_documents.json",
+        "queryParams": {
+          "period": "$period",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_get_warehouse_document",
+      "description": "Get one warehouse document with its lines (product_id, quantity, prices), warehouse and linked invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "integer",
+            "description": "Warehouse document id (numeric).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouse_documents/{document_id}.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_list_departments",
+      "description": "List the companies and departments of the account (the issuers of documents): id, name, shortcut, tax_no, address and bank account. The id is the department_id of an invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "fakturownia_list_categories",
+      "description": "List document categories: id, name and description. The id is the category_id of an invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories.json"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

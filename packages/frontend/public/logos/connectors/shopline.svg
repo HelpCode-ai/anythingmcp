@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="SHOPLINE connector">
+  <rect width="128" height="128" rx="24" fill="#1F1F2E"/>
+  <path d="M66 41c-4-5-10-7-16-7-9 0-16 5-16 13 0 18 33 10 33 26 0 8-7 13-17 13-7 0-14-3-18-8" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round"/>
+  <path d="M76 30h12v54h20v12H76Z" fill="#fff"/>
+</svg>
