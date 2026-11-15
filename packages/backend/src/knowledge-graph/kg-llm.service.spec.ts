@@ -70,3 +70,21 @@ describe('KgLlmService.enrich custom skip', () => {
     expect(prisma.orgSettings.upsert).toHaveBeenCalledTimes(1);
   });
 });
+
+/** The dashboard offers the scheduled switch only where the job can run. */
+describe('KgLlmService.scheduledAvailable', () => {
+  afterEach(() => {
+    clearKgEnv();
+    delete process.env.KG_LLM_CRON_ENABLED;
+  });
+
+  it('needs the AI features and the scheduled job turned on', () => {
+    const svc = make({});
+    setKgEnv();
+    expect(svc.scheduledAvailable()).toBe(false);
+    process.env.KG_LLM_CRON_ENABLED = 'true';
+    expect(svc.scheduledAvailable()).toBe(true);
+    clearKgEnv();
+    expect(svc.scheduledAvailable()).toBe(false);
+  });
+});

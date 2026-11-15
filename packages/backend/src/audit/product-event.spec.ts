@@ -189,6 +189,38 @@ describe('scrubProviderMessage', () => {
 });
 
 describe('ProductEventService.log — server-written metadata', () => {
+  // The callers' own tests replace this service with a mock, so only a test
+  // through it shows what is really stored: 'phone', `attempt` and `reason`
+  // were all dropped here once.
+  it('keeps the device and the attempt of an authorization page view', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    const view = (metadata: Record<string, unknown>) => service.log({ event: 'authorize_page_viewed', metadata });
+    await view({ client: 'Claude', device: 'mobile', attempt: 'mh0zq3k1' });
+    await view({ client: 'Claude', device: 'desktop', attempt: 'mh0zq3k1' });
+    // Only the two coarse devices, and only a short base-36 value as the attempt.
+    await view({ client: 'Claude', device: 'phone', attempt: 'A session-id, or any text' });
+    await view({ client: 'Claude', attempt: 'x'.repeat(13) });
+    expect(create.mock.calls.map((c) => c[0].data.metadata)).toEqual([
+      { client: 'Claude', device: 'mobile', attempt: 'mh0zq3k1' },
+      { client: 'Claude', device: 'desktop', attempt: 'mh0zq3k1' },
+      { client: 'Claude' },
+      { client: 'Claude' },
+    ]);
+  });
+
+  it('keeps why an install from the chat added nothing', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({
+      event: 'setup_install_failed',
+      userId: 'u1',
+      organizationId: 'org-1',
+      metadata: { adapterSlug: 'openplz', via: 'mcp', kind: 'plan_limit' },
+    });
+    expect(create.mock.calls[0][0].data.metadata).toEqual({ adapterSlug: 'openplz', via: 'mcp', kind: 'plan_limit' });
+  });
+
   it('keeps cardTrialOffered on the empty-workspace prompt (the #920 measurement)', async () => {
     const create = jest.fn().mockResolvedValue({});
     const service = new ProductEventService({ productEvent: { create } } as any);
