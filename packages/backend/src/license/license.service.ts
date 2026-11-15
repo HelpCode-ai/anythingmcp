@@ -6,7 +6,7 @@ import { normalizeEmail } from '../common/email.util';
 import { DeploymentService } from '../common/deployment.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CheckoutIntentPayload, CheckoutUnavailableError } from './license-checkout';
-import { FIRST_SUCCESS_KEY } from './card-trial-offer';
+import { earliestDate, membersFirstSuccessAt, storedFirstSuccessAt } from '../audit/first-success-markers';
 import {
   formatSkipReasons,
   isSettled,
@@ -414,28 +414,30 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
   /**
    * Cloud: when the workspace made its first successful tool call (null if
    * never), read from OrgSettings or, for a workspace whose first success was
-   * not recorded there, from tool_invocations. Null as a whole on self-hosted
-   * or when the lookup fails, so the licence site treats the use as unknown
-   * and cancelling never waits on it.
+   * not recorded there, the earlier of its members' first-success stamps and
+   * its oldest SUCCESS row. The rows alone are not enough: Cloud deletes them
+   * after INVOCATION_RETENTION_DAYS, and a paying workspace would look
+   * never used (first-success-markers.ts). Null as a whole on self-hosted or
+   * when the lookup fails, so the licence site treats the use as unknown and
+   * cancelling never waits on it.
    */
   private async cancellationUsage(
     organizationId: string,
   ): Promise<{ firstSuccessfulCallAt: string | null } | null> {
     if (!this.deployment.isCloud()) return null;
     try {
-      const stored = await this.prisma.orgSettings.findUnique({
-        where: { organizationId_key: { organizationId, key: FIRST_SUCCESS_KEY } },
-        select: { value: true },
-      });
-      if (stored?.value && Number.isFinite(Date.parse(stored.value))) {
-        return { firstSuccessfulCallAt: new Date(stored.value).toISOString() };
-      }
-      const first = await this.prisma.toolInvocation.findFirst({
-        where: { organizationId, status: 'SUCCESS' },
-        orderBy: { createdAt: 'asc' },
-        select: { createdAt: true },
-      });
-      return { firstSuccessfulCallAt: first?.createdAt.toISOString() ?? null };
+      const stored = await storedFirstSuccessAt(this.prisma, organizationId);
+      if (stored) return { firstSuccessfulCallAt: stored.toISOString() };
+      const [members, first] = await Promise.all([
+        membersFirstSuccessAt(this.prisma, organizationId),
+        this.prisma.toolInvocation.findFirst({
+          where: { organizationId, status: 'SUCCESS' },
+          orderBy: { createdAt: 'asc' },
+          select: { createdAt: true },
+        }),
+      ]);
+      const earliest = earliestDate(members, first?.createdAt);
+      return { firstSuccessfulCallAt: earliest?.toISOString() ?? null };
     } catch (err: any) {
       this.logger.warn(`Usage lookup for the cancellation of org ${organizationId} failed: ${err?.message ?? err}`);
       return null;

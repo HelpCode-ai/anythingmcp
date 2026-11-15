@@ -1382,6 +1382,8 @@ describe('OnboardingCronService — blocked-call email', () => {
     recentWinbackEmail?: boolean;
     sendOk?: boolean;
     codesUnavailable?: boolean;
+    /** Members' first-success stamps (users.first_successful_invocation_at). */
+    memberFirstSuccess?: Array<{ joinedAt: Date; at: Date }>;
   } = {}) {
     const organizationId = opts.organizationId ?? ORG;
     const events = opts.events ?? [
@@ -1423,8 +1425,14 @@ describe('OnboardingCronService — blocked-call email', () => {
         upsert: jest.fn().mockResolvedValue({}),
       },
       organizationMember: {
-        findMany: jest.fn().mockResolvedValue(
-          admins.map((a) => ({ user: { email: a.email, name: a.name ?? null, emailMarketingOptOut: !!a.optedOut } })),
+        // The admins, or (filtered on the user's stamp) the members' first successes.
+        findMany: jest.fn(async ({ where }: any) =>
+          where.user
+            ? (opts.memberFirstSuccess ?? []).map((m) => ({
+                joinedAt: m.joinedAt,
+                user: { firstSuccessfulInvocationAt: m.at },
+              }))
+            : admins.map((a) => ({ user: { email: a.email, name: a.name ?? null, emailMarketingOptOut: !!a.optedOut } })),
         ),
       },
       toolInvocation: { count: jest.fn().mockResolvedValue(opts.calls ?? 8) },
@@ -1547,6 +1555,43 @@ describe('OnboardingCronService — blocked-call email', () => {
     expect(email.sendTrialBlockedCallsEmail.mock.calls[0][2]).toMatchObject({ neverUsed: true, offer: PERSONAL });
     expect(o.blockedCallEmails).toBe(1);
     expect(stored()).toMatchObject({ winback_holdout: 'unused:treatment', winback_offer: 'unused:personal:blocked_calls' });
+  });
+
+  it('treats a workspace with no SUCCESS row left but a stored first success as used', async () => {
+    // Back months after its trial: the retention deleted its calls.
+    const { run, email, stored, prisma } = makeService({
+      calls: 0,
+      admins: [{ email: 'boss@acme.io', name: 'Boss' }],
+      stored: { first_successful_call_at: '2026-06-01T10:00:00.000Z' },
+    });
+    const o = await run();
+    expect(email.sendTrialBlockedCallsEmail.mock.calls[0][2]).toMatchObject({ neverUsed: false, offer: LOCKED });
+    expect(o.blockedCallEmails).toBe(1);
+    expect(stored()).toMatchObject({ winback_holdout: 'business:treatment', winback_offer: 'business:locked:blocked_calls' });
+    // Read in the batched settings query, with the workspace filter.
+    const where = prisma.orgSettings.findMany.mock.calls[0][0].where;
+    expect(where.key.in).toEqual(['trial_email_blocked_calls', 'first_successful_call_at']);
+    expect(where.organizationId.in).toEqual([ORG]);
+  });
+
+  it("treats a workspace with no SUCCESS row left as used when a member's stamp says so", async () => {
+    const { run, email, prisma } = makeService({
+      calls: 0,
+      memberFirstSuccess: [{ joinedAt: new Date('2026-06-01T00:00:00Z'), at: new Date('2026-06-02T00:00:00Z') }],
+    });
+    await run();
+    expect(email.sendTrialBlockedCallsEmail.mock.calls[0][2]).toMatchObject({ neverUsed: false, offer: PERSONAL });
+    const memberQuery = prisma.organizationMember.findMany.mock.calls.find((c: any[]) => c[0].where.user)[0];
+    expect(memberQuery.where.organizationId).toBe(ORG);
+  });
+
+  it('stays unused when a member was stamped before joining (a call made in another workspace)', async () => {
+    const { run, email } = makeService({
+      calls: 0,
+      memberFirstSuccess: [{ joinedAt: new Date('2026-09-01T00:00:00Z'), at: new Date('2026-06-02T00:00:00Z') }],
+    });
+    await run();
+    expect(email.sendTrialBlockedCallsEmail.mock.calls[0][2]).toMatchObject({ neverUsed: true, offer: PERSONAL });
   });
 
   it('holds out unused workspaces in the 20% band', async () => {

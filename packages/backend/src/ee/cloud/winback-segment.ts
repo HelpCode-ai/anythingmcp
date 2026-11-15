@@ -9,7 +9,8 @@ import { getAdapter } from '../../adapters/catalog';
  * One function for every pass of the onboarding cron, so the segments cannot
  * drift between emails:
  *
- * - `unused`: never made a successful tool call. Its win-back is the how-to,
+ * - `unused`: never made a successful tool call (no SUCCESS row left and no
+ *   stored first-success marker). Its win-back is the how-to,
  *   never an offer; only an AI that keeps calling after the trial ended
  *   (the blocked-call email) earns it an offer.
  * - `business`: an active admin on a company address (not a consumer mailbox
@@ -77,10 +78,17 @@ export function winbackSegment(input: {
   adminEmails: string[];
   /** The workspace's connectors' `config` (adapterSlug inside). */
   connectorConfigs: unknown[];
-  /** Successful tool calls the workspace ever made. */
+  /** Successful tool calls the workspace made, as far as tool_invocations still holds them. */
   successfulCalls: number;
+  /**
+   * A stored first-success marker exists (first-success-markers.ts). Cloud
+   * deletes tool_invocations after INVOCATION_RETENTION_DAYS, so a workspace
+   * back months after its trial can count 0 calls and still have used the
+   * product.
+   */
+  succeededBefore?: boolean;
 }): WinbackSegment {
-  if (input.successfulCalls <= 0) return 'unused';
+  if (input.successfulCalls <= 0 && !input.succeededBefore) return 'unused';
   if (input.adminEmails.some((e) => !isConsumerEmail(e))) return 'business';
   if (input.connectorConfigs.some((c) => isBusinessConnector(c))) return 'business';
   const slugs = input.connectorConfigs.map(connectorAdapterSlug).filter((s): s is string => !!s);
