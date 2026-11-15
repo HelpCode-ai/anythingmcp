@@ -21,6 +21,7 @@ import { resolveDerivedEnvVars, withDerivedValues } from './derived-settings';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { tiktokShopNeedsAuthorization } from '../connectors/engines/tiktok-shop-token.service';
 import { iopNeedsAuthorization } from '../connectors/engines/iop-token.service';
+import { sheinNeedsAuthorization } from '../connectors/engines/shein-token.service';
 import { metaLoginNeedsAuthorization } from '../connectors/engines/meta-login.util';
 import { odooCheckAdvice } from './odoo-database-hint';
 import {
@@ -1199,6 +1200,8 @@ export class AdaptersService {
     if (tiktokShopNeedsAuthorization(adapter.connector.authType, auth)) return null;
     // And for a seller at an IOP gateway (Lazada, Miravia, AliExpress seller).
     if (iopNeedsAuthorization(adapter.connector.authType, auth)) return null;
+    // And for a SHEIN shop, authorized through SHEIN's store authorization.
+    if (sheinNeedsAuthorization(adapter.connector.authType, auth)) return null;
     const call = pickProbe(adapter);
     if (!call) return null;
     const started = Date.now();

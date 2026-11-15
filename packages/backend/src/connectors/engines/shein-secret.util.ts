@@ -18,8 +18,8 @@ import { createDecipheriv } from 'node:crypto';
  * IV is the 16 bytes of the text `space-station-de`; the ciphertext is
  * Base64, the plaintext UTF-8.
  *
- * Pure and without I/O. Nothing calls it yet: it is the piece a SHEIN
- * authorization flow needs after `get-by-token`.
+ * Pure and without I/O. SheinTokenService (shein-token.service.ts) calls it
+ * after `get-by-token`.
  */
 const SHEIN_IV = Buffer.from('space-station-de', 'utf8');
 

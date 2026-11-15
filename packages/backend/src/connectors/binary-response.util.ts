@@ -22,6 +22,8 @@
  */
 
 /** Marks the object the engine hands back for a binary body. */
+import { parseJsonKeepingLargeIntegers } from './engines/json-integers.util';
+
 export const BINARY_MARKER = '__amcpBinary';
 
 export interface BinaryBody {
@@ -83,11 +85,17 @@ function sanitizeFilename(name: string): string | undefined {
   return base ? base.slice(0, 200) : undefined;
 }
 
+/** How a JSON body is parsed; see json-integers.util.ts. Unset for almost every connector. */
+export interface DecodeOptions {
+  /** "string": integer literals outside ±(2^53 - 1) become strings with their exact digits. */
+  largeIntegers?: 'string';
+}
+
 /** Text, parsed the way axios' default transform parses it. */
-function parseText(text: string): unknown {
+function parseText(text: string, options?: DecodeOptions): unknown {
   if (!text) return text;
   try {
-    return JSON.parse(text);
+    return options?.largeIntegers === 'string' ? parseJsonKeepingLargeIntegers(text) : JSON.parse(text);
   } catch {
     return text;
   }
@@ -98,13 +106,13 @@ function parseText(text: string): unknown {
  * or a `BinaryBody` for a file. Used as the REST engine's `transformResponse`
  * with `responseType: 'arraybuffer'`, so it sees every response, errors too.
  */
-export function decodeResponseBody(data: unknown, headers?: unknown): unknown {
+export function decodeResponseBody(data: unknown, headers?: unknown, options?: DecodeOptions): unknown {
   const buf = toBuffer(data);
-  if (!buf) return typeof data === 'string' ? parseText(data) : data;
+  if (!buf) return typeof data === 'string' ? parseText(data, options) : data;
   if (buf.length === 0) return '';
 
   const contentType = header(headers, 'content-type').split(';')[0].trim().toLowerCase();
-  if (TEXT_TYPE.test(contentType)) return parseText(lenientUtf8.decode(buf));
+  if (TEXT_TYPE.test(contentType)) return parseText(lenientUtf8.decode(buf), options);
 
   // No content type, or a generic one: text when the bytes are valid UTF-8
   // without control characters a text body would not have.
@@ -112,7 +120,7 @@ export function decodeResponseBody(data: unknown, headers?: unknown): unknown {
     try {
       const text = utf8.decode(buf);
       // eslint-disable-next-line no-control-regex
-      if (!/[\u0000-\u0008\u000e-\u001a]/.test(text)) return parseText(text);
+      if (!/[\u0000-\u0008\u000e-\u001a]/.test(text)) return parseText(text, options);
     } catch {
       /* not UTF-8: a file */
     }

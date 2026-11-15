@@ -1548,6 +1548,10 @@
       "title": "Shopee shop authorization",
       "body": "Sign in with the shop account and approve this app. The tokens are stored encrypted and renewed automatically. Authorize again when the authorization expires or the connector asks for it."
     },
+    "sheinShop": {
+      "title": "SHEIN shop authorization",
+      "body": "Sign in to SHEIN with the shop's main account and approve the app. SHEIN then hands this connector the shop's key, which is stored encrypted. SHEIN documents no fixed lifetime and no renewal: authorize again when SHEIN ends the authorization (the seller unbinds the app or resets the key, or it expires) and the connector asks for it."
+    },
     "iopSeller": {
       "title": "Seller authorization",
       "body": "Sign in with the seller account and approve the app (Lazada, Miravia, AliExpress). The app's callback URL must be your AnythingMCP address followed by /api/iop-auth/callback. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."
