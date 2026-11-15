@@ -185,6 +185,10 @@ x-backend: &backend
     - META_PLATFORM_APP_SECRET=${META_PLATFORM_APP_SECRET:-}
     - META_PLATFORM_CONFIG_ID=${META_PLATFORM_CONFIG_ID:-}
     - META_PLATFORM_ORG_IDS=${META_PLATFORM_ORG_IDS:-}
+    # One-tap Telegram bot: off unless the manager bot's token is set (see .env.example).
+    - TELEGRAM_MANAGER_BOT_TOKEN=${TELEGRAM_MANAGER_BOT_TOKEN:-}
+    - TELEGRAM_MANAGER_WEBHOOK_SECRET=${TELEGRAM_MANAGER_WEBHOOK_SECRET:-}
+    - TELEGRAM_MANAGED_BOT_ORG_IDS=${TELEGRAM_MANAGED_BOT_ORG_IDS:-}
     # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
     # a private docker IP, which the guard blocks by default). Harmless on
     # self-host (no such host on their network).
