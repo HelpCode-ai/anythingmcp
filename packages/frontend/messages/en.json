@@ -1542,7 +1542,9 @@
       "keysMissing": "Save your app's client ID and secret first, then authorize. The provider needs them to open its sign-in page (for Etsy: the Keystring and the Shared Secret).",
       "keysStillEmpty": "Still empty: {names}",
       "enterKeys": "Enter the keys",
-      "clientId": "client ID"
+      "clientId": "client ID",
+      "signInStarting": "Opening the sign-in for {name}…",
+      "signInManual": "The sign-in could not start by itself. Start it with this button:"
     },
     "shopee": {
       "title": "Shopee shop authorization",

@@ -5,6 +5,7 @@ import {
   type RetentionOffer,
   activationReminderEmail,
   appApprovedEmail,
+  appApprovedReminderEmail,
   planCapsAppliedEmail,
   cardTrialOfferEmail,
   connectorAuthEmail,
@@ -100,11 +101,41 @@ export const EMAIL_SAMPLES: EmailSample[] = [
         {
           name: n.name,
           providerName: 'Etsy',
-          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector`,
+          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector?signin=1`,
           prompt: 'Show my last 10 Etsy orders',
           promptUrl: 'https://claude.ai/new?q=Show%20my%20last%2010%20Etsy%20orders',
         },
         ctx,
+      ),
+  },
+  {
+    // The approval came when the free trial had run out: 7 days were added.
+    id: 'app-approved-etsy-trial-extended',
+    render: (ctx, n) =>
+      appApprovedEmail(
+        {
+          name: n.name,
+          providerName: 'Etsy',
+          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector?signin=1`,
+          prompt: 'Show my last 10 Etsy orders',
+          promptUrl: 'https://claude.ai/new?q=Show%20my%20last%2010%20Etsy%20orders',
+          trialDaysAdded: 7,
+        },
+        ctx,
+      ),
+  },
+  {
+    id: 'app-approved-etsy-reminder',
+    render: (ctx, n) =>
+      appApprovedReminderEmail(
+        {
+          name: n.name,
+          providerName: 'Etsy',
+          connectorUrl: `${SAMPLE_CLOUD_URL}/connectors/sample-connector?signin=1`,
+          prompt: 'Show my last 10 Etsy orders',
+          promptUrl: 'https://claude.ai/new?q=Show%20my%20last%2010%20Etsy%20orders',
+        },
+        unsub(ctx),
       ),
   },
   {
@@ -371,6 +402,7 @@ export const MARKETING_SAMPLE_IDS = new Set([
   'onboarding-client-connected',
   'activation-connect-client',
   'activation-test-connector',
+  'app-approved-etsy-reminder',
   'trial-warn3',
   'trial-warn1',
   'trial-expired',

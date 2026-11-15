@@ -341,9 +341,13 @@ export const ProductEvents = {
    */
   TRIAL_EXPIRED_CALL_BLOCKED: 'trial_expired_call_blocked',
   /**
-   * Cloud: a workspace took the one-click 7-day trial extension from the
-   * "your trial has ended" email (trial-extension.controller.ts).
-   * metadata.via = 'email'. Server-only. Read against the paid licences of
+   * Cloud: a workspace's trial was extended by 7 days, once. metadata.via =
+   * 'email': the one-click link in the "your trial has ended" email
+   * (trial-extension.controller.ts). metadata.via = 'app_approved': given by
+   * the server with the approval email, because the provider approved the
+   * user's app when the trial had ended or had under a day left
+   * (app-approval-trial-extension.service.ts; metadata.connectorId,
+   * metadata.adapterSlug). Server-only. Read against the paid licences of
    * those workspaces: does a week more lead to a purchase.
    */
   TRIAL_EXTENDED: 'trial_extended',
@@ -360,10 +364,21 @@ export const ProductEvents = {
    * Etsy accepted keys it had refused, and the connector's owner was told
    * once (app-approval-watch.ts). metadata.connectorId, metadata.adapterSlug,
    * metadata.kind = 'emailed', or 'not_sent' (no SMTP configured, or the
-   * send failed; never retried). Server-only. Its presence is what stops a
-   * second email for that connector.
+   * send failed; never retried). metadata.trialDaysAdded when the trial was
+   * extended with it (see trial_extended, via 'app_approved'). Server-only.
+   * Its presence is what stops a second email for that connector.
    */
   ETSY_APP_APPROVED_NOTIFIED: 'etsy_app_approved_notified',
+  /**
+   * The one reminder, 48 hours after etsy_app_approved_notified, for a
+   * connector that still waits for the sign-in (app-approval-watch.ts).
+   * metadata.connectorId, metadata.adapterSlug, metadata.kind = 'emailed',
+   * 'not_sent' (no SMTP configured, or the send failed; never retried) or
+   * 'opted_out' (the owner unsubscribed from tips and offers, so nothing was
+   * sent). Server-only. Its presence is what stops a second reminder. Read
+   * against the sign-ins that follow: does the reminder bring people back.
+   */
+  ETSY_APP_APPROVED_REMINDED: 'etsy_app_approved_reminded',
   /**
    * Cloud: the onboarding cron sent a user with an empty workspace reminder 1
    * or 2 (ee/cloud/onboarding-reminder.ts). metadata.reminder = 1 or 2,
@@ -482,6 +497,7 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.TRIAL_EXTENDED,
   ProductEvents.ETSY_APP_PENDING_SEEN,
   ProductEvents.ETSY_APP_APPROVED_NOTIFIED,
+  ProductEvents.ETSY_APP_APPROVED_REMINDED,
   ProductEvents.ONBOARDING_REMINDER_SENT,
   ProductEvents.ONBOARDING_REMINDER_HOLDOUT,
   ProductEvents.LICENSE_WALL_VIEWED,
@@ -603,12 +619,16 @@ export class ProductEventService {
 // `protocol`, `preset`, `files`: the File Search wizard (FILE_SEARCH_*):
 // a known protocol, a known product preset and a file count bucket; any
 // other value is dropped, so no host, path or exact count can be stored.
+// `attempt`: authorize_page_viewed, the value that makes reloads of one
+// authorization count once: a short lower-case base-36 number (the time the
+// pending authorization expires), and nothing else is kept.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'step', 'index', 'field', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
-  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer',
+  'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer', 'attempt',
 ] as const;
 const DEVICE_KINDS = new Set(['mobile', 'desktop']);
+const ATTEMPT_PATTERN = /^[0-9a-z]{6,12}$/;
 const KNOWN_PROTOCOLS = new Set<string>(FILE_SEARCH_PROTOCOLS);
 /** The File Search wizard's product presets. */
 const KNOWN_PRESETS = new Set(['nextcloud', 'owncloud', 'synology', 'qnap', 'fritzbox', 'hetzner']);
@@ -673,6 +693,8 @@ function boundMetadata(
           ? (SEARCH_MATCH_KINDS.has(metadata[key] as string) ? metadata[key] : null)
           : key === 'source'
             ? (KNOWN_CHECKOUT_SOURCES.has(metadata[key] as string) ? metadata[key] : null)
+            : key === 'attempt'
+              ? (typeof metadata[key] === 'string' && ATTEMPT_PATTERN.test(metadata[key] as string) ? metadata[key] : null)
             : ENUM_KEYS[key]
               ? (ENUM_KEYS[key]!.has(metadata[key] as string) ? metadata[key] : null)
               : metadata[key];

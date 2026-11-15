@@ -10,6 +10,12 @@
  * draft), checked again with the same cheap call, and the owner is emailed
  * once when Etsy accepts them.
  *
+ * AFTER THE APPROVAL. Of 88 approval emails, 58 never led to the connector
+ * page, and a third of those who opened it never started the sign-in. So the
+ * email's link starts the sign-in itself (signInPath), one reminder follows
+ * two days later while the sign-in is still missing, and the AI client's
+ * tools say it first (appApprovalAnnounced, read by the shared tool set).
+ *
  * Pure functions only (state, schedule, email text), so the schedule and the
  * once-only rule can be tested without a database; the job itself is
  * AppApprovalWatcherService.
@@ -37,6 +43,22 @@ export const LATER_EVERY_MS = 6 * 60 * 60 * 1000;
  */
 export const DUE_SLACK_MS = 5 * 60 * 1000;
 
+/** The reminder goes out this long after the approval email, when the sign-in is still missing. */
+export const REMIND_AFTER_MS = 48 * 60 * 60 * 1000;
+/**
+ * How long a reminder that fell due may still go out. A sweep takes it within
+ * 15 minutes; the day is for downtime. Past it the reminder is dropped: one
+ * that arrives days late reads as a second campaign, and a release that
+ * introduces the reminder must not send it for approvals of weeks ago.
+ */
+export const REMIND_WINDOW_MS = 24 * 60 * 60 * 1000;
+/**
+ * How far back the sweep reads connectors. Keys are checked for WATCH_FOR_MS
+ * only; an approval on the last day of that window still gets its reminder
+ * two days later, so the read reaches that far and no further.
+ */
+export const SWEEP_LOOKBACK_MS = WATCH_FOR_MS + REMIND_AFTER_MS + REMIND_WINDOW_MS;
+
 /** Key in `connectors.config` that holds the watch; no schema change. */
 export const WATCH_CONFIG_KEY = 'appApprovalWatch';
 
@@ -50,6 +72,11 @@ export const WATCH_CONFIG_KEY = 'appApprovalWatch';
  *   refused: the user simply has not signed in yet, nothing to tell them
  * - approvedAt: the provider accepted the keys after refusing them
  * - notifiedAt: the email was claimed (sent, or tried once); never again
+ * - reminderAnnouncedAt: set with notifiedAt since the email announces the
+ *   reminder. An email claimed before that said it was the only one, so no
+ *   reminder follows it
+ * - remindedAt: the reminder was claimed (sent, tried once, or withheld
+ *   because the owner opted out of such emails); never again
  * - doneAt: the connector got its sign-in while watched; nothing to tell
  */
 export interface AppApprovalWatch {
@@ -58,6 +85,8 @@ export interface AppApprovalWatch {
   notPending?: string;
   approvedAt?: string;
   notifiedAt?: string;
+  reminderAnnouncedAt?: string;
+  remindedAt?: string;
   doneAt?: string;
 }
 
@@ -65,14 +94,14 @@ export function readWatch(config: unknown): AppApprovalWatch {
   const raw = (config as Record<string, unknown> | null | undefined)?.[WATCH_CONFIG_KEY];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const out: AppApprovalWatch = {};
-  for (const key of ['pendingSince', 'lastCheckedAt', 'notPending', 'approvedAt', 'notifiedAt', 'doneAt'] as const) {
+  for (const key of ['pendingSince', 'lastCheckedAt', 'notPending', 'approvedAt', 'notifiedAt', 'reminderAnnouncedAt', 'remindedAt', 'doneAt'] as const) {
     const v = (raw as Record<string, unknown>)[key];
     if (typeof v === 'string' && !Number.isNaN(Date.parse(v))) out[key] = v;
   }
   return out;
 }
 
-/** Whether the watch has ended for good: nothing more to check or send. */
+/** Whether the key checks have ended for good. The reminder has its own rule, isReminderDue. */
 export function watchFinished(watch: AppApprovalWatch): boolean {
   return !!(watch.notifiedAt || watch.approvedAt || watch.notPending || watch.doneAt);
 }
@@ -104,6 +133,42 @@ export function isCheckDue(
   if (!watch.lastCheckedAt) return true;
   const since = now.getTime() - Date.parse(watch.lastCheckedAt);
   return since >= checkInterval(watch, now) - DUE_SLACK_MS;
+}
+
+/**
+ * Whether the one reminder is due on this sweep: the approval email was
+ * claimed 48 hours ago or more and announced it, no reminder was claimed, the connector was
+ * not seen signed in, and the reminder's own window has not passed. Whether
+ * the sign-in is still missing is read from the connector by the caller.
+ */
+export function isReminderDue(watch: AppApprovalWatch, now: Date): boolean {
+  if (!watch.notifiedAt || !watch.reminderAnnouncedAt || watch.remindedAt || watch.doneAt) return false;
+  const since = now.getTime() - Date.parse(watch.notifiedAt);
+  return since >= REMIND_AFTER_MS && since < REMIND_AFTER_MS + REMIND_WINDOW_MS;
+}
+
+/**
+ * Whether the provider approved this connector's app and the watch has not
+ * seen the sign-in since: what the AI client's tools say first, together with
+ * the connector still waiting for its authorization (which the caller knows
+ * from the connector's setup state, not from here).
+ */
+export function appApprovalAnnounced(config: unknown): boolean {
+  const slug = (config as { adapterSlug?: unknown } | null | undefined)?.adapterSlug;
+  if (typeof slug !== 'string' || !APP_APPROVAL_ADAPTERS.has(slug)) return false;
+  const watch = readWatch(config);
+  return !!watch.approvedAt && !watch.doneAt;
+}
+
+/**
+ * The connector page, opened so that the provider sign-in starts by itself
+ * (`signin=1`, read by the page for a connector that waits for its
+ * authorization). The link in the approval emails and in the AI client's
+ * answers. A path on this site and nothing else: the page asks the server for
+ * the provider's address, as its sign-in button does.
+ */
+export function signInPath(connectorId: string): string {
+  return `/connectors/${encodeURIComponent(connectorId)}?signin=1`;
 }
 
 /**
