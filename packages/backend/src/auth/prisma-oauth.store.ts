@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
+import { ProductEvents } from '../audit/product-event.service';
 import type {
   IOAuthStore,
   OAuthClient,
@@ -73,6 +74,7 @@ export class PrismaOAuthStore implements IOAuthStore {
         userProfileId: code.user_profile_id,
       },
     });
+    void this.recordCodeEvent(ProductEvents.AUTHORIZATION_CODE_ISSUED, code.user_id, code.client_id);
   }
 
   async getAuthCode(code: string): Promise<AuthorizationCode | undefined> {
@@ -83,6 +85,7 @@ export class PrismaOAuthStore implements IOAuthStore {
 
     // Single-use: delete after retrieval
     await this.prisma.oAuthAuthorizationCode.delete({ where: { code } });
+    void this.recordCodeEvent(ProductEvents.AUTHORIZATION_CODE_EXCHANGED, record.userId, record.clientId);
 
     return {
       code: record.code,
@@ -96,6 +99,35 @@ export class PrismaOAuthStore implements IOAuthStore {
       expires_at: Number(record.expiresAt),
       user_profile_id: record.userProfileId ?? undefined,
     };
+  }
+
+  /**
+   * `authorization_code_issued` and `authorization_code_exchanged`: whether
+   * the hand-back to the AI client was finished. A code that is issued and
+   * never presented is a connection the user believes they made and did not
+   * (in November 2026 this happened to most phone users for two weeks and
+   * no event showed it). Written here because this store is the one place
+   * both steps pass through; it is built without dependency injection, so it
+   * writes the row itself. Never throws and is never awaited: an
+   * authorization must not fail or wait for a statistic.
+   */
+  private async recordCodeEvent(event: string, userId: string, clientId: string): Promise<void> {
+    try {
+      const [user, client] = await Promise.all([
+        this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, organizationId: true } }),
+        this.prisma.oAuthClient.findUnique({ where: { clientId }, select: { clientName: true } }),
+      ]);
+      await this.prisma.productEvent.create({
+        data: {
+          event,
+          userId: user?.id ?? null,
+          organizationId: user?.organizationId ?? null,
+          metadata: client?.clientName ? { client: client.clientName.slice(0, 80) } : {},
+        },
+      });
+    } catch (err: any) {
+      this.logger.warn(`product event ${event} not recorded: ${err?.message ?? err}`);
+    }
   }
 
   async removeAuthCode(code: string): Promise<void> {

@@ -668,6 +668,43 @@ describe('LoginController', () => {
       );
     });
 
+    // The funnel before sign-up: a view inside a pending authorization is
+    // recorded once per attempt, with the client and the kind of device.
+    it('records that the sign-in page was opened inside an authorization', async () => {
+      arrange();
+      productEvents.log.mockClear();
+      const view = (userAgent: string, cookies: Record<string, string> = { oauth_session: 's1' }) =>
+        cloud.showLoginPage(
+          undefined as unknown as string,
+          undefined as unknown as string,
+          makeReq({ cookies, headers: { host: 'mcp.test', 'user-agent': userAgent } } as any),
+          makeRes(),
+        );
+      await view('Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1');
+      await view('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36');
+      const views = productEvents.log.mock.calls.map((c) => c[0]).filter((e) => e.event === 'authorize_page_viewed');
+      expect(views).toHaveLength(2);
+      expect(views[0].metadata).toEqual({ client: 'Claude', device: 'phone', attempt: expect.stringMatching(/^[0-9a-f]{12}$/) });
+      expect(views[1].metadata.device).toBe('desktop');
+      // The same authorization: the same value, so a reload counts once.
+      expect(views[1].metadata.attempt).toBe(views[0].metadata.attempt);
+      // Never the raw session id.
+      expect(JSON.stringify(views)).not.toContain('"s1"');
+      expect(views[0].userId).toBeUndefined();
+    });
+
+    it('records nothing for a page opened outside an authorization', async () => {
+      arrange({ session: false });
+      productEvents.log.mockClear();
+      await cloud.showLoginPage(
+        undefined as unknown as string,
+        undefined as unknown as string,
+        makeReq({ cookies: {}, headers: { host: 'mcp.test' } } as any),
+        makeRes(),
+      );
+      expect(productEvents.log.mock.calls.map((c) => c[0].event)).not.toContain('authorize_page_viewed');
+    });
+
     it('explains how to add an app before handing back to the client', async () => {
       arrange();
       const res = await login();

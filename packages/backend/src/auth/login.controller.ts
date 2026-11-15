@@ -14,7 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { randomBytes, timingSafeEqual, createHash } from 'crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { resolveDashboardSessionUser, type SessionUser } from './dashboard-session.util';
@@ -328,6 +328,23 @@ export class LoginController {
     // session that @rekog/mcp-nest's /authorize handler stored (keyed by the
     // httpOnly `oauth_session` cookie) so the user gives INFORMED consent.
     const consent = await this.loadConsentContext(req);
+    // Only inside a pending authorization: a bookmark or a crawler on this
+    // address is not somebody connecting an AI client.
+    if (consent) {
+      const sessionId = typeof req.cookies?.oauth_session === 'string' ? req.cookies.oauth_session : '';
+      void this.productEvents
+        ?.log({
+          event: ProductEvents.AUTHORIZE_PAGE_VIEWED,
+          metadata: {
+            client: consent.clientName,
+            device: isPhoneUserAgent(req.headers['user-agent']) ? 'phone' : 'desktop',
+            // Reloads and the return from a social sign-in show the page
+            // again: the same attempt, counted once by this value.
+            attempt: createHash('sha256').update(sessionId).digest('hex').slice(0, 12),
+          },
+        })
+        .catch(() => undefined);
+    }
 
     // Issue a CSRF token bound to this render (double-submit, HMAC-signed
     // cookie + matching hidden field). Prevents login CSRF / silent

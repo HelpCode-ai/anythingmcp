@@ -77,6 +77,20 @@ export const ProductEvents = {
    */
   AI_CLIENT_CONNECTED: 'ai_client_connected',
   /**
+   * The steps of connecting an AI client that `ai_client_connected` does not
+   * show (it is written when the user approves, before the code exists):
+   * the sign-in or consent page was opened inside an authorization, the
+   * authorization code was handed to the client's redirect, the client
+   * presented it at the token endpoint, and the client listed the tools.
+   * `authorize_page_viewed` carries a short hash of the authorization as
+   * `attempt`, so reloads of one attempt count once. `mcp_tools_listed` is
+   * written once per workspace and UTC day.
+   */
+  AUTHORIZE_PAGE_VIEWED: 'authorize_page_viewed',
+  AUTHORIZATION_CODE_ISSUED: 'authorization_code_issued',
+  AUTHORIZATION_CODE_EXCHANGED: 'authorization_code_exchanged',
+  MCP_TOOLS_LISTED: 'mcp_tools_listed',
+  /**
    * A new account (created minutes before) authorized one of AnythingMCP's
    * plugins in OpenAI's plugin directory; metadata.directory = 'chatgpt',
    * metadata.plugin = the plugin endpoint ('chatgpt-app', 'file-search').
@@ -381,6 +395,10 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.PLAN_CAPS_APPLIED,
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
+  ProductEvents.AUTHORIZE_PAGE_VIEWED,
+  ProductEvents.AUTHORIZATION_CODE_ISSUED,
+  ProductEvents.AUTHORIZATION_CODE_EXCHANGED,
+  ProductEvents.MCP_TOOLS_LISTED,
   ProductEvents.DIRECTORY_SIGNUP,
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
   ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,
