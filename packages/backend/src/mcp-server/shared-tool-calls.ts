@@ -63,6 +63,61 @@ export class DailyKeySet {
   }
 }
 
+/**
+ * The `mcp_tools_listed` event: an AI client asked the shared endpoint for its
+ * tools. It is the first thing a client does with a connection, so it tells a
+ * workspace whose client never came back after the authorization from one
+ * whose client is connected and simply was not asked to do anything.
+ *
+ * At most one row per workspace and UTC day, with the same two-step check as
+ * the recorder below.
+ */
+export class ToolsListedRecorder {
+  private readonly logger = new Logger(ToolsListedRecorder.name);
+
+  constructor(
+    private readonly prisma: Pick<PrismaService, 'productEvent' | 'oAuthClient'>,
+    private readonly productEvents: Pick<ProductEventService, 'log'>,
+    private readonly seen = new DailyKeySet(),
+  ) {}
+
+  /** Never throws; callers do not await it. */
+  async record(
+    call: { organizationId: string; userId?: string | null; oauthClientId?: string },
+    now = Date.now(),
+  ): Promise<void> {
+    try {
+      if (!this.seen.add([utcDay(now), call.organizationId].join('\u0000'))) return;
+      const today = await this.prisma.productEvent.findMany({
+        where: {
+          event: ProductEvents.MCP_TOOLS_LISTED,
+          organizationId: call.organizationId,
+          createdAt: { gte: startOfUtcDay(now) },
+        },
+        select: { id: true },
+        take: 1,
+      });
+      if (today.length > 0) return;
+      const client = call.oauthClientId
+        ? (
+            await this.prisma.oAuthClient.findUnique({
+              where: { clientId: call.oauthClientId },
+              select: { clientName: true },
+            })
+          )?.clientName
+        : undefined;
+      await this.productEvents.log({
+        event: ProductEvents.MCP_TOOLS_LISTED,
+        organizationId: call.organizationId,
+        userId: call.userId ?? null,
+        metadata: client ? { client } : {},
+      });
+    } catch (err: any) {
+      this.logger.warn(`Tools listing not recorded: ${err?.message ?? err}`);
+    }
+  }
+}
+
 export class SharedToolCallRecorder {
   private readonly logger = new Logger(SharedToolCallRecorder.name);
 
