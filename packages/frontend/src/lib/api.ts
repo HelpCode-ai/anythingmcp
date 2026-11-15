@@ -1385,6 +1385,8 @@ export interface KgSettings {
   enabled: boolean;
   llmEnabled: boolean;
   llmAvailable: boolean;
+  /** The scheduled job behind `autoExtend` runs on this instance. */
+  scheduledAvailable?: boolean;
   captureIntent: boolean;
   autoExtend: boolean;
   skillAutoApply: boolean;
