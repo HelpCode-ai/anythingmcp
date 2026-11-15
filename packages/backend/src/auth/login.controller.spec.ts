@@ -1134,7 +1134,6 @@ describe('LoginController', () => {
         for (const [slug, name] of [
           ['etsy', 'Etsy'],
           ['telegram-bot', 'Telegram'],
-          ['shopify', 'Shopify'],
           ['woocommerce', 'WooCommerce'],
           ['odoo', 'Odoo'],
           ['printify', 'Printify'],
@@ -1143,6 +1142,8 @@ describe('LoginController', () => {
         }
         // Picked often, set up almost never: it is reached through "Another app".
         expect(page).not.toContain('data-adapter="gemini"');
+        // Needs the store owner and an app in Shopify's Dev Dashboard: 75 picks, no keys.
+        expect(page).not.toContain('data-adapter="shopify"');
         expect(page).toContain('<label class="other-label" for="other-app">Another app</label>');
         expect(page).toContain('role="status" aria-live="polite"');
         // Optional: Continue is still the one button, straight to the callback.
@@ -1243,11 +1244,11 @@ describe('LoginController', () => {
         });
 
         it('keeps everything usable when the pick fails', async () => {
-          const { nodes, chips } = await run(async () => ({ ok: false, error: 'Shopify could not be added right now.' }));
+          const { nodes, chips } = await run(async () => ({ ok: false, error: 'WooCommerce could not be added right now.' }));
           chips[2].listeners.click({ currentTarget: chips[2] });
           await flush();
           await flush();
-          expect(nodes['quick-status'].textContent).toBe('Shopify could not be added right now.');
+          expect(nodes['quick-status'].textContent).toBe('WooCommerce could not be added right now.');
           expect(nodes['example-request'].textContent).toBe('Connect my Telegram bot to AnythingMCP.');
           // aria-disabled, never disabled: keyboard focus stays on the chip.
           expect(chips.every((c) => c.attrs['aria-disabled'] === 'false' && !c.disabled)).toBe(true);
@@ -1356,12 +1357,12 @@ describe('LoginController', () => {
         arrange();
         // The user's own organization is org-1; they picked org-2 on "Choose what to connect".
         grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-2' });
-        const res = await pick({ adapter: 'shopify', csrf: 'pick-tok' });
+        const res = await pick({ adapter: 'woocommerce', csrf: 'pick-tok' });
 
         expect(res._json.ok).toBe(true);
         const ctx = expect.objectContaining({ userId: 'u1', organizationId: 'org-2', serverIds: [] });
         expect(provider.canSetUp).toHaveBeenCalledWith(ctx);
-        expect(provider.install).toHaveBeenCalledWith(ctx, { adapter: 'shopify' }, { via: 'post_approve' });
+        expect(provider.install).toHaveBeenCalledWith(ctx, { adapter: 'woocommerce' }, { via: 'post_approve' });
         expect(productEvents.log).toHaveBeenCalledWith(
           expect.objectContaining({ event: 'post_approve_app_picked', organizationId: 'org-2' }),
         );
@@ -1370,11 +1371,11 @@ describe('LoginController', () => {
       it('adds the app to the user\'s own workspace when the client has no grant', async () => {
         arrange();
         grants.resolve.mockResolvedValue(null);
-        await pick({ adapter: 'shopify', csrf: 'pick-tok' });
+        await pick({ adapter: 'woocommerce', csrf: 'pick-tok' });
 
         expect(provider.install).toHaveBeenCalledWith(
           expect.objectContaining({ organizationId: 'org-1', serverIds: [] }),
-          { adapter: 'shopify' },
+          { adapter: 'woocommerce' },
           { via: 'post_approve' },
         );
       });
@@ -1394,7 +1395,7 @@ describe('LoginController', () => {
       ])('refuses a pick for %s: there is no one workspace to add it to', async (_label, grant) => {
         arrange();
         grants.resolve.mockResolvedValue(grant);
-        const res = await pick({ adapter: 'shopify', csrf: 'pick-tok' });
+        const res = await pick({ adapter: 'woocommerce', csrf: 'pick-tok' });
 
         expect(res._status).toBe(403);
         expect(provider.install).not.toHaveBeenCalled();
@@ -1437,13 +1438,13 @@ describe('LoginController', () => {
       it('lets the user continue when the install fails, and records why', async () => {
         arrange();
         provider.install.mockResolvedValue({ isError: true, body: { error: 'Connector limit reached' } });
-        const res = await pick({ adapter: 'shopify', csrf: 'pick-tok' });
+        const res = await pick({ adapter: 'woocommerce', csrf: 'pick-tok' });
         expect(res._status).toBe(200);
         expect(res._json).toEqual({ ok: false, error: expect.stringContaining('You can still continue') });
         expect(productEvents.log).toHaveBeenCalledWith(
           expect.objectContaining({
             event: 'post_approve_app_picked',
-            metadata: { adapterSlug: 'shopify', client: 'Claude', status: 'failed', error: 'Connector limit reached' },
+            metadata: { adapterSlug: 'woocommerce', client: 'Claude', status: 'failed', error: 'Connector limit reached' },
           }),
         );
       });
@@ -1670,7 +1671,7 @@ describe('LoginController', () => {
 
           it('starts none for another app, a failed install, or a service that cannot start one', async () => {
             arrange();
-            expect((await pick({ adapter: 'shopify', csrf: 'pick-tok' }, undefined, oneTap))._json.telegram).toBeUndefined();
+            expect((await pick({ adapter: 'woocommerce', csrf: 'pick-tok' }, undefined, oneTap))._json.telegram).toBeUndefined();
             provider.install.mockResolvedValue({ isError: true, body: { error: 'Connector limit reached' } });
             expect((await pick({ adapter: 'telegram-bot', csrf: 'pick-tok' }, undefined, oneTap))._json.ok).toBe(false);
             expect(telegram.begin).not.toHaveBeenCalled();
@@ -1917,7 +1918,7 @@ describe('LoginController', () => {
                 if (url === '/auth/first-app/telegram/token') return answers.token();
                 // The server sends the link with Telegram only.
                 const adapter = JSON.parse(init?.body ?? '{}').adapter;
-                return adapter === 'telegram-bot' ? PICKED : { ok: true, name: 'Shopify', request: 'Finish setting up my Shopify connector.' };
+                return adapter === 'telegram-bot' ? PICKED : { ok: true, name: 'WooCommerce', request: 'Finish setting up my WooCommerce connector.' };
               },
             }));
             const open = jest.fn();

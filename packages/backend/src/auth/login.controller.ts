@@ -158,7 +158,10 @@ export const QUICK_SETUP_APPS: ReadonlyArray<{ slug: string; name: string }> = [
   // it, and the guided setup the chat links to walks through the rest.
   { slug: 'etsy', name: 'Etsy' },
   { slug: 'telegram-bot', name: 'Telegram' },
-  { slug: 'shopify', name: 'Shopify' },
+  // Shopify is not offered here: its setup needs the store's owner to create
+  // an app in the Shopify Dev Dashboard (about ten minutes), and of 75 picks
+  // in four weeks none ever got its keys. Asked for in the chat or added
+  // from the dashboard, where people know what it takes, it works for most.
   { slug: 'woocommerce', name: 'WooCommerce' },
   { slug: 'odoo', name: 'Odoo' },
   { slug: 'printify', name: 'Printify' },
