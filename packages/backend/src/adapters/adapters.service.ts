@@ -64,6 +64,7 @@ import { setupEffort } from './setup-guide';
 import { fileSearchSetupPath } from './file-search-setup';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
+import { codeHint, providerErrorCode } from '../mcp-server/error-hints';
 import { mcpFixedArgumentsOf, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
 import { APP_APPROVAL_ADAPTERS } from './app-approval-watch';
@@ -697,7 +698,13 @@ export class AdaptersService {
       });
       // The adapter knows its own failures better than the shared classifier:
       // an Odoo 404 means "older than 19", not "check the tool path".
-      const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.[classified.kind];
+      // A provider that answers every refusal with the same status says which
+      // one in its body (Shopify's token request: 400 with `app_not_installed`,
+      // `shop_not_permitted`…): a hint filed under that code comes first.
+      const own =
+        codeHint(adapter.verifyHints, providerErrorCode(`${upstream}\n${rawResponseText(err)}`)) ??
+        adapter.verifyHints?.[String(status)] ??
+        adapter.verifyHints?.[classified.kind];
       // A server that only accepts approved addresses answers with a page or
       // a refusal that says nothing about the keys: name the address to allow.
       const ipRefusal =

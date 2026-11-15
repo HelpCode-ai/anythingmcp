@@ -188,6 +188,37 @@ describe('scrubProviderMessage', () => {
   });
 });
 
+describe('ProductEventService.log — a refused setup check', () => {
+  const log = async (metadata: Record<string, unknown>) => {
+    const create = jest.fn().mockResolvedValue({});
+    await new ProductEventService({ productEvent: { create } } as any).log({
+      event: 'setup_verify_failed',
+      userId: 'u1',
+      organizationId: 'org-1',
+      metadata,
+    });
+    return create.mock.calls[0][0].data.metadata;
+  };
+
+  it("keeps the provider's error code next to the kind and status", async () => {
+    expect(await log({ adapterSlug: 'shopify', kind: 'bad_request', status: 400, code: 'app_not_installed' })).toEqual({
+      adapterSlug: 'shopify',
+      kind: 'bad_request',
+      status: 400,
+      code: 'app_not_installed',
+    });
+  });
+
+  it('drops a code that is not a short identifier: a sentence, a key, a number', async () => {
+    for (const code of ['Not Found', 'sk_live_51Hx2kQ8rT9vZpYwA3bC', 'x'.repeat(41), 'ab', 400, { a: 1 }]) {
+      expect(await log({ adapterSlug: 'shopify', kind: 'bad_request', code })).toEqual({
+        adapterSlug: 'shopify',
+        kind: 'bad_request',
+      });
+    }
+  });
+});
+
 describe('ProductEventService.log — server-written metadata', () => {
   // The callers' own tests replace this service with a mock, so only a test
   // through it shows what is really stored: 'phone', `attempt` and `reason`

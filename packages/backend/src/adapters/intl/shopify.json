@@ -2,7 +2,7 @@
   "slug": "shopify",
   "name": "Shopify",
   "description": "Connect your Shopify store: search products, orders and customers, check stock per location, change variant prices, adjust inventory and mark orders as shipped with tracking. Shopify GraphQL Admin API with a custom app from the Dev Dashboard.",
-  "instructions": "## Shopify\nThis connector reads and updates a Shopify store through the **GraphQL Admin API** (`https://<store>.myshopify.com/admin/api/2026-10/graphql.json`, API version 2026-10): shop settings, products and variants, stock per location, orders with their fulfillment orders, and customers. It can change a variant's price, adjust stock and mark items as shipped with tracking.\n\n## Setup (store owner, about 10 minutes)\nSince 1 January 2026 new custom apps can no longer be created inside the store admin; they are made in the **Dev Dashboard**. A custom app installed on a store of your own organization gets its access token through the **client credentials grant**, which is what this connector uses. Nothing is published to the Shopify App Store and no review is needed.\n\n1. Open the Dev Dashboard at https://dev.shopify.com/dashboard/ with the account that owns the store (or a staff account with the **App development → Develop** permission). The store must belong to the same Shopify organization as the app.\n2. **Apps → Create app → Start from Dev Dashboard**, give it a name (for example \"AnythingMCP\") and click **Create**.\n3. Open **Versions**, fill in the **App URL** (any https URL, for example your shop's address; this connector does not use it), pick the newest webhooks API version, add the **Admin API scopes** from the table below, then click **Release**.\n4. On the app's overview, click **Install app** in the **Installs** card, pick your store and confirm **Install**. Until the app is installed the token request fails.\n5. Open **App settings** and copy the **Client ID** and **Client secret** into `SHOPIFY_CLIENT_ID` and `SHOPIFY_CLIENT_SECRET`.\n6. Set `SHOPIFY_STORE` to the store's myshopify handle: for `acme-shop.myshopify.com` enter `acme-shop`. It is in the admin URL (`admin.shopify.com/store/<handle>`) and under Settings → Domains. A custom domain such as `acme.com` does not work here.\n\nThe connector exchanges the client ID and secret at `https://<store>.myshopify.com/admin/oauth/access_token` for an access token, which Shopify issues for 24 hours, and fetches a new one before it expires. The token is sent in the `X-Shopify-Access-Token` header. Changing scopes means releasing a new app version; the next token carries the new scopes.\n\nApps created in the store admin before 2026 (with a `shpat_…` token) keep working in Shopify, but this connector uses the Dev Dashboard flow above.\n\n## Scopes\n| Scope | Used by |\n|---|---|\n| `read_products` | shopify_search_products, shopify_get_product, shopify_list_inventory_levels |\n| `write_products` | shopify_update_variant_price |\n| `read_inventory`, `read_locations` | shopify_list_inventory_levels, shopify_list_locations |\n| `write_inventory` | shopify_adjust_inventory |\n| `read_orders` | shopify_search_orders, shopify_get_order (orders of the last 60 days) |\n| `read_merchant_managed_fulfillment_orders` | fulfillment orders in shopify_get_order |\n| `write_merchant_managed_fulfillment_orders` | shopify_create_fulfillment |\n| `read_customers` | shopify_search_customers, shopify_get_customer |\n\nFor a read-only setup leave out the `write_*` scopes and switch the three write tools off on the connector page. `read_orders` only reaches orders from the **last 60 days**; older orders also need `read_all_orders`, which Shopify grants on request. Fulfillment orders assigned to a fulfilment app or third-party warehouse need the `*_assigned_fulfillment_orders` or `*_third_party_fulfillment_orders` scopes instead of the merchant-managed ones.\n\n**Customer data**: names, emails, phone numbers and addresses are protected customer data. If customer or order tools fail with \"This app is not approved to access the Customer object\" (or a similar message for name, email, phone or address fields), request access once: Partner Dashboard (partners.shopify.com) → **Apps** → the app → **API access requests** → **Protected customer data access** → **Request access**, tick the fields the AI should read (name, email, phone, address) with a short reason each, and **Save**. For an app used only on your own or a development store that is enough: no review is needed and the calls work right away.\n\n## Ids\nEvery id is a global id (GID) such as `gid://shopify/Product/1234567890`, `gid://shopify/ProductVariant/…`, `gid://shopify/Order/…` or `gid://shopify/Location/…`. Pass them whole. The order number customers see (`#1001`) is the order's `name`: find the order with `shopify_search_orders` and `query: \"name:#1001\"`.\n\nA variant's stock lives on its **inventory item** (`inventoryItem.id` in shopify_get_product), with one level per **location**. To change stock: shopify_get_product → shopify_list_inventory_levels (current quantities and location ids) → shopify_adjust_inventory.\n\nTo ship an order: shopify_get_order → take the `id` of an open fulfillment order (and, for a partial shipment, the ids of its line items) → shopify_create_fulfillment with carrier and tracking number.\n\n## Searching and paging\nThe search tools take Shopify's search syntax in `query`: `field:value` terms joined by spaces (AND) or `OR`, comparisons such as `created_at:>=2026-10-01` or `inventory_total:<5`, `-` to negate a term, and `*` as a wildcard (`title:*hoodie*`). Dates are ISO 8601, read in the store's time zone.\n\nLists are cursor-paged: `first` sets the page size (at most 250) and the answer carries `pageInfo { hasNextPage endCursor }`. Pass `endCursor` as `after` for the next page while `hasNextPage` is true.\n\n## Money\nPrices are decimal strings in the store currency (`\"29.90\"`). Order amounts are money bags; `shopMoney` is in the store currency.\n\n## Errors\n- The GraphQL API answers HTTP 200 for most problems. Errors in the query itself, missing scopes (\"Access denied for … field\") and throttling come back in `errors`: the tool call then fails with `GraphQL errors: [...]` and Shopify's message.\n- A mutation Shopify refuses (unknown variant, invalid price, stale quantity, fulfillment order already closed) does **not** fail the call: the result has a non-empty `userErrors` list with `field` and `message`. Check it after every write.\n- 401: the token request was refused (wrong client ID or secret, or the app is not installed on this store). 402: the store is frozen for unpaid bills. 423: the store is locked. 404: wrong store handle.\n\n## Rate limits\nThe Admin GraphQL API is limited by **query cost**, not by the number of requests: each app and store pair refills 100 points per second on the Standard plans (200 on Advanced, 1,000 on Plus, 2,000 on Enterprise), and no single query may cost more than 1,000 points. A list costs roughly its `first` value, so large pages and nested lists cost more. When the budget runs out Shopify answers with a `THROTTLED` error: wait a few seconds and retry, or ask for smaller pages. This connector returns only the `data` part of each answer, so the cost figures Shopify reports in `extensions.cost` are not shown.\n\n## Other operations\nThe generated `shopify_graphql_query` and `shopify_graphql_mutation` tools run any other Admin API operation (draft orders, discounts, collections, metafields…) within the scopes the app was given; `shopify_graphql_schema` looks up types and fields first.",
+  "instructions": "## Shopify\nThis connector reads and updates a Shopify store through the **GraphQL Admin API** (`https://<store>.myshopify.com/admin/api/2026-10/graphql.json`, API version 2026-10): shop settings, products and variants, stock per location, orders with their fulfillment orders, and customers. It can change a variant's price, adjust stock and mark items as shipped with tracking.\n\n## Setup (about 10 minutes, once, by the store's owner)\nShopify gives a tool access to a store through a **custom app** that belongs to the store's own organization. Since 1 January 2026 such apps can no longer be created inside the store admin; they are made in the **Dev Dashboard**. The app gets its access token through the **client credentials grant**, which is what this connector uses. Nothing is published to the Shopify App Store and no review is needed.\n\n**Who can do it**: the owner of the store's Shopify organization, or a user with the **App developer** role (assigned in the Shopify admin under **Settings → Users → Roles**). A collaborator account, the access an agency or freelancer has to the store, cannot open the store's Dev Dashboard. The app and the store must belong to the **same Shopify organization**: an app created elsewhere, for example in an agency's Partner account, is refused with `shop_not_permitted`.\n\n1. In the Shopify admin open **Settings → Apps** (https://admin.shopify.com/settings/apps), click **Develop apps**, then **Build apps in Dev Dashboard**. Starting from the store's admin opens the Dev Dashboard of the organization that owns the store.\n2. Click **Create app**, choose **Start from Dev Dashboard**, give it a name (for example \"AnythingMCP\") and click **Create**.\n3. On the app's **Versions** page set the **App URL** to `https://shopify.dev/apps/default-app-home` (Shopify's default for an app without a page of its own; this connector does not use it), pick the newest **Webhooks API version**, enter the scopes from the table below under **Access**, then click **Release** and confirm with **Release**. All scopes of the table as one line: `read_products,write_products,read_inventory,write_inventory,read_locations,read_orders,read_customers,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders`.\n4. Open the app and click **Install app** at the top of the **Installs** card, pick the store and confirm **Install**. Until the app is installed the token request fails with `app_not_installed`.\n5. Open the app's **Settings** and copy the **Client ID** and **Client secret** into `SHOPIFY_CLIENT_ID` and `SHOPIFY_CLIENT_SECRET`. A Dev Dashboard app has no access token to copy.\n6. Set `SHOPIFY_STORE` to the store's myshopify name: for `acme-shop.myshopify.com` it is `acme-shop`. It is the last part of the admin address (`admin.shopify.com/store/acme-shop`) and is listed under Settings → Domains. The setup also takes `acme-shop.myshopify.com` or the admin address pasted from the browser and keeps the name. A custom domain such as `acme.com` does not work here.\n\nThe connector exchanges the client ID and secret at `https://<store>.myshopify.com/admin/oauth/access_token` for an access token, which Shopify issues for 24 hours, and fetches a new one before it expires. The token is sent in the `X-Shopify-Access-Token` header. To add a scope later, release a new version of the app with it and approve the new access for the store in the Shopify admin: Shopify does not apply new scopes to an installed app until the store approves them.\n\nApps created in the store admin before 2026 (with a `shpat_…` token) keep working in Shopify, but this connector uses the Dev Dashboard flow above.\n\n## Scopes\n| Scope | Used by |\n|---|---|\n| `read_products` | shopify_search_products, shopify_get_product, shopify_list_inventory_levels |\n| `write_products` | shopify_update_variant_price |\n| `read_inventory`, `read_locations` | shopify_list_inventory_levels, shopify_list_locations |\n| `write_inventory` | shopify_adjust_inventory |\n| `read_orders` | shopify_search_orders, shopify_get_order (orders of the last 60 days) |\n| `read_merchant_managed_fulfillment_orders` | fulfillment orders in shopify_get_order |\n| `write_merchant_managed_fulfillment_orders` | shopify_create_fulfillment |\n| `read_customers` | shopify_search_customers, shopify_get_customer |\n\nFor a read-only setup leave out the `write_*` scopes and switch the three write tools off on the connector page. `read_orders` only reaches orders from the **last 60 days**; older orders also need `read_all_orders`, which Shopify grants on request. Fulfillment orders assigned to a fulfilment app or third-party warehouse need the `*_assigned_fulfillment_orders` or `*_third_party_fulfillment_orders` scopes instead of the merchant-managed ones.\n\n**Customer data**: names, emails, phone numbers and addresses are protected customer data. If customer or order tools fail with \"This app is not approved to access the Customer object\" (or a similar message for name, email, phone or address fields), request access once: Partner Dashboard (partners.shopify.com) → **Apps** → the app → **API access requests** → **Protected customer data access** → **Request access**, tick the fields the AI should read (name, email, phone, address) with a short reason each, and **Save**. For an app used only on your own or a development store that is enough: no review is needed and the calls work right away.\n\n## Ids\nEvery id is a global id (GID) such as `gid://shopify/Product/1234567890`, `gid://shopify/ProductVariant/…`, `gid://shopify/Order/…` or `gid://shopify/Location/…`. Pass them whole. The order number customers see (`#1001`) is the order's `name`: find the order with `shopify_search_orders` and `query: \"name:#1001\"`.\n\nA variant's stock lives on its **inventory item** (`inventoryItem.id` in shopify_get_product), with one level per **location**. To change stock: shopify_get_product → shopify_list_inventory_levels (current quantities and location ids) → shopify_adjust_inventory.\n\nTo ship an order: shopify_get_order → take the `id` of an open fulfillment order (and, for a partial shipment, the ids of its line items) → shopify_create_fulfillment with carrier and tracking number.\n\n## Searching and paging\nThe search tools take Shopify's search syntax in `query`: `field:value` terms joined by spaces (AND) or `OR`, comparisons such as `created_at:>=2026-10-01` or `inventory_total:<5`, `-` to negate a term, and `*` as a wildcard (`title:*hoodie*`). Dates are ISO 8601, read in the store's time zone.\n\nLists are cursor-paged: `first` sets the page size (at most 250) and the answer carries `pageInfo { hasNextPage endCursor }`. Pass `endCursor` as `after` for the next page while `hasNextPage` is true.\n\n## Money\nPrices are decimal strings in the store currency (`\"29.90\"`). Order amounts are money bags; `shopMoney` is in the store currency.\n\n## Errors\n- The GraphQL API answers HTTP 200 for most problems. Errors in the query itself, missing scopes (\"Access denied for … field\") and throttling come back in `errors`: the tool call then fails with `GraphQL errors: [...]` and Shopify's message.\n- A mutation Shopify refuses (unknown variant, invalid price, stale quantity, fulfillment order already closed) does **not** fail the call: the result has a non-empty `userErrors` list with `field` and `message`. Check it after every write.\n- A missing scope comes back as `ACCESS_DENIED` (\"Access denied for … field\", often with the scope Shopify wants). Retrying does not help: the owner adds the scope on a new version of the app, releases it and approves the new access for the store.\n- 400 from the token request, with the reason in the body: `app_not_installed` (the app is not installed on this store: Installs card → Install app), `shop_not_permitted` (the app and the store belong to different Shopify organizations), `application_cannot_be_found` (the Client ID is not that of a Dev Dashboard app).\n- 401: Shopify refused the credentials or the token. 402: the store is frozen for unpaid bills. 423: the store is locked. 404: no store has this myshopify name.\n\n## Rate limits\nThe Admin GraphQL API is limited by **query cost**, not by the number of requests: each app and store pair refills 100 points per second on the Standard plans (200 on Advanced, 1,000 on Plus, 2,000 on Enterprise), and no single query may cost more than 1,000 points. A list costs roughly its `first` value, so large pages and nested lists cost more. When the budget runs out Shopify answers with a `THROTTLED` error: wait a few seconds and retry, or ask for smaller pages. This connector returns only the `data` part of each answer, so the cost figures Shopify reports in `extensions.cost` are not shown.\n\n## Other operations\nThe generated `shopify_graphql_query` and `shopify_graphql_mutation` tools run any other Admin API operation (draft orders, discounts, collections, metafields…) within the scopes the app was given; `shopify_graphql_schema` looks up types and fields first.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "shopify",
@@ -14,33 +14,197 @@
   ],
   "envVarMeta": {
     "SHOPIFY_STORE": {
-      "label": "Store handle",
+      "label": "Store name at Shopify",
       "kind": "address",
-      "help": "The part before .myshopify.com, e.g. acme-shop for acme-shop.myshopify.com. It is in your admin URL (admin.shopify.com/store/<handle>) and under Settings → Domains. Not your custom domain.",
+      "help": "The last part of your admin address: acme-shop in admin.shopify.com/store/acme-shop. You can paste that address, or acme-shop.myshopify.com, and only the name is kept. Not your shop's own domain.",
       "example": "acme-shop",
-      "pattern": "^[a-z0-9][a-z0-9-]*$",
-      "patternMessage": "Enter only the handle in lower case, e.g. acme-shop, without https:// and without .myshopify.com."
+      "pattern": "^(?:(?:https?://)?(?:[A-Za-z0-9][A-Za-z0-9-]*\\.myshopify\\.com|admin\\.shopify\\.com/store/[A-Za-z0-9][A-Za-z0-9-]*)(?:[/?#]\\S*)?|[A-Za-z0-9][A-Za-z0-9-]*)$",
+      "patternMessage": "Enter the store's name at Shopify (acme-shop), its acme-shop.myshopify.com address, or its admin address (admin.shopify.com/store/acme-shop). Your shop's own domain, such as acme.com, does not work here."
     },
     "SHOPIFY_CLIENT_ID": {
       "label": "Client ID",
       "kind": "credential",
-      "help": "Dev Dashboard → your app → App settings → Client ID. The app must be released with the Admin API scopes and installed on the store.",
+      "help": "Dev Dashboard → your app → Settings → Client ID. The app must be released with its access scopes and installed on the store.",
       "link": "https://dev.shopify.com/dashboard/"
     },
     "SHOPIFY_CLIENT_SECRET": {
       "label": "Client secret",
       "kind": "credential",
       "secret": true,
-      "help": "Dev Dashboard → your app → App settings → Client secret.",
+      "help": "Dev Dashboard → your app → Settings → Client secret.",
       "link": "https://dev.shopify.com/dashboard/"
     }
   },
-  "prerequisites": "You need to be the store owner, or a staff member with the **App development → Develop** permission, to create a custom app in the Shopify **Dev Dashboard** (dev.shopify.com), release it with the Admin API scopes and install it on the store. No app review or App Store listing is involved.",
+  "prerequisites": "The owner of the store's Shopify organization, or a user with the **App developer** role, creates a private app for the store in Shopify's **Dev Dashboard**, releases it with the access scopes and installs it on the store. About 10 minutes; no App Store listing and no review. A collaborator account (an agency's or freelancer's access) cannot do this, and an app created in another organization is refused by Shopify.",
   "verifyHints": {
-    "401": "Shopify refused the client ID or secret. Copy both again from Dev Dashboard → your app → App settings, and check that the app is installed on this store (Installs card → Install app).",
-    "403": "The app is installed but lacks a scope. Add the Admin API scopes listed in the setup steps under Versions, release a new version and try again.",
-    "404": "No store answers at this handle. Use the myshopify handle (acme-shop for acme-shop.myshopify.com), not a custom domain.",
+    "app_not_installed": "The app is not installed on this store yet. In the Dev Dashboard open the app, click \"Install app\" at the top of the Installs card, pick this store and confirm with \"Install\". Then check again.",
+    "shop_not_permitted": "Shopify does not give this app a token for this store, because the two belong to different Shopify organizations (the app was created in an agency's or another Partner account, or the store name is that of another store). Create the app from the store's own admin: Settings → Apps → Develop apps → Build apps in Dev Dashboard, and check the store name.",
+    "application_cannot_be_found": {
+      "hint": "Shopify knows no app with this Client ID. Copy it again from Dev Dashboard → your app → Settings → Client ID.",
+      "field": "SHOPIFY_CLIENT_ID"
+    },
+    "400": "Shopify refused the token request; its reason is at the end of this message. Check that the Client ID and Client secret are the ones under Dev Dashboard → your app → Settings, and that the app is installed on this store (Installs card → Install app).",
+    "401": "Shopify refused the Client ID, the Client secret or the token. Copy both again from Dev Dashboard → your app → Settings, and check that the app is installed on this store (Installs card → Install app).",
+    "403": "The app is installed but lacks an access scope. Add the scopes listed in the setup steps on a new version of the app, release it, approve the new access for the store in the Shopify admin and try again.",
+    "404": {
+      "hint": "No store has this name at Shopify. Use the last part of your admin address (acme-shop in admin.shopify.com/store/acme-shop), not your shop's own domain.",
+      "field": "SHOPIFY_STORE"
+    },
     "rate_limited": "Shopify throttled the request (query cost budget used up). Wait a few seconds and try again."
+  },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 10,
+    "examples": [
+      "Which orders from this week have not shipped yet?",
+      "Which products have fewer than 5 in stock?",
+      "Set the price of the blue hoodie to 39.90",
+      "Mark order #1001 as shipped with this tracking number"
+    ],
+    "needs": [
+      "The Shopify account that **owns** the store, or a user with the **App developer** role",
+      "About 10 minutes: you create a small private app for your own store. No App Store, no review by Shopify"
+    ],
+    "why": "Shopify gives another tool access to a store only through an app. For your own store that is a **custom app** you create in Shopify's Dev Dashboard: it is free, private to your store, never listed in the App Store and not reviewed by Shopify. You choose what it may read or change, and uninstalling it cuts the access at once.\n\nAnythingMCP uses the app's Client ID and Client secret to ask Shopify for a token that lasts 24 hours and is renewed automatically. It never sees your Shopify password. Older guides tell you to copy an access token (`shpat_…`) from the store admin: Shopify stopped offering that for new apps on 1 January 2026, which is why the setup goes through the Dev Dashboard.",
+    "steps": [
+      {
+        "id": "store",
+        "title": "Your store",
+        "body": "Open your Shopify admin. Its address looks like `admin.shopify.com/store/acme-shop`: the last part is your store's name at Shopify. Enter it below, or paste the whole address from your browser.\n\nYour shop's own domain (`acme.com`) does not work here.",
+        "action": {
+          "label": "Open your Shopify admin",
+          "url": "https://admin.shopify.com"
+        },
+        "fields": [
+          "SHOPIFY_STORE"
+        ],
+        "problems": [
+          {
+            "q": "Where else do I find the name?",
+            "a": "In the admin under **Settings → Domains**: it is the address ending in `.myshopify.com`. You can paste that one too."
+          },
+          {
+            "q": "I have more than one store",
+            "a": "Enter the store the AI should work with. Every store gets a connector of its own."
+          }
+        ]
+      },
+      {
+        "id": "create-app",
+        "title": "Create your app",
+        "body": "In your Shopify admin open **Settings → Apps**, click **Develop apps**, then **Build apps in Dev Dashboard**. Shopify opens the Dev Dashboard of your store's organization.\n\nThere, click **Create app**, choose **Start from Dev Dashboard**, enter a name and click **Create**.",
+        "action": {
+          "label": "Open your app settings",
+          "url": "https://admin.shopify.com/settings/apps"
+        },
+        "values": [
+          {
+            "label": "App name",
+            "value": "AnythingMCP",
+            "note": "Any name works."
+          }
+        ],
+        "confirm": "I created the app",
+        "problems": [
+          {
+            "q": "I cannot open the Dev Dashboard, or there is no Create app button",
+            "a": "Only the store's owner and users with the **App developer** role can create apps. The owner assigns the role in the admin under **Settings → Users → Roles**, or does these steps once. A collaborator account (the access an agency or freelancer has to your store) cannot open your Dev Dashboard."
+          },
+          {
+            "q": "An agency or a developer manages my store",
+            "a": "The app has to be created in the organization that owns the store. An app created in the agency's own Shopify Partner account is refused by Shopify for your store, so the owner (or an App developer of the store) creates it here."
+          },
+          {
+            "q": "I already have an app with an access token (`shpat_…`)",
+            "a": "That is an app made in the store admin before 2026. This connector does not take such a token: create the app as described here and give it the same access."
+          }
+        ]
+      },
+      {
+        "id": "access",
+        "title": "Choose what it may access and release it",
+        "body": "On the app's **Versions** page fill in the form as below. The scopes decide what the AI can read and change: paste the whole line into the **Scopes** field under **Access**. Then click **Release** and confirm with **Release**.",
+        "values": [
+          {
+            "label": "App URL",
+            "value": "https://shopify.dev/apps/default-app-home",
+            "note": "Shopify's default for an app without a page of its own."
+          },
+          {
+            "label": "Webhooks API version",
+            "value": "The newest version in the list",
+            "pick": true
+          },
+          {
+            "label": "Scopes",
+            "value": "read_products,write_products,read_inventory,write_inventory,read_locations,read_orders,read_customers,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders",
+            "note": "For read-only access, use the shorter line under Common problems."
+          }
+        ],
+        "confirm": "I released the version",
+        "problems": [
+          {
+            "q": "The AI should only read, not change anything",
+            "a": "Paste only the read scopes: `read_products,read_inventory,read_locations,read_orders,read_customers,read_merchant_managed_fulfillment_orders`. After the setup, switch off the three write tools on the connector's page."
+          },
+          {
+            "q": "What do the scopes allow?",
+            "a": "`read_products` and `write_products`: products, variants and prices. `read_inventory`, `write_inventory` and `read_locations`: stock per location. `read_orders`: orders of the last 60 days. `read_customers`: customers. The two `…_merchant_managed_fulfillment_orders` scopes: seeing what is left to ship and marking orders as shipped."
+          },
+          {
+            "q": "Can I change the scopes later?",
+            "a": "Yes. Add them on a new version, click **Release**, then approve the new access for your store in the Shopify admin: Shopify does not apply new scopes to an installed app until you approve them."
+          }
+        ]
+      },
+      {
+        "id": "install",
+        "title": "Install the app on your store",
+        "body": "Open the app in the Dev Dashboard and click **Install app** at the top of the **Installs** card. Shopify shows what the app may access: pick your store if it asks, then click **Install**.",
+        "confirm": "I installed the app on my store",
+        "problems": [
+          {
+            "q": "My store is not offered",
+            "a": "The Dev Dashboard only offers the stores of the organization the app was created in. Open it from your store's admin (**Settings → Apps → Develop apps → Build apps in Dev Dashboard**) and create the app there."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Copy the Client ID and secret",
+        "body": "In the Dev Dashboard open your app's **Settings** and copy the **Client ID** and the **Client secret** into the fields below. AnythingMCP then asks Shopify for a token and reads your store's name as a check.",
+        "action": {
+          "label": "Open the Dev Dashboard",
+          "url": "https://dev.shopify.com/dashboard/"
+        },
+        "fields": [
+          "SHOPIFY_CLIENT_ID",
+          "SHOPIFY_CLIENT_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "Where is the access token?",
+            "a": "There is none to copy. AnythingMCP gets a token from Shopify with the Client ID and secret and renews it every day."
+          },
+          {
+            "q": "The check says `app_not_installed`",
+            "a": "The app is not installed on the store from step 1. Go back one step: **Install app** in the Installs card."
+          },
+          {
+            "q": "The check says `shop_not_permitted`",
+            "a": "The app and the store are in different Shopify organizations, or the name in step 1 is that of another store. Create the app from your store's own admin (step 2)."
+          },
+          {
+            "q": "The check says `application_cannot_be_found`",
+            "a": "The Client ID is not that of your app. Copy it again from the app's **Settings**."
+          },
+          {
+            "q": "The check answers 404",
+            "a": "No store has the name from step 1. Use the last part of your admin address, not your shop's own domain."
+          }
+        ]
+      }
+    ]
   },
   "probe": {
     "tool": "shopify_get_shop"

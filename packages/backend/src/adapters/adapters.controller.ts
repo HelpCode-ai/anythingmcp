@@ -22,6 +22,7 @@ import { AdaptersService } from './adapters.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { ProductEventService, ProductEvents, scrubProviderMessage } from '../audit/product-event.service';
+import { providerErrorCode } from '../mcp-server/error-hints';
 import { STARTER_PACK_MAX_INSTALL } from './starter-pack';
 
 // Public endpoints (no auth required) — used by the marketing website.
@@ -402,6 +403,11 @@ export class AdaptersController {
       // Recorded here rather than by the page so the provider's own words are
       // kept (scrubbed of the values just entered): the kind alone could not
       // tell a wrong key from a wrong address.
+      const entered = Object.values(body?.credentials ?? {});
+      // Read from the whole message (the stored `error` is cut), and dropped
+      // if it holds anything that was just entered.
+      const named = result.kind !== 'invalid_input' ? providerErrorCode(result.message) : undefined;
+      const code = named && scrubProviderMessage(named, entered) === named ? named : undefined;
       void this.productEvents.log({
         event: ProductEvents.SETUP_VERIFY_FAILED,
         userId: req.user.sub,
@@ -414,8 +420,11 @@ export class AdaptersController {
           ...(result.status != null ? { status: result.status } : {}),
           ...(result.toolName ? { toolName: result.toolName } : {}),
           ...(result.kind !== 'invalid_input'
-            ? { error: scrubProviderMessage(result.message, Object.values(body?.credentials ?? {})) }
+            ? { error: scrubProviderMessage(result.message, entered) }
             : {}),
+          // The provider's own error code, on its own: `error` starts with our
+          // hint, and what the provider said is cut off behind a long one.
+          ...(code ? { code } : {}),
         },
       });
       // The app is waiting for the provider's approval (Etsy: Pending). The
