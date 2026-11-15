@@ -1542,7 +1542,9 @@
       "keysMissing": "Speichere zuerst die Client-ID und das Secret deiner App und autorisiere danach. Der Anbieter braucht sie, um seine Anmeldeseite zu öffnen (bei Etsy: Keystring und Shared Secret).",
       "keysStillEmpty": "Noch leer: {names}",
       "enterKeys": "Schlüssel eingeben",
-      "clientId": "Client-ID"
+      "clientId": "Client-ID",
+      "signInStarting": "Die Anmeldung für {name} wird geöffnet…",
+      "signInManual": "Die Anmeldung konnte nicht automatisch starten. Starten Sie sie mit dieser Schaltfläche:"
     },
     "shopee": {
       "title": "Shopee-Shop-Autorisierung",
@@ -2213,8 +2215,8 @@
         "description": "Lassen Sie die KI regelmäßig (etwa täglich) den Graph erweitern und aus den erfassten Absichten der Benutzer Skills erstellen, damit sich Ihr Netz und Ihre Skills von selbst verbessern. Kostenbewusst: Sie läuft nur ab und zu, wird übersprungen, wenn sich nichts geändert hat, und bleibt aus, bis Sie sie aktivieren. Erfordert KI-Anreicherung + Absicht der Benutzer erfassen."
       },
       "skillAutoApply": {
-        "label": "Sichere Skills automatisch übernehmen",
-        "description": "Wenn die KI einen Skill mit hoher Sicherheit (≥ 0,90) erstellt, wird er automatisch übernommen, statt als Vorschlag zur Prüfung zu warten. Weniger sichere Skills warten weiterhin auf manuelle Freigabe."
+        "label": "Aus behobenen Fehlern gelernte Skills automatisch übernehmen",
+        "description": "Wenn derselbe fehlgeschlagene Aufruf mindestens dreimal auf dieselbe Weise behoben wurde, wird der daraus gelernte Skill automatisch übernommen. Von der KI erstellte Skills warten immer auf Ihre Prüfung."
       }
     },
     "security": {

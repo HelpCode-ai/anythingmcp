@@ -102,6 +102,7 @@ import {
   type FolderAccess,
 } from '../knowledge-folders/knowledge-folders.service';
 import { outputSchemaToZodShape } from '../connectors/output-schema.util';
+import { signInPath } from '../adapters/app-approval-watch';
 import {
   annotationsSignature,
   deriveToolAnnotations,
@@ -644,6 +645,9 @@ export class McpEndpointController {
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
       connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      // The link of the "your app was approved" email: the same page, opened
+      // so that the provider's sign-in starts.
+      signInUrl: (id) => `${dashboardBase}${signInPath(id)}`,
       // The workspace this connection mainly reaches: an ended trial is said
       // up front in anythingmcp_list_connectors, with the reactivation link.
       trialEnded: () => this.toolExecutor.trialEndedNotice(setupOrg || organizationId || undefined, user.sub),
