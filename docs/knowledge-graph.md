@@ -109,6 +109,9 @@ whole MCP server.
 4. **Serve.** *Applied* skills are composed into the MCP server's **instructions**
    at serve time — see below.
 
+To keep what one particular colleague teaches the AI, with their agreement
+and their name on record, use a [learning project](learning-projects.md).
+
 **Managing skills at scale:**
 
 - **Auto-apply (optional).** Turn on *Auto-apply skills learned from fixed

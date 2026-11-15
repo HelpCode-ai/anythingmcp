@@ -29,6 +29,7 @@ A gateway forwards calls. A company brain also knows where your documents are, h
 | **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud; self-hosted Enterprise |
 | **Company memory** | Facts and preferences saved from one AI client and found again in any other: said once in Claude, used by Copilot. Personal and company scopes, with folders and role limits. [Memory](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>) | Enterprise |
 | **AI skills** | The procedures your agents follow, written by hand or learned from real requests and fixed errors, approved by an admin. [AI skills](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>) | All |
+| **Learning projects** | Keep what an experienced colleague teaches the AI before they leave: their corrections on one MCP server become skills for the whole team, after they agree and confirm. [Learning projects](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>) | Team, Enterprise |
 | **Knowledge graph** | How your systems connect, so the agent links a customer in one system to their orders in another without being told. [Knowledge Graph](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md>) | All |
 | **Code Mode** | One short program that calls several tools in an isolated sandbox with no secrets and no network, so a five-step lookup becomes one call. [Code Mode](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md>) | All; write access Enterprise |
 | **Governance** | Roles and per-tool permissions, response mapping that drops fields before they reach the model, an audit log of every call. SSO and SCIM from your directory. [Security](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#security-and-governance>) | All; SSO/SCIM Enterprise |
@@ -858,6 +859,7 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 | [Tool definition format](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md>) | Parameters, endpoint mapping, response mapping |
 | [Knowledge Graph &amp; AI skills](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md>) | Per-workspace data-relationship map served over MCP, plus AI skills composed into server instructions |
 | [Workspace memory](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>) | Personal and company memory AI clients save and search over MCP (Enterprise) |
+| [Learning projects](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>) | Keep what one colleague teaches the AI on an MCP server as skills for everyone (Team and Enterprise) |
 | [MCP resources](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/mcp-resources.md>) | Read-only resources on per-server endpoints: URIs, role visibility, fail-closed rules |
 | [Deployment guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md>) | Docker, production setup, reverse proxy, env vars |
 | [Authentication](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#authentication>) | OAuth2, JWT, API keys, MCP auth modes |
@@ -8154,6 +8156,7 @@ Enterprise features follow the licence key (see [license FAQ](<https://github.co
 | File Search | Team limits | 1 folder, 500 files | 3 folders, 2,000 files | by contract |
 | Code mode | Team features | 5 saved code tools, no inline code | 20 saved code tools, inline code | unlimited |
 | Connectors with inbound webhooks | 5 | 1 | 5 | unlimited |
+| [Learning projects](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>) | 1 | – | 1 | unlimited |
 
 The trial includes everything in Team, so you can try every feature before you
 choose a plan. File Search and code mode have their own limits, described in
@@ -8998,6 +9001,9 @@ whole MCP server.
 4. **Serve.** *Applied* skills are composed into the MCP server's **instructions**
    at serve time — see below.
 
+To keep what one particular colleague teaches the AI, with their agreement
+and their name on record, use a [learning project](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>).
+
 **Managing skills at scale:**
 
 - **Auto-apply (optional).** Turn on *Auto-apply skills learned from fixed
@@ -9321,6 +9327,179 @@ Search uses PostgreSQL full text with the `simple` configuration (no stemming,
 so German, Italian and English behave alike), ranked by relevance, and falls
 back to a substring match for partial words and codes. No extra service or
 embedding provider is needed.
+
+---
+
+## docs/learning-projects.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/learning-projects.md
+
+# Learning projects
+
+A learning project keeps what one colleague teaches the AI. An admin turns
+learning on for **one member on one MCP server**. When that member corrects
+the AI or explains how the work is really done, the lesson is kept, and the
+lessons of a topic become a skill for everyone on that server.
+
+It is made for knowledge that leaves with a person: the colleague who knows
+which part fits which old model, which quantity is always wrong in the first
+draft, which customer rule is written nowhere.
+
+Learning projects are part of the **Team and Enterprise plans** on AnythingMCP
+Cloud and of **Enterprise** on a self-hosted instance (see
+[Plans](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#plans>)). Nothing is kept before the member agrees.
+
+- [How it works](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#how-it-works>)
+- [Start a project](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#start-a-project>)
+- [What the member sees](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#what-the-member-sees>)
+- [MCP tools](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#mcp-tools>)
+- [Review and publish](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#review-and-publish>)
+- [Privacy and safety](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#privacy-and-safety>)
+- [Plans](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#plans>)
+- [Limits](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#limits>)
+
+## How it works
+
+AnythingMCP sees tool calls, not the conversation. The member's own AI client
+saw the whole conversation, so it is the one that writes the lesson down;
+AnythingMCP stores it and serves it back.
+
+1. **A lesson** is one thing the member taught: a *rule*, a *fact*, a
+   *correction* (what the AI did, what the member changed it to, and why) or a
+   worked *example*.
+2. **A topic** groups lessons about one kind of work, for example "Quotes for
+   old windows". One topic is one skill. The skill text is put together from
+   the topic's lessons, so a new lesson never rewrites the others.
+3. **A draft** of the skill, with every lesson, is served to the member only.
+   Their AI client improves at once; if they correct it again, the lesson is
+   revised.
+4. **The member confirms** lessons in the chat ("this is what I learned, is it
+   right?").
+5. **A person publishes** a topic: its confirmed lessons become a skill for
+   everyone on the server. It is an ordinary [AI skill](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>)
+   with versions, a folder and usage counts, marked *from a learning project*.
+
+No AI key is needed on the instance: the member's AI client writes the lesson,
+the server only stores and arranges text.
+
+## Start a project
+
+**Learning projects → New learning project** (admins):
+
+| Field | Meaning |
+|---|---|
+| Name | For example "Hardware for old windows". The member and their AI client see it. |
+| Learn from | The member. One project per member and MCP server. |
+| On the MCP server | Lessons are kept only from the member's work on this server. |
+| File the skills in | Optional [folder](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md#folders>). A folder limited to roles also limits who is served the published skill. |
+| Ends on | Optional. The project ends on its own that day. |
+| Labels | Put on the learned skills, next to `learned`. |
+| Publishing | *A person publishes each topic* (default), or *lessons the member confirms are published*. |
+| Show the member's name | Off by default: the name is shown to admins only. |
+
+The project then waits for the member. You can pause, resume, end or delete it
+from its page. Ending keeps the lessons and the published skills; deleting
+removes the lessons and keeps the published skills.
+
+## What the member sees
+
+Under **Settings → Profile → Learning projects** the member reads what would
+be kept and chooses **Accept** or **Decline**. The notice they accepted is
+stored with the project.
+
+After accepting, they refresh the connector's tool list in their AI client
+(in claude.ai: *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
+list*) and work as usual.
+
+At any time they can **Stop** the project on the same page, and choose to
+erase everything that was not published. Their opt-out of
+[skill learning](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#who-contributes-to-skill-learning>) also
+stops every learning project.
+
+## MCP tools
+
+On `/mcp/<serverId>`, for the project's member only:
+
+| Tool | What it does |
+|---|---|
+| `learning_record(topic, kind, text, before?, after?, reason?, tool?, whenToUse?, replaces?)` | Keeps one lesson under a topic. A new topic name starts a new skill. |
+| `learning_review(topic?, limit?)` | Lists the lessons the member has not confirmed yet. |
+| `learning_confirm(decisions)` | Records the member's answers: `confirm`, `reject` or `correct` (with the corrected text). |
+
+The AI client is told when to call them in three places: the server's
+instructions, the description of `learning_record`, and one line at the end of
+the result of every tool that may change something ("if the user corrects this
+result, call learning_record"). The last one matters because some clients never
+show a server's instructions to the model.
+
+The tools disappear when the project is paused or ended, the member stops it
+or opts out, or the plan no longer includes it. A call made after that saves
+nothing.
+
+## Review and publish
+
+On the project's page (admins and editors):
+
+- **Lessons**: confirm, reject, reopen or reword a lesson. Rewording keeps the
+  earlier wording as *replaced*.
+- **Topics**: *Preview* shows the text publishing would write from the
+  confirmed lessons; **Publish** writes it. Publishing again updates the same
+  skill and keeps the earlier text as a version.
+
+A topic with confirmed lessons newer than its last publication is marked
+*Confirmed changes to publish*.
+
+## Privacy and safety
+
+- **Consent first.** Nothing is kept until the member accepts, and the text
+  they accepted is stored.
+- **What is kept:** the lessons. **Not kept:** the conversation, the member's
+  work on other servers, any figures about their work.
+- **A draft is served to its member only**, on every path that serves skills.
+  Admins and editors see drafts in the dashboard, marked as drafts.
+- **Nothing reaches other users unconfirmed.** A published skill holds only
+  lessons that were confirmed.
+- **Secrets and instructions are refused.** A lesson that looks like a
+  password, token or key, or that tells the assistant to ignore its
+  instructions, is not saved.
+- **The member's name** is shown to admins only, unless the project is set to
+  show it.
+- **Removal:** removing the member keeps the lessons without the link to the
+  person. Deleting an MCP server keeps what was learned on it.
+- **Audit:** `LEARNING_PROJECT_CREATED`, `LEARNING_PROJECT_CONSENT`,
+  `LEARNING_PROJECT_STATUS`, `LEARNING_PUBLISHED` and `LEARNING_ERASED` in the
+  security event log.
+
+Recording what one employee teaches can fall under workplace rules where you
+are (in Germany, for example, co-determination by a works council). Check
+before you start a project.
+
+## Plans
+
+| | Learning projects |
+|---|---|
+| Cloud Starter | none |
+| Cloud Team, and the Cloud trial | 1 at a time |
+| Enterprise (Cloud and self-hosted) | no limit |
+| Self-hosted Community | none |
+| Self-hosted 30-day evaluation | 1 at a time |
+
+A project *waiting for the member* or *active* counts; a paused or ended one
+does not. When a plan includes fewer projects than a workspace has, the oldest
+keep working up to the plan's number and the others capture nothing; no lesson
+and no published skill is removed, and an upgrade puts them back to work.
+
+Over the limit the API answers `403` with `code: "PLAN_LIMIT"` and
+`axis: "learningProjects"`; on a plan without learning projects,
+`code: "edition_required"`.
+
+## Limits
+
+Per project: 40 topics, 300 lessons per topic, 2,000 lessons, 60 new lessons
+an hour. A lesson holds up to 2,000 characters. A learned skill holds up to
+20,000 characters; past that the oldest examples leave the text (they stay
+stored), and the AI client is asked to file new lessons under a narrower
+topic.
 
 ---
 
@@ -12119,6 +12298,7 @@ For the current shipped state, see the [latest release](<https://github.com/Help
 - **File Search and File Share** (v0.52.0): a searchable index of SFTP, FTP/FTPS, WebDAV, S3 and network-share folders, with search, find, grep and read tools for every AI client, and temporary download links. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>)
 - **Code Mode** (v0.52.0): one short program that calls several tools, in an isolated runner with no secrets and no network; saved code tools turn a recurring chain into a single tool, which answers most of [tool composition (#986)](<https://github.com/HelpCode-ai/anythingmcp/issues/986>). [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md>)
 - **Company memory** (Enterprise): facts and preferences saved from one AI client and found by every other, personal or company-wide, in folders with role limits. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>)
+- **Learning projects** (Team and Enterprise): learning turned on for one member on one MCP server; their corrections become skills for everyone, after they agree and confirm. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>)
 - **AI skills v2**: on-demand skills and procedures with versions, folders and usage, learned from real requests and fixed errors and approved by an admin. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>)
 - **MCP resources** on per-server endpoints. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/mcp-resources.md>)
 - **Inbound webhooks**, first slice: Stripe events stored per connector and readable as a tool ([#988](<https://github.com/HelpCode-ai/anythingmcp/issues/988>) stays open for other providers).

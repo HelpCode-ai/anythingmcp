@@ -23,7 +23,7 @@ const SECTIONS = [
   ['Connectors', ['docs/connectors/*.md', 'docs/tool-definition.md']],
   ['AI clients', ['docs/integrations/*.md']],
   ['Operations and security', ['docs/operations/*.md', 'docs/sso.md', 'docs/scim-entra-setup.md', 'docs/code-mode.md', 'docs/license-faq.md', 'docs/cloud-invoices.md', 'docs/cloud-plans.md']],
-  ['Reference', ['docs/api-reference.md', 'docs/mcp-resources.md', 'docs/knowledge-graph.md', 'docs/memory.md']],
+  ['Reference', ['docs/api-reference.md', 'docs/mcp-resources.md', 'docs/knowledge-graph.md', 'docs/memory.md', 'docs/learning-projects.md']],
   ['Contributing', ['.github/CONTRIBUTING.md', 'AGENTS.md']],
   ['Optional', ['docs/catalog/*.md', 'docs/guides/*.md', 'docs/ROADMAP.md', 'docs/ADOPTERS.md']],
 ];

@@ -14,6 +14,7 @@ Enterprise features follow the licence key (see [license FAQ](license-faq.md)).
 | File Search | Team limits | 1 folder, 500 files | 3 folders, 2,000 files | by contract |
 | Code mode | Team features | 5 saved code tools, no inline code | 20 saved code tools, inline code | unlimited |
 | Connectors with inbound webhooks | 5 | 1 | 5 | unlimited |
+| [Learning projects](learning-projects.md) | 1 | – | 1 | unlimited |
 
 The trial includes everything in Team, so you can try every feature before you
 choose a plan. File Search and code mode have their own limits, described in
