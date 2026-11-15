@@ -477,7 +477,7 @@ export interface Connector {
   icon?: string | null;
   setupStatus?: string;
   missingVariables?: string[];
-  /** 'iop': the seller authorizes at an Alibaba IOP gateway (Lazada, Miravia, AliExpress seller). */
+  /** 'iop': the seller authorizes at an Alibaba IOP gateway (Lazada, Miravia, AliExpress seller); 'shein': SHEIN's store authorization. */
   tokenProvider?: string;
   /** Credential health: 'needs_reauth' (calls fail until fixed) or 'expiring'. */
   authStatus?: string | null;
@@ -689,6 +689,20 @@ export const connectors = {
     ),
   /** The callback URL to register on a Lazada, Miravia or AliExpress seller app. */
   iopRedirectUri: (token: string) => request<{ redirectUri: string }>('/api/iop-auth/redirect-uri', { token }),
+  /** "Authorize with Provider" for a SHEIN shop (SHEIN's store authorization). */
+  sheinAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
+      `/api/shein-auth/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a SHEIN store authorization: exchange the tempToken SHEIN sent back. */
+  sheinComplete: (state: string, tempToken: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/shein-auth/complete',
+      { method: 'POST', token, body: { state, tempToken } },
+    ),
+  /** The redirect URL of a SHEIN store authorization. */
+  sheinRedirectUri: (token: string) => request<{ redirectUri: string }>('/api/shein-auth/redirect-uri', { token }),
   /** Whether this server has its own TikTok Shop app, and the Redirect URL for a seller's own app. */
   tiktokShopPlatform: (token: string) =>
     request<{ available: boolean; redirectUrl: string }>('/api/tiktok-shop/platform', { token }),

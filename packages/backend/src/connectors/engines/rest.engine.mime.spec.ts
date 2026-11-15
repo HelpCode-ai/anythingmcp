@@ -220,7 +220,14 @@ describe('RestEngine without __mime: requests are unchanged', () => {
         mockedAxios.mockResolvedValue({ data: {}, headers: {} });
         mapSpy.mockClear();
         resolveSpy.mockClear();
-        await e.execute({ baseUrl: 'https://api.example.com', authType: 'NONE' }, mapping, params);
+        // A tool with bodyIntegers refuses the placeholder "v" where it wants
+        // a 64-bit id, after mapping the body and before sending: the mapping
+        // is still checked below (the refusal is in rest.engine.large-integers.spec.ts).
+        await e
+          .execute({ baseUrl: 'https://api.example.com', authType: 'NONE' }, mapping, params)
+          .catch((err: unknown) => {
+            if (!(original as { bodyIntegers?: unknown }).bodyIntegers) throw err;
+          });
         if ('__raw' in mapping.bodyMapping) {
           const call = resolveSpy.mock.calls.find((c) => c[0] === mapping.bodyMapping.__raw);
           expect(call?.[1]).toBe(params);

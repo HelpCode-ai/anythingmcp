@@ -1116,6 +1116,24 @@ export default function ConnectorDetailPage() {
     }
   };
 
+  // SHEIN shops authorize through SHEIN's own store authorization page.
+  const handleSheinAuthorize = async () => {
+    if (!token) return;
+    setAuthorizing(true);
+    try {
+      const result = await connectors.sheinAuthorize(id, token);
+      if (result.authorizationUrl) {
+        window.location.href = result.authorizationUrl;
+      } else if (result.error) {
+        setMsg(result.error);
+      }
+    } catch (err: any) {
+      setMsg(t('msg.authorizationFailed', { message: err.message }));
+    } finally {
+      setAuthorizing(false);
+    }
+  };
+
   // Instagram connectors sign in with Facebook or Instagram through Meta's own flow.
   const handleMetaAuthorize = async () => {
     if (!token) return;
@@ -2137,6 +2155,19 @@ export default function ConnectorDetailPage() {
               {t('iopSeller.body')}
             </p>
             <Button variant="primary" size="lg" onClick={handleIopAuthorize} disabled={authorizing}>
+              {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
+            </Button>
+          </Card>
+        )}
+
+        {/* SHEIN store authorization (HMAC-signed with the shop's openKeyId and secretKey) */}
+        {connector.authType === 'HMAC' && connector.tokenProvider === 'shein' && (
+          <Card className="p-[22px]">
+            <h3 className="text-sm font-semibold mb-2">{t('sheinShop.title')}</h3>
+            <p className="text-sm text-[var(--text-3)] mb-4">
+              {t('sheinShop.body')}
+            </p>
+            <Button variant="primary" size="lg" onClick={handleSheinAuthorize} disabled={authorizing}>
               {authorizing ? t('oauthCard.redirecting') : t('oauthCard.authorizeProvider')}
             </Button>
           </Card>
