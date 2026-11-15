@@ -109,6 +109,33 @@ export const ProductEvents = {
    */
   POST_APPROVE_APP_PICKED: 'post_approve_app_picked',
   /**
+   * The one-tap Telegram bot on that page (adapters/telegram-managed-bot.ts),
+   * all server-only and all with metadata.adapterSlug = 'telegram-bot'. Read in
+   * order, against post_approve_app_picked for Telegram, they say where a
+   * Telegram setup stops:
+   * - offered: Telegram was picked and the page got the link that creates the
+   *   bot. metadata.client, metadata.device ('mobile' or 'desktop': a desktop
+   *   also gets the QR code).
+   * - link_opened: the user clicked that link (once per setup; a scan of the
+   *   QR code cannot be seen). metadata.device.
+   * - connected: Telegram announced the new bot and its token was stored on
+   *   the connector. metadata.connectorId. Also written as setup_completed
+   *   with via 'telegram_one_tap'.
+   * - unmatched: a new bot could not be connected. metadata.kind = 'no_code'
+   *   (the user changed the suggested username), 'unknown_code', 'expired'
+   *   (created after the 30 minutes) or 'token_refused'. No workspace is
+   *   known for the first two.
+   * - token_pasted: "Already have a bot? Paste its token" was used.
+   *   metadata.status = 'saved' or 'refused' (then metadata.kind says why),
+   *   metadata.connectorId. A saved one is also written as setup_completed
+   *   with via 'post_approve_token'.
+   */
+  TELEGRAM_BOT_LINK_OFFERED: 'telegram_bot_link_offered',
+  TELEGRAM_BOT_LINK_OPENED: 'telegram_bot_link_opened',
+  TELEGRAM_BOT_CONNECTED: 'telegram_bot_connected',
+  TELEGRAM_BOT_UNMATCHED: 'telegram_bot_unmatched',
+  TELEGRAM_BOT_TOKEN_PASTED: 'telegram_bot_token_pasted',
+  /**
    * A tool of the shared /mcp tool set was called (shared-tool-calls.ts):
    * metadata.tool = the listed tool, metadata.profile = 'default' (Claude and
    * other clients) or 'chatgpt', metadata.client = the OAuth client's name
@@ -385,6 +412,11 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.EMPTY_WORKSPACE_PROMPT,
   ProductEvents.FILE_SEARCH_AUTHORIZE_OFFERED,
   ProductEvents.POST_APPROVE_APP_PICKED,
+  ProductEvents.TELEGRAM_BOT_LINK_OFFERED,
+  ProductEvents.TELEGRAM_BOT_LINK_OPENED,
+  ProductEvents.TELEGRAM_BOT_CONNECTED,
+  ProductEvents.TELEGRAM_BOT_UNMATCHED,
+  ProductEvents.TELEGRAM_BOT_TOKEN_PASTED,
   ProductEvents.SHARED_TOOL_CALLED,
   ProductEvents.ADS_ACTIVATION_REPORTED,
   ProductEvents.ADS_SIGNUP_REPORTED,

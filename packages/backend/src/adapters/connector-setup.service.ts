@@ -444,6 +444,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     const state = await this.connectorState(imported.connectorId);
     if (state.status === 'ready') {
       return {
+        connectorId: imported.connectorId,
         body: {
           installed: definition.name,
           status: 'ready',
@@ -456,6 +457,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     }
     const link = await this.createLink(ctx, imported.connectorId);
     return {
+      connectorId: imported.connectorId,
       body: {
         installed: definition.name,
         status: state.status,
