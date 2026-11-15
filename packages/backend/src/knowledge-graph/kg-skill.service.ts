@@ -170,8 +170,38 @@ function indexText(rows: SkillRow[], folders?: FolderNode[]): string {
   return `${head}\n${[...folderBlock, ...rootLines].join('\n')}`;
 }
 
-/** Auto-apply a generated skill only when at/above this confidence. */
-export const SKILL_AUTO_APPLY_MIN = 0.9;
+/**
+ * A skill learned from fixed errors is applied on its own (when the workspace
+ * turned auto-apply on) once its pattern was seen this many times. Skills a
+ * model generates are never applied on their own: the confidence a model
+ * gives its own answer is not evidence.
+ */
+export const ERROR_FIX_AUTO_APPLY_MIN = 3;
+
+/** Skills of the scope a generation run is told about, so it does not repeat them. */
+const EXISTING_FOR_PROMPT = 60;
+/** Skills of the scope a generated skill is compared with before it is filed. */
+const EXISTING_FOR_DEDUPE = 1000;
+
+/**
+ * A title or instruction reduced to what makes two skills the same rule:
+ * lower case, letters and digits only. "Use ISO dates!" and "use iso dates"
+ * are one skill.
+ */
+export function skillKey(text: string | null | undefined): string {
+  return (text ?? '')
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+/** What a scope already holds, as the keys a new draft is compared with. */
+interface KnownSkills {
+  keys: Set<string>;
+  /** The most recent ones, for the model. */
+  forPrompt: Array<{ title: string; whenToUse: string; status: string }>;
+}
 
 const CONSOLIDATE_PROMPT = `You are tidying the ACTIVE skills (standing rules) of an AI tool-integration platform. You receive the currently-applied skills of one scope, each with a "ref"; several may overlap, duplicate, or restate the same rule.
 
@@ -186,6 +216,9 @@ const JSON_SHAPE =
 const GROUNDING =
   'Ground EVERY skill in the supplied intents (and connectors). Do not invent rules from general knowledge, and never reproduce any example wording from these instructions. If the inputs show no clear, recurring need, return {"skills":[]}.';
 
+const NO_REPEAT =
+  'The input may list "existing": skills this workspace already uses ("applied") or rejected ("dismissed"). Never propose a skill that one of them already covers, in the same or in other words.';
+
 const CONNECTOR_PROMPT = `You improve an AI tool-integration platform by turning real user requests ("intents") into reusable "skills" — short corrections or domain rules that make future tool calls behave the way the user actually wants.
 
 You receive recent tool calls, each with: the user's intent, the tool name, its connector, and whether it succeeded.
@@ -197,7 +230,8 @@ ${JSON_SHAPE}
 Each skill also has a "connector": "<connector name or null>". Rules:
 - Propose at most 6 skills. Prefer specific, actionable rules.
 - Only use connector names that appear in the input (or null).
-- ${GROUNDING}`;
+- ${GROUNDING}
+- ${NO_REPEAT}`;
 
 const SERVER_PROMPT = `You configure a single MCP server that combines SEVERAL connectors into one assistant. Turn real user requests ("intents") into reusable cross-connector "skills" — rules that apply to the WHOLE server, understanding how its connectors relate.
 
@@ -206,7 +240,7 @@ You receive: the server's connectors with their entities, and recent tool calls 
 Look for HIGH-VALUE rules grounded in the intents that span or coordinate connectors, or encode a domain convention the user explicitly stated or corrected.
 
 ${JSON_SHAPE}
-Rules: at most 6 server-wide skills, specific and actionable. ${GROUNDING}`;
+Rules: at most 6 server-wide skills, specific and actionable. ${GROUNDING} ${NO_REPEAT}`;
 
 /**
  * Turns captured user intents into reviewable skill suggestions via the LLM.
@@ -236,7 +270,7 @@ export class KgSkillService {
       : this.generateForConnectors(organizationId);
   }
 
-  /** Per-workspace "auto-apply high-confidence skills" switch (default off). */
+  /** Per-workspace auto-apply switch for skills learned from fixed errors (default off). */
   async autoApplyEnabled(organizationId: string): Promise<boolean> {
     const row = await this.prisma.orgSettings.findUnique({
       where: { organizationId_key: { organizationId, key: 'kg_skill_auto_apply' } },
@@ -285,7 +319,55 @@ export class KgSkillService {
       connector: i.tool?.connector?.name ?? '',
       ok: i.status === 'SUCCESS',
     }));
-    return { system: CONNECTOR_PROMPT, user: JSON.stringify({ calls }) };
+    const known = await this.knownSkills(organizationId, { mcpServerId: null });
+    return {
+      system: CONNECTOR_PROMPT,
+      user: JSON.stringify({ calls, ...(known.forPrompt.length ? { existing: known.forPrompt } : {}) }),
+    };
+  }
+
+  /**
+   * The applied and dismissed skills of a generation scope: the connector
+   * scoped ones, or a server's own plus those of its connectors. Pending
+   * suggestions are left out, a run replaces its own.
+   */
+  private async knownSkills(
+    organizationId: string,
+    scope: { mcpServerId: string | null; connectorIds?: string[] },
+  ): Promise<KnownSkills> {
+    const where = scope.mcpServerId
+      ? {
+          OR: [
+            { mcpServerId: scope.mcpServerId },
+            ...(scope.connectorIds?.length ? [{ connectorId: { in: scope.connectorIds } }] : []),
+          ],
+        }
+      : { mcpServerId: null };
+    const rows = await this.prisma.kgSkillSuggestion.findMany({
+      where: {
+        organizationId,
+        kind: { not: 'code' },
+        status: { in: ['applied', 'dismissed'] },
+        ...where,
+      },
+      select: { title: true, whenToUse: true, instruction: true, status: true },
+      orderBy: { updatedAt: 'desc' },
+      take: EXISTING_FOR_DEDUPE,
+    });
+    const keys = new Set<string>();
+    for (const r of rows) {
+      keys.add(skillKey(r.title));
+      keys.add(skillKey(r.instruction));
+    }
+    keys.delete('');
+    return {
+      keys,
+      forPrompt: rows.slice(0, EXISTING_FOR_PROMPT).map((r) => ({
+        title: r.title,
+        whenToUse: (r.whenToUse ?? '').slice(0, 200),
+        status: r.status,
+      })),
+    };
   }
 
   /**
@@ -364,6 +446,8 @@ export class KgSkillService {
     await this.prisma.kgSkillSuggestion.deleteMany({
       where: { organizationId, status: 'pending', source: 'errors' },
     });
+    // Counted evidence, not a model's opinion: these may apply on their own.
+    const autoApply = patterns.length ? await this.autoApplyEnabled(organizationId) : false;
     let created = 0;
     for (const p of patterns.slice(0, 20)) {
       const tool = tools.find((t) => t.id === p.toolId);
@@ -377,7 +461,7 @@ export class KgSkillService {
           ...draft,
           confidence: Math.min(0.95, 0.5 + 0.1 * p.occurrences),
           evidenceCount: p.occurrences,
-          status: 'pending',
+          status: autoApply && p.occurrences >= ERROR_FIX_AUTO_APPLY_MIN ? 'applied' : 'pending',
           source: 'errors',
         },
       });
@@ -394,7 +478,7 @@ export class KgSkillService {
       select: { id: true, name: true },
     });
     const idByName = new Map(connectors.map((c) => [c.name.toLowerCase(), c.id]));
-    const autoApply = await this.autoApplyEnabled(organizationId);
+    const known = await this.knownSkills(organizationId, { mcpServerId: null });
 
     // Replace only the previous generation's pending output: manual pending
     // skills and Finder suggestions awaiting approval are not ours to drop.
@@ -406,7 +490,7 @@ export class KgSkillService {
     for (const s of skills) {
       const connectorId =
         typeof s?.connector === 'string' ? (idByName.get(s.connector.toLowerCase()) ?? null) : null;
-      if (await this.insertSkill(organizationId, { connectorId }, s, autoApply)) created++;
+      if (await this.insertSkill(organizationId, { connectorId }, s, known.keys)) created++;
     }
     return created;
   }
@@ -454,10 +538,16 @@ export class KgSkillService {
       ok: i.status === 'SUCCESS',
     }));
 
+    const known = await this.knownSkills(organizationId, { mcpServerId, connectorIds });
     const { json, skipped, usage } = await chatJson(
       cfg,
       SERVER_PROMPT,
-      JSON.stringify({ server: server.name, connectors: connectorsContext, calls }),
+      JSON.stringify({
+        server: server.name,
+        connectors: connectorsContext,
+        calls,
+        ...(known.forPrompt.length ? { existing: known.forPrompt } : {}),
+      }),
     );
     // Custom endpoint with an unusable reply: return early before the
     // deleteMany below so pending suggestions are left untouched.
@@ -467,29 +557,36 @@ export class KgSkillService {
     await this.prisma.kgSkillSuggestion.deleteMany({
       where: { organizationId, status: 'pending', source: 'llm', mcpServerId },
     });
-    const autoApply = await this.autoApplyEnabled(organizationId);
 
     let created = 0;
     for (const s of skills) {
-      if (await this.insertSkill(organizationId, { mcpServerId }, s, autoApply)) created++;
+      if (await this.insertSkill(organizationId, { mcpServerId }, s, known.keys)) created++;
     }
     this.logger.log(`KG skills (server ${server.name}) ${organizationId}: ${created}`);
     return { created, model: cfg.model, usage };
   }
 
+  /**
+   * File one generated skill as a suggestion. Always pending: a person
+   * reviews what a model wrote. `known` holds the keys of the scope's applied
+   * and dismissed skills and of the drafts filed earlier in this run; a draft
+   * that repeats one of them is dropped.
+   */
   private async insertSkill(
     organizationId: string,
     scope: { connectorId?: string | null; mcpServerId?: string | null },
     s: any,
-    autoApply = false,
-    forceStatus?: string,
+    known: Set<string>,
   ): Promise<boolean> {
     const title = typeof s?.title === 'string' ? s.title.slice(0, 160) : null;
     const instruction = typeof s?.instruction === 'string' ? s.instruction.slice(0, 2000) : null;
     if (!title || !instruction) return false;
+    const titleKey = skillKey(title);
+    const instructionKey = skillKey(instruction);
+    if (known.has(titleKey) || known.has(instructionKey)) return false;
+    if (titleKey) known.add(titleKey);
+    if (instructionKey) known.add(instructionKey);
     const confidence = Math.max(0, Math.min(1, Number(s?.confidence) || 0.5));
-    const status =
-      forceStatus ?? (autoApply && confidence >= SKILL_AUTO_APPLY_MIN ? 'applied' : 'pending');
     await this.prisma.kgSkillSuggestion.create({
       data: {
         organizationId,
@@ -500,7 +597,7 @@ export class KgSkillService {
         instruction,
         confidence,
         evidenceCount: Math.max(0, Math.min(9999, parseInt(s?.evidenceCount, 10) || 0)),
-        status,
+        status: 'pending',
         source: 'llm',
       },
     });
