@@ -85,7 +85,7 @@ const ATLASSIAN_UNSCOPED_TOKEN_HINT =
   'read:confluence:agent-interface, search:confluence:agent-interface, and the write scopes they ' +
   "want), and paste it into this connector's API token setting in AnythingMCP.";
 
-const ODOO_FIELD_HINT =
+export const ODOO_FIELD_HINT =
   'That field does not exist on this model in this Odoo database; field names differ between ' +
   'Odoo versions and installed apps. Do not guess another spelling: list the model\'s fields ' +
   'first (odoo_fields_get, or fields_get on the model) and use only the names it returns.';
@@ -623,7 +623,7 @@ const CREDENTIAL_HINTS = new Set<string>([
   WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT,
 ]);
 
-function bodyText(body: unknown): string {
+export function bodyText(body: unknown): string {
   if (body === undefined || body === null) return '';
   if (typeof body === 'string') return body;
   try {
