@@ -248,6 +248,12 @@ export default function ConnectorDetailPage() {
   // next to the button: the page-level message sits far above it and was
   // missed (a customer clicked five times and saw nothing).
   const [oauthError, setOauthError] = useState('');
+  // `?signin=1`, the link of the "your app was approved" email: the sign-in
+  // starts by itself for a connector that waits for it. 'manual' when it
+  // could not start: the button is then focused, with a line above it.
+  const [signInLink, setSignInLink] = useState<'' | 'starting' | 'manual'>('');
+  const signInLinkHandled = useRef(false);
+  const oauthCardRef = useRef<HTMLDivElement>(null);
   // The stored client id as written ("{{ETSY_CLIENT_ID}}"); null until loaded.
   const [oauthClientIdRaw, setOauthClientIdRaw] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
@@ -1044,14 +1050,16 @@ export default function ConnectorDetailPage() {
     }
   };
 
-  const handleOAuthAuthorize = async () => {
-    if (!token) return;
+  /** Starts the provider's sign-in. True when the browser is leaving for it. */
+  const handleOAuthAuthorize = async (): Promise<boolean> => {
+    if (!token) return false;
     setAuthorizing(true);
     setOauthError('');
     try {
       const result = await connectors.oauthAuthorize(id, token);
       if (result.authorizationUrl) {
         window.location.href = result.authorizationUrl;
+        return true;
       } else if (result.error) {
         setOauthError(isMissingClientKeysError(result.error) ? t('oauthCard.keysMissing') : result.error);
       }
@@ -1060,7 +1068,58 @@ export default function ConnectorDetailPage() {
     } finally {
       setAuthorizing(false);
     }
+    return false;
   };
+
+  // `?signin=1` (the "your app was approved" email, and the AI client's
+  // answers): start what the sign-in button starts, with no search for it.
+  //
+  // The parameter is a flag and carries no address: the page asks the server
+  // for the provider's URL of THIS connector, exactly as the button does, so
+  // the link cannot send anyone elsewhere. It acts once, only for a signed-in
+  // user (the page does not load otherwise, and /login brings the same link
+  // back), only on the connector in the path, and only while that connector
+  // waits for its authorization: one already signed in is left alone, so the
+  // link can never replace a working sign-in. The provider's own consent page
+  // still asks before anything is granted.
+  useEffect(() => {
+    if (signInLinkHandled.current || searchParams.get('signin') !== '1') return;
+    if (!token || !connector || connector.id !== id) return;
+    const oauth2 = connector.authType === 'OAUTH2' && connector.type !== 'MCP';
+    // Its OAuth settings (grant, client keys) are still loading.
+    if (oauth2 && oauthClientIdRaw === null) return;
+    signInLinkHandled.current = true;
+    // Dropped before leaving, so "back" from the provider does not start it again.
+    window.history.replaceState({}, '', `/connectors/${id}`);
+    const waitsForSignIn =
+      oauth2 &&
+      connector.setupStatus === 'needs_authorization' &&
+      connector.credentialScope !== 'USER' &&
+      !isMachineGrant(loadedOauthGrant) &&
+      missingOAuthClientKeys(connector, oauthClientIdRaw).length === 0;
+    if (!waitsForSignIn) return;
+    setSignInLink('starting');
+    void handleOAuthAuthorize().then((leaving) => {
+      if (leaving) return;
+      // Could not start: bring the button into view instead.
+      setSignInLink('manual');
+      requestAnimationFrame(() => {
+        oauthCardRef.current?.scrollIntoView({ block: 'center' });
+        oauthCardRef.current?.querySelector('button')?.focus();
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connector, oauthClientIdRaw, token, searchParams]);
+
+  // "Back" from the provider can restore this page exactly as it was left:
+  // the "opening the sign-in" line would then stand there with nothing going on.
+  useEffect(() => {
+    const onShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setSignInLink('');
+    };
+    window.addEventListener('pageshow', onShow);
+    return () => window.removeEventListener('pageshow', onShow);
+  }, []);
 
   // Shopee shops are authorized through Shopee's own signed link, not OAuth2.
   const handleShopeeAuthorize = async () => {
@@ -1363,6 +1422,11 @@ export default function ConnectorDetailPage() {
           />
         )}
 
+        {signInLink === 'starting' && (
+          <div role="status" className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
+            {t('oauthCard.signInStarting', { name: connector.name })}
+          </div>
+        )}
         {msg && (
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm text-[var(--text-2)]">
             {msg}
@@ -2077,12 +2141,17 @@ export default function ConnectorDetailPage() {
                 ? t('oauthCard.mcp')
                 : t('oauthCard.provider')}
             </p>
-            <div className="flex gap-3 flex-wrap">
+            {signInLink === 'manual' && (
+              <p role="status" className="mb-3 text-sm font-medium text-[var(--text)]">
+                {t('oauthCard.signInManual')}
+              </p>
+            )}
+            <div ref={oauthCardRef} className="flex gap-3 flex-wrap">
               {connector.credentialScope !== 'USER' && (
                 <Button
                   variant="primary"
                   size="lg"
-                  onClick={handleOAuthAuthorize}
+                  onClick={() => void handleOAuthAuthorize()}
                   disabled={authorizing || oauthKeysMissing.length > 0}
                 >
                   {authorizing

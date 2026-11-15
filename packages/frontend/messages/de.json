@@ -1542,7 +1542,9 @@
       "keysMissing": "Speichere zuerst die Client-ID und das Secret deiner App und autorisiere danach. Der Anbieter braucht sie, um seine Anmeldeseite zu öffnen (bei Etsy: Keystring und Shared Secret).",
       "keysStillEmpty": "Noch leer: {names}",
       "enterKeys": "Schlüssel eingeben",
-      "clientId": "Client-ID"
+      "clientId": "Client-ID",
+      "signInStarting": "Die Anmeldung für {name} wird geöffnet…",
+      "signInManual": "Die Anmeldung konnte nicht automatisch starten. Starten Sie sie mit dieser Schaltfläche:"
     },
     "shopee": {
       "title": "Shopee-Shop-Autorisierung",
