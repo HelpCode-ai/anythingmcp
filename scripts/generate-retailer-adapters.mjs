@@ -578,6 +578,16 @@ export function generate() {
   return { files, retailers: table.retailers.length };
 }
 
+/** The file's text, or null when it does not exist (read once, no separate exists check). */
+function readIfPresent(absolute) {
+  try {
+    return readFileSync(absolute, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     if (process.argv.slice(2).some((arg) => arg !== '--check')) fail(`Usage: node ${SELF} [--check]`);
@@ -586,7 +596,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     let written = 0;
     for (const [path, content] of files) {
       const absolute = join(ROOT, path);
-      const current = existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+      const current = readIfPresent(absolute);
       if (current === content) continue;
       if (check) {
         console.error(`${path} is ${current === null ? 'missing' : 'stale'}. Run node ${SELF} and commit the result.`);
