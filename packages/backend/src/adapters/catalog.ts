@@ -599,6 +599,7 @@ import * as servicem8 from './intl/servicem8.json';
 import * as servicenow from './intl/servicenow.json';
 import * as servicetitan from './intl/servicetitan.json';
 import * as sftp from './intl/sftp.json';
+import * as shein from './intl/shein.json';
 import * as shippo from './intl/shippo.json';
 import * as shipstation from './intl/shipstation.json';
 import * as shopee from './intl/shopee.json';
@@ -631,6 +632,7 @@ import * as statsig from './intl/statsig.json';
 import * as statuspage from './intl/statuspage.json';
 import * as storyblok from './intl/storyblok.json';
 import * as strapi from './intl/strapi.json';
+import * as strava from './intl/strava.json';
 import * as streak from './intl/streak.json';
 import * as stripe from './intl/stripe.json';
 import * as substack from './intl/substack.json';
@@ -1698,6 +1700,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   servicenow as unknown as AdapterDefinition,
   servicetitan as unknown as AdapterDefinition,
   sftp as unknown as AdapterDefinition,
+  shein as unknown as AdapterDefinition,
   shippo as unknown as AdapterDefinition,
   shipstation as unknown as AdapterDefinition,
   shopee as unknown as AdapterDefinition,
@@ -1730,6 +1733,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   statuspage as unknown as AdapterDefinition,
   storyblok as unknown as AdapterDefinition,
   strapi as unknown as AdapterDefinition,
+  strava as unknown as AdapterDefinition,
   streak as unknown as AdapterDefinition,
   stripe as unknown as AdapterDefinition,
   substack as unknown as AdapterDefinition,

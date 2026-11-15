@@ -110,6 +110,7 @@ import {
 import { supportsUserCredentials } from './user-credential.util';
 import { egressIps } from './egress';
 import { IOP_TOKEN_PROVIDER, isIopAuth } from './engines/iop-token.service';
+import { SHEIN_TOKEN_PROVIDER, isSheinAuth } from './engines/shein-token.service';
 import {
   SECRET_GUARDED_TYPES,
   SecretExtractor,
@@ -909,6 +910,8 @@ export class ConnectorsController {
       // seller): the connector page shows its Authorize button. Not a secret;
       // absent on every other connector.
       ...(isIopAuth(connector.authType, authConfig) ? { tokenProvider: IOP_TOKEN_PROVIDER } : {}),
+      // A SHEIN store authorization, likewise.
+      ...(isSheinAuth(connector.authType, authConfig) ? { tokenProvider: SHEIN_TOKEN_PROVIDER } : {}),
     };
   }
 

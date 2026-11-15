@@ -424,6 +424,116 @@ export function iopTokenProviderProblems(connector) {
   return problems;
 }
 
+const SHEIN_FIELDS = new Set(['appId', 'appSecret', 'authorizeUrl', 'tokenBaseUrl', 'tokenPath']);
+const SHEIN_KEY_VARS = ['${openKeyId}', '${secretKey}'];
+
+/**
+ * `authConfig.tokenProvider: "shein"` (SHEIN Open Platform): the engine gets
+ * the shop's openKeyId and secretKey from SHEIN's store authorization
+ * (shein-token.service.ts) and fills them into `${openKeyId}` and
+ * `${secretKey}` of the signature block before each call. Checked: HMAC
+ * only; the authorize page is an https URL (a hash route is fine, a query is
+ * not); the token base is an https URL or one variable; the token operation
+ * is a path; the App ID and App Secret are given; the signature is SHEIN's
+ * (hex-base64, 5-character nonce in the key and in front of the header,
+ * milliseconds, `${openKeyId}&${timestamp}&${pathname}`, the openKeyId in
+ * `x-lt-openKeyId`). `${openKeyId}` and `${secretKey}` mean nothing without
+ * the provider.
+ */
+export function sheinTokenProviderProblems(connector) {
+  const cfg = connector?.authConfig;
+  if (!cfg || typeof cfg !== 'object') return [];
+  const sig = cfg.signature && typeof cfg.signature === 'object' && !Array.isArray(cfg.signature) ? cfg.signature : undefined;
+  const sigTexts = sig
+    ? [sig.secret, sig.template, ...Object.values(sig.extraHeaders && typeof sig.extraHeaders === 'object' ? sig.extraHeaders : {})].filter((v) => typeof v === 'string')
+    : [];
+  if (cfg.tokenProvider !== 'shein') {
+    return sigTexts.some((t) => SHEIN_KEY_VARS.some((v) => t.includes(v)))
+      ? ['${openKeyId} and ${secretKey} in the signature need tokenProvider "shein"']
+      : [];
+  }
+  if (connector.authType !== 'HMAC') return ['tokenProvider "shein" only applies to HMAC authentication'];
+  const shein = cfg.shein;
+  if (!shein || typeof shein !== 'object' || Array.isArray(shein)) return ['tokenProvider "shein" needs an authConfig.shein object'];
+  const problems = [];
+  for (const key of Object.keys(shein)) {
+    if (!SHEIN_FIELDS.has(key)) problems.push(`authConfig.shein.${key} is not a known field (${[...SHEIN_FIELDS].join(', ')})`);
+  }
+  for (const key of ['appId', 'appSecret']) {
+    if (typeof shein[key] !== 'string' || !shein[key].trim()) problems.push(`tokenProvider "shein" needs authConfig.shein.${key}`);
+  }
+  const authorizeUrl = shein.authorizeUrl;
+  if (typeof authorizeUrl !== 'string' || !/^https:\/\/[^/\s?#]+/.test(authorizeUrl)) problems.push('authConfig.shein.authorizeUrl must be an https URL');
+  else if (authorizeUrl.includes('?')) problems.push('authConfig.shein.authorizeUrl must not carry a query: the engine adds appid, redirectUrl and state');
+  const tokenBaseUrl = shein.tokenBaseUrl;
+  if (typeof tokenBaseUrl !== 'string' || !(/^https:\/\/[^/\s?#]+[^\s?#]*$/.test(tokenBaseUrl) || /^\{\{[A-Z0-9_]+\}\}$/.test(tokenBaseUrl))) {
+    problems.push('authConfig.shein.tokenBaseUrl must be an https URL without a query, or one variable such as "{{SHEIN_API_HOST}}"');
+  }
+  const tokenPath = shein.tokenPath;
+  if (typeof tokenPath !== 'string' || !/^\/[^\s?#]*$/.test(tokenPath) || tokenPath.includes('//')) {
+    problems.push('authConfig.shein.tokenPath must be a path starting with "/", such as "/open-api/auth/get-by-token"');
+  }
+  if (!sig) {
+    problems.push('tokenProvider "shein" needs authConfig.signature: every call is signed with the shop\'s keys');
+    return problems;
+  }
+  const text = (v) => (typeof v === 'string' ? v : '');
+  if (sig.encoding !== 'hex-base64') problems.push('tokenProvider "shein" needs signature.encoding "hex-base64"');
+  if (sig.nonceLength !== 5) problems.push('tokenProvider "shein" needs signature.nonceLength 5');
+  if (sig.timestampFormat !== 'ms') problems.push('tokenProvider "shein" needs signature.timestampFormat "ms"');
+  if ((sig.placement ?? 'header') !== 'header') problems.push('tokenProvider "shein" needs the signature in a header');
+  if (!text(sig.secret).includes('${secretKey}') || !text(sig.secret).includes('${nonce}')) problems.push('tokenProvider "shein" needs signature.secret "${secretKey}${nonce}"');
+  if (text(sig.template) !== '${openKeyId}&${timestamp}&${pathname}') problems.push('tokenProvider "shein" needs signature.template "${openKeyId}&${timestamp}&${pathname}"');
+  if (text(sig.headerTemplate) !== '${nonce}${signature}') problems.push('tokenProvider "shein" needs signature.headerTemplate "${nonce}${signature}"');
+  const extra = sig.extraHeaders && typeof sig.extraHeaders === 'object' ? sig.extraHeaders : {};
+  if (extra['x-lt-openKeyId'] !== '${openKeyId}') problems.push('tokenProvider "shein" needs signature.extraHeaders { "x-lt-openKeyId": "${openKeyId}" }');
+  if (/\{\{/.test(text(sig.secret)) || /\{\{/.test(text(sig.template))) problems.push('tokenProvider "shein" takes the shop\'s keys from the authorization, not from variables in signature.secret or signature.template');
+  return problems;
+}
+
+const BODY_INTEGER_PATH = /^[A-Za-z0-9_$-]+(\[\])?(\.[A-Za-z0-9_$-]+(\[\])?)*$/;
+
+/**
+ * 64-bit integers (packages/backend/src/connectors/engines/json-integers.util.ts):
+ * `connector.config.largeIntegers: "string"` makes the REST engine read
+ * integers outside the safe range of a JSON answer as exact strings, and a
+ * tool's `endpointMapping.bodyIntegers` lists body paths whose digit strings
+ * go out as number literals. Checked: the value "string" on a REST connector;
+ * a non-empty list of paths (`a`, `a[]`, `a[].b`) on a tool with a JSON body,
+ * each starting at a field the bodyMapping writes.
+ */
+export function largeIntegerProblems(adapter) {
+  const problems = [];
+  const connector = adapter?.connector ?? {};
+  const value = connector.config?.largeIntegers;
+  if (value !== undefined) {
+    if (value !== 'string') problems.push('connector.config.largeIntegers must be "string"');
+    if (connector.type !== 'REST') problems.push('connector.config.largeIntegers only applies to REST connectors');
+  }
+  (Array.isArray(adapter?.tools) ? adapter.tools : []).forEach((tool, i) => {
+    const mapping = tool?.endpointMapping;
+    if (!mapping || mapping.bodyIntegers === undefined) return;
+    const at = `tools[${i}].endpointMapping.bodyIntegers`;
+    const list = mapping.bodyIntegers;
+    if (!Array.isArray(list) || list.length === 0) {
+      problems.push(`${at} must be a non-empty list of body paths such as "items[].id"`);
+      return;
+    }
+    if (String(mapping.method ?? '').toUpperCase() === 'GET') problems.push(`${at} needs a tool with a JSON body, not a GET`);
+    if (mapping.bodyEncoding !== undefined && mapping.bodyEncoding !== 'json') problems.push(`${at} only applies to a JSON body`);
+    const body = mapping.bodyMapping && typeof mapping.bodyMapping === 'object' ? mapping.bodyMapping : undefined;
+    for (const path of list) {
+      if (typeof path !== 'string' || !BODY_INTEGER_PATH.test(path)) {
+        problems.push(`${at}: "${path}" is not a body path such as "items[].id"`);
+        continue;
+      }
+      const first = path.split('.')[0].replace(/\[\]$/, '');
+      if (!body || !Object.prototype.hasOwnProperty.call(body, first)) problems.push(`${at}: "${path}" starts at "${first}", which the bodyMapping does not write`);
+    }
+  });
+  return problems;
+}
+
 // Leftover marker from `scripts/adapter-new.mjs`. Case-sensitive on purpose:
 // real adapters mention "to-do" lists, and only the uppercase word is ours.
 const TODO_MARKER = /\bTODO\b/;
@@ -907,6 +1017,10 @@ export function validateAdapter(adapter, file, region) {
     errors.push(error('hmac-signature', 'connector.authConfig.signature', problem, 'See the tables under "Plain digest and body placement" and "Nonce and header template" for the fields and their values.', 'hmac-signed-requests'));
   }
 
+  for (const problem of sheinTokenProviderProblems(adapter.connector)) {
+    errors.push(error('shein-token-provider', 'connector.authConfig.shein', problem, 'Give authorizeUrl as an https URL, tokenBaseUrl as an https URL or one variable, tokenPath as a path ("/open-api/auth/get-by-token"), the App ID and App Secret, and SHEIN\'s signature with ${openKeyId} and ${secretKey}.', 'shop-authorization-token-providers'));
+  }
+
   for (const problem of iopTokenProviderProblems(adapter.connector)) {
     errors.push(error('iop-token-provider', 'connector.authConfig.iop', problem, 'Give authorizeUrl and tokenBaseUrl as https URLs, tokenPath and refreshPath as paths ("/auth/token/create", "/auth/token/refresh"), and the IOP signature (placement "query", encoding "hex-upper", timestampFormat "ms", ${sortedParams}).', 'shop-authorization-token-providers'));
   }
@@ -921,6 +1035,10 @@ export function validateAdapter(adapter, file, region) {
 
   for (const problem of loginTokenXmlProblems(adapter)) {
     errors.push(error('login-token-xml', 'connector.authConfig', problem, 'See the "XML logins and a token in the request body" section of docs/connectors/login-token-auth.md: loginBodyFormat and loginResponseFormat take "xml", tokenPlacement takes "header" or "body", refreshOnBody401 takes true or false.', 'authentication'));
+  }
+
+  for (const problem of largeIntegerProblems(adapter)) {
+    errors.push(error('large-integers', 'connector.config.largeIntegers', problem, 'Set "largeIntegers": "string" on a REST connector, and list bodyIntegers as paths of fields the bodyMapping writes ("orderGoodsId", "infoList[].goodsId", "goodsIdList[]").', 'large-integers-64-bit-ids'));
   }
 
   for (const problem of errorWhenProblems(adapter.connector?.config?.errorWhen)) {

@@ -358,15 +358,21 @@ function SetupContent() {
   // A seller at an IOP gateway (Lazada, Miravia, AliExpress seller) registers
   // this server's IOP callback on the app instead of the OAuth one.
   const isIop = info?.connector.authType === 'HMAC' && info.connector.authConfig?.tokenProvider === 'iop';
+  // A SHEIN shop likewise, with SHEIN's store authorization.
+  const isShein = info?.connector.authType === 'HMAC' && info.connector.authConfig?.tokenProvider === 'shein';
   useEffect(() => {
     if (!token) return;
     if (isIop) {
       connectors.iopRedirectUri(token).then((r) => setRedirectUri(r.redirectUri)).catch(() => {});
       return;
     }
+    if (isShein) {
+      connectors.sheinRedirectUri(token).then((r) => setRedirectUri(r.redirectUri)).catch(() => {});
+      return;
+    }
     if (info?.setupKind !== 'oauth_browser') return;
     connectors.oauthRedirectUri(token).then((r) => setRedirectUri(r.redirectUri)).catch(() => {});
-  }, [token, info?.setupKind, isIop]);
+  }, [token, info?.setupKind, isIop, isShein]);
 
   // Back from the provider: the authorization is stored; show the outcome.
   useEffect(() => {
@@ -748,6 +754,16 @@ function SetupContent() {
         const id = await save(fix);
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.iopAuthorize(id, token, returnTo);
+        if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
+        productEvents.track('oauth_started', token, { adapterSlug: slug });
+        window.location.href = auth.authorizationUrl;
+        return;
+      }
+      // A SHEIN shop likewise, through SHEIN's store authorization page.
+      if (isShein) {
+        const id = await save(fix);
+        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
+        const auth = await connectors.sheinAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
         productEvents.track('oauth_started', token, { adapterSlug: slug });
         window.location.href = auth.authorizationUrl;
