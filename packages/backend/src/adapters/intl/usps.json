@@ -1,0 +1,2482 @@
+{
+  "slug": "usps",
+  "name": "USPS",
+  "description": "USPS APIs for shippers: validate US addresses and look up ZIP Codes, compare domestic and international prices, get delivery days and shipping options, track packages, and find Post Offices, drop-off sites and Parcel Lockers. Labels, refunds, pickups and SCAN Forms are included but switched off. Consumer Key and Secret of an app in the USPS Customer Onboarding Portal.",
+  "instructions": "## USPS\nThis connector works with the **USPS APIs**, the REST APIs of developers.usps.com with OAuth 2.0 that replaced the retired Web Tools XML APIs, for a business that ships with the United States Postal Service: address validation and ZIP Code lookups, domestic and international prices, delivery standards, shipping options, tracking, Post Office and drop-off locations, Carrier Pickup, shipping labels and SCAN Forms. Payment, label, pickup booking and SCAN Form tools are included but installed switched off.\n\n**Setup (about 15 minutes)**\n1. Open the USPS Customer Onboarding Portal at https://cop.usps.com/cop-navigator?wf=API and sign in with your USPS Business Account, or create one there. The portal prepares the account for the USPS APIs.\n2. Select **My Apps** at the top of the portal and add an app.\n3. Open the app. In **Credentials** copy the **Consumer Key** into `USPS_CLIENT_ID` and the **Consumer Secret** into `USPS_CLIENT_SECRET`.\n4. Choose the API address in `USPS_API_HOST`: production `https://apis.usps.com`, or the Testing Environment for Mailers `https://apis-tem.usps.com`. Both take the same production credentials. Labels made on the test host are watermarked and never charged. USPS publishes the test host for every API except Tracking, so keep production when you mainly track.\n5. Optional, for labels and contract prices: your CRID, Mailer ID and Enterprise Payment Account number in `USPS_CRID`, `USPS_MID` and `USPS_EPS_ACCOUNT_NUMBER`. The Business Service Administrator of your Business Customer Gateway account has them.\n\nThe connector sends the Consumer Key and Secret to `/oauth2/v3/token` on the chosen host (client credentials) and gets a bearer token valid for about 8 hours, which it reuses and renews by itself.\n\n**What a new app may use**: every app starts with the USPS default product: OAuth, Addresses, Domestic Prices, International Prices, Locations, Service Standards, Shipping Options and Tracking. Addresses, prices, delivery days, shipping options, tracking, Post Offices and drop-off locations therefore work at once. **Carrier Pickup, Payments, Labels, International Labels and SCAN Forms need USPS approval**: ask for them with a USPS API service request on the Email Us page (https://emailus.usps.com/s/usps-APIs). The Labels APIs also need enrollment in **USPS Ship** (outbound and return labels) and an **Enterprise Payment Account** (EPS) that pays the postage. Parcel lockers (`usps_find_parcel_lockers`) and the international service standard (`usps_get_international_service_standard`) have scopes of their own; if they answer 403, ask USPS for them the same way.\n\n**Where to start**: `usps_get_city_state` with a ZIP Code proves the connection. For a quote, `usps_search_shipping_options` returns prices and delivery dates for every service in one call; `usps_search_domestic_prices` and `usps_search_international_prices` give the price breakdown with extra services.\n\n**Addresses**: `usps_validate_address` standardizes a US address and returns the ZIP+4, `DPVConfirmation` (Y confirmed, D secondary number missing, S secondary number not confirmed, N not confirmed), `business` (Y or N) and `vacant`. `usps_get_zip_code` finds the ZIP Code of a street in a city and state, `usps_get_city_state` the city and state of a ZIP Code. States are two-letter codes; only US addresses (including territories and military addresses) are covered.\n\n**Prices**: packages are weighed in pounds and measured in inches; letters, flats and cards are weighed in ounces. `price_type` COMMERCIAL is what you pay for labels bought online, RETAIL is the Post Office counter price, CONTRACT needs `account_type` and `account_number`. `usps_search_domestic_prices` returns `rateOptions` with `totalBasePrice`, `totalPrice` and the extra services; `usps_list_domestic_prices` lists every eligible product with its `SKU`, `rateIndicator` and `processingCategory`, the values a label request needs. `usps_search_letter_prices` prices First-Class Mail letters, flats and postcards. Abroad: `usps_search_international_prices` (optionally with duties and taxes per item), `usps_list_international_prices` and `usps_search_international_letter_prices`. Mailing dates may be today up to 7 days ahead. Amounts are US dollars. USPS_GROUND_ADVANTAGE replaced First-Class Package Service and Retail Ground.\n\n**Delivery days**: `usps_get_delivery_estimates` gives the scheduled delivery date for a mailing day, with the acceptance cut-off time (`cutOffTime`, HHMM local); `usps_get_service_standards` the standard number of days per mail class; `usps_get_international_service_standard` a sentence such as Estimated delivery in 5-9 business days. A service standard is a target, not a guarantee.\n\n**Tracking**: `usps_track_package` for one number, `usps_track_packages` for up to 35 at once. Both use Tracking 3.2; the legacy Tracking 3.0 API retires on 31 July 2027. The answer has `statusCategory`, `statusSummary`, `trackingEvents` (`eventTimestamp` in local time of the event, `GMTTimestamp` in UTC), `deliveryDateExpectation` and `uniqueTrackingID`. A batch answers HTTP 207 when some numbers fail, and each failed number carries its own `error`. `usps_register_tracking_notifications` signs up to 3 email addresses for tracking emails and `usps_request_proof_of_delivery` has a proof of delivery letter emailed; both need the `uniqueTrackingID` of a tracking answer, send email from USPS and cost nothing.\n\n**Locations**: `usps_find_post_offices` searches by ZIP Code, city and state, address or coordinates (radius in miles, 20 by default) and lists the hours of each service; `usps_find_dropoff_locations` lists the destination entry facilities for Parcel Select, USPS Connect and Package Services by destination ZIP Code; `usps_find_parcel_lockers` finds Parcel Lockers.\n\n**Pickups**: `usps_check_pickup_eligibility` and `usps_get_pickup` only read. `usps_schedule_pickup` books the free Carrier Pickup (Monday to Saturday) and `usps_cancel_pickup` cancels one; both are switched off. A pickup cannot be changed here: cancel it and book a new one.\n\n**Labels (switched off)**: every label call needs a payment authorization token. `usps_create_payment_authorization` with your CRID, Mailer ID and EPS account returns `paymentAuthorizationToken`; pass it to `usps_create_label`, `usps_create_return_label`, `usps_create_international_label`, `usps_cancel_label` or `usps_cancel_international_label`. Labels come back as JSON: `labelMetadata` with the tracking number and postage, and `labelImage` in base64 (a 4x6 PDF by default). Creating a label buys postage from the EPS account. A cancel answers CANCELED, or DISPUTED with a `disputeId` when USPS opened a refund request. `usps_get_payment_account` reads the account and, with `amount`, tells whether the funds suffice. `usps_create_scan_form` puts many labels on one PS Form 5630 for a single acceptance scan. Switch these tools on only after USPS approved the Labels APIs, and try them on the test host first.\n\n**Errors**: failures come as `error` with `code`, `message` and a list `errors` (`title`, `detail`, `source.parameter`). 400 names the wrong field; 401 means wrong credentials or an expired token; 403 means the app does not have that API (it is outside the default product); 404 means USPS found nothing, e.g. an unknown tracking number.\n\n**Limits**: each app has a quota of calls per hour; a 429 means it is used up until the next hour. USPS raises the quota on request through the Email Us page. Dates are YYYY-MM-DD.",
+  "aliases": [
+    "United States Postal Service",
+    "US Postal Service",
+    "USPS Tracking"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "usps",
+  "docsUrl": "https://developers.usps.com/apis",
+  "requiredEnvVars": [
+    "USPS_CLIENT_ID",
+    "USPS_CLIENT_SECRET",
+    "USPS_API_HOST"
+  ],
+  "optionalEnvVars": [
+    "USPS_CRID",
+    "USPS_MID",
+    "USPS_EPS_ACCOUNT_NUMBER"
+  ],
+  "envVarMeta": {
+    "USPS_CLIENT_ID": {
+      "label": "Consumer Key",
+      "kind": "credential",
+      "help": "USPS Customer Onboarding Portal, My Apps, your app, Credentials: the Consumer Key (the client ID).",
+      "link": "https://cop.usps.com/cop-navigator?wf=API&showCC=false",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste the Consumer Key only, without spaces."
+    },
+    "USPS_CLIENT_SECRET": {
+      "label": "Consumer Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Consumer Secret shown next to the Consumer Key of the same app.",
+      "link": "https://cop.usps.com/cop-navigator?wf=API&showCC=false",
+      "pattern": "^\\S{8,128}$",
+      "patternMessage": "Paste the Consumer Secret only, without spaces."
+    },
+    "USPS_API_HOST": {
+      "label": "API address",
+      "kind": "address",
+      "help": "Production (apis.usps.com) for real work. The Testing Environment for Mailers (apis-tem.usps.com) takes the same credentials and makes watermarked labels that are never charged; USPS publishes no test host for Tracking.",
+      "link": "https://developers.usps.com/getting-started",
+      "example": "https://apis.usps.com",
+      "pattern": "^https://apis(-tem)?\\.usps\\.com$",
+      "patternMessage": "Pick https://apis.usps.com (production) or https://apis-tem.usps.com (test).",
+      "options": [
+        {
+          "value": "https://apis.usps.com",
+          "label": "Production (apis.usps.com)"
+        },
+        {
+          "value": "https://apis-tem.usps.com",
+          "label": "Testing Environment for Mailers (apis-tem.usps.com)"
+        }
+      ]
+    },
+    "USPS_CRID": {
+      "label": "CRID",
+      "kind": "setting",
+      "advanced": true,
+      "help": "Optional. Customer Registration ID of your business, up to 10 digits, from the Business Customer Gateway. Needed for labels.",
+      "link": "https://gateway.usps.com",
+      "pattern": "^\\d{1,10}$",
+      "patternMessage": "The CRID is a number of up to 10 digits."
+    },
+    "USPS_MID": {
+      "label": "Mailer ID (MID)",
+      "kind": "setting",
+      "advanced": true,
+      "help": "Optional. Your Mailer ID, 6 or 9 digits, from the Business Customer Gateway. Needed for labels.",
+      "link": "https://gateway.usps.com",
+      "pattern": "^(\\d{6}|\\d{9})$",
+      "patternMessage": "The Mailer ID has 6 or 9 digits."
+    },
+    "USPS_EPS_ACCOUNT_NUMBER": {
+      "label": "Enterprise Payment Account number",
+      "kind": "setting",
+      "advanced": true,
+      "help": "Optional. The Enterprise Payment Account (EPS) that pays for labels and holds any contract prices.",
+      "link": "https://gateway.usps.com",
+      "pattern": "^\\d+$",
+      "patternMessage": "The account number has digits only."
+    }
+  },
+  "instructionFacts": [
+    "The CRID of this connector is {{USPS_CRID}} and its Mailer ID is {{USPS_MID}}: pass them as crid and mid to usps_create_payment_authorization, and the CRID as crid to usps_request_proof_of_delivery.",
+    "The Enterprise Payment Account of this connector is {{USPS_EPS_ACCOUNT_NUMBER}}: use it as account_number with account_type EPS in usps_create_payment_authorization and usps_get_payment_account, and for CONTRACT prices."
+  ],
+  "verifyHints": {
+    "401": "USPS did not accept the Consumer Key and Consumer Secret. Copy both again from your app in the USPS Customer Onboarding Portal (My Apps, Credentials).",
+    "403": "USPS refused the call: your app does not have this API. Addresses, prices, locations, service standards, shipping options and tracking come with every app; Carrier Pickup, Payments, Labels and SCAN Forms need a USPS API service request on the Email Us page.",
+    "404": "USPS found nothing for this request. Check the ZIP Code, tracking number or confirmation number for typos.",
+    "rate_limited": "The hourly call quota of your USPS app is used up. Wait for the next hour, or ask USPS for a higher quota through the Email Us page."
+  },
+  "probe": {
+    "tool": "usps_get_city_state",
+    "params": {
+      "zip_code": "30022"
+    }
+  },
+  "prerequisites": "A USPS Business Account, to add an app in the USPS Customer Onboarding Portal. About 15 minutes. Labels also need USPS approval, USPS Ship enrollment and an Enterprise Payment Account.",
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 15,
+    "examples": [
+      "Where is USPS package 9400111899223817568426?",
+      "What does USPS charge for a 3 lb box from 10001 to 94105?",
+      "Is 3120 M St NW, Washington DC a valid address, and is it a business?",
+      "When would Priority Mail sent today from Chicago reach Miami?"
+    ],
+    "needs": [
+      "A USPS Business Account (usps.com business login)",
+      "About 15 minutes"
+    ],
+    "why": "USPS gives API access through an app that you add in the USPS Customer Onboarding Portal. The app is free: AnythingMCP uses its Consumer Key and Secret to ask USPS for a token that lasts about 8 hours.\n\nAnythingMCP never sees your usps.com password. Tools that buy postage, refund labels, book pickups or create SCAN Forms are installed switched off, so nothing is charged unless you switch them on.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Add an app at USPS",
+        "body": "Open the **USPS Customer Onboarding Portal** and sign in with your USPS Business Account (or create one there). Select **My Apps** at the top of the page and add an app. The app gets the USPS default product at once: addresses, prices, locations, service standards, shipping options and tracking.",
+        "action": {
+          "label": "Open the Customer Onboarding Portal",
+          "url": "https://cop.usps.com/cop-navigator?wf=API&showCC=false"
+        },
+        "confirm": "I added an app",
+        "problems": [
+          {
+            "q": "I have no USPS Business Account",
+            "a": "The portal creates one: follow its sign-up steps with your business details. A personal usps.com login is not enough."
+          },
+          {
+            "q": "I want to buy labels too",
+            "a": "Labels need more than the default product: enrollment in USPS Ship, an Enterprise Payment Account and a USPS API service request on the Email Us page. Connect now; switch the label tools on once USPS has approved them."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Paste the app credentials",
+        "body": "Open your app and its **Credentials** section. Copy the **Consumer Key** and the **Consumer Secret**, and pick the API address: **Production** for real work, or the **Testing Environment for Mailers**, which takes the same credentials and never charges labels. AnythingMCP then checks them with one ZIP Code lookup.",
+        "action": {
+          "label": "Open My Apps at USPS",
+          "url": "https://cop.usps.com/cop-navigator?wf=API&showCC=false"
+        },
+        "fields": [
+          "USPS_CLIENT_ID",
+          "USPS_CLIENT_SECRET",
+          "USPS_API_HOST"
+        ],
+        "problems": [
+          {
+            "q": "The check answers 401",
+            "a": "Copy the Consumer Key and Consumer Secret again from the Credentials section of your app; the client ID is the Consumer Key and the client secret the Consumer Secret."
+          },
+          {
+            "q": "The check answers 429",
+            "a": "The hourly quota of the app is used up. Wait for the next hour and check again."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "USPS API",
+    "type": "REST",
+    "baseUrl": "{{USPS_API_HOST}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{USPS_CLIENT_ID}}",
+      "clientSecret": "{{USPS_CLIENT_SECRET}}",
+      "tokenUrl": "{{USPS_API_HOST}}/oauth2/v3/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "usps_validate_address",
+      "description": "Validate and standardize one US address. Returns `address` in USPS standard form (`streetAddress`, `city`, `state`, `ZIPCode`, `ZIPPlus4`), `additionalInfo` with `DPVConfirmation` (Y confirmed, D secondary number missing, S secondary number not confirmed, N not confirmed), `business` (Y or N), `vacant`, `carrierRoute` and `deliveryPoint`, plus `corrections` and `matches` codes. Domestic addresses only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "street_address": {
+            "type": "string",
+            "description": "House number and street, e.g. 3120 M St. May also carry the apartment or suite."
+          },
+          "secondary_address": {
+            "type": "string",
+            "description": "Apartment, suite or unit, e.g. APT 4B or STE 150."
+          },
+          "city": {
+            "type": "string",
+            "description": "City name. Give city and state, or the ZIP Code."
+          },
+          "state": {
+            "type": "string",
+            "description": "Two-letter state or territory code, e.g. NY, CA, PR.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "zip_code": {
+            "type": "string",
+            "description": "5-digit ZIP Code.",
+            "pattern": "^\\d{5}$"
+          },
+          "zip_plus4": {
+            "type": "string",
+            "description": "The 4-digit ZIP+4 extension, if known.",
+            "pattern": "^\\d{4}$"
+          },
+          "firm": {
+            "type": "string",
+            "description": "Company name at the address, if any."
+          },
+          "urbanization": {
+            "type": "string",
+            "description": "Urbanization name, only for Puerto Rico addresses."
+          }
+        },
+        "required": [
+          "street_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses/v3/address",
+        "queryParams": {
+          "streetAddress": "$street_address",
+          "secondaryAddress": "$secondary_address",
+          "city": "$city",
+          "state": "$state",
+          "ZIPCode": "$zip_code",
+          "ZIPPlus4": "$zip_plus4",
+          "firm": "$firm",
+          "urbanization": "$urbanization"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_get_city_state",
+      "description": "Look up the city and state of a 5-digit ZIP Code. Returns `city` (in capitals), `state` (two letters) and `ZIPCode`. Cheap call, used as the connection check. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zip_code": {
+            "type": "string",
+            "description": "5-digit ZIP Code, e.g. 30022.",
+            "pattern": "^\\d{5}$"
+          }
+        },
+        "required": [
+          "zip_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses/v3/city-state",
+        "queryParams": {
+          "ZIPCode": "$zip_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_get_zip_code",
+      "description": "Find the ZIP Code and ZIP+4 of a street address in a city and state. Returns `address` with the standardized street, `city`, `state`, `ZIPCode` and `ZIPPlus4`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "street_address": {
+            "type": "string",
+            "description": "House number and street, e.g. 1273 Pale San Vitores Rd."
+          },
+          "secondary_address": {
+            "type": "string",
+            "description": "Apartment, suite or unit, if any."
+          },
+          "city": {
+            "type": "string",
+            "description": "City name."
+          },
+          "state": {
+            "type": "string",
+            "description": "Two-letter state or territory code, e.g. NY, CA, PR.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "zip_code": {
+            "type": "string",
+            "description": "5-digit ZIP Code, if partly known.",
+            "pattern": "^\\d{5}$"
+          },
+          "zip_plus4": {
+            "type": "string",
+            "description": "The 4-digit ZIP+4 extension, if known.",
+            "pattern": "^\\d{4}$"
+          },
+          "firm": {
+            "type": "string",
+            "description": "Company name at the address, if any."
+          }
+        },
+        "required": [
+          "street_address",
+          "city",
+          "state"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addresses/v3/zipcode",
+        "queryParams": {
+          "streetAddress": "$street_address",
+          "secondaryAddress": "$secondary_address",
+          "city": "$city",
+          "state": "$state",
+          "ZIPCode": "$zip_code",
+          "ZIPPlus4": "$zip_plus4",
+          "firm": "$firm"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_search_domestic_prices",
+      "description": "Price a domestic package across mail classes, extra services included. Returns `rateOptions`, one per eligible product, each with `totalBasePrice` (postage and fees), `totalPrice` (with the requested extra services), `rates` (`SKU`, `mailClass`, `productName`, `zone`, `price`, `weight`, `dimWeight`, `fees`, `processingCategory`, `rateIndicator`, `destinationEntryFacilityType`) and `extraServices` (code, name, price). US dollars. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the package ships from, 5 digits or ZIP+4.",
+            "pattern": "^\\d{5}(?:[-\\s]\\d{4})?$"
+          },
+          "destination_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the package ships to, 5 digits or ZIP+4.",
+            "pattern": "^\\d{5}(?:[-\\s]\\d{4})?$"
+          },
+          "weight": {
+            "type": "number",
+            "description": "Package weight in pounds, e.g. 2.5. USPS prices the greater of this and the dimensional weight."
+          },
+          "length": {
+            "type": "number",
+            "description": "Package length in inches, the longest side."
+          },
+          "width": {
+            "type": "number",
+            "description": "Package width in inches, the second longest side."
+          },
+          "height": {
+            "type": "number",
+            "description": "Package height in inches."
+          },
+          "mail_classes": {
+            "type": "array",
+            "description": "Mail classes to price. Default ALL. USPS_GROUND_ADVANTAGE replaced First-Class Package Service and Retail Ground.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "USPS_GROUND_ADVANTAGE",
+                "PRIORITY_MAIL",
+                "PRIORITY_MAIL_EXPRESS",
+                "PARCEL_SELECT",
+                "MEDIA_MAIL",
+                "LIBRARY_MAIL",
+                "BOUND_PRINTED_MATTER",
+                "USPS_CONNECT_LOCAL",
+                "USPS_CONNECT_MAIL",
+                "USPS_CONNECT_REGIONAL",
+                "MARKETING_MAIL_PARCELS",
+                "ALL"
+              ]
+            },
+            "default": [
+              "ALL"
+            ]
+          },
+          "price_type": {
+            "type": "string",
+            "description": "COMMERCIAL (default) is the price for labels bought online, RETAIL the Post Office counter price, CONTRACT your negotiated price (needs account_type and account_number).",
+            "enum": [
+              "COMMERCIAL",
+              "RETAIL",
+              "CONTRACT"
+            ],
+            "default": "COMMERCIAL"
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Date of mailing, YYYY-MM-DD, today up to 7 days ahead. Default today.",
+            "format": "date"
+          },
+          "has_nonstandard_characteristics": {
+            "type": "boolean",
+            "description": "true for nonstandard packages: tubes and rolls, high-density items, glass containers with more than 24 oz of liquid and similar. Default false."
+          },
+          "account_type": {
+            "type": "string",
+            "description": "Payment account for contract prices: EPS (Enterprise Payment Account), PERMIT or METER (PC Postage providers only).",
+            "enum": [
+              "EPS",
+              "PERMIT",
+              "METER"
+            ]
+          },
+          "account_number": {
+            "type": "string",
+            "description": "The Enterprise Payment Account, permit or meter number that holds the contract prices. With an account number USPS returns CONTRACT prices when they exist.",
+            "pattern": "^\\d+$"
+          },
+          "item_value": {
+            "type": "number",
+            "description": "Value of the contents in US dollars. Needed for insurance and Collect on Delivery prices."
+          },
+          "extra_services": {
+            "type": "array",
+            "description": "Extra service codes to price, e.g. 920 USPS Tracking, 921 Signature Confirmation, 930 insurance up to 500 dollars, 931 insurance above 500, 910 Certified Mail, 986 for Priority Mail Express. Leave out to get every available extra service.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "origin_zip_code",
+          "destination_zip_code",
+          "weight",
+          "length",
+          "width",
+          "height"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/prices/v3/total-rates/search",
+        "bodyMapping": {
+          "originZIPCode": "$origin_zip_code",
+          "destinationZIPCode": "$destination_zip_code",
+          "weight": "$weight",
+          "length": "$length",
+          "width": "$width",
+          "height": "$height",
+          "mailClasses": "$mail_classes",
+          "priceType": "$price_type",
+          "mailingDate": "$mailing_date",
+          "hasNonstandardCharacteristics": "$has_nonstandard_characteristics",
+          "accountType": "$account_type",
+          "accountNumber": "$account_number",
+          "itemValue": "$item_value",
+          "extraServices": "$extra_services"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_list_domestic_prices",
+      "description": "List every product a domestic package is eligible for, with its base price and no extra services. Returns `rateOptions` with `totalBasePrice` and `rates` (`SKU`, `description`, `mailClass`, `productName`, `zone`, `price`, `processingCategory`, `rateIndicator`, `destinationEntryFacilityType`): the ingredients a label request expects. US dollars. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the package ships from, 5 digits or ZIP+4.",
+            "pattern": "^\\d{5}(?:[-\\s]\\d{4})?$"
+          },
+          "destination_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the package ships to, 5 digits or ZIP+4.",
+            "pattern": "^\\d{5}(?:[-\\s]\\d{4})?$"
+          },
+          "weight": {
+            "type": "number",
+            "description": "Package weight in pounds, e.g. 2.5. USPS prices the greater of this and the dimensional weight."
+          },
+          "length": {
+            "type": "number",
+            "description": "Package length in inches, the longest side."
+          },
+          "width": {
+            "type": "number",
+            "description": "Package width in inches, the second longest side."
+          },
+          "height": {
+            "type": "number",
+            "description": "Package height in inches."
+          },
+          "mail_classes": {
+            "type": "array",
+            "description": "Mail classes to price. Default ALL. USPS_GROUND_ADVANTAGE replaced First-Class Package Service and Retail Ground.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "USPS_GROUND_ADVANTAGE",
+                "PRIORITY_MAIL",
+                "PRIORITY_MAIL_EXPRESS",
+                "PARCEL_SELECT",
+                "MEDIA_MAIL",
+                "LIBRARY_MAIL",
+                "BOUND_PRINTED_MATTER",
+                "USPS_CONNECT_LOCAL",
+                "USPS_CONNECT_MAIL",
+                "USPS_CONNECT_REGIONAL",
+                "MARKETING_MAIL_PARCELS",
+                "ALL"
+              ]
+            },
+            "default": [
+              "ALL"
+            ]
+          },
+          "price_type": {
+            "type": "string",
+            "description": "COMMERCIAL (default) is the price for labels bought online, RETAIL the Post Office counter price, CONTRACT your negotiated price (needs account_type and account_number).",
+            "enum": [
+              "COMMERCIAL",
+              "RETAIL",
+              "CONTRACT"
+            ],
+            "default": "COMMERCIAL"
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Date of mailing, YYYY-MM-DD, today up to 7 days ahead. Default today.",
+            "format": "date"
+          },
+          "has_nonstandard_characteristics": {
+            "type": "boolean",
+            "description": "true for nonstandard packages: tubes and rolls, high-density items, glass containers with more than 24 oz of liquid and similar. Default false."
+          },
+          "account_type": {
+            "type": "string",
+            "description": "Payment account for contract prices: EPS (Enterprise Payment Account), PERMIT or METER (PC Postage providers only).",
+            "enum": [
+              "EPS",
+              "PERMIT",
+              "METER"
+            ]
+          },
+          "account_number": {
+            "type": "string",
+            "description": "The Enterprise Payment Account, permit or meter number that holds the contract prices. With an account number USPS returns CONTRACT prices when they exist.",
+            "pattern": "^\\d+$"
+          }
+        },
+        "required": [
+          "origin_zip_code",
+          "destination_zip_code",
+          "weight",
+          "length",
+          "width",
+          "height"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/prices/v3/base-rates-list/search",
+        "bodyMapping": {
+          "originZIPCode": "$origin_zip_code",
+          "destinationZIPCode": "$destination_zip_code",
+          "weight": "$weight",
+          "length": "$length",
+          "width": "$width",
+          "height": "$height",
+          "mailClasses": "$mail_classes",
+          "priceType": "$price_type",
+          "mailingDate": "$mailing_date",
+          "hasNonstandardCharacteristics": "$has_nonstandard_characteristics",
+          "accountType": "$account_type",
+          "accountNumber": "$account_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_search_letter_prices",
+      "description": "Price a First-Class Mail letter, flat (large envelope) or postcard sent within the US. Returns `totalBasePrice` and `rates` (`SKU`, `description`, `price`, `fees`) plus `extraServices` with their prices. Weight in ounces, sizes in inches, prices in US dollars. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "weight": {
+            "type": "number",
+            "description": "Weight in ounces, e.g. 1.2."
+          },
+          "length": {
+            "type": "number",
+            "description": "Length in inches. For letters and cards the side parallel to the address; for flats the longest side."
+          },
+          "height": {
+            "type": "number",
+            "description": "Height in inches, the side at right angles to the length."
+          },
+          "thickness": {
+            "type": "number",
+            "description": "Thickness in inches, e.g. 0.1."
+          },
+          "processing_category": {
+            "type": "string",
+            "description": "Shape: LETTERS, FLATS (large envelopes) or CARDS (postcards).",
+            "enum": [
+              "LETTERS",
+              "FLATS",
+              "CARDS"
+            ]
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Date of mailing, YYYY-MM-DD, today up to 7 days ahead. Default today.",
+            "format": "date"
+          },
+          "non_machinable_indicators": {
+            "type": "object",
+            "description": "Optional nonmachinable indicators, each a boolean: `isPolybagged`, `hasClosureDevices`, `hasLooseItems`, `isRigid`, `isSelfMailer`, `isBooklet`. A true value adds the nonmachinable surcharge."
+          },
+          "extra_services": {
+            "type": "array",
+            "description": "Extra service codes: 910 Certified Mail, 911 Certified Mail Restricted Delivery, 930 insurance up to 500 dollars, 931 insurance above 500, 940 Registered Mail, 955 Return Receipt, 957 Return Receipt Electronic.",
+            "items": {
+              "type": "integer",
+              "enum": [
+                910,
+                911,
+                930,
+                931,
+                934,
+                940,
+                941,
+                955,
+                957,
+                985
+              ]
+            }
+          },
+          "item_value": {
+            "type": "number",
+            "description": "Value in US dollars, needed for insurance and Registered Mail."
+          }
+        },
+        "required": [
+          "weight",
+          "length",
+          "height",
+          "thickness",
+          "processing_category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/prices/v3/letter-rates/search",
+        "bodyMapping": {
+          "weight": "$weight",
+          "length": "$length",
+          "height": "$height",
+          "thickness": "$thickness",
+          "processingCategory": "$processing_category",
+          "mailingDate": "$mailing_date",
+          "nonMachinableIndicators": "$non_machinable_indicators",
+          "extraServices": "$extra_services",
+          "itemValue": "$item_value"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_search_international_prices",
+      "description": "Price an outbound international package, extra services included and, on request, duties and taxes per item. Returns `rateOptions`, one per eligible product, with `totalBasePrice`, `totalPrice`, `rates` (`SKU`, `mailClass`, `productName`, `price`, `zone`, `fees`) and `extraServices`; with `request_duties_taxes_fees` also the duties, taxes and fees per item. US dollars. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the package ships from, 5 digits or ZIP+4.",
+            "pattern": "^\\d{5}(?:[-\\s]\\d{4})?$"
+          },
+          "destination_country_code": {
+            "type": "string",
+            "description": "Destination country, ISO 3166-1 alpha-2 in capitals, e.g. CA, GB, DE.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "foreign_postal_code": {
+            "type": "string",
+            "description": "Postal code at the destination. Some countries need it for a price."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Package weight in pounds, e.g. 2.5. USPS prices the greater of this and the dimensional weight."
+          },
+          "length": {
+            "type": "number",
+            "description": "Package length in inches, the longest side."
+          },
+          "width": {
+            "type": "number",
+            "description": "Package width in inches, the second longest side."
+          },
+          "height": {
+            "type": "number",
+            "description": "Package height in inches."
+          },
+          "mail_class": {
+            "type": "string",
+            "description": "International mail class. Default ALL.",
+            "enum": [
+              "FIRST-CLASS_PACKAGE_INTERNATIONAL_SERVICE",
+              "PRIORITY_MAIL_INTERNATIONAL",
+              "PRIORITY_MAIL_EXPRESS_INTERNATIONAL",
+              "ALL"
+            ],
+            "default": "ALL"
+          },
+          "price_type": {
+            "type": "string",
+            "description": "COMMERCIAL (default) for labels bought online, RETAIL for the Post Office counter, COMMERCIAL_BASE, COMMERCIAL_PLUS or CONTRACT (needs account_type and account_number).",
+            "enum": [
+              "COMMERCIAL",
+              "RETAIL",
+              "COMMERCIAL_BASE",
+              "COMMERCIAL_PLUS",
+              "CONTRACT"
+            ],
+            "default": "COMMERCIAL"
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Date of mailing, YYYY-MM-DD, today up to 7 days ahead. Default today.",
+            "format": "date"
+          },
+          "account_type": {
+            "type": "string",
+            "description": "Payment account for contract prices: EPS (Enterprise Payment Account), PERMIT or METER (PC Postage providers only).",
+            "enum": [
+              "EPS",
+              "PERMIT",
+              "METER"
+            ]
+          },
+          "account_number": {
+            "type": "string",
+            "description": "The Enterprise Payment Account, permit or meter number that holds the contract prices. With an account number USPS returns CONTRACT prices when they exist.",
+            "pattern": "^\\d+$"
+          },
+          "item_value": {
+            "type": "number",
+            "description": "Value of all contents in US dollars. Needed for insurance and Registered Mail prices."
+          },
+          "extra_services": {
+            "type": "array",
+            "description": "Extra service codes: 370 USPS Delivery Duties Paid fee, 930 insurance up to 500 dollars, 931 insurance above 500, 955 Return Receipt, 813, 820, 826, 857 hazardous materials. Leave out to get every available one.",
+            "items": {
+              "type": "integer",
+              "enum": [
+                370,
+                813,
+                820,
+                826,
+                857,
+                930,
+                931,
+                955
+              ]
+            }
+          },
+          "request_duties_taxes_fees": {
+            "type": "boolean",
+            "description": "true adds the duties, taxes and fees for each item in `items`. Default false.",
+            "default": false
+          },
+          "destination_city": {
+            "type": "string",
+            "description": "Destination city; some countries need it for duties and taxes."
+          },
+          "destination_state": {
+            "type": "string",
+            "description": "Destination state or province code; some countries need it for duties and taxes."
+          },
+          "items": {
+            "type": "array",
+            "description": "Items for duties and taxes, each with `itemId` (your id, up to 20 letters or digits), `itemValue` (US dollars), `itemQuantity`, and optionally `weight`, `countryOfOrigin` (two letters) and `HSTariffNumber`.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "origin_zip_code",
+          "destination_country_code",
+          "weight",
+          "length",
+          "width",
+          "height"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/international-prices/v3/total-rates/search",
+        "bodyMapping": {
+          "originZIPCode": "$origin_zip_code",
+          "destinationCountryCode": "$destination_country_code",
+          "foreignPostalCode": "$foreign_postal_code",
+          "weight": "$weight",
+          "length": "$length",
+          "width": "$width",
+          "height": "$height",
+          "mailClass": "$mail_class",
+          "priceType": "$price_type",
+          "mailingDate": "$mailing_date",
+          "accountType": "$account_type",
+          "accountNumber": "$account_number",
+          "itemValue": "$item_value",
+          "extraServices": "$extra_services",
+          "requestDutiesTaxesFees": "$request_duties_taxes_fees",
+          "destinationCity": "$destination_city",
+          "destinationState": "$destination_state",
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_list_international_prices",
+      "description": "List every international product an outbound package is eligible for, with base prices and no extra services. Returns `rateOptions` with `totalBasePrice` and `rates` (`SKU`, `description`, `mailClass`, `productName`, `price`, `zone`, `processingCategory`, `rateIndicator`). US dollars. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the package ships from, 5 digits or ZIP+4.",
+            "pattern": "^\\d{5}(?:[-\\s]\\d{4})?$"
+          },
+          "destination_country_code": {
+            "type": "string",
+            "description": "Destination country, ISO 3166-1 alpha-2 in capitals, e.g. CA, GB, DE.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "foreign_postal_code": {
+            "type": "string",
+            "description": "Postal code at the destination. Some countries need it for a price."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Package weight in pounds, e.g. 2.5. USPS prices the greater of this and the dimensional weight."
+          },
+          "length": {
+            "type": "number",
+            "description": "Package length in inches, the longest side."
+          },
+          "width": {
+            "type": "number",
+            "description": "Package width in inches, the second longest side."
+          },
+          "height": {
+            "type": "number",
+            "description": "Package height in inches."
+          },
+          "mail_class": {
+            "type": "string",
+            "description": "International mail class. Default ALL.",
+            "enum": [
+              "FIRST-CLASS_PACKAGE_INTERNATIONAL_SERVICE",
+              "PRIORITY_MAIL_INTERNATIONAL",
+              "PRIORITY_MAIL_EXPRESS_INTERNATIONAL",
+              "ALL"
+            ],
+            "default": "ALL"
+          },
+          "price_type": {
+            "type": "string",
+            "description": "COMMERCIAL (default) for labels bought online, RETAIL for the Post Office counter, COMMERCIAL_BASE, COMMERCIAL_PLUS or CONTRACT (needs account_type and account_number).",
+            "enum": [
+              "COMMERCIAL",
+              "RETAIL",
+              "COMMERCIAL_BASE",
+              "COMMERCIAL_PLUS",
+              "CONTRACT"
+            ],
+            "default": "COMMERCIAL"
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Date of mailing, YYYY-MM-DD, today up to 7 days ahead. Default today.",
+            "format": "date"
+          },
+          "account_type": {
+            "type": "string",
+            "description": "Payment account for contract prices: EPS (Enterprise Payment Account), PERMIT or METER (PC Postage providers only).",
+            "enum": [
+              "EPS",
+              "PERMIT",
+              "METER"
+            ]
+          },
+          "account_number": {
+            "type": "string",
+            "description": "The Enterprise Payment Account, permit or meter number that holds the contract prices. With an account number USPS returns CONTRACT prices when they exist.",
+            "pattern": "^\\d+$"
+          }
+        },
+        "required": [
+          "origin_zip_code",
+          "destination_country_code",
+          "weight",
+          "length",
+          "width",
+          "height"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/international-prices/v3/base-rates-list/search",
+        "bodyMapping": {
+          "originZIPCode": "$origin_zip_code",
+          "destinationCountryCode": "$destination_country_code",
+          "foreignPostalCode": "$foreign_postal_code",
+          "weight": "$weight",
+          "length": "$length",
+          "width": "$width",
+          "height": "$height",
+          "mailClass": "$mail_class",
+          "priceType": "$price_type",
+          "mailingDate": "$mailing_date",
+          "accountType": "$account_type",
+          "accountNumber": "$account_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_search_international_letter_prices",
+      "description": "Price a First-Class Mail International letter, flat or postcard. Returns `totalBasePrice`, `rates` (`SKU`, `description`, `price`, `fees`) and `extraServices`. Weight in ounces, sizes in inches, prices in US dollars. Merchandise cannot go as First-Class Mail International letters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination_country_code": {
+            "type": "string",
+            "description": "Destination country, ISO 3166-1 alpha-2 in capitals, e.g. CA, GB, DE.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "weight": {
+            "type": "number",
+            "description": "Weight in ounces, e.g. 1.2."
+          },
+          "length": {
+            "type": "number",
+            "description": "Length in inches. For letters and cards the side parallel to the address; for flats the longest side."
+          },
+          "height": {
+            "type": "number",
+            "description": "Height in inches, the side at right angles to the length."
+          },
+          "thickness": {
+            "type": "number",
+            "description": "Thickness in inches, e.g. 0.1."
+          },
+          "processing_category": {
+            "type": "string",
+            "description": "Shape: LETTERS, FLATS (large envelopes) or CARDS (postcards).",
+            "enum": [
+              "LETTERS",
+              "FLATS",
+              "CARDS"
+            ]
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Date of mailing, YYYY-MM-DD, today up to 7 days ahead. Default today.",
+            "format": "date"
+          },
+          "non_machinable_indicators": {
+            "type": "object",
+            "description": "Optional nonmachinable indicators, each a boolean: `isPolybagged`, `hasClosureDevices`, `hasLooseItems`, `isRigid`, `isSelfMailer`, `isBooklet`. A true value adds the nonmachinable surcharge."
+          },
+          "extra_services": {
+            "type": "array",
+            "description": "Extra service codes: 940 Registered Mail, 955 Return Receipt.",
+            "items": {
+              "type": "integer",
+              "enum": [
+                940,
+                955
+              ]
+            }
+          },
+          "item_value": {
+            "type": "number",
+            "description": "Declared value in US dollars for Registered Mail."
+          }
+        },
+        "required": [
+          "destination_country_code",
+          "weight",
+          "length",
+          "height",
+          "thickness",
+          "processing_category"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/international-prices/v3/letter-rates/search",
+        "bodyMapping": {
+          "destinationCountryCode": "$destination_country_code",
+          "weight": "$weight",
+          "length": "$length",
+          "height": "$height",
+          "thickness": "$thickness",
+          "processingCategory": "$processing_category",
+          "mailingDate": "$mailing_date",
+          "nonMachinableIndicators": "$non_machinable_indicators",
+          "extraServices": "$extra_services",
+          "itemValue": "$item_value"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_get_delivery_estimates",
+      "description": "Estimate the delivery date of mail accepted on a given day. Returns a list, one entry per mail class, with `serviceStandard` (days), `serviceStandardMessage` (e.g. 2-Day), `effectiveAcceptanceDate`, `cutOffTime` (HHMM local), `acceptanceLocations` and `delivery.scheduledDeliveryDateTime`; for HOLD_FOR_PICKUP also the pickup location with its closing times. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the mail leaves from: 5 or 9 digits, or the first 3 digits.",
+            "pattern": "^(\\d{3}|\\d{5}|\\d{9})$"
+          },
+          "destination_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the mail goes to: 5 or 9 digits.",
+            "pattern": "^(\\d{5}|\\d{9})$"
+          },
+          "mail_class": {
+            "type": "string",
+            "description": "Mail class. Default ALL.",
+            "enum": [
+              "USPS_GROUND_ADVANTAGE",
+              "PRIORITY_MAIL",
+              "PRIORITY_MAIL_EXPRESS",
+              "PARCEL_SELECT",
+              "MEDIA_MAIL",
+              "LIBRARY_MAIL",
+              "BOUND_PRINTED_MATTER",
+              "LETTERS",
+              "FLATS",
+              "CARDS",
+              "ALL"
+            ],
+            "default": "ALL"
+          },
+          "destination_type": {
+            "type": "string",
+            "description": "Where it is delivered: STREET (default), PO_BOX or HOLD_FOR_PICKUP.",
+            "enum": [
+              "STREET",
+              "PO_BOX",
+              "HOLD_FOR_PICKUP"
+            ]
+          },
+          "weight": {
+            "type": "number",
+            "description": "Weight in pounds. Needed for USPS Ground Advantage above one pound."
+          },
+          "acceptance_date": {
+            "type": "string",
+            "description": "Day the mail is handed to USPS, YYYY-MM-DD, up to 30 days ahead. Default today.",
+            "format": "date"
+          },
+          "acceptance_time": {
+            "type": "string",
+            "description": "Time of handing over, HHMM in 24-hour local time, e.g. 1430. Default 0800.",
+            "pattern": "^([0-1][0-9]|2[0-3])[0-5][0-9]$"
+          },
+          "service_type_codes": {
+            "type": "string",
+            "description": "Optional Service Type Code (3 digits) for the product and extra services, e.g. 925 for Priority Mail with USPS Tracking."
+          },
+          "length": {
+            "type": "number",
+            "description": "Length in inches; with width and height only needed for Priority Mail Next Day."
+          },
+          "width": {
+            "type": "number",
+            "description": "Width in inches."
+          },
+          "height": {
+            "type": "number",
+            "description": "Height in inches."
+          }
+        },
+        "required": [
+          "origin_zip_code",
+          "destination_zip_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/service-standards/v3/estimates",
+        "queryParams": {
+          "originZIPCode": "$origin_zip_code",
+          "destinationZIPCode": "$destination_zip_code",
+          "acceptanceDate": "$acceptance_date",
+          "acceptanceTime": "$acceptance_time",
+          "mailClass": "$mail_class",
+          "destinationType": "$destination_type",
+          "serviceTypeCodes": "$service_type_codes",
+          "weight": "$weight",
+          "length": "$length",
+          "width": "$width",
+          "height": "$height"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_get_service_standards",
+      "description": "Get the standard number of delivery days between two ZIP Codes per mail class. Returns a list with `mailClass`, `days`, `effectiveAcceptanceDate` and `scheduledDeliveryDate`. A service standard is the USPS target, not a guarantee. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the mail leaves from: 5 or 9 digits, or the first 3 digits.",
+            "pattern": "^(\\d{3}|\\d{5}|\\d{9})$"
+          },
+          "destination_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the mail goes to: 5 or 9 digits.",
+            "pattern": "^(\\d{5}|\\d{9})$"
+          },
+          "mail_class": {
+            "type": "string",
+            "description": "Mail class. Default ALL.",
+            "enum": [
+              "USPS_GROUND_ADVANTAGE",
+              "PRIORITY_MAIL",
+              "PRIORITY_MAIL_EXPRESS",
+              "PARCEL_SELECT",
+              "MEDIA_MAIL",
+              "LIBRARY_MAIL",
+              "BOUND_PRINTED_MATTER",
+              "LETTERS",
+              "FLATS",
+              "CARDS",
+              "ALL"
+            ],
+            "default": "ALL"
+          },
+          "destination_type": {
+            "type": "string",
+            "description": "Where it is delivered: STREET (default), PO_BOX or HOLD_FOR_PICKUP.",
+            "enum": [
+              "STREET",
+              "PO_BOX",
+              "HOLD_FOR_PICKUP"
+            ]
+          },
+          "weight": {
+            "type": "number",
+            "description": "Weight in pounds. Needed for USPS Ground Advantage above one pound."
+          }
+        },
+        "required": [
+          "origin_zip_code",
+          "destination_zip_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/service-standards/v3/standards",
+        "queryParams": {
+          "originZIPCode": "$origin_zip_code",
+          "destinationZIPCode": "$destination_zip_code",
+          "mailClass": "$mail_class",
+          "destinationType": "$destination_type",
+          "weight": "$weight"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_get_international_service_standard",
+      "description": "Get the expected delivery time of an international mail class to a country. Returns `countryCode`, `mailClass` and `serviceStandardMessage`, e.g. Estimated delivery in 5-9 business days. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country_code": {
+            "type": "string",
+            "description": "Destination country, ISO 3166-1 alpha-2, e.g. CA.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "mail_class": {
+            "type": "string",
+            "description": "International mail class.",
+            "enum": [
+              "FIRST-CLASS_PACKAGE_INTERNATIONAL_SERVICE",
+              "PRIORITY_MAIL_INTERNATIONAL",
+              "PRIORITY_MAIL_EXPRESS_INTERNATIONAL"
+            ]
+          }
+        },
+        "required": [
+          "country_code",
+          "mail_class"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/international-service-standard/v3/international-service-standard",
+        "queryParams": {
+          "countryCode": "$country_code",
+          "mailClass": "$mail_class"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_search_shipping_options",
+      "description": "Compare every way to ship one package in a single call: prices and delivery commitments together, domestic or international. Returns `pricingOptions` with `shippingOptions` per `mailClass`, each holding `rateOptions` with `commitment` (`name` such as 3 Days, `scheduleDeliveryDate`), `totalPrice`, `totalBasePrice`, `rates` (`SKU`, `description`, `price`, `zone`) and `extraServices`. Give destination_zip_code for a domestic package or destination_country_code for an international one. US dollars. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin_zip_code": {
+            "type": "string",
+            "description": "ZIP Code the package ships from, 5 digits or ZIP+4.",
+            "pattern": "^\\d{5}(?:[-\\s]\\d{4})?$"
+          },
+          "destination_zip_code": {
+            "type": "string",
+            "description": "Destination ZIP Code, for a domestic package.",
+            "pattern": "^\\d{5}(?:[-\\s]\\d{4})?$"
+          },
+          "destination_country_code": {
+            "type": "string",
+            "description": "Destination country (ISO 3166-1 alpha-2 in capitals), for an international package.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "foreign_postal_code": {
+            "type": "string",
+            "description": "Postal code at the destination. Some countries need it for a price."
+          },
+          "weight": {
+            "type": "number",
+            "description": "Package weight in pounds, at most 70."
+          },
+          "length": {
+            "type": "number",
+            "description": "Package length in inches, the longest side."
+          },
+          "width": {
+            "type": "number",
+            "description": "Package width in inches, the second longest side."
+          },
+          "height": {
+            "type": "number",
+            "description": "Package height in inches."
+          },
+          "mail_class": {
+            "type": "string",
+            "description": "Mail class to look at. ALL (default) covers every class; ALL_OUTBOUND and ALL_RETURNS are domestic only; the INTERNATIONAL classes need destination_country_code.",
+            "enum": [
+              "ALL",
+              "ALL_OUTBOUND",
+              "ALL_RETURNS",
+              "USPS_GROUND_ADVANTAGE",
+              "PRIORITY_MAIL",
+              "PRIORITY_MAIL_EXPRESS",
+              "PARCEL_SELECT",
+              "MEDIA_MAIL",
+              "LIBRARY_MAIL",
+              "BOUND_PRINTED_MATTER",
+              "USPS_CONNECT_LOCAL",
+              "USPS_CONNECT_MAIL",
+              "USPS_CONNECT_REGIONAL",
+              "MARKETING_MAIL_PARCELS",
+              "FIRST-CLASS_PACKAGE_INTERNATIONAL_SERVICE",
+              "PRIORITY_MAIL_INTERNATIONAL",
+              "PRIORITY_MAIL_EXPRESS_INTERNATIONAL"
+            ],
+            "default": "ALL"
+          },
+          "extra_services": {
+            "type": "array",
+            "description": "Optional extra service codes to include, e.g. 920 USPS Tracking, 921 Signature Confirmation, 930 insurance.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "package_value": {
+            "type": "number",
+            "description": "Value of the contents in US dollars; needed for insurance prices."
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Date of mailing, YYYY-MM-DD (time defaults to 6 pm local at the origin)."
+          },
+          "price_type": {
+            "type": "string",
+            "description": "COMMERCIAL (default), RETAIL or CONTRACT (needs payment_account).",
+            "enum": [
+              "COMMERCIAL",
+              "RETAIL",
+              "CONTRACT"
+            ],
+            "default": "COMMERCIAL"
+          },
+          "payment_account": {
+            "type": "object",
+            "description": "Only for CONTRACT prices: `accountType` (EPS, PERMIT, METER or MID), `accountNumber` and, for contract delivery standards, `CRID`."
+          },
+          "shipping_filter": {
+            "type": "string",
+            "description": "Return only the cheapest option (PRICE) or, domestic only, the fastest (SERVICE_STANDARDS). Leave out for all options.",
+            "enum": [
+              "PRICE",
+              "SERVICE_STANDARDS"
+            ]
+          }
+        },
+        "required": [
+          "origin_zip_code",
+          "weight",
+          "length",
+          "width",
+          "height"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/v3/options/search",
+        "bodyMapping": {
+          "pricingOptions": [
+            {
+              "priceType": "$price_type",
+              "paymentAccount": "$payment_account"
+            }
+          ],
+          "originZIPCode": "$origin_zip_code",
+          "destinationZIPCode": "$destination_zip_code",
+          "destinationCountryCode": "$destination_country_code",
+          "foreignPostalCode": "$foreign_postal_code",
+          "packageDescription": {
+            "weight": "$weight",
+            "length": "$length",
+            "width": "$width",
+            "height": "$height",
+            "mailClass": "$mail_class",
+            "extraServices": "$extra_services",
+            "packageValue": "$package_value",
+            "mailingDate": "$mailing_date"
+          },
+          "shippingFilter": "$shipping_filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_track_package",
+      "description": "Track one USPS package with Tracking 3.2. Returns `trackingNumber`, `uniqueTrackingID`, `mailClass`, `status`, `statusCategory` (e.g. Accepted, In Transit, Delivered, Alert), `statusSummary`, origin and destination city, state and ZIP Code, `deliveryDateExpectation` (expected, predicted or guaranteed delivery date) and `trackingEvents` (`eventType`, `eventCode`, `eventTimestamp` local to the event, `GMTTimestamp`, `eventCity`, `eventState`, `eventZIPCode`). A number USPS does not know answers 404 or, inside the answer, an `error`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "USPS tracking number (IMpb), 4 to 34 letters or digits, e.g. 9400111899223817568426.",
+            "pattern": "^[A-Za-z0-9]{4,34}$"
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Optional mailing date, YYYY-MM-DD, to pick the right item when USPS finds several.",
+            "format": "date"
+          },
+          "destination_zip_code": {
+            "type": "string",
+            "description": "Optional 5-digit destination ZIP Code, to pick the right item when USPS finds several.",
+            "pattern": "^\\d{5}$"
+          }
+        },
+        "required": [
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tracking/v3r2/tracking",
+        "bodyMapping": [
+          {
+            "trackingNumber": "$tracking_number",
+            "mailingDate": "$mailing_date",
+            "destinationZIPCode": "$destination_zip_code"
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_track_packages",
+      "description": "Track up to 35 USPS packages in one call with Tracking 3.2. Returns one result per number with `trackingNumber`, `uniqueTrackingID`, `mailClass`, `status`, `statusCategory` (e.g. Accepted, In Transit, Delivered, Alert), `statusSummary`, origin and destination city, state and ZIP Code, `deliveryDateExpectation` (expected, predicted or guaranteed delivery date) and `trackingEvents` (`eventType`, `eventCode`, `eventTimestamp` local to the event, `GMTTimestamp`, `eventCity`, `eventState`, `eventZIPCode`). When some numbers fail the answer is HTTP 207 and each failed number carries its own `error`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packages": {
+            "type": "array",
+            "description": "1 to 35 entries, each with `trackingNumber` and optionally `mailingDate` (YYYY-MM-DD) and `destinationZIPCode` (5 digits).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1,
+            "maxItems": 35
+          }
+        },
+        "required": [
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tracking/v3r2/tracking",
+        "bodyMapping": {
+          "__raw": "$packages"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_register_tracking_notifications",
+      "description": "Sign up to 3 email addresses for USPS tracking emails about one package: expected delivery updates, delivery activity or all updates. Needs the `uniqueTrackingID` from a tracking call. Returns HTTP 202 with `transactionMessage`. Sends email from USPS; costs nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "USPS tracking number.",
+            "pattern": "^[A-Za-z0-9]{4,34}$"
+          },
+          "unique_tracking_id": {
+            "type": "string",
+            "description": "The `uniqueTrackingID` from usps_track_package or usps_track_packages."
+          },
+          "notify_event_types": {
+            "type": "array",
+            "description": "Which emails to send: EXPECTED_DELIVERY, DELIVERY_ACTIVITY or ALL_UPDATES.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "EXPECTED_DELIVERY",
+                "DELIVERY_ACTIVITY",
+                "ALL_UPDATES"
+              ]
+            }
+          },
+          "recipients": {
+            "type": "array",
+            "description": "Up to 3 recipients, each with `email` and optionally `firstName` and `lastName`.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1,
+            "maxItems": 3
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "The `mailingDate` from the tracking answer, YYYY-MM-DD.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "tracking_number",
+          "unique_tracking_id",
+          "notify_event_types",
+          "recipients"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tracking/v3r2/tracking/{tracking_number}/notifications",
+        "bodyMapping": {
+          "uniqueTrackingID": "$unique_tracking_id",
+          "mailingDate": "$mailing_date",
+          "notifyEventTypes": "$notify_event_types",
+          "recipients": "$recipients"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "usps_request_proof_of_delivery",
+      "description": "Have USPS email a proof of delivery letter (or an electronic return receipt) for a delivered package to up to 3 recipients. Needs the `uniqueTrackingID` from a tracking call. Returns HTTP 202 with `transactionMessage`. Sends email from USPS; costs nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "USPS tracking number.",
+            "pattern": "^[A-Za-z0-9]{4,34}$"
+          },
+          "unique_tracking_id": {
+            "type": "string",
+            "description": "The `uniqueTrackingID` from usps_track_package or usps_track_packages."
+          },
+          "recipients": {
+            "type": "array",
+            "description": "Up to 3 recipients, each with `email` and optionally `firstName` and `lastName`.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1,
+            "maxItems": 3
+          },
+          "letter_type": {
+            "type": "string",
+            "description": "PROOF_OF_DELIVERY (default) or RETURN_RECEIPT_ELECTRONIC.",
+            "enum": [
+              "PROOF_OF_DELIVERY",
+              "RETURN_RECEIPT_ELECTRONIC"
+            ],
+            "default": "PROOF_OF_DELIVERY"
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "The `mailingDate` from the tracking answer, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "crid": {
+            "type": "string",
+            "description": "Optional Customer Registration ID (CRID) of your business.",
+            "pattern": "^\\d{1,10}$"
+          }
+        },
+        "required": [
+          "tracking_number",
+          "unique_tracking_id",
+          "recipients"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tracking/v3r2/tracking/{tracking_number}/proof-of-delivery",
+        "bodyMapping": {
+          "uniqueTrackingID": "$unique_tracking_id",
+          "mailingDate": "$mailing_date",
+          "letterType": "$letter_type",
+          "recipients": "$recipients",
+          "CRID": "$crid"
+        }
+      },
+      "annotations": {
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "usps_find_post_offices",
+      "description": "Find Post Offices and other retail locations near a ZIP Code, an address or coordinates, closest first. Returns `locations` with `facilityName`, `facilityAddress`, `facilityID`, `postOfficeType`, `distance` (miles), `geoCoordinates`, `phoneNumbers`, `services` with their opening `hours`, `specialHours`, `temporaryClosure`, `timeZone` and `parking`. Paged with limit and offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zip_code": {
+            "type": "string",
+            "description": "5-digit ZIP Code to search around.",
+            "pattern": "^\\d{5}$"
+          },
+          "city": {
+            "type": "string",
+            "description": "City to search around, with state."
+          },
+          "state": {
+            "type": "string",
+            "description": "Two-letter state or territory code, e.g. NY, CA, PR.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "street_address": {
+            "type": "string",
+            "description": "Street address to search around, with city and state or ZIP Code."
+          },
+          "latitude": {
+            "type": "number",
+            "description": "Latitude to search around, with longitude."
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude to search around, with latitude."
+          },
+          "radius": {
+            "type": "integer",
+            "description": "Search radius in miles. USPS uses 20 when left out.",
+            "minimum": 1
+          },
+          "post_office_type": {
+            "type": "string",
+            "description": "Only this kind of location.",
+            "enum": [
+              "POST_OFFICE",
+              "CONTRACT_POSTAL_UNIT",
+              "SELF_SERVICE_KIOSK",
+              "VILLAGE_POST_OFFICE"
+            ]
+          },
+          "mailing_service": {
+            "type": "string",
+            "description": "Only locations offering this mailing service.",
+            "enum": [
+              "CARRIER_SERVICES",
+              "GENERAL_DELIVERY",
+              "LABEL_BROKER",
+              "LABEL_BROKER_SELF-SERVICE_KIOSK",
+              "PRIORITY_MAIL_INTERNATIONAL",
+              "PO_BOX",
+              "SELF-SERVICE_KIOSK",
+              "USPS_CONNECT_LOCAL"
+            ]
+          },
+          "hours": {
+            "type": "string",
+            "description": "Only locations with retail hours at these times.",
+            "enum": [
+              "WEEKDAY_AFTER_5",
+              "SATURDAY_HOURS",
+              "SUNDAY_HOURS",
+              "24-HOUR_FACILITIES"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Locations per page. Default 20.",
+            "default": 20,
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Locations to skip, for the next page.",
+            "minimum": 0
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/v3/post-office-locations",
+        "queryParams": {
+          "ZIPCode": "$zip_code",
+          "city": "$city",
+          "state": "$state",
+          "streetAddress": "$street_address",
+          "LAT": "$latitude",
+          "LONG": "$longitude",
+          "radius": "$radius",
+          "postOfficeType": "$post_office_type",
+          "mailingService": "$mailing_service",
+          "hours": "$hours",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_find_dropoff_locations",
+      "description": "Find the destination entry facilities where you can drop off Parcel Select, USPS Connect and Package Services mail for a destination ZIP Code. Returns a list with `dropShipmentKey`, `facilityName`, `facilityAddress`, `dropSitePhoneNumber`, `destinationEntryFacilityType`, `acceptedPackageTypes` (mail class, processing category, palletized) and acceptance times; an empty list when none match. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination_zip_code": {
+            "type": "string",
+            "description": "5-digit ZIP Code the packages are addressed to.",
+            "pattern": "^\\d{5}$"
+          },
+          "destination_zip_plus4": {
+            "type": "string",
+            "description": "Optional ZIP+4 extension.",
+            "pattern": "^\\d{4}$"
+          },
+          "mail_class": {
+            "type": "string",
+            "description": "Mail class of the packages.",
+            "enum": [
+              "PARCEL_SELECT",
+              "USPS_CONNECT_LOCAL",
+              "USPS_CONNECT_MAIL",
+              "USPS_CONNECT_REGIONAL",
+              "LIBRARY_MAIL",
+              "MEDIA_MAIL",
+              "BOUND_PRINTED_MATTER"
+            ]
+          },
+          "processing_category": {
+            "type": "string",
+            "description": "Shape of the packages.",
+            "enum": [
+              "MACHINABLE",
+              "NON_MACHINABLE",
+              "NONSTANDARD",
+              "FLATS"
+            ]
+          },
+          "destination_entry_facility_type": {
+            "type": "string",
+            "description": "Kind of facility.",
+            "enum": [
+              "DESTINATION_DELIVERY_UNIT",
+              "DESTINATION_SERVICE_HUB",
+              "DESTINATION_SECTIONAL_CENTER_FACILITY",
+              "DESTINATION_NETWORK_DISTRIBUTION_CENTER",
+              "DESTINATION_REGIONAL_PROCESSING_DISTRIBUTION_CENTER"
+            ]
+          },
+          "palletized": {
+            "type": "string",
+            "description": "Whether the shipment comes on pallets.",
+            "enum": [
+              "PALLETIZED",
+              "NON_PALLETIZED",
+              "BOTH"
+            ]
+          },
+          "mailing_date": {
+            "type": "string",
+            "description": "Date of mailing, YYYY-MM-DD, today up to 7 days ahead. Default today.",
+            "format": "date"
+          }
+        },
+        "required": [
+          "destination_zip_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/v3/dropoff-locations",
+        "queryParams": {
+          "destinationZIPCode": "$destination_zip_code",
+          "destinationZIPPlus4": "$destination_zip_plus4",
+          "mailClass": "$mail_class",
+          "processingCategory": "$processing_category",
+          "destinationEntryFacilityType": "$destination_entry_facility_type",
+          "palletized": "$palletized",
+          "mailingDate": "$mailing_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_find_parcel_lockers",
+      "description": "Find USPS Parcel Lockers by ZIP Code or by city and state. Returns a list of lockers with `facilityID`, `locationName`, `locationAddress`, `latitude`, `longitude`, `lockerStatus`, the largest locker size in inches and the services offered (direct ship, prepaid returns, label printing), paged with limit (default 30) and offset. Needs the parcel-locker scope on the app. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zip_code": {
+            "type": "string",
+            "description": "5-digit ZIP Code.",
+            "pattern": "^\\d{5}$"
+          },
+          "city": {
+            "type": "string",
+            "description": "City; required when state is given."
+          },
+          "state": {
+            "type": "string",
+            "description": "Two-letter state or territory code, e.g. NY, CA, PR.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Lockers per page. Default 30.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Lockers to skip, for the next page.",
+            "minimum": 0
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locations/v3/parcel-locker-locations",
+        "queryParams": {
+          "ZIPCode": "$zip_code",
+          "city": "$city",
+          "state": "$state",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_check_pickup_eligibility",
+      "description": "Check whether USPS offers free Carrier Pickup at an address. Answers 200 with `pickupAddress` in standardized form when the address is eligible, an error when it is not. Needs Carrier Pickup access on the app. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "street_address": {
+            "type": "string",
+            "description": "House number and street."
+          },
+          "secondary_address": {
+            "type": "string",
+            "description": "Apartment, suite or unit, if any."
+          },
+          "city": {
+            "type": "string",
+            "description": "City; give city and state, or the ZIP Code."
+          },
+          "state": {
+            "type": "string",
+            "description": "Two-letter state or territory code, e.g. NY, CA, PR.",
+            "pattern": "^[A-Z]{2}$"
+          },
+          "zip_code": {
+            "type": "string",
+            "description": "5-digit ZIP Code.",
+            "pattern": "^\\d{5}$"
+          },
+          "zip_plus4": {
+            "type": "string",
+            "description": "The 4-digit ZIP+4 extension, if known.",
+            "pattern": "^\\d{4}$"
+          },
+          "urbanization": {
+            "type": "string",
+            "description": "Urbanization name, only for Puerto Rico addresses."
+          }
+        },
+        "required": [
+          "street_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pickup/v3/carrier-pickup/eligibility",
+        "queryParams": {
+          "streetAddress": "$street_address",
+          "secondaryAddress": "$secondary_address",
+          "city": "$city",
+          "state": "$state",
+          "ZIPCode": "$zip_code",
+          "ZIPPlus4": "$zip_plus4",
+          "urbanization": "$urbanization"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_get_pickup",
+      "description": "Get a scheduled Carrier Pickup by confirmation number. Returns `confirmationNumber`, `pickupDate` and `carrierPickupRequest` (address, packages by type and count, estimated weight in pounds, package location). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "confirmation_number": {
+            "type": "string",
+            "description": "Carrier Pickup confirmation number, e.g. WTC123456789."
+          }
+        },
+        "required": [
+          "confirmation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pickup/v3/carrier-pickup/{confirmation_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_get_payment_account",
+      "description": "Check an Enterprise Payment Account or permit. Returns the account details and, when `amount` is given, `sufficientFunds` (true or false) for a payment of that many US dollars. Needs Payments access on the app. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_number": {
+            "type": "string",
+            "description": "The EPS account number or the permit number.",
+            "pattern": "^\\d+$"
+          },
+          "account_type": {
+            "type": "string",
+            "description": "EPS (default) or PERMIT.",
+            "enum": [
+              "EPS",
+              "PERMIT"
+            ],
+            "default": "EPS"
+          },
+          "permit_zip_code": {
+            "type": "string",
+            "description": "ZIP Code of the permit; required for PERMIT.",
+            "pattern": "^\\d{5}$"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Optional amount in US dollars to check the balance against."
+          }
+        },
+        "required": [
+          "account_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/v3/payment-account/{account_number}",
+        "queryParams": {
+          "accountType": "$account_type",
+          "permitZIPCode": "$permit_zip_code",
+          "amount": "$amount"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "usps_create_payment_authorization",
+      "enabled": false,
+      "description": "Get the payment authorization token that every label call needs: names your business as PAYER and LABEL_OWNER with its CRID, Mailer ID and Enterprise Payment Account (or permit). Returns `paymentAuthorizationToken` and the `roles` as USPS accepted them. Moves no money by itself, but unlocks postage purchases. Installed switched off, like the label tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "crid": {
+            "type": "string",
+            "description": "Customer Registration ID (CRID) of your business.",
+            "pattern": "^\\d{1,10}$"
+          },
+          "mid": {
+            "type": "string",
+            "description": "Mailer ID (MID), 6 or 9 digits, used for the tracking numbers on your labels.",
+            "pattern": "^(\\d{6}|\\d{9})$"
+          },
+          "manifest_mid": {
+            "type": "string",
+            "description": "Optional manifest Mailer ID, 6 or 9 digits.",
+            "pattern": "^(\\d{6}|\\d{9})$"
+          },
+          "account_type": {
+            "type": "string",
+            "description": "EPS (default) or PERMIT.",
+            "enum": [
+              "EPS",
+              "PERMIT"
+            ],
+            "default": "EPS"
+          },
+          "account_number": {
+            "type": "string",
+            "description": "Enterprise Payment Account number; required for EPS.",
+            "pattern": "^\\d+$"
+          },
+          "permit_number": {
+            "type": "string",
+            "description": "Permit number; required for PERMIT."
+          },
+          "permit_zip_code": {
+            "type": "string",
+            "description": "ZIP Code of the permit; required for PERMIT.",
+            "pattern": "^\\d{5}$"
+          }
+        },
+        "required": [
+          "crid",
+          "mid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/v3/payment-authorization",
+        "bodyMapping": {
+          "roles": [
+            {
+              "roleName": "PAYER",
+              "CRID": "$crid",
+              "MID": "$mid",
+              "manifestMID": "$manifest_mid",
+              "accountType": "$account_type",
+              "accountNumber": "$account_number",
+              "permitNumber": "$permit_number",
+              "permitZIP": "$permit_zip_code"
+            },
+            {
+              "roleName": "LABEL_OWNER",
+              "CRID": "$crid",
+              "MID": "$mid",
+              "manifestMID": "$manifest_mid",
+              "accountType": "$account_type",
+              "accountNumber": "$account_number",
+              "permitNumber": "$permit_number",
+              "permitZIP": "$permit_zip_code"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "usps_create_label",
+      "enabled": false,
+      "description": "Buy postage and create a domestic shipping label, paid from the Enterprise Payment Account in the payment authorization token. Returns `labelMetadata` (`trackingNumber`, `postage`, `SKU`, `routingInformation`, `extraServices`, `commitment`) and `labelImage` (base64, PDF 4x6 by default). Labels made on the test host are watermarked and not charged. Installed switched off because it spends money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_authorization_token": {
+            "type": "string",
+            "description": "The `paymentAuthorizationToken` returned by usps_create_payment_authorization."
+          },
+          "to_address": {
+            "type": "object",
+            "description": "Recipient address with `firstName`, `lastName`, `firm`, `streetAddress`, `secondaryAddress`, `city`, `state` (two letters), `ZIPCode` (5 digits), `ZIPPlus4`, `phone`, `email`."
+          },
+          "from_address": {
+            "type": "object",
+            "description": "Address the package ships from with `firstName`, `lastName`, `firm`, `streetAddress`, `secondaryAddress`, `city`, `state` (two letters), `ZIPCode` (5 digits), `ZIPPlus4`, `phone`, `email`."
+          },
+          "package_description": {
+            "type": "object",
+            "description": "Package: `mailClass` (e.g. USPS_GROUND_ADVANTAGE, PRIORITY_MAIL), `rateIndicator` (e.g. SP single piece), `processingCategory` (e.g. MACHINABLE), `destinationEntryFacilityType` (NONE for normal mailing), `weight` (pounds), `length`, `width`, `height` (inches), `mailingDate` (YYYY-MM-DD) and optionally `extraServices` (codes) and `customerReference`. usps_list_domestic_prices gives valid mail class, rate indicator and processing category combinations."
+          },
+          "image_info": {
+            "type": "object",
+            "description": "Label image options: `imageType` (PDF, PNG, JPG, TIFF, GIF, SVG, ZPL203DPI, ZPL300DPI, EPL300DPI), `labelType` (4X6LABEL, 4X4LABEL, 4X5LABEL, 6X4LABEL, 2X7LABEL), `receiptOption` (NONE, SAME_PAGE, SEPARATE_PAGE), `suppressPostage`, `suppressMailDate`. Default a 4x6 PDF without receipt.",
+            "default": {
+              "imageType": "PDF",
+              "labelType": "4X6LABEL",
+              "receiptOption": "NONE"
+            }
+          },
+          "sender_address": {
+            "type": "object",
+            "description": "Optional business address when it differs from from_address."
+          },
+          "return_address": {
+            "type": "object",
+            "description": "Optional address printed for returns and undeliverable packages."
+          },
+          "customs_form": {
+            "type": "object",
+            "description": "Customs form, only for military (APO, FPO, DPO) and US territory destinations: `customsContentType` and `contents`."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional UUID you generate for this request. Repeating a request with the same key returns the first result instead of creating a second one.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "payment_authorization_token",
+          "to_address",
+          "from_address",
+          "package_description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/labels/v3/label",
+        "headers": {
+          "X-Payment-Authorization-Token": "$payment_authorization_token",
+          "X-Idempotency-Key": "$idempotency_key",
+          "Accept": "application/vnd.usps.labels+json"
+        },
+        "bodyMapping": {
+          "imageInfo": "$image_info",
+          "toAddress": "$to_address",
+          "fromAddress": "$from_address",
+          "senderAddress": "$sender_address",
+          "returnAddress": "$return_address",
+          "packageDescription": "$package_description",
+          "customsForm": "$customs_form"
+        }
+      }
+    },
+    {
+      "name": "usps_create_return_label",
+      "enabled": false,
+      "description": "Create a domestic return label for a customer to send a package back (to_address is your returns address, from_address the customer). Returns `labelMetadata` with `trackingNumber` and `labelImage` (base64). Return postage is charged to your account when the label is used. Installed switched off because it spends money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_authorization_token": {
+            "type": "string",
+            "description": "The `paymentAuthorizationToken` returned by usps_create_payment_authorization."
+          },
+          "to_address": {
+            "type": "object",
+            "description": "Recipient address with `firstName`, `lastName`, `firm`, `streetAddress`, `secondaryAddress`, `city`, `state` (two letters), `ZIPCode` (5 digits), `ZIPPlus4`, `phone`, `email`."
+          },
+          "from_address": {
+            "type": "object",
+            "description": "Address the package ships from with `firstName`, `lastName`, `firm`, `streetAddress`, `secondaryAddress`, `city`, `state` (two letters), `ZIPCode` (5 digits), `ZIPPlus4`, `phone`, `email`."
+          },
+          "package_description": {
+            "type": "object",
+            "description": "Package: `mailClass` (e.g. USPS_GROUND_ADVANTAGE, PRIORITY_MAIL), `rateIndicator` (e.g. SP single piece), `processingCategory` (e.g. MACHINABLE), `destinationEntryFacilityType` (NONE for normal mailing), `weight` (pounds), `length`, `width`, `height` (inches), `mailingDate` (YYYY-MM-DD) and optionally `extraServices` (codes) and `customerReference`. usps_list_domestic_prices gives valid mail class, rate indicator and processing category combinations."
+          },
+          "image_info": {
+            "type": "object",
+            "description": "Label image options: `imageType` (PDF, PNG, JPG, TIFF, GIF, SVG, ZPL203DPI, ZPL300DPI, EPL300DPI), `labelType` (4X6LABEL, 4X4LABEL, 4X5LABEL, 6X4LABEL, 2X7LABEL), `receiptOption` (NONE, SAME_PAGE, SEPARATE_PAGE), `suppressPostage`, `suppressMailDate`. Default a 4x6 PDF without receipt.",
+            "default": {
+              "imageType": "PDF",
+              "labelType": "4X6LABEL",
+              "receiptOption": "NONE"
+            }
+          },
+          "sender_address": {
+            "type": "object",
+            "description": "Optional business address when it differs from from_address."
+          },
+          "return_address": {
+            "type": "object",
+            "description": "Optional address printed for returns and undeliverable packages."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional UUID you generate for this request. Repeating a request with the same key returns the first result instead of creating a second one.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "payment_authorization_token",
+          "to_address",
+          "from_address",
+          "package_description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/labels/v3/return-label",
+        "headers": {
+          "X-Payment-Authorization-Token": "$payment_authorization_token",
+          "X-Idempotency-Key": "$idempotency_key",
+          "Accept": "application/vnd.usps.labels+json"
+        },
+        "bodyMapping": {
+          "imageInfo": "$image_info",
+          "toAddress": "$to_address",
+          "fromAddress": "$from_address",
+          "senderAddress": "$sender_address",
+          "returnAddress": "$return_address",
+          "packageDescription": "$package_description"
+        }
+      }
+    },
+    {
+      "name": "usps_cancel_label",
+      "enabled": false,
+      "description": "Cancel an unused domestic label or ask for a postage refund. Returns `trackingNumber`, `status` (CANCELED, or DISPUTED when a refund request was filed) and `disputeId`. Installed switched off: cancellations and refunds stay with a person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the label."
+          },
+          "payment_authorization_token": {
+            "type": "string",
+            "description": "The `paymentAuthorizationToken` returned by usps_create_payment_authorization."
+          }
+        },
+        "required": [
+          "tracking_number",
+          "payment_authorization_token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/labels/v3/label/{tracking_number}",
+        "headers": {
+          "X-Payment-Authorization-Token": "$payment_authorization_token"
+        }
+      }
+    },
+    {
+      "name": "usps_create_international_label",
+      "enabled": false,
+      "description": "Buy postage and create an international label with its customs form (First-Class Package International Service, Priority Mail International or Priority Mail Express International). Returns `labelMetadata` (`internationalTrackingNumber`, `postage`, `SKU`, `fees`) and `labelImage` (base64). Installed switched off because it spends money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_authorization_token": {
+            "type": "string",
+            "description": "The `paymentAuthorizationToken` returned by usps_create_payment_authorization."
+          },
+          "to_address": {
+            "type": "object",
+            "description": "Recipient abroad: `firstName`, `lastName`, `firm`, `streetAddress`, `city`, `province`, `postalCode`, `country`, `countryISOAlpha2Code`, `phone`."
+          },
+          "from_address": {
+            "type": "object",
+            "description": "US address the package ships from (a firm is required) with `firstName`, `lastName`, `firm`, `streetAddress`, `secondaryAddress`, `city`, `state` (two letters), `ZIPCode` (5 digits), `ZIPPlus4`, `phone`, `email`."
+          },
+          "package_description": {
+            "type": "object",
+            "description": "Package: `mailClass`, `processingCategory`, `destinationEntryFacilityType` (NONE), `rateIndicator`, `weight` (pounds), `length`, `width`, `height` (inches), `mailingDate` and optionally `extraServices`."
+          },
+          "customs_form": {
+            "type": "object",
+            "description": "Customs form: `customsContentType` (e.g. MERCHANDISE, GIFT, DOCUMENTS, SAMPLE, RETURN), `AESITN` (export filing number or exemption, e.g. NO EEI 30.37(a)) and `contents`, a list of items with `itemDescription`, `itemQuantity`, `itemValue`, `itemTotalValue`, `weightUOM`, `itemWeight`, `itemTotalWeight`, `HSTariffNumber` and `countryofOrigin`."
+          },
+          "image_info": {
+            "type": "object",
+            "description": "Label image options: `imageType` (PDF, PNG, JPG, TIFF, GIF, SVG, ZPL203DPI, ZPL300DPI, EPL300DPI), `labelType` (4X6LABEL, 4X4LABEL, 4X5LABEL, 6X4LABEL, 2X7LABEL), `receiptOption` (NONE, SAME_PAGE, SEPARATE_PAGE), `suppressPostage`, `suppressMailDate`. Default a 4x6 PDF without receipt.",
+            "default": {
+              "imageType": "PDF",
+              "labelType": "4X6LABEL",
+              "receiptOption": "NONE"
+            }
+          },
+          "sender_address": {
+            "type": "object",
+            "description": "Optional business address when it differs from from_address."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional UUID you generate for this request. Repeating a request with the same key returns the first result instead of creating a second one.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "payment_authorization_token",
+          "to_address",
+          "from_address",
+          "package_description",
+          "customs_form"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/international-labels/v3/international-label",
+        "headers": {
+          "X-Payment-Authorization-Token": "$payment_authorization_token",
+          "X-Idempotency-Key": "$idempotency_key",
+          "Accept": "application/vnd.usps.labels+json"
+        },
+        "bodyMapping": {
+          "imageInfo": "$image_info",
+          "toAddress": "$to_address",
+          "fromAddress": "$from_address",
+          "senderAddress": "$sender_address",
+          "packageDescription": "$package_description",
+          "customsForm": "$customs_form"
+        }
+      }
+    },
+    {
+      "name": "usps_cancel_international_label",
+      "enabled": false,
+      "description": "Cancel an unused international label or ask for a postage refund. Returns the tracking number, `status` (CANCELED or DISPUTED) and the refund request id. Installed switched off: cancellations and refunds stay with a person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {
+            "type": "string",
+            "description": "International tracking number of the label."
+          },
+          "payment_authorization_token": {
+            "type": "string",
+            "description": "The `paymentAuthorizationToken` returned by usps_create_payment_authorization."
+          }
+        },
+        "required": [
+          "tracking_number",
+          "payment_authorization_token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/international-labels/v3/international-label/{tracking_number}",
+        "headers": {
+          "X-Payment-Authorization-Token": "$payment_authorization_token"
+        }
+      }
+    },
+    {
+      "name": "usps_schedule_pickup",
+      "enabled": false,
+      "description": "Book a free USPS Carrier Pickup for packages at your address (Monday to Saturday; same-day only until 2 am Central Time). Returns `confirmationNumber`, `pickupDate` and the request as booked. Installed switched off because it books a carrier visit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pickup_date": {
+            "type": "string",
+            "description": "Pickup date, YYYY-MM-DD.",
+            "format": "date"
+          },
+          "pickup_address": {
+            "type": "object",
+            "description": "Contact and address: `firstName`, `lastName`, `firm`, `address` (`streetAddress`, `secondaryAddress`, `city`, `state`, `ZIPCode`, `ZIPPlus4`) and `contact`, a list with `email`."
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages by type: `packageType` (USPS_GROUND_ADVANTAGE, PRIORITY_MAIL, PRIORITY_MAIL_EXPRESS, RETURNS, INTERNATIONAL, OTHER) and `packageCount`, optionally `trackingNumbers`.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "estimated_weight": {
+            "type": "number",
+            "description": "Estimated total weight of all packages, in pounds."
+          },
+          "pickup_location": {
+            "type": "object",
+            "description": "Where the carrier finds the packages: `packageLocation` (FRONT_DOOR, BACK_DOOR, SIDE_DOOR, KNOCK_ON_DOOR, MAIL_ROOM, OFFICE, PORCH, RECEPTION, MAILBOX, OTHER), `specialInstructions` (required for OTHER) and `dogPresent`."
+          },
+          "next_available_pickup": {
+            "type": "boolean",
+            "description": "true books the next available day when pickup_date is not possible. Default false."
+          }
+        },
+        "required": [
+          "pickup_date",
+          "pickup_address",
+          "packages",
+          "estimated_weight",
+          "pickup_location"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pickup/v3/carrier-pickup",
+        "bodyMapping": {
+          "pickupDate": "$pickup_date",
+          "pickupAddress": "$pickup_address",
+          "packages": "$packages",
+          "estimatedWeight": "$estimated_weight",
+          "pickupLocation": "$pickup_location",
+          "nextAvailablePickup": "$next_available_pickup"
+        }
+      }
+    },
+    {
+      "name": "usps_cancel_pickup",
+      "enabled": false,
+      "description": "Cancel a scheduled Carrier Pickup by confirmation number. Returns 200 when cancelled. Installed switched off: cancellations stay with a person.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "confirmation_number": {
+            "type": "string",
+            "description": "Carrier Pickup confirmation number."
+          }
+        },
+        "required": [
+          "confirmation_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/pickup/v3/carrier-pickup/{confirmation_number}"
+      }
+    },
+    {
+      "name": "usps_create_scan_form",
+      "enabled": false,
+      "description": "Create a SCAN Form (PS Form 5630) that links labels to one barcode, so a single scan at acceptance records every package. Returns `SCANFormMetaData` with `manifestNumber` (Electronic File Number) and the linked `trackingNumbers`, and the form image in base64. Label data reaches USPS systems within 15 minutes. Installed switched off, like the label tools it works with.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mailing_date": {
+            "type": "string",
+            "description": "Day the packages are handed over, YYYY-MM-DD; every label on the form must have this mailing date.",
+            "format": "date"
+          },
+          "entry_facility_zip_code": {
+            "type": "string",
+            "description": "ZIP Code of the Post Office or facility where you hand the packages over.",
+            "pattern": "^\\d{5}$"
+          },
+          "destination_entry_facility_type": {
+            "type": "string",
+            "description": "NONE (default) for a Post Office, or the destination entry facility type.",
+            "enum": [
+              "NONE",
+              "DESTINATION_DELIVERY_UNIT",
+              "DESTINATION_SERVICE_HUB",
+              "DESTINATION_SECTIONAL_CENTER_FACILITY",
+              "DESTINATION_NETWORK_DISTRIBUTION_CENTER",
+              "DESTINATION_REGIONAL_PROCESSING_DISTRIBUTION_CENTER"
+            ],
+            "default": "NONE"
+          },
+          "tracking_numbers": {
+            "type": "array",
+            "description": "Tracking numbers of the labels to put on the form.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "from_address": {
+            "type": "object",
+            "description": "Shipper address with `firstName`, `lastName`, `firm`, `streetAddress`, `secondaryAddress`, `city`, `state` (two letters), `ZIPCode` (5 digits), `ZIPPlus4`, `phone`, `email`."
+          },
+          "overwrite_mailing_date": {
+            "type": "boolean",
+            "description": "true sets every label to mailing_date. Default false."
+          },
+          "pickup_confirmation_number": {
+            "type": "string",
+            "description": "Optional Carrier Pickup confirmation number to tie the form to."
+          },
+          "image_info": {
+            "type": "object",
+            "description": "Form image: `imageType` (PDF default, PNG, ZPL203DPI and others) and `labelType` (8.5X11LABEL default, or 4X6LABEL)."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Optional UUID you generate for this request. Repeating a request with the same key returns the first result instead of creating a second one.",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "mailing_date",
+          "entry_facility_zip_code",
+          "tracking_numbers",
+          "from_address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/scan-forms/v3/scan-form",
+        "headers": {
+          "X-Idempotency-Key": "$idempotency_key",
+          "Accept": "application/vnd.usps.labels+json"
+        },
+        "bodyMapping": {
+          "imageInfo": "$image_info",
+          "mailingDate": "$mailing_date",
+          "overwriteMailingDate": "$overwrite_mailing_date",
+          "entryFacilityZIPCode": "$entry_facility_zip_code",
+          "destinationEntryFacilityType": "$destination_entry_facility_type",
+          "shipment": {
+            "trackingNumbers": "$tracking_numbers"
+          },
+          "fromAddress": "$from_address",
+          "pickupConfirmationNumber": "$pickup_confirmation_number"
+        }
+      }
+    }
+  ]
+}

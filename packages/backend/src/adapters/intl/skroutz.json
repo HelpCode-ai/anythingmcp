@@ -1,0 +1,1363 @@
+{
+  "slug": "skroutz",
+  "name": "Skroutz",
+  "description": "Skroutz Marketplace (Smart Cart) API for sellers on the Greek and Cypriot marketplace: read, accept and schedule orders, Set as Ready, tracking, invoice uploads, returns, Fulfilled by Skroutz stock, purchase orders and suppliers, bulk price and stock updates and CPS orders. API token from the merchants panel.",
+  "instructions": "## Skroutz\nThis connector works with the **Skroutz Merchants API** at `https://api.skroutz.gr`, for shops selling on Skroutz Marketplace (Smart Cart), the largest marketplace and price comparison site of Greece and Cyprus: marketplace orders, pickups and Set as Ready, tracking, invoice uploads, returns, Fulfilled by Skroutz (FBS) stock, purchase orders and suppliers, bulk price and stock updates, and CPS orders of your own web shop.\n\n**Setup (about 3 minutes)**\n1. Sign in to the Skroutz merchants panel and open **Services, Skroutz Marketplace** (the Smart Cart settings page).\n2. Generate the **API token** and paste it into `SKROUTZ_API_TOKEN`. A shop has one active token: generating a new one ends the previous one, so a token used by another integration stops working there.\n3. Optional, for bulk price and stock updates: in **Products, Feed Updates** generate the Products API token and paste it into `SKROUTZ_PRODUCTS_TOKEN`.\n4. Optional, for CPS orders of your own web shop: in **Παραγγελίες καταστήματος, Αυτόματη διαχείριση** (shop orders, automatic handling) generate the CPS token and paste it into `SKROUTZ_CPS_TOKEN`.\n\nEvery call sends the token as `Authorization: Bearer` with the media type `application/vnd.skroutz+json; version=3.0`. The install check reads the demo order `DEMO-OPEN`, which proves the marketplace token without touching real data.\n\n**Where to start**: the API has **no order list**. Orders reach a shop through the order webhook, the merchants panel and the order emails, so ask the user for the order code (like `191128-1234567`) and read it with `skroutz_get_order`. The demo codes `DEMO-OPEN`, `DEMO-ACCEPTED`, `DEMO-REJECTED`, `DEMO-INVOICE`, `DEMO-FBS`, `DEMO-STORE-PICKUP` and `DEMO-RETURN` are safe to read, accept and reject for testing: nothing is stored.\n\n**Orders**: an open order carries `accept_options` and `reject_options` and must be handled before `expires_at`. Accept it with `skroutz_accept_order`, sending a pickup location id and the id of one of that location's own pickup windows (windows differ per location). Skroutz then books the courier and the voucher PDF appears in `courier_voucher`. Express orders are accepted by Skroutz automatically. `skroutz_reject_order` is installed switched off: a rejection cannot be undone and counts against the shop. To change the pickup of an accepted order, read it with `action_options` 1 right before and use `skroutz_reschedule_order_pickup` (a date from `reschedule_options`) or `skroutz_relocate_order_pickup` (an id from `relocate_options`); the lists shrink over time. `skroutz_request_preorder_voucher` creates the voucher of an accepted preorder early.\n\n**Set as Ready**: when an order shows `set_as_ready_required` true, Skroutz Last Mile only picks it up after `skroutz_set_order_ready`; downloading the voucher no longer marks it ready (since 30 March 2026). Marking early can move the pickup to an earlier window. `skroutz_set_order_not_ready` undoes it before pickup. Shops with `set_as_ready_required` false need neither.\n\n**Shipping and documents**: `skroutz_update_tracking_details` sends courier and tracking code for Fulfilled by Merchant (FBM) orders only. `skroutz_upload_invoice` and `skroutz_upload_credit_invoice` take a public link to the PDF, PNG or JPG (at most 7 MB); the connector downloads it and uploads the file, one per order, replacing an earlier upload.\n\n**Returns**: `skroutz_get_return` reads a return by its code (like `R-111111-1111111`, from the return webhook or the merchants panel; the `returns` of an order give only a uuid and tracking ids). `skroutz_handle_return` (decide a return waiting for review before `review.expires_at`, including sending a missing part at the shop's cost) and `skroutz_submit_service_inspection` (technical report on a faulty item, as a file link) are installed switched off, because they lead to refunds, replacements or paid shipments. `skroutz_file_compensation_request` is switched off too: it claims money from Skroutz for returned items, and through this connector only for the reasons that need no photos.\n\n**Fulfilled by Skroutz**: `skroutz_list_fbs_products` (stock in Skroutz warehouses), `skroutz_list_fbs_purchase_orders`, `skroutz_list_fbs_purchase_order_items`, `skroutz_list_fbs_suppliers`, `skroutz_create_fbs_supplier` and `skroutz_update_fbs_supplier`. `skroutz_create_fbs_purchase_order` is switched off, because warehouse fees follow from it. Lists are paged with `page` and come with `meta.pagination` (100 rows a page). A shop without FBS gets 401 here.\n\n**Products API** (needs `SKROUTZ_PRODUCTS_TOKEN`): `skroutz_validate_product_updates` checks a batch without changing anything; `skroutz_update_products` (switched off) updates availability, price and quantity of up to 500 existing products and variations, asynchronously; `skroutz_get_product_update_status` reports success, no_change or failure per product. Prices here are **integer euro cents** (1050 is 10.50 EUR), while order amounts are decimal euros. It does not create products: those come from the XML feed. A 422 saying the XML is being scanned means try again later.\n\n**CPS orders** (needs `SKROUTZ_CPS_TOKEN`): `skroutz_get_cps_order` reads a sale of your own web shop by your own order number, with revenue and commission; `skroutz_reject_cps_order` (switched off) rejects it so no commission is charged.\n\n**Field notes**: times are ISO 8601 with the Athens offset (+02:00 in winter, +03:00 in summer). Labels such as pickup windows, rejection reasons and CPS states come in Greek. Line item ids are short strings (`l39vKqxqwe`); `shop_uid` is your own product id. Errors carry an `errors` array with a `code` and `messages`: 422 `order_status` means the order is not in a state for that action. A wrong or replaced marketplace token answers 403. The connector never moves money: rejections, return decisions, compensation claims, purchase orders and bulk product updates are installed switched off for an admin to turn on deliberately.",
+  "aliases": [
+    "Skroutz Marketplace",
+    "Skroutz Smart Cart",
+    "Skroutz.gr",
+    "Skroutz Merchants",
+    "Σκρουτζ"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "skroutz",
+  "docsUrl": "https://developer.skroutz.gr/smart_cart/orders_api",
+  "requiredEnvVars": [
+    "SKROUTZ_API_TOKEN"
+  ],
+  "optionalEnvVars": [
+    "SKROUTZ_PRODUCTS_TOKEN",
+    "SKROUTZ_CPS_TOKEN"
+  ],
+  "envVarMeta": {
+    "SKROUTZ_API_TOKEN": {
+      "label": "Marketplace API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Merchants panel, Services, Skroutz Marketplace, settings: generate the API token. One token per shop: generating a new one ends the old one. Covers orders, returns and Fulfilled by Skroutz.",
+      "link": "https://developer.skroutz.gr/smart_cart/orders_api",
+      "pattern": "^\\S{10,512}$",
+      "patternMessage": "Paste the token only, without spaces and without the word Bearer."
+    },
+    "SKROUTZ_PRODUCTS_TOKEN": {
+      "label": "Products API token (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only for bulk price and stock updates. Merchants panel, Products, Feed Updates: generate the Products API token (a different token from the marketplace one).",
+      "link": "https://developer.skroutz.gr/products/api",
+      "pattern": "^\\S{10,512}$",
+      "patternMessage": "Paste the token only, without spaces and without the word Bearer."
+    },
+    "SKROUTZ_CPS_TOKEN": {
+      "label": "CPS orders API token (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only for CPS orders of your own web shop. Merchants panel, Παραγγελίες καταστήματος (shop orders), Αυτόματη διαχείριση (automatic handling): generate the API token.",
+      "link": "https://developer.skroutz.gr/cps_orders_api/",
+      "pattern": "^\\S{10,512}$",
+      "patternMessage": "Paste the token only, without spaces and without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Skroutz refused the token for this part of the API. Fulfilled by Skroutz needs the marketplace token with Fulfilled by Skroutz active on the shop; product batch updates need SKROUTZ_PRODUCTS_TOKEN and CPS orders SKROUTZ_CPS_TOKEN, each generated on its own page of the merchants panel.",
+    "403": "Skroutz did not accept the API token. Generate a new one in the merchants panel (Services, Skroutz Marketplace) and paste it into SKROUTZ_API_TOKEN: only the newest token of a shop works.",
+    "404": "Skroutz found no order, return, purchase order or batch with that code in this shop. Check the code in the merchants panel.",
+    "rate_limited": "Skroutz is limiting this token (compensation requests 20 a minute, service reports 30 in 10 minutes). Wait and try again."
+  },
+  "probe": {
+    "tool": "skroutz_get_order",
+    "params": {
+      "order_code": "DEMO-OPEN"
+    }
+  },
+  "prerequisites": "A Skroutz merchant account selling on Skroutz Marketplace (Smart Cart) and access to its merchants panel to generate the API token. Optional: the Products API token for bulk price and stock updates, and the CPS orders token. About 3 minutes.",
+  "connector": {
+    "name": "Skroutz Merchants API",
+    "type": "REST",
+    "baseUrl": "https://api.skroutz.gr",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/vnd.skroutz+json; version=3.0",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "skroutz_get_order",
+      "description": "Read one Skroutz Marketplace (Smart Cart) order by its code: state (open, accepted, rejected, cancelled, expired, dispatched, delivered, partially_delivered, for_return, partially_returned, returned), customer name and shipping address, invoice_details when an invoice was asked for, line_items (id, shop_uid, ean, product_name, quantity, unit_price and total_price in EUR), courier, courier_voucher (PDF link) and tracking codes, created_at, expires_at (accept before it), dispatch_until, commission and fees in EUR, payment_method, set_as_ready_required and is_ready_for_dispatch. An open order also carries accept_options (pickup locations with their pickup windows, number of parcels) and reject_options (rejection reasons). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "action_options": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Pass 1 to add reschedule_options (pickup dates) and relocate_options (pickup locations) for an accepted order. Fetch them right before rescheduling or relocating: they change over time."
+          },
+          "compensation_requests": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Pass 1 to add the order's compensation requests, oldest first, with their state and the amount or rejection reason per line item."
+          }
+        },
+        "required": [
+          "order_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/ecommerce/orders/{order_code}",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "queryParams": {
+          "action_options": "$action_options",
+          "compensation_requests": "$compensation_requests"
+        }
+      }
+    },
+    {
+      "name": "skroutz_accept_order",
+      "description": "Accept an open order: Skroutz then books the courier and issues the voucher (it arrives on the order as courier_voucher). Send a pickup_location id from accept_options and the id of one of that location's own pickup windows, e.g. `20191204T1000-20191204T1200`. Express orders cannot be accepted through the API: Skroutz accepts them automatically. Answers `success: true`; 422 when the order is no longer open or the window is not available.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "pickup_location": {
+            "type": "string",
+            "description": "id of one entry of accept_options.pickup_location, e.g. `YlpD0KROym`."
+          },
+          "pickup_window": {
+            "type": "string",
+            "description": "id of one of the pickup windows listed under that same location, e.g. `20191204T1000-20191204T1200`. The older integer ids of the top-level accept_options.pickup_window list are also accepted."
+          },
+          "number_of_parcels": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of parcels, one of accept_options.number_of_parcels. Skroutz assumes 1 when left out."
+          }
+        },
+        "required": [
+          "order_code",
+          "pickup_location",
+          "pickup_window"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/accept",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "pickup_location": "$pickup_location",
+          "pickup_window": "$pickup_window",
+          "number_of_parcels": "$number_of_parcels"
+        }
+      }
+    },
+    {
+      "name": "skroutz_reject_order",
+      "description": "Reject an open order, either per line item with a reason id from reject_options (with available_quantity when the reason has requires_available_quantity, e.g. limited stock) or as a whole with a free-text reason. Skroutz may reprocess the order for the items still available. A rejection cannot be undone and counts against the shop. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "line_items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Line item id from the order."
+                },
+                "reason_id": {
+                  "type": "integer",
+                  "description": "id from reject_options.line_item_rejection_reasons."
+                },
+                "available_quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units still available; required when the reason has requires_available_quantity true."
+                }
+              },
+              "required": [
+                "id",
+                "reason_id"
+              ]
+            },
+            "description": "Line items to reject, e.g. `[{\"id\": \"jn231kb12u\", \"reason_id\": 2}]`. Leave out when rejecting the whole order with rejection_reason_other."
+          },
+          "rejection_reason_other": {
+            "type": "string",
+            "description": "Free-text reason that rejects the whole order. Leave out when sending line_items."
+          }
+        },
+        "required": [
+          "order_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/reject",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "line_items": "$line_items",
+          "rejection_reason_other": "$rejection_reason_other"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "skroutz_reschedule_order_pickup",
+      "description": "Move the courier pickup of an accepted order to another date. Read the order with action_options 1 right before and send one of its reschedule_options dates; a date that is no longer offered is refused (422), never replaced. Not possible for Fulfilled by Skroutz, Fulfilled by Merchant, store pickup or express orders. Answers `success: true`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "reschedule_date": {
+            "type": "string",
+            "format": "date",
+            "description": "New pickup date, YYYY-MM-DD, taken from reschedule_options."
+          }
+        },
+        "required": [
+          "order_code",
+          "reschedule_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/reschedule_pickup",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "reschedule_date": "$reschedule_date"
+        }
+      }
+    },
+    {
+      "name": "skroutz_relocate_order_pickup",
+      "description": "Move the courier pickup of an accepted order to another of the shop's pickup locations, keeping the pickup date and slot. The courier is chosen again for the new location and a new voucher may be issued. Read the order with action_options 1 right before and send a relocate_options id. Answers `success: true`; 422 when relocation is not possible for the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "pickup_location": {
+            "type": "string",
+            "description": "id from relocate_options, e.g. `m8O6n3eO6j`."
+          }
+        },
+        "required": [
+          "order_code",
+          "pickup_location"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/relocate_pickup",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "pickup_location": "$pickup_location"
+        }
+      }
+    },
+    {
+      "name": "skroutz_set_order_ready",
+      "description": "Mark an accepted order as packed and ready for dispatch (Set as Ready). Required for shops whose orders show set_as_ready_required true: Skroutz Last Mile only picks up orders marked ready, and an early mark can move the pickup to an earlier window. Only for accepted core marketplace orders shipped with Skroutz Last Mile. Answers `success: true`; 422 when not eligible or already ready.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          }
+        },
+        "required": [
+          "order_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/set_as_ready",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "skroutz_set_order_not_ready",
+      "description": "Undo Set as Ready on an accepted order that the courier has not picked up yet. Skroutz tries to move the pickup back to the original date. Answers `success: true`; 422 when the order was not marked ready or is already picked up.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          }
+        },
+        "required": [
+          "order_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/set_as_not_ready",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "skroutz_update_tracking_details",
+      "description": "Send the courier and tracking code of each shipment of a Fulfilled by Merchant (FBM) order, so the customer can follow it. Only for FBM orders shipped to the customer, not for returns. Answers `success: true`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "tracking_details": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "courier": {
+                  "type": "string",
+                  "description": "Courier name in lower case, e.g. `acs`."
+                },
+                "tracking_code": {
+                  "type": "string",
+                  "description": "Tracking code of the parcel."
+                }
+              },
+              "required": [
+                "courier",
+                "tracking_code"
+              ]
+            },
+            "description": "One entry per shipment, e.g. `[{\"courier\": \"acs\", \"tracking_code\": \"224085551\"}]`."
+          }
+        },
+        "required": [
+          "order_code",
+          "tracking_details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/tracking_details",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "tracking_details": "$tracking_details"
+        }
+      }
+    },
+    {
+      "name": "skroutz_request_preorder_voucher",
+      "description": "Ask for the courier voucher of an accepted preorder now, when the product arrived before the planned shipment date (the panel's Create voucher now button). Pickup location and window are chosen by Skroutz. The voucher is made asynchronously: read it later from courier_voucher on the order. Answers `success: true`; 422 when the order is not an accepted preorder without a voucher.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          }
+        },
+        "required": [
+          "order_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/request_voucher",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "skroutz_upload_invoice",
+      "description": "Upload the receipt or invoice of an order from a link to the file (PDF, PNG or JPG, at most 7 MB). One file per order: a new upload replaces the previous one, which shows on the order as uploaded_invoice_file. Answers `success: true`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "invoice_file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https link to the PDF, PNG or JPG; the connector downloads it and sends the file."
+          }
+        },
+        "required": [
+          "order_code",
+          "invoice_file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/invoices",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "invoice_file": {
+            "__file": "$invoice_file_url"
+          }
+        },
+        "bodyEncoding": "form-data"
+      }
+    },
+    {
+      "name": "skroutz_upload_credit_invoice",
+      "description": "Upload the credit invoice of an order that was cancelled, returned, partially returned or returned to sender after its receipt or invoice was issued, from a link to the file (PDF, PNG or JPG, at most 7 MB). One file per order; a new upload replaces it. The order must have been accepted. Answers `success: true`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "credit_invoice_file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https link to the PDF, PNG or JPG; the connector downloads it and sends the file."
+          }
+        },
+        "required": [
+          "order_code",
+          "credit_invoice_file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/credit_invoices",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "credit_invoice_file": {
+            "__file": "$credit_invoice_file_url"
+          }
+        },
+        "bodyEncoding": "form-data"
+      }
+    },
+    {
+      "name": "skroutz_file_compensation_request",
+      "description": "Ask Skroutz to compensate the shop for returned line items, sent as JSON without photos, so only for reasons that need none: return_not_received, item_sent, product_misclassified, and delayed_return (with a comment). Reasons that need photos (damaged_product and the like) must be filed in the merchants panel. Skroutz reviews the request; follow it with skroutz_get_order and compensation_requests 1. Answers `success: true` and compensation_request_id. At most 20 per minute. Installed switched off: it is a money claim.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Marketplace order code, e.g. `191128-1234567` (date plus number), from the merchants panel, the order email or an order webhook. `DEMO-OPEN`, `DEMO-ACCEPTED` and the other demo codes are safe test orders."
+          },
+          "line_items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Line item id from the order."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Units to compensate, at most the quantity still eligible."
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "return_not_received",
+                    "delayed_return",
+                    "item_sent",
+                    "product_misclassified"
+                  ],
+                  "description": "Reason. A late return takes only delayed_return; a delivery with a missing item takes item_sent or product_misclassified."
+                },
+                "at_fault": {
+                  "type": "string",
+                  "enum": [
+                    "customer",
+                    "courier"
+                  ],
+                  "description": "Who is at fault; required for return_not_received and delayed_return."
+                },
+                "comment": {
+                  "type": "string",
+                  "maxLength": 400,
+                  "description": "Description, up to 400 characters; required for delayed_return."
+                }
+              },
+              "required": [
+                "id",
+                "quantity",
+                "reason"
+              ]
+            },
+            "description": "One entry per line item, each line item once, e.g. `[{\"id\": \"k9Qp2xR4mN\", \"quantity\": 1, \"reason\": \"return_not_received\", \"at_fault\": \"courier\"}]`."
+          }
+        },
+        "required": [
+          "order_code",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/orders/{order_code}/compensation_requests",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "line_items": "$line_items"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "skroutz_get_return",
+      "description": "Read one return by its code: state (pending_merchant_review, returning, pending_physical_review, pending_service_inspection, returned, rejected, expired, cancelled, resolved_without_return), order_code, created_at, courier and courier_tracking_ids, returning_address, and return_line_items (id, ean, product_name, returning_quantity, return_reason, sub_reason, requested_compensation, user_comment, user_photos). A return waiting for the shop also carries review (type, expires_at deadline) and handle_options; an item waiting for a technical report carries inspection with its options. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Return code, e.g. `R-111111-1111111`, from the merchants panel or a return webhook. `DEMO-RETURN` is a safe test return."
+          }
+        },
+        "required": [
+          "return_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/ecommerce/returns/{return_code}",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "skroutz_handle_return",
+      "description": "Decide a return in state pending_merchant_review with one of its handle_options: approve, a rejection such as not_faulty (with comment when comment_required is true), or send_missing_part (send the customer the missing part instead, at the shop's cost: give pickup_location, cargo, pickup_window, weight, number_of_parcels, items_description and delivery_reason from the option's delivery). Every option closes the review. Answers the updated return. Installed switched off: approving leads to a refund or replacement, and a missing part ships at the shop's cost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Return code, e.g. `R-111111-1111111`, from the merchants panel or a return webhook. `DEMO-RETURN` is a safe test return."
+          },
+          "option": {
+            "type": "string",
+            "description": "One of the return's handle_options, e.g. `approve`, `not_faulty`, `contact_manufacturer`, `usability_suggestions`, `resolved_via_customer_communication`, `send_missing_part`."
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Comment to the customer, up to 1000 characters; required when the option's comment_required is true."
+          },
+          "proposed_part_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Link on Skroutz to a part sold separately; only when the option's supports_proposed_part_url is true."
+          },
+          "pickup_location": {
+            "type": "string",
+            "description": "send_missing_part: id of one delivery.pickup_location."
+          },
+          "cargo": {
+            "type": "boolean",
+            "description": "send_missing_part: true books the cargo carrier with the location's cargo_pickup_window, false uses its pickup_window."
+          },
+          "pickup_window": {
+            "type": "string",
+            "description": "send_missing_part: id of a window of the chosen list."
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "send_missing_part: weight in kilos, within delivery.weight."
+          },
+          "number_of_parcels": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "send_missing_part: one of delivery.number_of_parcels."
+          },
+          "items_description": {
+            "type": "string",
+            "maxLength": 250,
+            "description": "send_missing_part: what is sent, up to 250 characters."
+          },
+          "delivery_reason": {
+            "type": "string",
+            "maxLength": 250,
+            "description": "send_missing_part: why it is sent, up to 250 characters."
+          }
+        },
+        "required": [
+          "return_code",
+          "option"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/returns/{return_code}/handle",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "option": "$option",
+          "comment": "$comment",
+          "proposed_part_url": "$proposed_part_url",
+          "pickup_location": "$pickup_location",
+          "cargo": "$cargo",
+          "pickup_window": "$pickup_window",
+          "weight": "$weight",
+          "number_of_parcels": "$number_of_parcels",
+          "items_description": "$items_description",
+          "delivery_reason": "$delivery_reason"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "skroutz_submit_service_inspection",
+      "description": "Submit the technical inspection result of a faulty returned item (return in state pending_service_inspection): the item id, one of its inspection.options (e.g. under_warranty_repairable, under_warranty_unrepairable, no_warranty_repairable, no_warranty_unrepairable, unconfirmed), the service report from a link (PDF, PNG or JPG, at most 7 MB), and in_stock when the option asks for it. Answers the updated return (200), or 202 while Skroutz checks the report first. At most 30 per 10 minutes. Installed switched off: the result decides a repair, replacement or refund.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Return code, e.g. `R-111111-1111111`, from the merchants panel or a return webhook. `DEMO-RETURN` is a safe test return."
+          },
+          "item": {
+            "type": "string",
+            "description": "id of the return line item that carries the inspection."
+          },
+          "option": {
+            "type": "string",
+            "description": "One of the item's inspection.options."
+          },
+          "service_report_file_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https link to the service report (PDF, PNG or JPG); the connector downloads it and sends the file."
+          },
+          "in_stock": {
+            "type": "boolean",
+            "description": "Whether a replacement can be sent; required when the option's in_stock_required is true."
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 400,
+            "description": "Comment to the customer, up to 400 characters."
+          }
+        },
+        "required": [
+          "return_code",
+          "item",
+          "option",
+          "service_report_file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/returns/{return_code}/service_inspection",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "item": "$item",
+          "option": "$option",
+          "service_report_file": {
+            "__file": "$service_report_file_url"
+          },
+          "in_stock": "$in_stock",
+          "comment": "$comment"
+        },
+        "bodyEncoding": "form-data"
+      },
+      "enabled": false
+    },
+    {
+      "name": "skroutz_list_fbs_products",
+      "description": "List the shop's Fulfilled by Skroutz (FBS) products stored in Skroutz warehouses: id, shop_uid (your product id), active (buyable from the warehouse) and quantity in stock. Paged, 100 per page with meta.pagination. Read-only; needs FBS on the shop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `meta.pagination` in the answer gives total_pages and total_results."
+          },
+          "per": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (Skroutz answers 100 per page by default)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/ecommerce/fbs/products",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "per": "$per"
+        }
+      }
+    },
+    {
+      "name": "skroutz_list_fbs_purchase_orders",
+      "description": "List the shop's Fulfilled by Skroutz purchase orders (stock sent to Skroutz warehouses): code, created_at, expected_date and received_at. Paged, 100 per page with meta.pagination. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `meta.pagination` in the answer gives total_pages and total_results."
+          },
+          "per": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (Skroutz answers 100 per page by default)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/ecommerce/fbs/purchase_orders",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "per": "$per"
+        }
+      }
+    },
+    {
+      "name": "skroutz_list_fbs_purchase_order_items",
+      "description": "List the line items of one Fulfilled by Skroutz purchase order: product_id, shop_uid, active, expected_quantity and actual_quantity received by the warehouse. Paged with meta.pagination. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,40}$",
+            "description": "Purchase order code, e.g. `220623-4078-5820`, from skroutz_list_fbs_purchase_orders."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `meta.pagination` in the answer gives total_pages and total_results."
+          },
+          "per": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (Skroutz answers 100 per page by default)."
+          }
+        },
+        "required": [
+          "purchase_order_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/ecommerce/fbs/purchase_orders/{purchase_order_code}/line_items",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "per": "$per"
+        }
+      }
+    },
+    {
+      "name": "skroutz_create_fbs_purchase_order",
+      "description": "Announce a new Fulfilled by Skroutz purchase order: the stock you will deliver to a Skroutz warehouse, with the expected date, the supplier and per product the quantity, serial number and expiry handling and storage conditions. Answers `success: true` and the new code. Installed switched off: warehouse storage and fulfilment fees follow from it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expected_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the stock should reach the warehouse, YYYY-MM-DD."
+          },
+          "supplier_id": {
+            "type": "string",
+            "description": "Supplier id from skroutz_list_fbs_suppliers."
+          },
+          "line_items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_uid": {
+                  "type": "string",
+                  "description": "Your product id (shop_uid)."
+                },
+                "expected_quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Units the warehouse will receive."
+                },
+                "keep_serial_numbers": {
+                  "type": "boolean",
+                  "description": "true when each unit sold needs its serial number."
+                },
+                "has_expiration_date": {
+                  "type": "boolean",
+                  "description": "true when the product has an expiry date."
+                },
+                "storage_conditions": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1,
+                    2,
+                    3
+                  ],
+                  "description": "0 dry, 1 air conditioned, 2 refrigerated, 3 frozen."
+                }
+              },
+              "required": [
+                "product_uid",
+                "expected_quantity"
+              ]
+            },
+            "description": "Products, e.g. `[{\"product_uid\": \"52781\", \"expected_quantity\": 8, \"keep_serial_numbers\": false, \"has_expiration_date\": false, \"storage_conditions\": 0}]`."
+          }
+        },
+        "required": [
+          "expected_date",
+          "supplier_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/fbs/purchase_orders",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "expected_date": "$expected_date",
+          "supplier_id": "$supplier_id",
+          "line_items": "$line_items"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "skroutz_list_fbs_suppliers",
+      "description": "List the shop's Fulfilled by Skroutz suppliers: id (use it for purchase orders), code, name, address, city, area, zip_code, phone, tax_number and email. Paged with meta.pagination. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `meta.pagination` in the answer gives total_pages and total_results."
+          },
+          "per": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (Skroutz answers 100 per page by default)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/ecommerce/fbs/suppliers",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "queryParams": {
+          "page": "$page",
+          "per": "$per"
+        }
+      }
+    },
+    {
+      "name": "skroutz_create_fbs_supplier",
+      "description": "Add a Fulfilled by Skroutz supplier (who ships stock to the Skroutz warehouse for you) with a unique code, name, address, city, area, zip code, phone, tax number and email. Answers `success: true`; read the new id with skroutz_list_fbs_suppliers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Your unique supplier code."
+          },
+          "name": {
+            "type": "string",
+            "description": "Supplier name."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street and number."
+          },
+          "city": {
+            "type": "string",
+            "description": "City, e.g. Athens."
+          },
+          "area": {
+            "type": "string",
+            "description": "Area or region, e.g. Attica."
+          },
+          "zip_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "tax_number": {
+            "type": "string",
+            "description": "Tax number (AFM)."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email address."
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/ecommerce/fbs/suppliers",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "code": "$code",
+          "name": "$name",
+          "address": "$address",
+          "city": "$city",
+          "area": "$area",
+          "zip_code": "$zip_code",
+          "phone": "$phone",
+          "tax_number": "$tax_number",
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "skroutz_update_fbs_supplier",
+      "description": "Change fields of a Fulfilled by Skroutz supplier; only the fields you send change. Answers `success: true`.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,40}$",
+            "description": "Supplier id from skroutz_list_fbs_suppliers."
+          },
+          "code": {
+            "type": "string",
+            "description": "New unique supplier code."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "address": {
+            "type": "string",
+            "description": "New street and number."
+          },
+          "city": {
+            "type": "string",
+            "description": "New city."
+          },
+          "area": {
+            "type": "string",
+            "description": "New area or region."
+          },
+          "zip_code": {
+            "type": "string",
+            "description": "New postal code."
+          },
+          "phone": {
+            "type": "string",
+            "description": "New phone number."
+          },
+          "tax_number": {
+            "type": "string",
+            "description": "New tax number."
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "New email address."
+          }
+        },
+        "required": [
+          "supplier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/merchants/ecommerce/fbs/suppliers/{supplier_id}",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_API_TOKEN}"
+        },
+        "bodyMapping": {
+          "code": "$code",
+          "name": "$name",
+          "address": "$address",
+          "city": "$city",
+          "area": "$area",
+          "zip_code": "$zip_code",
+          "phone": "$phone",
+          "tax_number": "$tax_number",
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "skroutz_validate_product_updates",
+      "description": "Check a batch of product updates (availability, price in cents, quantity, variations) without changing anything: Skroutz runs every check of the real batch update and answers `success: true` with a message, or 400 with the fields at fault (missing field, wrong type, more than 500 products) or 422 when the shop cannot be updated now (e.g. its XML feed is being scanned). Needs SKROUTZ_PRODUCTS_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "string",
+                  "description": "Your product id: the unique id of the product in your XML feed, or the generated id from the panel's product reports for manually added products."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units available."
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether the product can be bought."
+                },
+                "price": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Price in euro cents including VAT: 1050 is 10.50 EUR."
+                },
+                "variations": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "variation_id": {
+                        "type": "string",
+                        "description": "Your variation id."
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Units available."
+                      },
+                      "enabled": {
+                        "type": "boolean",
+                        "description": "Whether the variation can be bought."
+                      },
+                      "price": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Price in euro cents."
+                      }
+                    },
+                    "required": [
+                      "variation_id",
+                      "quantity",
+                      "enabled",
+                      "price"
+                    ]
+                  },
+                  "description": "Variations (sizes, colours), each with all four fields."
+                }
+              },
+              "required": [
+                "product_id",
+                "quantity",
+                "enabled",
+                "price"
+              ]
+            },
+            "description": "Up to 500 products, each with all four fields, e.g. `[{\"product_id\": \"ABC123\", \"quantity\": 10, \"enabled\": true, \"price\": 2999}]`."
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/products/batch/validations",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_PRODUCTS_TOKEN}"
+        },
+        "bodyMapping": {
+          "data": "$data"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "skroutz_update_products",
+      "description": "Update availability, price (euro cents) and quantity of up to 500 existing products and their variations in one batch; it does not create products. Processed asynchronously: the answer is `success: true` and a batch id, and skroutz_get_product_update_status gives the outcome per product. Run skroutz_validate_product_updates first. Needs SKROUTZ_PRODUCTS_TOKEN. Installed switched off: it changes live prices and can take products off sale in bulk.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "string",
+                  "description": "Your product id: the unique id of the product in your XML feed, or the generated id from the panel's product reports for manually added products."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units available."
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Whether the product can be bought."
+                },
+                "price": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Price in euro cents including VAT: 1050 is 10.50 EUR."
+                },
+                "variations": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "variation_id": {
+                        "type": "string",
+                        "description": "Your variation id."
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Units available."
+                      },
+                      "enabled": {
+                        "type": "boolean",
+                        "description": "Whether the variation can be bought."
+                      },
+                      "price": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Price in euro cents."
+                      }
+                    },
+                    "required": [
+                      "variation_id",
+                      "quantity",
+                      "enabled",
+                      "price"
+                    ]
+                  },
+                  "description": "Variations (sizes, colours), each with all four fields."
+                }
+              },
+              "required": [
+                "product_id",
+                "quantity",
+                "enabled",
+                "price"
+              ]
+            },
+            "description": "Up to 500 products, each with all four fields, e.g. `[{\"product_id\": \"ABC123\", \"quantity\": 10, \"enabled\": true, \"price\": 2999}]`."
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/products/batch",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_PRODUCTS_TOKEN}"
+        },
+        "bodyMapping": {
+          "data": "$data"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "skroutz_get_product_update_status",
+      "description": "Read the outcome of a product batch update: status (in_progress while any product is pending, then completed), created_at, and per product (and variation) status success, no_change, failure (with message) or in_progress and executed_at. 404 for an unknown batch id. Needs SKROUTZ_PRODUCTS_TOKEN. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,64}$",
+            "description": "Batch id returned by skroutz_update_products, e.g. `6a9810dcd4ff840001bf0f32`."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/products/batch/{batch_id}/status",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_PRODUCTS_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "skroutz_get_cps_order",
+      "description": "Read one CPS order (a sale on your own web shop that came from Skroutz, paid by commission) by the order code your shop gave it: date, revenue and commission in EUR, state (in Greek, e.g. Προς χρέωση, to be charged), charged, charged_at, refunded_at, rejection_reason, line_items (product_id, name, quantity, unit_price, commission_rate, commission) and reject_options while it can still be rejected. Needs SKROUTZ_CPS_TOKEN. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Your own shop's order number, as sent to Skroutz Analytics, e.g. `1234567`."
+          }
+        },
+        "required": [
+          "order_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchants/cps/orders/{order_code}",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_CPS_TOKEN}"
+        }
+      }
+    },
+    {
+      "name": "skroutz_reject_cps_order",
+      "description": "Reject a CPS order so Skroutz does not charge commission on it, with one of its reject_options (user_cancel, user_return, undelivered, unpaid, unavailable_items, shop_staff_order, invoice_39a, reduced_vat) or other with a comment. Answers `success: true`; 422 when already rejected. Needs SKROUTZ_CPS_TOKEN. Installed switched off: it changes what the shop is charged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Your own shop's order number."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "user_cancel",
+              "user_return",
+              "undelivered",
+              "unpaid",
+              "unavailable_items",
+              "shop_staff_order",
+              "invoice_39a",
+              "reduced_vat",
+              "other"
+            ],
+            "description": "Reason name from reject_options."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Explanation; required with reason other."
+          }
+        },
+        "required": [
+          "order_code",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchants/cps/orders/{order_code}/reject",
+        "headers": {
+          "Authorization": "Bearer ${SKROUTZ_CPS_TOKEN}"
+        },
+        "bodyMapping": {
+          "reason": {
+            "name": "$reason",
+            "comment": "$comment"
+          }
+        }
+      },
+      "enabled": false
+    }
+  ]
+}
