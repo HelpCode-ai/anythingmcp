@@ -367,7 +367,8 @@ export class LoginController {
           event: ProductEvents.AUTHORIZE_PAGE_VIEWED,
           metadata: {
             client: consent.clientName,
-            device: isPhoneUserAgent(req.headers['user-agent']) ? 'phone' : 'desktop',
+            // 'mobile', not 'phone': the only values the event store keeps for `device`.
+            device: isPhoneUserAgent(req.headers['user-agent']) ? 'mobile' : 'desktop',
             // Reloads and the return from a social sign-in show the page
             // again: the same attempt, counted once by this value. It is
             // the moment the pending authorization expires, set once when
