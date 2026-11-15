@@ -425,6 +425,7 @@ import * as messagebird from './intl/messagebird.json';
 import * as metaAds from './intl/meta-ads.json';
 import * as metaCatalog from './intl/meta-catalog.json';
 import * as metabase from './intl/metabase.json';
+import * as microsoftAdvertising from './intl/microsoft-advertising.json';
 import * as microsoftBookings from './intl/microsoft-bookings.json';
 import * as microsoftExcel from './intl/microsoft-excel.json';
 import * as microsoftOnedrive from './intl/microsoft-onedrive.json';
@@ -609,6 +610,7 @@ import * as shoptet from './intl/shoptet.json';
 import * as shortcut from './intl/shortcut.json';
 import * as signnow from './intl/signnow.json';
 import * as signwell from './intl/signwell.json';
+import * as skroutz from './intl/skroutz.json';
 import * as slab from './intl/slab.json';
 import * as slack from './intl/slack.json';
 import * as smartlead from './intl/smartlead.json';
@@ -678,6 +680,7 @@ import * as typeform from './intl/typeform.json';
 import * as untappd from './intl/untappd.json';
 import * as ups from './intl/ups.json';
 import * as uptimeRobot from './intl/uptime-robot.json';
+import * as usps from './intl/usps.json';
 import * as uzumMarket from './intl/uzum-market.json';
 import * as vapi from './intl/vapi.json';
 import * as venteUnique from './intl/vente-unique.json';
@@ -1527,6 +1530,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   metaAds as unknown as AdapterDefinition,
   metaCatalog as unknown as AdapterDefinition,
   metabase as unknown as AdapterDefinition,
+  microsoftAdvertising as unknown as AdapterDefinition,
   microsoftBookings as unknown as AdapterDefinition,
   microsoftExcel as unknown as AdapterDefinition,
   microsoftOnedrive as unknown as AdapterDefinition,
@@ -1711,6 +1715,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   shortcut as unknown as AdapterDefinition,
   signnow as unknown as AdapterDefinition,
   signwell as unknown as AdapterDefinition,
+  skroutz as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
   slack as unknown as AdapterDefinition,
   smartlead as unknown as AdapterDefinition,
@@ -1780,6 +1785,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   untappd as unknown as AdapterDefinition,
   ups as unknown as AdapterDefinition,
   uptimeRobot as unknown as AdapterDefinition,
+  usps as unknown as AdapterDefinition,
   uzumMarket as unknown as AdapterDefinition,
   vapi as unknown as AdapterDefinition,
   venteUnique as unknown as AdapterDefinition,
