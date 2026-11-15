@@ -211,6 +211,11 @@ test.describe('starter pack on /welcome', () => {
     // says "Add 2" and a third, unticked card is disabled.
     await expect(region.getByRole('button', { name: 'Add 2 connectors' })).toBeEnabled();
     await expect(region.getByText('Your current plan includes')).toBeVisible();
+    // The checkout takes more than cards, so the link says "payment method".
+    await expect(region.getByRole('link', { name: 'Add a payment method for more' })).toHaveAttribute(
+      'href',
+      '/start-trial?source=starter_pack',
+    );
     await expect(region.getByRole('checkbox', { name: /Nominatim/ })).toBeDisabled();
 
     await region.getByRole('button', { name: 'Add 2 connectors' }).click();

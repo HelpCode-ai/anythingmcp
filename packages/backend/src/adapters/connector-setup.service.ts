@@ -515,7 +515,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     return {
       error: reason,
       whatTheUserCanDo: onTrial
-        ? 'Add a card to continue the trial on the full plan (nothing is charged before the trial ends), or remove a connector.'
+        ? 'Add a payment method to continue the trial on the full plan (nothing is charged before the trial ends), or remove a connector.'
         : 'Choose a plan with more connectors, or remove a connector.',
       upgradeUrl: `${ctx.dashboardBase}${onTrial ? '/start-trial' : '/settings/license'}?source=${CHAT_SETUP_SOURCE}`,
     };
