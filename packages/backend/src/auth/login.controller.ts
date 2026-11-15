@@ -14,7 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
-import { randomBytes, timingSafeEqual, createHash } from 'crypto';
+import { randomBytes, timingSafeEqual, createHmac } from 'crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { resolveDashboardSessionUser, type SessionUser } from './dashboard-session.util';
@@ -340,7 +340,11 @@ export class LoginController {
             device: isPhoneUserAgent(req.headers['user-agent']) ? 'phone' : 'desktop',
             // Reloads and the return from a social sign-in show the page
             // again: the same attempt, counted once by this value.
-            attempt: createHash('sha256').update(sessionId).digest('hex').slice(0, 12),
+            // Keyed, so the value cannot be recomputed from a session id.
+            attempt: createHmac('sha256', process.env.ENCRYPTION_KEY || 'authorize-attempt')
+              .update(sessionId)
+              .digest('hex')
+              .slice(0, 12),
           },
         })
         .catch(() => undefined);
