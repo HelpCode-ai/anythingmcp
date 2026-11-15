@@ -164,7 +164,7 @@
         "properties": {
           "order_id": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "pattern": "^[A-Za-z0-9_-]{3,40}$",
             "description": "Spartoo order id, e.g. 90D813EA1A2365A8 (orders_id of spartoo_list_orders)."
           }
         },
@@ -193,7 +193,7 @@
         "properties": {
           "order_id": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "pattern": "^[A-Za-z0-9_-]{3,40}$",
             "description": "Spartoo order id to accept (orders_id of spartoo_list_orders)."
           }
         },
@@ -225,7 +225,7 @@
         "properties": {
           "order_id": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "pattern": "^[A-Za-z0-9_-]{3,40}$",
             "description": "Spartoo order id to ship; it must be in status 2 (accept it first)."
           },
           "tracking_number": {
@@ -265,7 +265,7 @@
         "properties": {
           "order_id": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "pattern": "^[A-Za-z0-9_-]{3,40}$",
             "description": "Spartoo order id to cancel."
           }
         },
@@ -340,12 +340,12 @@
         "properties": {
           "return_id": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9]{3,40}$",
+            "pattern": "^[A-Za-z0-9_-]{3,40}$",
             "description": "Spartoo return id, e.g. EEAJBCC (return_id of spartoo_list_returns)."
           },
           "order_id": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "pattern": "^[A-Za-z0-9_-]{3,40}$",
             "description": "Spartoo order id: all returns of that order."
           }
         }
@@ -372,7 +372,7 @@
         "properties": {
           "product_reference": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9._-]{1,100}$",
+            "pattern": "^[A-Za-z0-9._/+-]{1,100}$",
             "description": "Your product reference (reference_partenaire: one model in one colour). Letters, digits, dash, underscore and full stop only."
           }
         },
@@ -401,7 +401,7 @@
         "properties": {
           "product_reference": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9._-]{1,100}$",
+            "pattern": "^[A-Za-z0-9._/+-]{1,100}$",
             "description": "Your product reference (reference_partenaire: one model in one colour)."
           },
           "size_reference": {
