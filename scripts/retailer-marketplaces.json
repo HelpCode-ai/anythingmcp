@@ -500,6 +500,453 @@
       "sources": [
         "https://help.lengow.com/hc/en-us/articles/8363025976476-Vente-unique-Mirakl-Starting-with-Vente-unique"
       ]
+    },
+    {
+      "slug": "boulanger",
+      "name": "Boulanger Marketplace",
+      "retailer": "Boulanger",
+      "region": "fr",
+      "brandColor": "#FD5300",
+      "monogram": "Bo",
+      "hosts": [{ "value": "https://merchant.boulanger.com", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Boulanger selects its sellers; contact it by e-mail (`marketplace.interne@boulanger.com`). The business must be based in the EU, ship from the EU and offer customer service in French.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.boulanger.com/evenement/devenir-vendeur-marketplace",
+      "notes": [],
+      "aliases": ["Boulanger seller API", "Boulanger vendeur marketplace", "Boulanger place de marché", "merchant.boulanger.com", "Boulanger Mirakl"],
+      "sources": [
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
+        "https://crt.sh/?q=%25.boulanger.com",
+        "https://help.lengow.com/hc/en-us/articles/360012238371-Boulanger-Mirakl-Starting-with-Boulanger",
+        "https://support.channelengine.com/hc/en-us/articles/6328193013277-Boulanger-marketplace-guide",
+        "https://www.boulanger.com/evenement/devenir-vendeur-marketplace"
+      ]
+    },
+    {
+      "slug": "leen-bakker",
+      "name": "Leen Bakker Marketplace",
+      "retailer": "Leen Bakker",
+      "region": "nl",
+      "brandColor": "#CD0279",
+      "monogram": "LB",
+      "hosts": [{ "value": "https://partnerplatform.leenbakker.nl", "label": "Netherlands and Belgium" }],
+      "countries": ["NL", "BE"],
+      "countriesNote": "Belgium is sold in Dutch and in French from the same shop.",
+      "shopIdNeeded": false,
+      "access": "Leen Bakker selects its sellers (a curated marketplace); apply through its new sales partner page or by e-mail.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.leenbakker.nl/nieuwe-verkooppartner",
+      "notes": [],
+      "aliases": ["Leen Bakker seller API", "Leen Bakker verkooppartner", "Leen Bakker partnerplatform", "LeenBakker", "Leen Bakker Mirakl"],
+      "sources": [
+        "https://crt.sh/?q=%25.leenbakker.nl",
+        "https://support.channelengine.com/hc/en-us/articles/4409503282717",
+        "https://helpcenter.channable.com/list-advertise/sell-on-marketplaces/mirakl-marketplaces/setting-up-a-leen-bakker-api",
+        "https://e-tailize.com/help/marketplaces/sell-on-leen-bakker/"
+      ]
+    },
+    {
+      "slug": "macys",
+      "name": "Macy's Marketplace",
+      "retailer": "Macy's",
+      "region": "intl",
+      "brandColor": "#E11A2B",
+      "monogram": "Ma",
+      "hosts": [{ "value": "https://macysus-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "Macy's takes applications through its marketplace site; sellers need a US tax id, a hand-signed W-9, a US warehouse, a UPS account for returns and GS1-registered UPC codes.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://marketplace.macys.com",
+      "notes": [],
+      "aliases": ["Macys", "Macy's seller API", "Macys Marketplace", "Macy's Marketplace US", "Macy's Mirakl"],
+      "sources": [
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/5CORE-ALL/invent/blob/HEAD/config/services.php",
+        "https://support.channelengine.com/hc/en-us/articles/9000052801053-Macy-s-marketplace-guide",
+        "https://crt.sh/?q=%25.macys.com"
+      ]
+    },
+    {
+      "slug": "nature-et-decouvertes",
+      "name": "Nature & Découvertes Marketplace",
+      "retailer": "Nature & Découvertes",
+      "region": "fr",
+      "brandColor": "#215331",
+      "monogram": "ND",
+      "hosts": [{ "value": "https://marketplace.natureetdecouvertes.com", "label": "France" }],
+      "countries": ["FR", "BE", "LU", "DE", "CH"],
+      "countriesNote": "The shop is French; orders also come from Belgium, Luxembourg, Germany and Switzerland.",
+      "shopIdNeeded": false,
+      "access": "Nature & Découvertes selects its sellers through the application form on its marketplace page; the business must be registered in the French trade register (RCS) and follow French VAT rules.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.natureetdecouvertes.com/marketplace",
+      "notes": [],
+      "aliases": ["Nature et Découvertes", "Nature et Decouvertes", "Nature & Decouvertes", "N&D marketplace", "Nature & Découvertes seller API", "Nature & Découvertes Mirakl"],
+      "sources": [
+        "https://github.com/invoice-collector/invoice-collector/blob/HEAD/src/collectors/sketch/nature_et_decouvertes/nature_et_decouvertes.ts",
+        "https://crt.sh/?q=%25.natureetdecouvertes.com",
+        "https://help.lengow.com/hc/en-us/articles/360012230691",
+        "https://support.channelengine.com/hc/en-us/articles/18583242898973-Nature-et-Découvertes-marketplace-guide",
+        "https://www.natureetdecouvertes.com/marketplace"
+      ]
+    },
+    {
+      "slug": "nordstrom",
+      "name": "Nordstrom Marketplace",
+      "retailer": "Nordstrom",
+      "region": "intl",
+      "brandColor": "#231F20",
+      "monogram": "N",
+      "hosts": [{ "value": "https://nordstromus-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "Nordstrom selects its sellers after a first call; sellers need a US business registration, an EIN, Tax ID or LEI, a W-9, a US bank account and US shipping and return addresses.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Nordstrom seller API", "Nordstrom.com marketplace", "Nordstrom partner", "Nordstrom Mirakl"],
+      "sources": [
+        "https://github.com/WeathermanInc/Daily-revenue-by-sales-platform/blob/HEAD/main.py",
+        "https://support.channelengine.com/hc/en-us/articles/28394311446813-Nordstrom-marketplace-guide",
+        "https://www.mirakl.com/resources/how-nordstrom-building-customer-first-marketplace"
+      ]
+    },
+    {
+      "slug": "obelink",
+      "name": "Obelink Marketplace",
+      "retailer": "Obelink",
+      "region": "intl",
+      "brandColor": "#0032A0",
+      "monogram": "Ob",
+      "hosts": [{ "value": "https://marketplace-obelink.mirakl.net", "label": "All countries" }],
+      "countries": ["NL", "BE", "DE", "FR"],
+      "countriesNote": "All countries share one seller platform.",
+      "shopIdNeeded": false,
+      "access": "Obelink takes applications through its partner programme form or by direct contact.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.obelink.nl/obelink-partnerprogramma",
+      "notes": [],
+      "aliases": ["Obelink seller API", "Obelink partnerprogramma", "Obelink Vrijetijdsmarkt", "Obelink Mirakl"],
+      "sources": [
+        "https://github.com/GijsNagtegaal/CV/blob/HEAD/obelink-bot/bot.js",
+        "https://github.com/onetoweb/mirakl/blob/HEAD/docs/offer.rst",
+        "https://support.channelengine.com/hc/en-us/articles/4654174711965",
+        "https://www.obelink.nl/obelink-partnerprogramma"
+      ]
+    },
+    {
+      "slug": "auchan",
+      "name": "Auchan Marketplace",
+      "retailer": "Auchan",
+      "region": "fr",
+      "brandColor": "#D6180B",
+      "monogram": "Au",
+      "hosts": [{ "value": "https://auchan-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Auchan selects its sellers; contact its marketplace team by e-mail (`fr-liste_ecom_marketplace@auchan.fr`). The business must be based in Europe.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.auchan.fr/devenir-vendeur-marketplace/ep-devenir-vendeur-marketplace",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Auchan seller API", "Auchan place de marché", "Auchan Marketplace France", "Auchan Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/360012003032-Auchan-Mirakl-Starting-with-Auchan",
+        "https://support.channelengine.com/hc/en-us/articles/27315522105757-Auchan-marketplace-guide",
+        "https://www.auchan.fr/devenir-vendeur-marketplace/ep-devenir-vendeur-marketplace",
+        "https://github.com/STANDUP-SHOW/DropShipPro/blob/HEAD/backend/src/services/mirakl.ts"
+      ]
+    },
+    {
+      "slug": "bricomarche",
+      "name": "Bricomarché Marketplace",
+      "retailer": "Bricomarché",
+      "region": "fr",
+      "brandColor": "#ED1D24",
+      "monogram": "Br",
+      "hosts": [{ "value": "https://bricomarchefr-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Bricomarché selects its sellers; contact its marketplace team by e-mail (`SASEM_MARKETPLACE_BM@mousquetaires.com`). Customer service must be in French.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.bricomarche.com/faq-vendeur-marketplace",
+      "notes": [
+        "The same seller account can also sell on Brico Cash and Bricorama once the Bricomarché account manager switches those sites on.",
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Bricomarche", "Bricomarché seller API", "Brico Cash", "Bricorama", "Les Mousquetaires marketplace", "Bricomarché Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/4411803292818",
+        "https://support.channelengine.com/hc/en-us/articles/25925161074205",
+        "https://www.bricomarche.com/faq-vendeur-marketplace",
+        "https://github.com/STANDUP-SHOW/DropShipPro/blob/HEAD/backend/src/services/mirakl.ts"
+      ]
+    },
+    {
+      "slug": "cultura",
+      "name": "Cultura Marketplace",
+      "retailer": "Cultura",
+      "region": "fr",
+      "brandColor": "#39409E",
+      "monogram": "Cu",
+      "hosts": [{ "value": "https://culturafr-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Cultura reviews applications sent through the form on its website; the company and its warehouse must be in the EU and every product needs an EAN.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.cultura.com/cultura-s-engage/services/informations-marketplace/vendeur-marchand.html",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Cultura seller API", "Cultura place de marché", "Cultura vendeur marchand", "Cultura Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/24529328207388-Cultura-Mirakl-Starting-with-Cultura",
+        "https://support.channelengine.com/hc/en-us/articles/22920701709597",
+        "https://www.mirakl.com/fr-fr/news/cultura-choisit-mirakl-pour-creer-sa-place-de-marche-et-elargit-son-offre-de-produits-culturels-neufs-et-docassion/",
+        "https://github.com/STANDUP-SHOW/DropShipPro/blob/HEAD/backend/src/services/mirakl.ts"
+      ]
+    },
+    {
+      "slug": "inno",
+      "name": "INNO Marketplace",
+      "retailer": "INNO",
+      "region": "be",
+      "brandColor": "#1A1A1A",
+      "monogram": "In",
+      "hosts": [{ "value": "https://galeriainnobe-prod.mirakl.net", "label": "Belgium" }],
+      "countries": ["BE", "NL"],
+      "countriesNote": "Products are listed in Dutch and in French on the same shop.",
+      "shopIdNeeded": false,
+      "access": "INNO screens every seller (a curated marketplace): a business check through Stripe, then an invitation link to open the shop, valid for 48 hours.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.inno.be/fr/b2b-marketplace.html",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Galeria Inno", "INNO Belgium", "inno.be marketplace", "INNO seller API", "INNO Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/31739412385180-INNO-Mirakl-Starting-with-INNO-Mirakl",
+        "https://support.channelengine.com/hc/en-us/articles/4409485337501",
+        "https://e-tailize.com/help/marketplaces/sell-on-inno/",
+        "https://github.com/STANDUP-SHOW/DropShipPro/blob/HEAD/backend/src/services/mirakl.ts"
+      ]
+    },
+    {
+      "slug": "rue-du-commerce",
+      "name": "Rue du Commerce Marketplace",
+      "retailer": "Rue du Commerce",
+      "region": "fr",
+      "brandColor": "#001D3D",
+      "monogram": "RC",
+      "hosts": [{ "value": "https://mirakl-web.groupe-rueducommerce.fr", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Rue du Commerce selects its sellers; contact it by e-mail (`service.marchands@rueducommerce.com`) or through its seller form.",
+      "keyPath": "your e-mail address (top right) > My account > API key",
+      "sellerHelpUrl": "https://www.rueducommerce.fr/media/documents/Guide%20Marketplace/Guide%20MKP%20En.pdf",
+      "notes": [],
+      "aliases": ["Rue du Commerce seller API", "RueDuCommerce", "RDC marketplace", "Rue du Commerce vendeur", "Rue du Commerce Mirakl"],
+      "sources": [
+        "https://www.rueducommerce.fr/media/documents/Guide%20Marketplace/Guide%20MKP%20En.pdf",
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/lampesecoenergie/site/blob/HEAD/app/code/Ced/RueDuCommerce/rueducommerce-sdk/src/Core/RequestInterface.php",
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://help.lengow.com/hc/en-us/articles/360012228851-Rue-du-Commerce-Mirakl-Starting-with-Rue-du-Commerce",
+        "https://help.lengow.com/hc/en-us/articles/24177189019804-Rue-du-Commerce-Mirakl-Connection-settings",
+        "https://support.channelengine.com/hc/en-us/articles/4698801992221-Rue-du-Commerce-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "sarenza",
+      "name": "Sarenza Marketplace",
+      "retailer": "Sarenza",
+      "region": "fr",
+      "brandColor": "#FF2157",
+      "monogram": "Sa",
+      "hosts": [{ "value": "https://sarenza-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Sarenza selects its sellers; contact it by e-mail (`marketplace@sarenza.com`). It asks for experience on other marketplaces and official distributor status in France for the brands you sell.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Sarenza seller API", "Sarenza.com", "Sarenza partenaire", "Sarenza Mirakl"],
+      "sources": [
+        "https://support.channelengine.com/hc/en-us/articles/13388713920285-Sarenza-marketplace-guide",
+        "https://help.lengow.com/hc/en-us/articles/4415928084626-Sarenza-Mirakl-Starting-with-Sarenza"
+      ]
+    },
+    {
+      "slug": "shop-apotheke",
+      "name": "Shop Apotheke Marketplace",
+      "retailer": "Shop Apotheke",
+      "region": "intl",
+      "brandColor": "#ED0334",
+      "monogram": "SA",
+      "hosts": [{ "value": "https://shopapotheke.mirakl.net", "label": "All countries" }],
+      "countries": ["DE", "AT", "IT", "BE"],
+      "countriesNote": "The marketplace is live in Germany and Austria; Italy (redcare.it) and Belgium (farmaline.be) run a partner programme on their own contracts.",
+      "shopIdNeeded": true,
+      "shopIdNote": "Shop Apotheke signs a separate contract for each country, so a seller in several countries has several shops.",
+      "access": "Shop Apotheke approves each partner, may review the product feed first, and signs a contract per country; apply on its partner page.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.shop-apotheke.com/partner/marktplatz/",
+      "notes": [
+        "Only the Germany and Austria shops are confirmed on this address; Italian and Belgian shops are assumed to use it too."
+      ],
+      "aliases": ["Shop Apotheke seller API", "SHOP APOTHEKE Marktplatz", "Redcare Pharmacy", "Redcare", "shop-apotheke.com", "Shop Apotheke Mirakl"],
+      "sources": [
+        "https://github.com/invoice-collector/invoice-collector/blob/HEAD/src/collectors/sketch/mirakl_shop_apotheke/mirakl_shop_apotheke.ts",
+        "https://github.com/holmegruppen/services/blob/HEAD/server.js",
+        "https://www.shop-apotheke.com/partner/marktplatz/",
+        "https://support.channelengine.com/hc/en-us/articles/11752385530141-Shop-Apotheke-marketplace-guide",
+        "https://docs.poleepo.cloud/en/articles/12077550-configure-redcare"
+      ]
+    },
+    {
+      "slug": "sprinter",
+      "name": "Sprinter Marketplace",
+      "retailer": "Sprinter",
+      "region": "es",
+      "brandColor": "#A3E81A",
+      "monogram": "Sp",
+      "hosts": [{ "value": "https://sprinter-prod.mirakl.net", "label": "Spain, Portugal" }],
+      "countries": ["ES", "PT"],
+      "countriesNote": "Spain and Portugal are two sales channels of the same shop, each with its own prices.",
+      "shopIdNeeded": false,
+      "access": "Sprinter takes applications through the form on its seller page; fees and commission are agreed with Sprinter.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.sprintersports.com/marketplace-sellers",
+      "notes": [],
+      "aliases": ["Sprinter seller API", "Sprinter Sports", "sprintersports.com", "Sprinter Mirakl"],
+      "sources": [
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://support.channelengine.com/hc/en-us/articles/12431290779037-Sprinter-marketplace-guide",
+        "https://helpcenter.channable.com/list-advertise/sell-on-marketplaces/mirakl-marketplaces/how-to-set-up-a-sprinter-channel"
+      ]
+    },
+    {
+      "slug": "superdrug",
+      "name": "Superdrug Marketplace",
+      "retailer": "Superdrug",
+      "region": "gb",
+      "brandColor": "#EE008E",
+      "monogram": "Sd",
+      "hosts": [{ "value": "https://superdrugnl-prod.mirakl.net", "label": "United Kingdom" }],
+      "countries": ["GB"],
+      "shopIdNeeded": false,
+      "access": "Superdrug selects its sellers; contact it by e-mail (`marketplace@uk.aswatson.com`).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.superdrug.com/marketplace/sellers",
+      "notes": [],
+      "aliases": ["Superdrug seller API", "Superdrug.com marketplace", "A.S. Watson Superdrug", "Superdrug Mirakl"],
+      "sources": [
+        "https://github.com/fluffhead-tim/retail-category-selector/blob/HEAD/data/marketplaces.json",
+        "https://www.superdrug.com/marketplace/sellers",
+        "https://www.mirakl.com/news/superdrug-launches-first-high-street-health-and-beauty-retailer-marketplace",
+        "https://support.storefeeder.com/hc/en-gb/articles/39325658627997-Marketplaces-Available-through-Mirakl"
+      ]
+    },
+    {
+      "slug": "tesco",
+      "name": "Tesco Marketplace",
+      "retailer": "Tesco",
+      "region": "gb",
+      "brandColor": "#00539F",
+      "monogram": "T",
+      "hosts": [{ "value": "https://tescouk-prod.mirakl.net", "label": "United Kingdom" }],
+      "countries": ["GB"],
+      "shopIdNeeded": false,
+      "access": "Tesco takes applications through its seller application form and vets each seller; the business must be registered and VAT-registered in the UK.",
+      "keyPath": "your initials (top right) > Personal Settings > API Key",
+      "sellerHelpUrl": "https://share-eu1.hsforms.com/1UEhLaAEvReaG1Vrus6xjTQ2ejl75",
+      "notes": [
+        "The API key belongs to the user who created it: it stops working if that user is disabled or loses the Owner or Manager role."
+      ],
+      "aliases": ["Tesco seller API", "Tesco Marketplace UK", "Tesco.com marketplace", "Tesco Mirakl"],
+      "sources": [
+        "https://github.com/fluffhead-tim/retail-category-selector/blob/HEAD/data/marketplaces.json",
+        "https://support.channelengine.com/hc/en-us/article_attachments/34004444058397",
+        "https://support.storefeeder.com/hc/en-gb/articles/30889565428253-Connecting-to-Tesco-Marketplace-via-Mirakl-Integration",
+        "https://support.channelengine.com/hc/en-us/articles/20681041889949-Tesco-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "hornbach",
+      "name": "HORNBACH Marketplace",
+      "retailer": "HORNBACH",
+      "region": "de",
+      "brandColor": "#F7911A",
+      "monogram": "H",
+      "hosts": [{ "value": "https://hornbach-mp.mirakl.net", "label": "Germany, Czech Republic" }],
+      "countries": ["DE", "CZ"],
+      "countriesNote": "Germany and the Czech Republic are two sales channels of the same shop.",
+      "shopIdNeeded": false,
+      "access": "HORNBACH vets each partner through its application form; partners ship from the EU, give support in the local language and have a German VAT number or use the OSS scheme.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.hornbach.de/aktuelles/projekt-marktplatz-partner-werden/",
+      "notes": [],
+      "aliases": ["HORNBACH seller API", "Hornbach Marktplatz", "Hornbach partner", "HORNBACH Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/article_attachments/22724523382940",
+        "https://www.hornbach.de/aktuelles/projekt-marktplatz-partner-werden/",
+        "https://help.lengow.com/hc/en-us/articles/22646565950748-HORNBACH-Mirakl-Starting-with-HORNBACH",
+        "https://support.channelengine.com/hc/en-us/articles/14837873232925-HORNBACH-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "xxxlutz",
+      "name": "XXXLutz Marketplace",
+      "retailer": "XXXLutz",
+      "region": "intl",
+      "brandColor": "#E30613",
+      "monogram": "XL",
+      "hosts": [{ "value": "https://marketplace.xxxlgroup.com", "label": "All countries" }],
+      "countries": ["DE", "AT", "CH", "CZ", "SK", "HU", "RO", "SI", "HR", "SE"],
+      "countriesNote": "Germany is the main market; ChannelEngine lists the other countries.",
+      "shopIdNeeded": false,
+      "access": "XXXLutz takes applications through its registration form; it requires a German VAT number or the OSS scheme, a warehouse in the EU and an EAN for every product.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.xxxlutz.de/c/marketplace",
+      "notes": [],
+      "aliases": ["XXXLutz seller API", "XXXL Marketplace", "XXXL Group", "Lutz", "XXXLutz Mirakl"],
+      "sources": [
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://help.lengow.com/hc/en-us/articles/20294234101020-XXXLutz-Mirakl-Starting-with-XXXLutz",
+        "https://support.channelengine.com/hc/en-us/articles/15648471899165-XXXLutz-marketplace-guide",
+        "https://help.beezup.com/en/articles/9479961-xxxlutz-products-publication"
+      ]
+    },
+    {
+      "slug": "modivo",
+      "name": "MODIVO Marketplace",
+      "retailer": "MODIVO",
+      "region": "pl",
+      "brandColor": "#050505",
+      "monogram": "Mo",
+      "hosts": [{ "value": "https://modivo.mirakl.net", "label": "All countries" }],
+      "countries": ["PL", "CZ", "SK", "IT"],
+      "countriesNote": "Each market has its own seller account.",
+      "shopIdNeeded": true,
+      "shopIdNote": "MODIVO opens a separate account for each market, so a seller in several countries has several shops.",
+      "access": "MODIVO is a closed marketplace: contact MODIVO, which checks your business against its requirements (delivery and return terms, carriers, 48-hour shipping, EAN codes).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://help-partner.modivo.com/en/",
+      "notes": [],
+      "aliases": ["MODIVO seller API", "Modivo partner", "modivo.pl", "eobuwie", "MODIVO Mirakl"],
+      "sources": [
+        "https://help-partner.modivo.com/en/login-and-password/logging-in-and-password.html",
+        "https://help-partner.modivo.com/en/integrations/how-to-list-products-offers-on-other-markets.html",
+        "https://github.com/invoice-collector/invoice-collector/blob/HEAD/src/collectors/sketch/mirakl_modivo/mirakl_modivo.ts",
+        "https://support.channelengine.com/hc/en-us/articles/12770067029789-MODIVO-marketplace-guide"
+      ]
     }
   ]
 }
