@@ -12,6 +12,8 @@ import { CardTrialOfferService } from '../../license/card-trial-offer.service';
 import { RetentionLicenceClient } from '../../license/retention-licence.client';
 import { cloudFrontendOrigin } from '../../license/license-checkout';
 import { createTrialExtensionToken, trialExtensionSecret } from '../../license/trial-extension-token';
+import { FIRST_SUCCESS_KEY } from '../../license/card-trial-offer';
+import { membersFirstSuccessAt } from '../../audit/first-success-markers';
 import {
   WINBACK_HOLDOUT_KEY,
   WINBACK_OFFER_KEY,
@@ -1030,13 +1032,14 @@ export class OnboardingCronService {
     });
     const firstStage = WINBACK_STAGES[0];
     // What the loop checks first, loaded in a few queries for every workspace
-    // with enough events (one group per workspace): the email already sent,
-    // any licence besides the free trial, and the latest free trial's end.
+    // with enough events (one group per workspace): the email already sent
+    // and the stored first success, any licence besides the free trial, and
+    // the latest free trial's end.
     const eligible = groups
       .filter((g) => g.organizationId && g._count._all >= BLOCKED_CALLS.minEvents)
       .map((g) => g.organizationId!);
     const [sent, customers, trialEnds] = await Promise.all([
-      this.storedSettings(eligible, [BLOCKED_CALLS.flagKey]),
+      this.storedSettings(eligible, [BLOCKED_CALLS.flagKey, FIRST_SUCCESS_KEY]),
       this.workspacesWithOtherLicence(eligible),
       this.latestTrialEnds(eligible),
     ]);
@@ -1070,10 +1073,18 @@ export class OnboardingCronService {
         this.prisma.toolInvocation.count({ where: { organizationId, status: 'SUCCESS' } }),
         this.prisma.connector.findMany({ where: { organizationId }, select: { config: true } }),
       ]);
+      // A workspace back long after its trial may have no SUCCESS row left
+      // (Cloud deletes them after INVOCATION_RETENTION_DAYS): the stored
+      // markers say whether it ever succeeded.
+      const succeededBefore =
+        successfulCalls <= 0 &&
+        (sent.has(settingId(organizationId, FIRST_SUCCESS_KEY)) ||
+          (await membersFirstSuccessAt(this.prisma, organizationId)) !== null);
       const segment = winbackSegment({
         adminEmails: admins.map((a) => a.user.email),
         connectorConfigs: connectors.map((c) => c.config),
         successfulCalls,
+        succeededBefore,
       });
       const recipients = admins.filter((a) => !a.user.emailMarketingOptOut).map((a) => a.user);
       if (recipients.length === 0) {

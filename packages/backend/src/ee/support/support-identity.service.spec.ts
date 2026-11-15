@@ -40,6 +40,9 @@ function fakePrisma() {
     mcpServerConfig: {
       findMany: jest.fn().mockResolvedValue([{ id: 's1', name: 'Default (Ada)' }]),
     },
+    // No stored first success and no member stamp unless a test sets one.
+    orgSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+    organizationMember: { findMany: jest.fn().mockResolvedValue([]) },
     toolInvocation: {
       groupBy: jest.fn().mockResolvedValue([{ connectorId: 'c2', _count: { _all: 7 } }]),
       findFirst: jest.fn().mockResolvedValue({
@@ -246,6 +249,48 @@ describe('SupportIdentityService', () => {
     const { svc, prisma } = build();
     prisma.toolInvocation.findFirst.mockResolvedValue(null);
     expect((await svc.contactAttributes('u1', 'org1')).last_tool_call).toBe('never');
+  });
+
+  describe('when the retention deleted every successful call', () => {
+    afterEach(() => {
+      process.env = { ...SAVED };
+    });
+
+    it('says "more than 90 days ago" when the workspace stored its first success', async () => {
+      delete process.env.INVOCATION_RETENTION_DAYS;
+      const { svc, prisma } = build();
+      prisma.toolInvocation.findFirst.mockResolvedValue(null);
+      prisma.orgSettings.findUnique.mockResolvedValue({ value: '2026-06-01T10:00:00.000Z' });
+      expect((await svc.contactAttributes('u1', 'org1')).last_tool_call).toBe('more than 90 days ago');
+      expect(prisma.orgSettings.findUnique.mock.calls[0][0].where).toEqual({
+        organizationId_key: { organizationId: 'org1', key: 'first_successful_call_at' },
+      });
+    });
+
+    it("uses a member's first-success stamp and the configured retention", async () => {
+      process.env.INVOCATION_RETENTION_DAYS = '30';
+      const { svc, prisma } = build();
+      prisma.toolInvocation.findFirst.mockResolvedValue(null);
+      prisma.organizationMember.findMany.mockResolvedValue([
+        { joinedAt: new Date('2026-06-01T00:00:00Z'), user: { firstSuccessfulInvocationAt: new Date('2026-06-02T00:00:00Z') } },
+      ]);
+      expect((await svc.contactAttributes('u1', 'org1')).last_tool_call).toBe('more than 30 days ago');
+      expect(prisma.organizationMember.findMany.mock.calls[0][0].where).toMatchObject({ organizationId: 'org1' });
+    });
+
+    it('says "not in the call history" on a dedicated instance, which runs no retention', async () => {
+      const { svc, prisma } = build(false);
+      prisma.toolInvocation.findFirst.mockResolvedValue(null);
+      prisma.orgSettings.findUnique.mockResolvedValue({ value: '2026-06-01T10:00:00.000Z' });
+      expect((await svc.contactAttributes('u1', 'org1')).last_tool_call).toBe('not in the call history');
+    });
+
+    it('still gives the day when a successful call is kept, without reading the markers', async () => {
+      const { svc, prisma } = build();
+      prisma.toolInvocation.findFirst.mockResolvedValue({ createdAt: new Date('2026-11-01T08:00:00Z') });
+      expect((await svc.contactAttributes('u1', 'org1')).last_tool_call).toBe('2026-11-01');
+      expect(prisma.orgSettings.findUnique).not.toHaveBeenCalled();
+    });
   });
 
   it('filters every query by the caller organization', async () => {

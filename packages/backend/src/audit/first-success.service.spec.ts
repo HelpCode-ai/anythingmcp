@@ -33,6 +33,8 @@ function makeService(
     /** Admin addresses the licence site says had a subscription; null = no answer. */
     hadSubscription?: string[] | null;
     admins?: string[];
+    /** Members' first-success stamps (users.first_successful_invocation_at). */
+    members?: Array<{ joinedAt: Date; firstSuccessfulInvocationAt: Date }>;
   } = {},
 ) {
   const settings = [...(opts.settings ?? [])];
@@ -64,7 +66,15 @@ function makeService(
     mcpTool: { findUnique: jest.fn(async () => ({ name: 'shopify_list_orders' })) },
     productEvent: { create: jest.fn(async ({ data }: any) => events.push(data)) },
     organizationMember: {
-      findMany: jest.fn(async () => (opts.admins ?? ['ada@example.com']).map((email) => ({ user: { email } }))),
+      // The admins (role filter), or the members with a first-success stamp.
+      findMany: jest.fn(async ({ where }: any) =>
+        where.user
+          ? (opts.members ?? []).map((m) => ({
+              joinedAt: m.joinedAt,
+              user: { firstSuccessfulInvocationAt: m.firstSuccessfulInvocationAt },
+            }))
+          : (opts.admins ?? ['ada@example.com']).map((email) => ({ user: { email } })),
+      ),
     },
   };
   const deployment = { isCloud: () => opts.isCloud ?? true };
@@ -220,6 +230,34 @@ describe('FirstSuccessService', () => {
     expect(settings).toEqual([{ organizationId: 'org-1', key: FIRST_SUCCESS_KEY, value: old.toISOString() }]);
     expect(prisma.license.findMany).not.toHaveBeenCalled();
     expect(events).toHaveLength(0);
+  });
+
+  it("keeps a member's older first success when the retention deleted the old rows: not fresh, no offer", async () => {
+    // The oldest row left is a minute old, but a member first succeeded in
+    // this workspace four months ago.
+    const old = new Date('2026-06-30T08:00:00.000Z');
+    const { svc, prisma, settings, events } = makeService({
+      members: [
+        { joinedAt: new Date('2026-06-29T00:00:00Z'), firstSuccessfulInvocationAt: old },
+        { joinedAt: new Date('2026-06-29T00:00:00Z'), firstSuccessfulInvocationAt: new Date('2026-09-01T00:00:00Z') },
+      ],
+    });
+    await svc.onSuccessfulInvocation('org-1');
+    expect(settings).toEqual([{ organizationId: 'org-1', key: FIRST_SUCCESS_KEY, value: old.toISOString() }]);
+    expect(prisma.organizationMember.findMany.mock.calls[0][0].where).toMatchObject({ organizationId: 'org-1' });
+    expect(prisma.license.findMany).not.toHaveBeenCalled();
+    expect(events).toHaveLength(0);
+  });
+
+  it('stays fresh when no row is left and no member has an older stamp (the first call is this one)', async () => {
+    const { svc, settings, events } = makeService({
+      firstSuccessAt: null,
+      // Stamped before joining this workspace: a call made elsewhere.
+      members: [{ joinedAt: new Date('2026-10-01T00:00:00Z'), firstSuccessfulInvocationAt: new Date('2026-09-01T00:00:00Z') }],
+    });
+    await svc.onSuccessfulInvocation('org-1', { connectorId: 'con-1', toolId: 'tool-1' });
+    expect(settings.find((s) => s.key === FIRST_SUCCESS_KEY)?.value).toBe(NOW.toISOString());
+    expect(events).toHaveLength(1);
   });
 
   it('never rejects, and tries again on the next call after a failure', async () => {
