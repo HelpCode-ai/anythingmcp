@@ -733,7 +733,7 @@ describe('ChatGPT tool set', () => {
             isError: true,
             body: {
               error: 'Trial limit reached (10 connectors).',
-              whatTheUserCanDo: 'Add a card to continue the trial on the full plan, or remove a connector.',
+              whatTheUserCanDo: 'Add a payment method to continue the trial on the full plan, or remove a connector.',
               upgradeUrl: 'https://cloud.example.com/start-trial',
             },
           },

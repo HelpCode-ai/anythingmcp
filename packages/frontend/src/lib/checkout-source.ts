@@ -22,13 +22,13 @@ export const CHECKOUT_SOURCES = [
   'license_page',
   /** The wall shown once the free trial is over. */
   'trial_ended_wall',
-  /** "Add a card" on the page after approving an AI client. */
+  /** "Add a payment method" on the page after approving an AI client. */
   'post_approve',
   /** The card-trial page shown once after sign-up. */
   'signup_prompt',
   /** "Add a payment method" next to the connector limit. */
   'trial_limit',
-  /** "Add a card for more" in the starter pack on /welcome. */
+  /** "Add a payment method for more" in the starter pack on /welcome. */
   'starter_pack',
   /** The plan link the setup tools give the AI in a chat. */
   'chat_setup',

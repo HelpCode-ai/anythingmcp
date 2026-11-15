@@ -2,7 +2,6 @@ import axios, {
   AxiosAdapter,
   AxiosError,
   AxiosHeaders,
-  AxiosInstance,
   AxiosRequestConfig,
   AxiosResponse,
   InternalAxiosRequestConfig,
@@ -24,8 +23,8 @@ import { restateResponseTooLarge } from './response-size-limit';
  * connector base URLs, token and login endpoints, spec and schema URLs, MCP
  * servers. Use it for every such request:
  *  - axios: `outboundRequest(config)`, or spread `outboundAxiosOptions()` into
- *    the config of `axios.get/post/...`; `outboundAxios()` for libraries that
- *    take an axios instance (soap).
+ *    the config of `axios.get/post/...`; `axios.create(outboundAxiosOptions())`
+ *    for libraries that take an axios instance (soap, see wsdl.parser.ts).
  *  - fetch: `ssrfGuardedFetch`, for libraries that take a fetch (the MCP SDK).
  *  - Downloading a file or document for a user: `fetchOutbound`
  *    (outbound-fetch.util), which adds a byte cap and a deadline.
@@ -131,14 +130,6 @@ export function outboundRequest<T = any>(
 ): Promise<AxiosResponse<T>> {
   const { adapter, ...agents } = outboundAxiosOptions(options);
   return axios({ ...agents, ...config, adapter });
-}
-
-let sharedAxios: AxiosInstance | null = null;
-
-/** An axios instance with {@link outboundAxiosOptions}, for libraries that take one (soap). */
-export function outboundAxios(): AxiosInstance {
-  sharedAxios ??= axios.create(outboundAxiosOptions());
-  return sharedAxios;
 }
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
