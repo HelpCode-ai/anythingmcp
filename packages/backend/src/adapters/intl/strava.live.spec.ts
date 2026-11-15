@@ -1,4 +1,4 @@
-﻿import * as adapter from './strava.json';
+import * as adapter from './strava.json';
 
 const a = adapter as unknown as {
   slug: string;
@@ -10,7 +10,7 @@ const a = adapter as unknown as {
   tools: Array<{ name: string }>;
 };
 
-describe('strava adapter â€” static spec conformance', () => {
+describe('strava adapter - static spec conformance', () => {
   it('uses the Strava API v3 base URL', () => {
     expect(a.connector.baseUrl).toBe('https://www.strava.com/api/v3');
   });
@@ -39,7 +39,7 @@ describe('strava adapter â€” static spec conformance', () => {
 
 const runLive = process.env.RUN_STRAVA_LIVE === '1';
 
-describe('strava adapter â€” live API', () => {
+describe('strava adapter - live API', () => {
   (runLive ? it : it.skip)('can retrieve the authenticated athlete', async () => {
     const token = process.env.STRAVA_ACCESS_TOKEN;
 
