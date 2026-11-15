@@ -1,0 +1,1538 @@
+{
+  "slug": "shein",
+  "name": "SHEIN Seller",
+  "aliases": [
+    "SHEIN Open Platform",
+    "SHEIN Marketplace",
+    "SHEIN Seller Hub"
+  ],
+  "description": "Let your AI work with your SHEIN seller shop: orders, buyer address and tracking upload, parcel tracking, products with prices and stock, stock and price updates, categories and attributes, after-sales cases and returns.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "shein",
+  "docsUrl": "https://open.sheincorp.com/documents/system/2169474d-1d4a-41a9-b9fd-427f63f54a63",
+  "instructions": "## SHEIN\nThis connector calls the **SHEIN Open Platform API** (open.sheincorp.com) for one SHEIN seller shop: the shop and its sites, customer orders with items, buyer address, shipping carriers, tracking upload and parcel tracking, products with prices and stock, categories, attributes and brands, stock and price updates, units sold, after-sales cases and return orders. Cancelling an order line as out of stock, taking products off shelf and confirming a return are installed switched off. Nothing here moves money, books paid logistics or decides an after-sales case.\n\nThe order, address, tracking, warehouse, stock-update and return tools are for **self-operated** and **semi-managed** shops; prices can be set by self-operated shops only. Products, categories, attributes, brands, sites and stock reads also work for fully managed shops.\n\n**What you need**: a SHEIN Open Platform developer account of the type **Seller Self-Developed** (verified with the shop's merchant information), an approved app of the shop's cooperation mode, and the shop's main account to approve it. About 20 minutes of work, plus SHEIN's reviews of the account and the app.\n\n**Setup**\n1. Register at https://open.sheincorp.com, choose the developer type **Seller Self-Developed** and submit the merchant information it asks for (all of it is in the seller backend). The type cannot be changed once approved.\n2. In the console open **Application Management** and create an application. Pick the application type of the shop's cooperation mode: **Self-Operated** or **Semi-Managed** for a marketplace shop (a shop in several modes needs one app per mode). Name, icon and description are shown to sellers and cannot be edited after submitting. SHEIN reviews the app; until it is approved there is no valid App ID or App Secret.\n3. On the app's details page check the **API Permission Package**: the order, product, inventory, after-sales and return APIs must be subscribed (usually granted with the approval; otherwise click Apply for Permission Package). Add this server's outbound IP address to the app's **IP whitelist**: SHEIN refuses production calls from any other address (`openapi00002`). On AnythingMCP Cloud the setup page shows the address.\n4. Copy the **App ID** into `SHEIN_APP_ID` and the **App Secret** into `SHEIN_APP_SECRET`, and pick the API address for `SHEIN_API_HOST`: `https://openapi.sheincorp.com` for self-operated and semi-managed apps, `https://openapi.sheincorp.cn` for fully managed, SHEIN-operated and other apps.\n5. Install the connector and click **Authorize with Provider** (the last step of the setup guide does it). SHEIN's page opens: sign in to the seller backend with the shop's **main account** and click the authorize button. SHEIN sends the browser back to `<SERVER_URL>/api/shein-auth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/shein-auth/callback`) and the connector fetches the shop's key within the 10 minutes SHEIN allows.\n\n**The shop key**: SHEIN hands over the shop's openKeyId and secretKey (the secretKey encrypted with the App Secret, which AnythingMCP decrypts once); both are stored encrypted on the connector. SHEIN documents no lifetime and no renewal for them. An authorization ends when the seller unbinds the app or resets the key, the shop is closed, SHEIN resets or unbinds it, or it expires: calls then fail with `openapi00004` (\"The user has expired\"), the connector shows that it needs a new authorization, and someone clicks **Authorize with Provider** again.\n\n**How it signs**: every call carries `x-lt-openKeyId`, `x-lt-timestamp` (Unix milliseconds) and `x-lt-signature`: five random characters followed by the Base64 of the lower-case hex HMAC-SHA256 of `openKeyId&timestamp&path`, keyed with the secretKey plus those five characters. The query is not signed. A timestamp is valid for 5 minutes, so the server clock must be right.\n\n**Where to start**: `shein_get_store_info` checks the authorization and names the shop; `shein_list_sites` gives the site codes and currencies.\n- Orders: `shein_list_orders` (a window of at most 48 hours is mandatory), then `shein_get_orders` for up to 30 at once. Only orders with stockMode 3 are shipped by the seller; printOrderStatus 1 means the order can be handled now.\n- Shipping it yourself: `shein_get_order_address` (handle_type 2 also moves the order to be shipped), `shein_list_warehouse_addresses`, `shein_list_shipping_channels`, then `shein_upload_tracking_numbers` per piece (goodsId). `shein_get_logistics_track` follows the parcel. SHEIN marks the order shipped when the carrier scans it. `shein_confirm_out_of_stock` is switched off at install.\n- Products: `shein_search_products` (codes, shelf status, prices, stock and campaign locks), `shein_list_products` (all codes), `shein_get_product` (one SPU in full). For new listings: `shein_get_category_tree`, `shein_get_attribute_templates`, `shein_list_brands`. `shein_set_skc_shelf_status` is switched off at install.\n- Stock and prices: `shein_list_warehouses`, `shein_get_stock`, `shein_update_stock` (with an idempotency key per line), `shein_update_prices` (raises may wait for SHEIN's price review). `shein_get_sku_sales` gives units sold for managed shops.\n- After sales: `shein_list_after_sales_orders` and `shein_get_after_sales_orders`, `shein_list_return_orders` and `shein_get_return_orders` only read; `shein_sign_return_order` is switched off at install.\n\n**Codes, times and amounts**: SPU, SKC and SKU codes (spuName, skcName, skuCode) are SHEIN's; supplierCode and supplierSku are the seller's own. A SKU sold several times has one goodsId per piece, and tracking numbers, cancellations and return receipts work per goodsId. goodsId values are 64-bit numbers: the connector reads every id too long for a JavaScript number as text with its exact digits, and the tools take ids as text and send them to SHEIN as numbers, so copy them exactly as an order or return shows them. Order, after-sales and return windows are Beijing time (UTC+8) as `yyyy-MM-dd HH:mm:ss`; order details answer with `yyyy-MM-dd'T'HH:mm:ss.SSSZ`, tracking events with Unix milliseconds. Amounts are decimals in the currency named next to them (orderCurrency, currency, currencyCode).\n\n**Limits**: every API has its own calls-per-second limit per app (20 for product search, 30 to 300 for the others), answered with `openapi00006` or 832213 when exceeded. Order and return lists page by 30, product search by 10; an order window returns at most 10,000 orders, the product list at most 50,000 codes. The same SKC and site can change shelf status once per 20 minutes.\n\n**Answers and errors**: SHEIN answers with `code` \"0\" and the result in `info`; any other `code` is an error with `msg` and a traceId to quote to SHEIN support within three days. The connector asks for English messages (`language: en`). `openapi00001`: the signature was refused; with a correct server clock this means the shop key changed (re-authorized or reset elsewhere), so authorize again. `openapi00002`: this server's IP address is not on the app's whitelist. `openapi00003`: the app has no permission for this API, the API is not for the shop's mode, or the developer account is disabled. `openapi00004`: the authorization has ended; authorize again. Write calls that take a list answer `code` 0 and name the refused lines (failedList, failure_results or info).",
+  "prerequisites": "A SHEIN seller shop (self-operated or semi-managed for orders and stock) and its main account, a SHEIN Open Platform developer account of the type Seller Self-Developed, and an approved app of the shop's cooperation mode with the needed API permission packages and this server's outbound IP address on its IP whitelist. About 20 minutes, plus SHEIN's reviews of the account and the app.",
+  "appRegistrationUrl": "https://open.sheincorp.com",
+  "requiresIpAllowlist": true,
+  "requiredEnvVars": [
+    "SHEIN_API_HOST",
+    "SHEIN_APP_ID",
+    "SHEIN_APP_SECRET"
+  ],
+  "envVarMeta": {
+    "SHEIN_API_HOST": {
+      "label": "API address",
+      "kind": "address",
+      "help": "SHEIN's API address for your app's type: openapi.sheincorp.com for self-operated and semi-managed apps, openapi.sheincorp.cn for fully managed, SHEIN-operated and other apps.",
+      "link": "https://open.sheincorp.com/documents/system/49b797df-016e-40eb-882b-ab9bbaa8c630",
+      "pattern": "^https://openapi\\.sheincorp\\.(com|cn)$",
+      "patternMessage": "Pick one of SHEIN's two API addresses, https://openapi.sheincorp.com or https://openapi.sheincorp.cn.",
+      "options": [
+        {
+          "value": "https://openapi.sheincorp.com",
+          "label": "Self-operated or semi-managed app (openapi.sheincorp.com)"
+        },
+        {
+          "value": "https://openapi.sheincorp.cn",
+          "label": "Fully managed, SHEIN-operated or other app (openapi.sheincorp.cn)"
+        }
+      ]
+    },
+    "SHEIN_APP_ID": {
+      "label": "App ID",
+      "kind": "setting",
+      "help": "SHEIN Open Platform, Application Management, your approved app: the App ID (letters and digits).",
+      "example": "F9D87342D803BA78E1EE49997162",
+      "link": "https://open.sheincorp.com",
+      "pattern": "^[A-Za-z0-9]{8,64}$",
+      "patternMessage": "The App ID is a string of letters and digits, without spaces."
+    },
+    "SHEIN_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page as the App ID: the App Secret. It signs the authorization and decrypts the shop's key; it is never sent.",
+      "link": "https://open.sheincorp.com",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste the App Secret alone, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "SHEIN refused the signature or the shop's key (openapi00001 or openapi00004). Check that the server clock is right (a timestamp is valid for 5 minutes), that SHEIN_APP_ID and SHEIN_APP_SECRET belong to the app the shop authorized, then click Authorize with Provider again: the seller may have unbound the app or reset the key.",
+    "403": "SHEIN does not let this app make the call. openapi00002: add this server's outbound IP address to the app's IP whitelist on the SHEIN Open Platform. openapi00003: subscribe the app's API Permission Package for this API, and check that the API is meant for the shop's cooperation mode and that SHEIN_API_HOST matches the app's type.",
+    "404": "SHEIN has no API at this address. Check that SHEIN_API_HOST is https://openapi.sheincorp.com or https://openapi.sheincorp.cn, without a path.",
+    "rate_limited": "SHEIN limits every API per app and second (openapi00006 or 832213): 20 calls per second for product search, 30 to 300 for the others. Wait a second and try again, and spread bulk reads out."
+  },
+  "probe": {
+    "tool": "shein_get_store_info"
+  },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 20,
+    "examples": [
+      "Which SHEIN orders from the last two days still have to be shipped?",
+      "Upload tracking number 1Z999AA10123456784 with UPS for order GSON8F44T00000M",
+      "Set the stock of SKU I569gfcaeopb in my Girona warehouse to 40",
+      "Show the open after-sales cases of this week with the buyers' remarks"
+    ],
+    "needs": [
+      "Your SHEIN shop's **main account** for the seller backend",
+      "A SHEIN Open Platform developer account of the type **Seller Self-Developed**",
+      "About 20 minutes, plus SHEIN's reviews of the developer account and the app"
+    ],
+    "why": "SHEIN lets other tools reach a shop only through an app registered on the SHEIN Open Platform. A seller creates one for their own shop: AnythingMCP keeps the app's ID and secret and signs every call with the key SHEIN hands over for the shop.\n\nYou approve that access on SHEIN's own page, signed in with the shop's main account. SHEIN accepts calls only from addresses on the app's IP whitelist, which is why the setup has a step for it. Deleting the connector removes the keys it holds.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Create your SHEIN app",
+        "body": "Sign in to the **SHEIN Open Platform** (register first if you have no account). Choose the developer type **Seller Self-Developed** and submit the merchant information it asks for: everything is in the seller backend, and SHEIN checks it against your shop.\n\nIn the console open **Application Management** and create an application of your shop's cooperation mode. Name, icon and description cannot be edited after submitting. SHEIN reviews the app and tells you by SMS or email; until then it has no valid App ID or App Secret.",
+        "action": {
+          "label": "Open the SHEIN Open Platform",
+          "url": "https://open.sheincorp.com"
+        },
+        "values": [
+          {
+            "label": "Developer type",
+            "value": "Seller Self-Developed",
+            "pick": true,
+            "note": "It cannot be changed once approved."
+          },
+          {
+            "label": "Application type",
+            "value": "Self-Operated or Semi-Managed",
+            "pick": true,
+            "note": "The cooperation mode of your shop. A shop in several modes needs one app per mode."
+          },
+          {
+            "label": "Redirect URL",
+            "value": "{{redirectUri}}",
+            "note": "SHEIN sends you back to this address after you approve the app. Enter it exactly if the app form asks for a redirect or callback URL."
+          }
+        ],
+        "confirm": "My app is approved",
+        "problems": [
+          {
+            "q": "I have no SHEIN Open Platform account",
+            "a": "Register at [open.sheincorp.com](https://open.sheincorp.com), then choose **Seller Self-Developed** as the developer type and fill in your merchant information from the seller backend."
+          },
+          {
+            "q": "Which application type do I pick?",
+            "a": "The cooperation mode of your shop: **Self-Operated** if you run the shop and ship the orders yourself, **Semi-Managed** if you ship from your own overseas stock while SHEIN helps run the shop. Orders, tracking and stock updates in this connector are for these two modes."
+          },
+          {
+            "q": "I need to change the app after submitting it",
+            "a": "Submitted apps cannot be edited in the console. Contact SHEIN through the support ticket system of the Open Platform."
+          }
+        ]
+      },
+      {
+        "id": "permissions",
+        "title": "Check API permissions and add this server's address",
+        "body": "On the app's details page open **API Permission Package** and check that the order, product, inventory, after-sales and return packages are subscribed. They are usually granted with the approval; otherwise click **Apply for Permission Package** and wait for SHEIN.\n\nThen add this server's **outbound IP address** to the app's **IP whitelist**: SHEIN refuses every production call from another address. AnythingMCP shows the address in this setup.",
+        "action": {
+          "label": "Open the SHEIN Open Platform",
+          "url": "https://open.sheincorp.com"
+        },
+        "confirm": "The packages are subscribed and the address is on the whitelist",
+        "problems": [
+          {
+            "q": "An API I need is not in the list",
+            "a": "The APIs depend on the application type. Ask SHEIN for it through a support ticket on the Open Platform."
+          },
+          {
+            "q": "Calls fail with openapi00002",
+            "a": "The calling address is not on the app's IP whitelist. Add the address shown in this setup; a self-hosted server adds its own outbound address."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Copy your App ID and App Secret",
+        "body": "On the app's details page copy the **App ID** and the **App Secret** into the fields below, and pick the API address of your app's type.",
+        "action": {
+          "label": "Open the SHEIN Open Platform",
+          "url": "https://open.sheincorp.com"
+        },
+        "fields": [
+          "SHEIN_APP_ID",
+          "SHEIN_APP_SECRET",
+          "SHEIN_API_HOST"
+        ],
+        "problems": [
+          {
+            "q": "Which API address do I pick?",
+            "a": "**openapi.sheincorp.com** for a self-operated or semi-managed app, **openapi.sheincorp.cn** for a fully managed, SHEIN-operated or other app. The wrong one answers with a permission or address error."
+          }
+        ]
+      },
+      {
+        "id": "authorize",
+        "title": "Authorize your shop",
+        "body": "Continue saves your keys and opens SHEIN's authorization page. Sign in to the seller backend with your shop's **main account** and click the authorize button. You come back here on your own, and the connector fetches your shop's key.",
+        "problems": [
+          {
+            "q": "SHEIN says the authorization timed out",
+            "a": "The authorization is valid for 10 minutes after you approve it. Start it again from this step."
+          },
+          {
+            "q": "I cannot authorize with my account",
+            "a": "Only the shop's **main account** can authorize an app. Sign out of the seller backend and sign in with the main account."
+          },
+          {
+            "q": "The connection fails right after the authorization",
+            "a": "Check the app's IP whitelist (step 2) and that the API address matches your app's type (step 3)."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "SHEIN Open Platform",
+    "type": "REST",
+    "baseUrl": "{{SHEIN_API_HOST}}",
+    "authType": "HMAC",
+    "authConfig": {
+      "tokenProvider": "shein",
+      "shein": {
+        "appId": "{{SHEIN_APP_ID}}",
+        "appSecret": "{{SHEIN_APP_SECRET}}",
+        "authorizeUrl": "https://openapi-sem.sheincorp.com/#/empower",
+        "tokenBaseUrl": "{{SHEIN_API_HOST}}",
+        "tokenPath": "/open-api/auth/get-by-token"
+      },
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex-base64",
+        "secret": "${secretKey}${nonce}",
+        "nonceLength": 5,
+        "template": "${openKeyId}&${timestamp}&${pathname}",
+        "timestampFormat": "ms",
+        "headerName": "x-lt-signature",
+        "headerTemplate": "${nonce}${signature}",
+        "timestampHeader": "x-lt-timestamp",
+        "extraHeaders": {
+          "x-lt-openKeyId": "${openKeyId}"
+        }
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json;charset=UTF-8",
+      "language": "en",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "largeIntegers": "string",
+      "errorWhen": [
+        {
+          "path": "code",
+          "in": [
+            "openapi00001",
+            "openapi00004"
+          ],
+          "messagePath": [
+            "code",
+            "msg"
+          ],
+          "status": 401
+        },
+        {
+          "path": "code",
+          "in": [
+            "openapi00002",
+            "openapi00003"
+          ],
+          "messagePath": [
+            "code",
+            "msg"
+          ],
+          "status": 403
+        },
+        {
+          "path": "code",
+          "in": [
+            "openapi00006",
+            "832213"
+          ],
+          "messagePath": [
+            "code",
+            "msg"
+          ],
+          "status": 429
+        },
+        {
+          "path": "code",
+          "matches": "^(?!0$).+",
+          "messagePath": [
+            "code",
+            "msg"
+          ],
+          "messageMatches": "rate.?limit|too frequent|requests per minute",
+          "status": 429
+        },
+        {
+          "path": "code",
+          "matches": "^(?!0$).+",
+          "messagePath": [
+            "code",
+            "msg"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "shein_get_store_info",
+      "description": "The authorized SHEIN shop: storeInfo (supplierId, storeName and storeStatus 1 enabled or 0 disabled, the last two for self-operated and semi-managed shops only, supplierBusinessMode such as POP-US, POP-GLOBAL or SFS for special sellers) and storeProductQuota (totalLimit, usedQuota, availableLimit: how many products the shop may still publish). No parameters; the lightest call, so it also checks that the authorization, the signature and the IP whitelist work. Limit: 50 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/openapi-business-backend/query-store-info",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_list_sites",
+      "description": "The sites the shop sells on: main_site and main_site_name, then sub_site_list with site_abbr (the site code the price and shelf tools take, such as shein-us or shein-fr), site_name, currency, symbol_left and symbol_right, site_status (1 enabled, 0 not enabled) and store_type (1 platform, 2 self-operated). No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/goods/query-site-list",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_list_orders",
+      "description": "List customer orders of a self-operated or semi-managed shop in a time window of at most 48 hours. Returns count and orderList, each with orderNo, orderStatus (1 pending, 2 to be shipped, 3 to be shipped by SHEIN, 4 shipped, 5 delivered, 6 refunded to the buyer, 7 awaiting pickup, 8 reported lost or damaged, 9 refused by the buyer), orderCreateTime and orderUpdateTime. Times are Beijing time (UTC+8). Paged with page and page_size (at most 30); a window returns at most 10,000 orders, so for more start the next window at the last order's time. Read the items with shein_get_orders. Limit: 100 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "description": "Start of the window. Format `yyyy-MM-dd HH:mm:ss` in Beijing time (UTC+8), e.g. 2026-11-14 00:00:00."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the window, at most 48 hours after start_time. Format `yyyy-MM-dd HH:mm:ss` in Beijing time (UTC+8)."
+          },
+          "query_type": {
+            "type": "integer",
+            "description": "Which time the window applies to: 1 when the order reached the shop (default), 2 when it was last updated.",
+            "enum": [
+              1,
+              2
+            ],
+            "default": 1
+          },
+          "order_status": {
+            "type": "integer",
+            "description": "Only orders in this status: 1 pending, 2 to be shipped, 3 to be shipped by SHEIN, 4 shipped, 5 delivered, 6 refunded to the buyer, 7 awaiting pickup, 8 reported lost or damaged, 9 refused by the buyer.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ]
+          },
+          "query_order_type": {
+            "type": "integer",
+            "description": "Orders shipped from: 1 a certified warehouse, 2 a SHEIN warehouse, 3 the seller's own warehouse, 4 all. Unset: SHEIN-warehouse and seller-warehouse orders (seller-warehouse orders only for Brazilian sellers).",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 30.",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 30
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/order/order-list",
+        "bodyMapping": {
+          "queryType": "$query_type",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "orderStatus": "$order_status",
+          "queryOrderType": "$query_order_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_get_orders",
+      "description": "Read up to 30 orders in full: orderStatus, orderType (1 normal, 2 exchange), printOrderStatus (1 when the address can be exported and a label printed; otherwise unProcessReason says why), optionalLogisticsList (1 SHEIN partner logistics, 2 own shipping) and orderLogisticsType, salesSite, orderGoodsInfoList (one line per piece: goodsId, skuCode, skc, sellerSku, goodsTitle, newGoodsStatus, prices, commission and estimatedIncome in orderCurrency), receiveMsg (country, province, city, postCode only), packageWaybillList (packageNo, waybillNo, carrier), totals and the order's milestone times (yyyy-MM-dd'T'HH:mm:ss.SSSZ). Times are Beijing time (UTC+8). Only orders with stockMode 3 need the seller to ship. Limit: 300 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_nos": {
+            "type": "array",
+            "description": "Order numbers (orderNo from shein_list_orders), at most 30.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 30
+          }
+        },
+        "required": [
+          "order_nos"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/order/order-detail",
+        "bodyMapping": {
+          "orderNoList": "$order_nos"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_get_order_address",
+      "description": "Export the buyer's shipping address of one order: receiveMsgList with firstName, middleName, lastName, country, province, city, district, street, address, addressExt, postCode, phone, email and taxNo. handle_type 1 (default) only reads the address. handle_type 2 also moves the order from pending (1) to be shipped (2): only for orders the seller ships itself (optionalLogisticsList contains 2 and orderLogisticsType is 2); confirm with the user first. Only when printOrderStatus is 1 in shein_get_orders. Personal data: show it only to people who ship the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_no": {
+            "type": "string",
+            "description": "Order number (orderNo)."
+          },
+          "handle_type": {
+            "type": "integer",
+            "description": "1 read the address only (default); 2 read it and move the order to be shipped.",
+            "enum": [
+              1,
+              2
+            ],
+            "default": 1
+          }
+        },
+        "required": [
+          "order_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/order/export-address",
+        "bodyMapping": {
+          "orderNo": "$order_no",
+          "handleType": "$handle_type"
+        }
+      }
+    },
+    {
+      "name": "shein_list_warehouse_addresses",
+      "description": "The seller's shipping warehouse addresses for SHEIN partner logistics: openApiAddressInfos with warehouseAddressCode (what shein_list_shipping_channels takes), warehouseName, salesSite and addressInfo (country, province, city, district, postCode, address1, address2, phone). No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/gsp/warehouse-address",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_list_shipping_channels",
+      "description": "The carriers this shop may use: expressChannels for its own shipping (site, expressIdCode such as UPS or DHL ecommerce, expressChannelCode) and platformLogisticsChannels (expressId, expressIdCode, site). expressIdCode and expressChannelCode are what shein_upload_tracking_numbers takes. Without warehouse_address_code only the own-shipping carriers come back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_address_code": {
+            "type": "string",
+            "description": "warehouseAddressCode from shein_list_warehouse_addresses, to get the carriers for that address and its sites."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/order/express-channel",
+        "bodyMapping": {
+          "warehouseAddressCode": "$warehouse_address_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_upload_tracking_numbers",
+      "description": "Upload, replace or delete the tracking numbers of an order the seller ships itself, per piece (goodsId from shein_get_orders; several pieces can share one tracking number). Each item: expressCode (the tracking number), expressIdCode and optionally expressChannelCode (from shein_list_shipping_channels), goodsId, status (2 add or update, 1 delete). At most 100 items. Uploading does not mark the order shipped: SHEIN does that when the carrier scans the parcel. code 0 with an empty info means all were accepted; otherwise info lists the refused items with errorMsg. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_no": {
+            "type": "string",
+            "description": "Order number (orderNo)."
+          },
+          "items": {
+            "type": "array",
+            "description": "One entry per piece, at most 100.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "expressCode": {
+                  "type": "string",
+                  "description": "The tracking number. SHEIN checks its format for the carrier."
+                },
+                "expressIdCode": {
+                  "type": "string",
+                  "description": "The carrier, as expressIdCode from shein_list_shipping_channels."
+                },
+                "expressChannelCode": {
+                  "type": "string",
+                  "description": "The carrier's product code (expressChannelCode), when the channel list gives one."
+                },
+                "goodsId": {
+                  "type": "string",
+                  "description": "The piece's goodsId from shein_get_orders, as digits (each piece of a SKU has its own). A 64-bit number: pass it as text, exactly as the order shows it.",
+                  "pattern": "^(0|[1-9][0-9]{0,19})$"
+                },
+                "status": {
+                  "type": "integer",
+                  "description": "2 add or update this piece's tracking number, 1 delete it.",
+                  "enum": [
+                    1,
+                    2
+                  ]
+                }
+              },
+              "required": [
+                "expressCode",
+                "expressIdCode",
+                "goodsId",
+                "status"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "order_no",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/order/import-batch-multiple-express",
+        "bodyMapping": {
+          "orderNo": "$order_no",
+          "infoList": "$items"
+        },
+        "bodyIntegers": [
+          "infoList[].goodsId"
+        ]
+      }
+    },
+    {
+      "name": "shein_get_logistics_track",
+      "description": "Tracking events of an order's parcel or of a return: trackInfo, one entry per waybill with carrier, waybillNo, waybillType (1 first leg, 2 last leg, 3 to 6 return legs) and tracking (nodeCode, nodeCodeName, description, updateTimeMillis in Unix milliseconds). Give order_no together with package_no or waybill_no, or give return_order_no. Limit: 80 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_no": {
+            "type": "string",
+            "description": "Order number (orderNo); then also package_no or waybill_no."
+          },
+          "package_no": {
+            "type": "string",
+            "description": "Package number (packageNo from packageWaybillList in shein_get_orders); every waybill of the package comes back."
+          },
+          "waybill_no": {
+            "type": "string",
+            "description": "One waybill number (waybillNo)."
+          },
+          "return_order_no": {
+            "type": "string",
+            "description": "Return order number (returnOrderNo), instead of order_no."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-api/gsp/logistics-track",
+        "queryParams": {
+          "orderNo": "$order_no",
+          "packageNo": "$package_no",
+          "waybillNo": "$waybill_no",
+          "returnOrderNo": "$return_order_no"
+        }
+      }
+    },
+    {
+      "name": "shein_confirm_out_of_stock",
+      "description": "Cancel one piece of an order because it is out of stock: its storageTag becomes 3 and SHEIN later refunds the buyer (newGoodsStatus 6). Frequent cancellations can get the shop penalised by SHEIN. Switched off at install: turn it on deliberately, and confirm with the user first every time.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_no": {
+            "type": "string",
+            "description": "Order number (orderNo)."
+          },
+          "order_goods_id": {
+            "type": "string",
+            "description": "The piece's goodsId from shein_get_orders, as digits, exactly as the order shows it.",
+            "pattern": "^(0|[1-9][0-9]{0,19})$"
+          },
+          "sku_code": {
+            "type": "string",
+            "description": "SHEIN SKU code (skuCode) of the piece."
+          }
+        },
+        "required": [
+          "order_no",
+          "order_goods_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/order/confirm-no-stock",
+        "bodyMapping": {
+          "orderNo": "$order_no",
+          "orderGoodsId": "$order_goods_id",
+          "skuCode": "$sku_code"
+        },
+        "bodyIntegers": [
+          "orderGoodsId"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "shein_search_products",
+      "description": "Search the shop's products by SHEIN codes, the seller's own codes, shelf status, category and time. Returns meta.count and data, one entry per SPU (newest first): spuName, spuShelfStatus (1 on shelf, 0 off), categoryId and skcList (skcName, supplierCode, skcTitle, skcSalesAttribute, skcSiteShelfStatusList per site, activityLockList: shelfLockType 1 cannot be taken off shelf and priceLockType 1 or 2 should not be raised while a campaign runs, and skuList with skuCode, supplierSku, priceList for self-operated shops, costList for managed shops and inventoryList). Filters combine with AND; each list takes at most 10 values. Paged with page_num and page_size (at most 10). Limit: 20 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_num": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "SPUs per page, 1 to 10.",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 10
+          },
+          "spu_names": {
+            "type": "array",
+            "description": "SHEIN SPU codes (spuName), at most 10.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10
+          },
+          "skc_names": {
+            "type": "array",
+            "description": "SHEIN SKC codes (skcName), at most 10.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10
+          },
+          "sku_codes": {
+            "type": "array",
+            "description": "SHEIN SKU codes (skuCode), at most 10.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10
+          },
+          "skc_supplier_codes": {
+            "type": "array",
+            "description": "The seller's own SKC item numbers (supplierCode), at most 10.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10
+          },
+          "supplier_skus": {
+            "type": "array",
+            "description": "The seller's own SKU codes (supplierSku), at most 10.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10
+          },
+          "category_ids": {
+            "type": "array",
+            "description": "Leaf category ids, as digits, at most 10.",
+            "items": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "maxItems": 10
+          },
+          "skc_shelf_status": {
+            "type": "integer",
+            "description": "1 only SKCs on shelf, 0 only off shelf (waiting to go on shelf and sold out count as off).",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "language_list": {
+            "type": "array",
+            "description": "Languages of names and attributes, at most 5: en (default), fr, es, de, zh-cn, th, pt-br, ja, ko.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "en",
+                "fr",
+                "es",
+                "de",
+                "zh-cn",
+                "th",
+                "pt-br",
+                "ja",
+                "ko"
+              ]
+            },
+            "maxItems": 5
+          },
+          "create_time_start": {
+            "type": "string",
+            "description": "SPUs first approved from this time, yyyy-MM-dd HH:mm:ss."
+          },
+          "create_time_end": {
+            "type": "string",
+            "description": "SPUs first approved until this time, yyyy-MM-dd HH:mm:ss."
+          },
+          "update_time_start": {
+            "type": "string",
+            "description": "SPUs whose title, brand or attributes changed from this time (price and stock changes do not count), yyyy-MM-dd HH:mm:ss."
+          },
+          "update_time_end": {
+            "type": "string",
+            "description": "Same, until this time, yyyy-MM-dd HH:mm:ss."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/goods/searchProduct",
+        "bodyMapping": {
+          "pageNum": "$page_num",
+          "pageSize": "$page_size",
+          "spuNameList": "$spu_names",
+          "skcNameList": "$skc_names",
+          "skuCodeList": "$sku_codes",
+          "skcSupplierCodeList": "$skc_supplier_codes",
+          "supplierSkuList": "$supplier_skus",
+          "categoryIds": "$category_ids",
+          "skcShelfStatus": "$skc_shelf_status",
+          "languageList": "$language_list",
+          "createTimeStart": "$create_time_start",
+          "createTimeEnd": "$create_time_end",
+          "updateTimeStart": "$update_time_start",
+          "updateTimeEnd": "$update_time_end"
+        },
+        "bodyIntegers": [
+          "categoryIds[]"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_list_products",
+      "description": "List every published product as codes only: data with spuName, skcName and skuCodeList (up to 40 SKUs per SKC). For names, prices and stock use shein_search_products or shein_get_product. Paged with page_num and page_size (default 50); at most 50,000 results per query, so narrow a big catalog with the time filters. Limit: 100 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_num": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Entries per page.",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "insert_time_start": {
+            "type": "string",
+            "description": "Products first approved from this time, yyyy-MM-dd HH:mm:ss."
+          },
+          "insert_time_end": {
+            "type": "string",
+            "description": "Products first approved until this time, yyyy-MM-dd HH:mm:ss."
+          },
+          "update_time_start": {
+            "type": "string",
+            "description": "Products updated from this time (internal updates count too), yyyy-MM-dd HH:mm:ss."
+          },
+          "update_time_end": {
+            "type": "string",
+            "description": "Products updated until this time, yyyy-MM-dd HH:mm:ss."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/openapi-business-backend/product/query",
+        "bodyMapping": {
+          "pageNum": "$page_num",
+          "pageSize": "$page_size",
+          "insertTimeStart": "$insert_time_start",
+          "insertTimeEnd": "$insert_time_end",
+          "updateTimeStart": "$update_time_start",
+          "updateTimeEnd": "$update_time_end"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_get_product",
+      "description": "One approved SPU in full: categoryId, productTypeId, brandCode, supplierCode, productMultiNameList and productMultiDescList per language, productAttributeInfoList, dimensionAttributeInfoList (size chart), productVideoList and skcInfoList (sales attribute, names, shelfStatusInfoList per site with first and last shelf time, images and skuInfoList with skuCode, supplierSku, sales attributes, prices and costs per site). No stock: use shein_get_stock. Limit: 100 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spu_name": {
+            "type": "string",
+            "description": "SHEIN SPU code (spuName)."
+          },
+          "language_list": {
+            "type": "array",
+            "description": "Languages of names, descriptions and attributes, at most 5. Use the shop's default language to be sure to get text: zh-cn, en, es, fr, de, it, pt-BR, pt-PT, pl, tr, ar, ko, ja, sv.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "zh-cn",
+                "en",
+                "es",
+                "fr",
+                "de",
+                "it",
+                "pt-BR",
+                "pt-PT",
+                "pl",
+                "tr",
+                "ar",
+                "ko",
+                "ja",
+                "sv"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 5,
+            "default": [
+              "en"
+            ]
+          }
+        },
+        "required": [
+          "spu_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/goods/spu-info",
+        "bodyMapping": {
+          "spuName": "$spu_name",
+          "languageList": "$language_list"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_get_category_tree",
+      "description": "The product categories this shop may use, as a tree: category_id, category_name, parent_category_id, last_category (true for a leaf), children and, on leaves, product_type_id (what shein_get_attribute_templates takes). Categories differ between shops. No parameters; a large answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/goods/query-category-tree",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_get_attribute_templates",
+      "description": "The attributes this shop may or must fill for up to 10 product types: per product_type_id, attribute_infos with attribute_id, attribute_name, attribute_type (1 sales attribute, 2 size, 3 composition, 4 other), attribute_label (1 main sales attribute, usually colour), attribute_mode (0 typed value, 1 multi-select, 2 single-select sales attribute), attribute_status (3 required, 2 optional, 1 not allowed) and attribute_value_info_list (attribute_value_id, attribute_value). SHEIN changes these rules; read them again before publishing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_type_ids": {
+            "type": "array",
+            "description": "product_type_id values from shein_get_category_tree, as digits, at most 10.",
+            "items": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "minItems": 1,
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "product_type_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/goods/query-attribute-template",
+        "bodyMapping": {
+          "product_type_id_list": "$product_type_ids"
+        },
+        "bodyIntegers": [
+          "product_type_id_list[]"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_list_brands",
+      "description": "The brands this shop may publish under: data with brand_code and brand_name. No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/goods/query-brand-list",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_list_warehouses",
+      "description": "The seller's warehouses of a self-operated or semi-managed shop: list with warehouseCode (what shein_update_stock needs when the shop has several), warehouseName, warehouseType (1 seller warehouse, 2 certified warehouse; only seller-warehouse stock can be changed), saleCountryList and countrySiteDefaultList (the default warehouse per site). No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-api/msc/warehouse/list"
+      }
+    },
+    {
+      "name": "shein_get_stock",
+      "description": "Stock of SKUs, SKCs or SPUs: goodsInventory per SKC with skuList, each with skuCode, totalInventoryQuantity, totalUsableInventory (what can still be sold), totalLockedQuantity (sold, not yet shipped), totalTempLockQuantity (ordered, not yet paid), totalTransitQuantity and warehouseInventoryList per warehouse. Give exactly one of sku_codes, skc_names or spu_names (at most 100 codes). Limit: 50 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_codes": {
+            "type": "array",
+            "description": "SHEIN SKU codes (skuCode), at most 100.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "skc_names": {
+            "type": "array",
+            "description": "SHEIN SKC codes (skcName), at most 100; an SKC with more than 100 SKUs needs sku_codes.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "spu_names": {
+            "type": "array",
+            "description": "SHEIN SPU codes (spuName), at most 100.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "warehouse_type": {
+            "type": "integer",
+            "description": "Which stock: 2 the seller's own (virtual) stock of a self-operated or semi-managed shop (default), 1 stock held in SHEIN warehouses, 3 the virtual stock of a fully managed or SHEIN-operated shop.",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 2
+          },
+          "inv_type": {
+            "type": "string",
+            "description": "Newer stock type that replaces warehouse_type (which SHEIN retires on 31 December 2026); wins when both are given: VI the seller's virtual stock, PI physical stock in SHEIN warehouses, JI the seller's JIT stock.",
+            "enum": [
+              "VI",
+              "PI",
+              "JI"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/stock/stock-query",
+        "bodyMapping": {
+          "skuCodeList": "$sku_codes",
+          "skcNameList": "$skc_names",
+          "spuNameList": "$spu_names",
+          "warehouseType": "$warehouse_type",
+          "invType": "$inv_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_update_stock",
+      "description": "Change the sellable stock of up to 100 SKUs of a self-operated or semi-managed shop. Each item: idempotencyKey (a unique text; a repeat with the same key is ignored, so a retry cannot count twice), skuCode, invType (VI virtual stock or JI JIT stock), warehouseCode (required for VI when the shop has several warehouses, from shein_list_warehouses), changeType (ADD, SUB, or OVERWRITE the total) and changeQuantity (a positive number); optionally changeReason. SUB can remove at most the sellable quantity, and OVERWRITE never goes below what orders already hold. Returns failedList with skuCode, code and reason. Stock in SHEIN warehouses cannot be changed here. Confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "One entry per SKU, at most 100.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "idempotencyKey": {
+                  "type": "string",
+                  "description": "A unique text for this change, e.g. stock-2026-11-15-MUG-01."
+                },
+                "skuCode": {
+                  "type": "string",
+                  "description": "SHEIN SKU code (skuCode) of an approved SKU."
+                },
+                "invType": {
+                  "type": "string",
+                  "description": "VI the seller's virtual stock, JI the seller's JIT stock.",
+                  "enum": [
+                    "VI",
+                    "JI"
+                  ]
+                },
+                "warehouseCode": {
+                  "type": "string",
+                  "description": "The seller warehouse (warehouseCode); required for VI when the shop has several, not used for JI."
+                },
+                "changeType": {
+                  "type": "string",
+                  "description": "ADD to add, SUB to remove, OVERWRITE to set the total sellable stock.",
+                  "enum": [
+                    "ADD",
+                    "SUB",
+                    "OVERWRITE"
+                  ]
+                },
+                "changeQuantity": {
+                  "type": "integer",
+                  "description": "How many, a positive number.",
+                  "minimum": 1
+                },
+                "changeReason": {
+                  "type": "string",
+                  "description": "Optional reason, e.g. Restocking from supplier."
+                }
+              },
+              "required": [
+                "idempotencyKey",
+                "skuCode",
+                "invType",
+                "changeType",
+                "changeQuantity"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/stock/change-inventory/v2",
+        "bodyMapping": {
+          "updateSkuInventoryQuantityRequests": "$items"
+        }
+      }
+    },
+    {
+      "name": "shein_update_prices",
+      "description": "Set the selling price of up to 100 SKUs per site (self-operated shops). Each item: productCode (the skuCode), site (a sub-site such as shein-us, from shein_list_sites), currencyCode (the site's currency), shopPrice (the regular price) and optionally specialPrice and riseReason. A missing specialPrice is set to 0, removing a running special price. Before a raise, check priceLockType in shein_search_products: a campaign may forbid it. Returns data per SKU with status 1 done, 2 waiting for SHEIN's price review (no new change for that SKU until it is decided), 0 failed, and message. Confirm with the user first. Limit: 40 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "One entry per SKU and site, at most 100.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productCode": {
+                  "type": "string",
+                  "description": "SHEIN SKU code (skuCode)."
+                },
+                "site": {
+                  "type": "string",
+                  "description": "Sub-site code, e.g. shein-us (site_abbr from shein_list_sites)."
+                },
+                "currencyCode": {
+                  "type": "string",
+                  "description": "The site's selling currency, e.g. USD, EUR, BRL, MXN."
+                },
+                "shopPrice": {
+                  "type": "number",
+                  "description": "Regular price in currencyCode."
+                },
+                "specialPrice": {
+                  "type": "number",
+                  "description": "Special price in currencyCode. Left out: set to 0 (no special price)."
+                },
+                "riseReason": {
+                  "type": "string",
+                  "description": "Reason for a raise: 1 product cost went up, 2 fulfilment cost went up, 3 a campaign ended and the price is restored, 4 other, 5 fulfilment cost went up after a logistics rule change.",
+                  "enum": [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5"
+                  ]
+                }
+              },
+              "required": [
+                "productCode",
+                "site",
+                "currencyCode",
+                "shopPrice"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/openapi-business-backend/product/price/save",
+        "bodyMapping": {
+          "productPriceList": "$items"
+        }
+      }
+    },
+    {
+      "name": "shein_get_sku_sales",
+      "description": "Units sold per SKU: dataList with skuCode, realTimeSaleCnt (today), cydSaleCnt (yesterday), c7dSaleCnt and c30dSaleCnt (last 7 and 30 days) and dt (the day the counts run to, yyyyMMdd). SHEIN documents it for semi-managed, fully managed, SHEIN-operated and POP shops, not for self-operated ones. Updated daily at midnight Beijing time. At most 100 SKUs per call; 40 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_codes": {
+            "type": "array",
+            "description": "SHEIN SKU codes (skuCode), at most 100.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "sku_codes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/goods/query-sku-sales",
+        "bodyMapping": {
+          "skuCodeList": "$sku_codes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_set_skc_shelf_status",
+      "description": "Put SKCs on shelf or take them off shelf on chosen sites, up to 100 entries. Each entry: skc_name, site_list (sub-sites such as shein-fr) and shelf_state (1 on shelf, 2 off shelf). The same SKC and site can be changed only every 20 minutes; a campaign can forbid taking an SKC off (shelfLockType in shein_search_products). Returns success_count, failure_count and failure_results. Switched off at install: taking products off shelf stops their sales. Turn it on deliberately and confirm with the user first.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "description": "One entry per SKC, at most 100.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skc_name": {
+                  "type": "string",
+                  "description": "SHEIN SKC code (skcName)."
+                },
+                "site_list": {
+                  "type": "array",
+                  "description": "Sub-sites, e.g. shein-fr.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "shelf_state": {
+                  "type": "integer",
+                  "description": "1 on shelf, 2 off shelf.",
+                  "enum": [
+                    1,
+                    2
+                  ]
+                }
+              },
+              "required": [
+                "skc_name",
+                "site_list",
+                "shelf_state"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "entries"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/goods/modify-skc-shelf",
+        "bodyMapping": {
+          "skc_site_info_list": "$entries"
+        }
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    },
+    {
+      "name": "shein_list_after_sales_orders",
+      "description": "List after-sales cases of a self-operated or semi-managed shop in a window of at most 48 hours: count and list with aftersalesOrderNo, aftersalesOrderSubStatus (1 waiting for the seller, 2 customer service review, 3 waiting for the buyer's choice, 4 waiting for the buyer's return, 5 waiting for handover, 6 delivered, 7 return problem under SHEIN review, 8 waiting for transfer at a SHEIN warehouse, 9 refund agreed, 10 in dispute, 11 closed, 12 completed, 13 cancelled, 14 waiting for reshipment, 15 waiting for the seller's label, 16 waiting for the buyer's feedback), requestTime and updateTime (Beijing time, UTC+8). Paged by 30 at most. Read-only: no tool here decides a case.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "description": "Start of the window. Format `yyyy-MM-dd HH:mm:ss` in Beijing time (UTC+8)."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the window, at most 48 hours after start_time. Format `yyyy-MM-dd HH:mm:ss` in Beijing time (UTC+8)."
+          },
+          "query_type": {
+            "type": "integer",
+            "description": "1 when the buyer applied (default), 2 when the case was last updated.",
+            "enum": [
+              1,
+              2
+            ],
+            "default": 1
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Only cases in these statuses (numbers as in the description).",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16
+              ]
+            }
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Cases per page, 1 to 30.",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 30
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/after-sales-order/list",
+        "bodyMapping": {
+          "queryType": "$query_type",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "aftersalesOrderSubStatusList": "$statuses"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_get_after_sales_orders",
+      "description": "Read up to 10 after-sales cases: site, orderNo, returnOrderNo, aftersalesOrderSubStatus, aftersalesResolutionPlan (1 return and refund, 2 refund only, 3 rejected, 4 reshipment), applyInfo (buyer and seller choice, remarks and evidence image or video URLs), costSummary (settlement, freeze and return fee totals) in currency, appeal eligibility and deadlines, and goodsList (skcName, skuCode, skuSn, goodsTitle, goodsSubStatus). Times are Beijing time (UTC+8). Limit: 30 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after_sales_order_nos": {
+            "type": "array",
+            "description": "aftersalesOrderNo values, at most 10.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "after_sales_order_nos"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/after-sales-order/details",
+        "bodyMapping": {
+          "aftersalesOrderNos": "$after_sales_order_nos"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_list_return_orders",
+      "description": "List return orders of a self-operated or semi-managed shop in a window (48 hours by default): count and returnOrderList with returnOrderNo, returnOrderStatus (1 closed, 2 requested, 3 cancelled, 5 received, 6 delivered, 7 waiting for handover, 8 waiting for transfer at a SHEIN warehouse, 9 completed), addTime, requestReturnTime and updateTime (yyyy-MM-dd HH:mm:ss). Paged by 30 at most. Limit: 100 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_time": {
+            "type": "string",
+            "description": "Start of the window, yyyy-MM-dd HH:mm:ss."
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the window, yyyy-MM-dd HH:mm:ss; SHEIN reads 48 hours at a time."
+          },
+          "query_type": {
+            "type": "integer",
+            "description": "Which time: 1 when the return reached the shop (default), 2 when the buyer requested it, 3 when it was last updated.",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 1
+          },
+          "return_order_status": {
+            "type": "integer",
+            "description": "Only returns in this status: 1 closed, 2 requested, 3 cancelled, 5 received, 6 delivered, 7 waiting for handover, 8 waiting for transfer at a SHEIN warehouse, 9 completed.",
+            "enum": [
+              1,
+              2,
+              3,
+              5,
+              6,
+              7,
+              8,
+              9
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Returns per page, 1 to 30.",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 30
+          }
+        },
+        "required": [
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/return-order/list",
+        "bodyMapping": {
+          "queryType": "$query_type",
+          "startTime": "$start_time",
+          "endTime": "$end_time",
+          "page": "$page",
+          "pageSize": "$page_size",
+          "returnOrderStatus": "$return_order_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_get_return_orders",
+      "description": "Read up to 30 return orders: returnOrderStatus, orderNo, site, noReturnGoodsSign (1 refund without return), returnOrderTagCode, tracking (platformExpressNo, memberExpressNo, expressCompanyName, and refundWaybill for parcels SHEIN sends back to the seller), performanceCost, the milestone times, checkStatus, stockMode and returnGoodsInfoList (goodsId, sku, skc, skuSn, goodsTitle, goodsStatus, returnImageList, prices in currency). Limit: 40 calls per second per app.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_order_nos": {
+            "type": "array",
+            "description": "returnOrderNo values, at most 30.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 30
+          }
+        },
+        "required": [
+          "return_order_nos"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/return-order/details",
+        "bodyMapping": {
+          "returnOrderNoList": "$return_order_nos"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "shein_sign_return_order",
+      "description": "Confirm that the seller received returned pieces of a return order (goodsId values from shein_get_return_orders). This settles the return on SHEIN's side and cannot be undone. Switched off at install: turn it on deliberately, and confirm with the user first after checking the parcel.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_order_no": {
+            "type": "string",
+            "description": "Return order number (returnOrderNo)."
+          },
+          "goods_ids": {
+            "type": "array",
+            "description": "goodsId of each received piece, as digits, exactly as the return order shows it.",
+            "items": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,19})$"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "return_order_no",
+          "goods_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-api/return-order/sign-return-order",
+        "bodyMapping": {
+          "returnOrderNo": "$return_order_no",
+          "goodsIdList": "$goods_ids"
+        },
+        "bodyIntegers": [
+          "goodsIdList[]"
+        ]
+      },
+      "annotations": {
+        "destructiveHint": true
+      }
+    }
+  ]
+}
