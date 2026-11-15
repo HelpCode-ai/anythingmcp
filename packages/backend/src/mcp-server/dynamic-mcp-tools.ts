@@ -70,6 +70,7 @@ import { FileSearchEngine } from '../file-search/file-search.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
 import { getAdapter } from '../adapters/catalog';
+import { ArgumentPatternError, catalogPatternViolations } from './catalog-patterns';
 import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { ToolRateLimitService } from './tool-rate-limit.service';
@@ -619,6 +620,17 @@ export class DynamicMcpTools {
         interpolationVars,
         { reservedPrefix: CALLER_CONTEXT_PREFIX },
       );
+
+      // A catalog tool's argument that does not match the pattern the tool
+      // declares for it is refused here, with the rule in words, instead of
+      // going to the vendor for a refusal of its own (catalog-patterns.ts).
+      const patternViolations = catalogPatternViolations(
+        (tool.connectorConfig.config as { adapterSlug?: string } | undefined)?.adapterSlug,
+        tool.name,
+        tool.parameters,
+        params,
+      );
+      if (patternViolations.length > 0) throw new ArgumentPatternError(patternViolations);
 
       // Decide proxy routing (env present + tool opted in + cloud rate-limit).
       // Throws on over-quota (choice B). Returns null → direct request.

@@ -956,6 +956,33 @@ Supported types: `string`, `integer`, `number`, `boolean`, `array`, `object`
 
 > **Tip:** Parameters matching environment variable names are automatically stripped from the tool schema, so the AI never sees them.
 
+### `pattern` on a string parameter
+
+A catalog adapter may give a string parameter (or the string items of an
+array parameter) a `pattern`. A value that does not match is refused before
+the request is sent, and the answer quotes the parameter's `description`, so
+write there what to pass instead:
+
+```json
+"includes": {
+  "type": "string",
+  "description": "Comma-separated, any of: Images, Shop, User. For stock and prices call the inventory tool.",
+  "pattern": "^(Images|Shop|User)(,(Images|Shop|User))*$"
+}
+```
+
+- Make the pattern no stricter than the API: check it against values that
+  work (case, non-ASCII characters, optional parts) before adding it.
+- Keep it simple. `catalog-patterns.spec.ts` runs every catalog pattern on
+  texts built to slow a regular expression down, and fails when one needs
+  more than a moment. Backreferences are not allowed.
+- Values longer than 2,000 characters are not checked.
+- Only catalog tools are checked, and only while the installed tool still
+  carries the catalog's pattern: a workspace that edits or removes the
+  pattern on its own copy turns the check off for that tool. Patterns of
+  hand-built tools and of tools imported from an OpenAPI file stay
+  documentation.
+
 ---
 
 ## 2. Endpoint Mapping
