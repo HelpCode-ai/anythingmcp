@@ -383,9 +383,16 @@ describe('mirakl adapter: static spec conformance', () => {
     for (const t of a.tools) expect(t.endpointMapping.path).not.toMatch(/refund|cancel|payout|promotions/);
   });
 
-  it('is found by the names of the marketplaces that run on Mirakl', () => {
+  it('leaves retailers with a connector of their own to that connector', () => {
+    // Searching a retailer's name finds its dedicated connector, not this generic one.
     const aliases = (adapter as unknown as { aliases: string[] }).aliases;
-    for (const name of ['Leroy Merlin', 'ADEO', 'Conforama', 'BUT', 'home24', 'Maisons du Monde', 'Vente-unique', 'ePrice']) expect(aliases).toContain(name);
+    expect(aliases).toEqual(['Mirakl Marketplace Platform']);
+    for (const name of ['Leroy Merlin', 'Conforama', 'Decathlon', 'Carrefour', 'ePrice', 'home24']) {
+      expect((adapter as unknown as { description: string }).description).not.toContain(name);
+      expect(a.instructions).toContain(name);
+    }
+    expect(a.instructions).toContain('**Retailers with their own connector**');
+    // The addresses stay, so a seller on a retailer without its own connector still finds the pattern.
     for (const url of ['adeo-marketplace.mirakl.net', 'but-prod.mirakl.net', 'conforama-prod.mirakl.net', 'home24.mirakl.net', 'maisonsdumonde-prod.mirakl.net', 'venteunique-prod.mirakl.net']) {
       expect(a.instructions).toContain(`https://${url}`);
     }
