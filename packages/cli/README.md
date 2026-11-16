@@ -30,7 +30,7 @@
 `amcp` does two jobs with one binary:
 
 - **Calls MCP tools.** These are the same tools your AI clients use (Shopify, HubSpot, SAP, Odoo, Postgres, an SFTP share…). You can run them by hand, in shell scripts, from cron and CI, or as a **code-mode program** that loops over dozens of tool calls in a single step.
-- **Drives the management API.** With a management-scoped key, everything the dashboard does — connectors, MCP servers, users, roles, SSO, memory, skills, audit — is one `amcp api` command away, for a person or for a connected AI agent.
+- **Drives the management API.** With a management-scoped key, everything the dashboard does — connectors, MCP servers, users, roles, SSO, memory, skills, learning projects, audit — is one `amcp api` command away, for a person or for a connected AI agent.
 
 It works with [AnythingMCP Cloud](https://cloud.anythingmcp.com) and self-hosted instances.
 
@@ -411,7 +411,7 @@ CLI usage and connection errors go to stderr, also as JSON when `--json` is set,
 
 ## Management API (`amcp api`)
 
-`amcp api` calls the instance's management API (`/api/*`) with a **management-scoped** key. That covers connectors, MCP servers, roles, users, SSO, settings, memory, skills, the knowledge graph and more. It works like `gh api`, but for AnythingMCP.
+`amcp api` calls the instance's management API (`/api/*`) with a **management-scoped** key. That covers connectors, MCP servers, roles, users, SSO, settings, memory, skills, learning projects, the knowledge graph and more. It works like `gh api`, but for AnythingMCP.
 
 A management key is an ordinary MCP API key minted with a management scope: `MANAGEMENT_READ` or `MANAGEMENT_ADMIN`. You can mint one from the dashboard or with `POST /api/mcp-keys`. The key carries its owner's identity and role, and it never grants privilege, so admin-only routes still need an admin owner. `MANAGEMENT_READ` keys can only call safe methods (GET/HEAD), and connector exports made with them never include secrets, even for an admin owner.
 

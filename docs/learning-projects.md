@@ -18,6 +18,7 @@ Cloud and of **Enterprise** on a self-hosted instance (see
 - [What the member sees](#what-the-member-sees)
 - [MCP tools](#mcp-tools)
 - [Review and publish](#review-and-publish)
+- [From the CLI and the API](#from-the-cli-and-the-api)
 - [Privacy and safety](#privacy-and-safety)
 - [Plans](#plans)
 - [Limits](#limits)
@@ -112,6 +113,79 @@ On the project's page (admins and editors):
 
 A topic with confirmed lessons newer than its last publication is marked
 *Confirmed changes to publish*.
+
+## From the CLI and the API
+
+Everything the dashboard does for learning projects is in the management API
+under `/api/learning`, so the [CLI](../packages/cli/README.md) reaches it with
+`amcp api` and a management key (`amcp login --management`). The key carries
+its owner's role: starting, changing, pausing, ending and deleting a project
+need an admin; reading lessons and publishing need an admin or an editor. A
+read-only (`MANAGEMENT_READ`) key gets 403 on every change.
+`amcp api --list learning` prints all 16 operations.
+
+What the plan includes, and the projects of the workspace:
+
+```bash
+amcp api GET /api/learning/allowance
+# {"max":1,"full":false,"plan":"team","used":0}
+amcp api GET /api/learning/projects
+```
+
+Start a project. The ids come from `amcp api GET /api/users` and
+`amcp api GET /api/mcp-servers`; only `name`, `userId` and `mcpServerId` are
+required:
+
+```bash
+amcp api POST /api/learning/projects --yes --data '{
+  "name": "Hardware for old windows",
+  "userId": "<member id>",
+  "mcpServerId": "<server id>",
+  "folderId": "<folder id>",
+  "endsAt": "2027-03-31T23:59:59Z",
+  "tags": ["windows"],
+  "publishMode": "manual"
+}'
+```
+
+It waits for the member. Pause, resume, end or delete it:
+
+```bash
+amcp api POST /api/learning/projects/<id>/pause --yes
+amcp api POST /api/learning/projects/<id>/resume --yes
+amcp api POST /api/learning/projects/<id>/end --yes
+amcp api DELETE /api/learning/projects/<id> --yes
+```
+
+Review lessons and publish a topic. The topic ids are in the project
+(`GET /api/learning/projects/<id>`):
+
+```bash
+amcp api GET '/api/learning/projects/<id>/lessons?status=draft'
+amcp api PATCH /api/learning/lessons/<lesson id> --yes --data '{"status":"confirmed"}'
+amcp api PATCH /api/learning/lessons/<lesson id> --yes --data '{"text":"The lesson in better words."}'
+amcp api GET /api/learning/topics/<topic id>/preview
+amcp api POST /api/learning/topics/<topic id>/publish --yes
+```
+
+**The member's own answer cannot be given for them.** `consent` and `withdraw`
+act for the owner of the key, and are refused for anyone but the project's
+member. With their own key the member can accept or stop:
+
+```bash
+amcp api GET /api/learning/me
+amcp api POST /api/learning/projects/<id>/consent --yes --data '{"notice":"<the notice the member read>"}'
+amcp api POST /api/learning/projects/<id>/withdraw --yes --data '{"erase":true}'
+```
+
+The lesson tools are MCP tools, not management operations. The member can
+call them from the CLI when logged in to the project's server
+(`amcp login --url <instance> --server <server id>`):
+
+```bash
+amcp tools call learning_review
+amcp tools call learning_record --yes --args '{"topic":"Old windows","kind":"rule","text":"Check the groove width before choosing a hinge."}'
+```
 
 ## Privacy and safety
 
