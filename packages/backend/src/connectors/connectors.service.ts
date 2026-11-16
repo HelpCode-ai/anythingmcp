@@ -215,7 +215,9 @@ export class ConnectorsService implements OnApplicationBootstrap {
     const moved =
       data.type === 'DATABASE' ? moveUrlCredentials(data.baseUrl, data.authConfig) : null;
     if (moved) data = { ...data, baseUrl: moved.baseUrl, authConfig: moved.authConfig };
-    const encryptedAuth = data.authConfig ? this.sealAuthConfig(data.authConfig) : null;
+    const encryptedAuth = data.authConfig
+      ? encrypt(JSON.stringify(data.authConfig), this.encryptionKey)
+      : null;
 
     const baseUrl = normalizeConnectorBaseUrl(data.baseUrl, data.type);
 
@@ -303,7 +305,10 @@ export class ConnectorsService implements OnApplicationBootstrap {
 
     const updateData: any = { ...data };
     if (data.authConfig) {
-      updateData.authConfig = this.sealAuthConfig(data.authConfig);
+      updateData.authConfig = encrypt(
+        JSON.stringify(data.authConfig),
+        this.encryptionKey,
+      );
     }
     // webhookSecret is write-only, like authConfig: never returned by any
     // API, so a client has nothing to echo back. Omit it entirely unless a
@@ -343,11 +348,6 @@ export class ConnectorsService implements OnApplicationBootstrap {
     } catch {
       return {};
     }
-  }
-
-  /** What `auth_config` stores: the JSON, encrypted. */
-  private sealAuthConfig(authConfig: Record<string, unknown>): string {
-    return encrypt(JSON.stringify(authConfig), this.encryptionKey);
   }
 
   /**
@@ -421,7 +421,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
           where: { id: row.id, baseUrl: row.baseUrl, authConfig: row.authConfig },
           data: {
             baseUrl: normalizeConnectorBaseUrl(next.baseUrl, 'DATABASE'),
-            authConfig: this.sealAuthConfig(next.authConfig),
+            // Stored as `create` and `update` store it: the JSON, encrypted.
+            authConfig: encrypt(JSON.stringify(next.authConfig), this.encryptionKey),
           },
         });
         // No row: it was saved, or repaired by another instance, in between.
