@@ -1,0 +1,1232 @@
+{
+  "slug": "bonanza",
+  "name": "Bonanza",
+  "description": "Bonanza seller API (Bonapitit) for the US marketplace: orders, shipping and tracking, offers, buyer feedback, booth items with price and quantity updates, categories and traits, booth statistics and buyer messages. Dev id, cert id and user token.",
+  "instructions": "## Bonanza\nThis connector works with **Bonapitit**, the Bonanza API (`https://api.bonanza.com/api_requests/secure_request`), for sellers on Bonanza, the US marketplace for independent sellers: orders, shipping and tracking, offers, feedback, booth items with price and quantity, categories and traits, booth statistics and buyer messages.\n\n**Setup (1 to 2 business days, then 5 minutes)**\n1. Apply for an API account at https://api.bonanza.com/accounts/new. Bonanza approves applications by email, usually within 1 to 2 business days; the welcome email and the Bonapitit dashboard show your **dev id** and **cert id**. Paste them into `BONANZA_DEV_ID` and `BONANZA_CERT_ID`.\n2. Get a user token for your seller account: send a fetchToken request, for example `curl -X POST https://api.bonanza.com/api_requests/secure_request -H 'X-BONANZLE-API-DEV-NAME: <dev id>' -H 'X-BONANZLE-API-CERT-NAME: <cert id>' -d fetchTokenRequest`. The answer holds `authToken` and `authenticationURL`.\n3. Open the authenticationURL, log in with the Bonanza seller account and approve. Paste the authToken into `BONANZA_USER_TOKEN`.\n\nUser tokens expire one year after they were fetched, or when the seller deactivates them in the Bonanza account. `bonanza_fetch_token` starts a new one from the chat; `bonanza_get_token_status` shows the expiry.\n\n**Where to start**: `bonanza_get_user` returns the seller's user name, which is also the booth id. `bonanza_list_orders` with order_status Completed lists paid orders that still have to ship.\n\n**Orders**: `bonanza_list_orders`, `bonanza_get_orders`. Ship with `bonanza_mark_order_shipped` (tracking number, carrier usps, ups, fedex or other). Offers (status Proposed): `bonanza_accept_offer`, `bonanza_deny_offer`. Feedback for the buyer: `bonanza_leave_feedback`. Bonanza has no API for refunds or cancellations; the connector never moves money.\n\n**Items**: `bonanza_list_booth_items` (by status: for_sale, ready_to_post, missing_fields, reserved, sold), `bonanza_get_item`, `bonanza_add_item`, `bonanza_revise_item`, and `bonanza_update_inventory` for price and quantity of many items at once (not for items with variations). `bonanza_end_items` removes items and is installed switched off. Categories and traits: `bonanza_get_categories` (0 for the top level), `bonanza_get_category_traits`.\n\n**Booth and messages**: `bonanza_get_booth`, `bonanza_get_booth_stats`, `bonanza_list_message_threads`, `bonanza_get_messages`, `bonanza_send_message`, `bonanza_update_message`.\n\n**How calls look**: every call is a POST whose JSON body is wrapped in the call name, for example `getOrdersRequest`; the answer has `ack` (Success, Warning or Failure) and the result under `getOrdersResponse`. The connector adds the user token as requesterCredentials. Errors carry `errorMessage` with a `type` such as `Bonapitit::AccountNotFound` (wrong dev or cert id), `InvalidAuthToken` or `TokenNotVerified` (token wrong or not approved yet), and come back with HTTP 500 or 200.\n\n**Formats and limits**: prices are US dollars; times are ISO 8601 in GMT. Order lists page with entries_per_page (up to 100) and page_number (up to 100 pages). Rapid repeated calls can be throttled (RequestsThrottled), and an account has daily caps on calls (TooManyRequests) and on errors (TooManyErrors).",
+  "aliases": [
+    "Bonapitit",
+    "Bonanza marketplace",
+    "Bonanza.com"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "bonanza",
+  "docsUrl": "https://api.bonanza.com/docs",
+  "requiredEnvVars": [
+    "BONANZA_DEV_ID",
+    "BONANZA_CERT_ID",
+    "BONANZA_USER_TOKEN"
+  ],
+  "envVarMeta": {
+    "BONANZA_DEV_ID": {
+      "label": "Dev id",
+      "kind": "credential",
+      "help": "From the Bonapitit welcome email or dashboard after Bonanza approved your API account (apply at api.bonanza.com/accounts/new).",
+      "link": "https://api.bonanza.com/accounts/new",
+      "pattern": "^\\S{4,100}$",
+      "patternMessage": "Paste the dev id without spaces."
+    },
+    "BONANZA_CERT_ID": {
+      "label": "Cert id",
+      "kind": "credential",
+      "secret": true,
+      "help": "The certificate id next to the dev id in the Bonapitit welcome email or dashboard.",
+      "link": "https://api.bonanza.com/docs/basics/secure_requests",
+      "pattern": "^\\S{4,200}$",
+      "patternMessage": "Paste the cert id without spaces."
+    },
+    "BONANZA_USER_TOKEN": {
+      "label": "User token",
+      "kind": "credential",
+      "secret": true,
+      "help": "authToken from a fetchToken request, approved by logging in at its authenticationURL with the seller account. Valid for one year.",
+      "link": "https://api.bonanza.com/docs/reference/fetch_token",
+      "pattern": "^\\S{6,200}$",
+      "patternMessage": "Paste the authToken without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Bonanza did not accept the user token: it is wrong, expired (one year) or was never approved at its authenticationURL. Fetch a new token and approve it with the seller account.",
+    "403": "Bonanza refused the call for this account. Check that the API account is approved and that the token belongs to the seller who owns the item or order.",
+    "404": "Bonanza found no order, item or booth with that id.",
+    "500": "Bonanza answered with an error. Bonapitit::AccountNotFound means the dev id or cert id is wrong; InvalidAuthToken or TokenNotVerified mean the user token is wrong or not approved yet.",
+    "rate_limited": "Bonanza throttled the calls (RequestsThrottled) or the daily cap is reached (TooManyRequests). Slow down and try again later."
+  },
+  "probe": {
+    "tool": "bonanza_get_token_status",
+    "params": {}
+  },
+  "prerequisites": "A Bonanza seller account and an approved Bonapitit API account (apply at api.bonanza.com, approval usually within 1 to 2 business days) for the dev id and cert id, plus a user token the seller approves once a year. About 5 minutes after approval.",
+  "connector": {
+    "name": "Bonanza API (Bonapitit)",
+    "type": "REST",
+    "baseUrl": "https://api.bonanza.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-BONANZLE-API-CERT-NAME",
+      "apiKey": "{{BONANZA_CERT_ID}}"
+    },
+    "headers": {
+      "X-BONANZLE-API-DEV-NAME": "{{BONANZA_DEV_ID}}",
+      "Accept": "application/json",
+      "Content-Type": "application/json; charset=utf-8",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "ack",
+          "equals": "Failure",
+          "messagePath": "errorMessage",
+          "messageMatches": "InvalidAuthToken|TokenNotVerified|MissingAuthToken|AccountNotFound|AccountCannotBeValidated|MissingCertId",
+          "status": 401
+        },
+        {
+          "path": "ack",
+          "equals": "Failure",
+          "messagePath": "errorMessage",
+          "messageMatches": "RequestsThrottled|TooManyRequests",
+          "status": 429
+        },
+        {
+          "path": "ack",
+          "equals": "Failure",
+          "messagePath": "errorMessage",
+          "messageMatches": "CannotFind|CantFind",
+          "status": 404
+        },
+        {
+          "path": "ack",
+          "equals": "Failure",
+          "messagePath": "errorMessage",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "bonanza_get_token_status",
+      "description": "Status of the user token: whether it is verified, when it expires (one year after it was fetched) and which user it belongs to. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getTokenStatusRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_get_user",
+      "description": "The seller behind the token: userID, userName, email, feedback score and positive percentage, good standing, registration address and sellerInfo (storeOwner, storeURL). The user name is the booth id for bonanza_list_booth_items.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getUserRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_fetch_token",
+      "description": "Start a new user token (needed once a year, or after the seller deactivated it): returns authToken, authenticationURL and hardExpirationTime. The seller opens the authenticationURL and logs in to approve; then paste the authToken into BONANZA_USER_TOKEN.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "validation_complete_url": {
+            "type": "string",
+            "description": "Optional page the seller is offered after approving."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "fetchTokenRequest": {
+            "validationCompleteURL": "$validation_complete_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_list_orders",
+      "description": "List the seller's orders: orderID, orderStatus (Completed = paid but not shipped, Shipped, Cancelled, InProcess, Invoiced, Proposed, Active, Incomplete), amountPaid, buyerUserName, buyerCheckoutMessage, createdTime, paidTime, itemArray (itemID, title, quantity, price, sellerInventoryID, variations), shippingAddress and shippingDetails. Filter by status and by created, modified or sold time. Up to 100 per page, at most 100 pages; hasMoreOrders says whether more follow.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_status": {
+            "type": "string",
+            "description": "Only this status; Completed means paid and waiting to ship.",
+            "enum": [
+              "Active",
+              "Cancelled",
+              "Completed",
+              "Incomplete",
+              "InProcess",
+              "Invoiced",
+              "Proposed",
+              "Shipped"
+            ]
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created at or after. ISO 8601 date-time in GMT, e.g. 2026-11-01T00:00:00.000Z."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created at or before. ISO 8601 date-time in GMT, e.g. 2026-11-01T00:00:00.000Z."
+          },
+          "modified_from": {
+            "type": "string",
+            "description": "Modified at or after. ISO 8601 date-time in GMT, e.g. 2026-11-01T00:00:00.000Z."
+          },
+          "modified_to": {
+            "type": "string",
+            "description": "Modified at or before. ISO 8601 date-time in GMT, e.g. 2026-11-01T00:00:00.000Z."
+          },
+          "sold_from": {
+            "type": "string",
+            "description": "Sold at or after. ISO 8601 date-time in GMT, e.g. 2026-11-01T00:00:00.000Z."
+          },
+          "sold_to": {
+            "type": "string",
+            "description": "Sold at or before. ISO 8601 date-time in GMT, e.g. 2026-11-01T00:00:00.000Z."
+          },
+          "entries_per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Orders per page, 1 to 100."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 1,
+            "description": "Page, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getOrdersRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "orderRole": "seller",
+            "orderStatus": "$order_status",
+            "createTimeFrom": "$created_from",
+            "createTimeTo": "$created_to",
+            "modTimeFrom": "$modified_from",
+            "modTimeTo": "$modified_to",
+            "soldTimeFrom": "$sold_from",
+            "soldTimeTo": "$sold_to",
+            "paginationInput": {
+              "entriesPerPage": "$entries_per_page",
+              "pageNumber": "$page_number"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_get_orders",
+      "description": "Read specific orders by id with items, buyer, shipping address, amounts and status. Date filters do not apply here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "integer"
+            },
+            "description": "Order ids (numbers)."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getOrdersRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "orderRole": "seller",
+            "orderIDArray": "$order_ids"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_mark_order_shipped",
+      "description": "Mark an order shipped and add the tracking number and carrier, with an optional note to the buyer and a private note. Uses completeSale with the order id as transactionID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id (transactionID)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number."
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier used.",
+            "enum": [
+              "usps",
+              "ups",
+              "fedex",
+              "other"
+            ]
+          },
+          "note_to_buyer": {
+            "type": "string",
+            "description": "Shipping message for the buyer."
+          },
+          "private_note": {
+            "type": "string",
+            "description": "Private note for yourself."
+          },
+          "shipped": {
+            "type": "boolean",
+            "default": true,
+            "description": "true marks the order shipped (default)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "completeSaleRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "transactionID": "$order_id",
+            "shipped": "$shipped",
+            "shipment": {
+              "shippingTrackingNumber": "$tracking_number",
+              "shippingCarrierUsed": "$carrier",
+              "notes": "$note_to_buyer",
+              "privateNote": "$private_note"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_accept_offer",
+      "description": "Accept a buyer's pending offer (order status Proposed). Accepting commits you to sell at the offered price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id of the offer (transactionID)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "completeSaleRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "transactionID": "$order_id",
+            "accept": true
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_deny_offer",
+      "description": "Deny a buyer's pending offer (order status Proposed) with completeSale deny; the item stays unsold.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id of the offer (transactionID)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "completeSaleRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "transactionID": "$order_id",
+            "deny": true
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_leave_feedback",
+      "description": "Leave feedback for the buyer of an order: positive, neutral or negative with a comment of up to 250 characters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id (transactionID)."
+          },
+          "target_user": {
+            "type": "string",
+            "description": "User name or id of the buyer."
+          },
+          "comment_type": {
+            "type": "string",
+            "description": "Feedback type.",
+            "enum": [
+              "positive",
+              "neutral",
+              "negative"
+            ]
+          },
+          "comment_text": {
+            "type": "string",
+            "description": "Comment, up to 250 characters.",
+            "maxLength": 250
+          }
+        },
+        "required": [
+          "order_id",
+          "target_user",
+          "comment_type",
+          "comment_text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "completeSaleRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "transactionID": "$order_id",
+            "feedbackInfo": {
+              "targetUser": "$target_user",
+              "commentTypeCode": "$comment_type",
+              "commentText": "$comment_text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_list_booth_items",
+      "description": "Items in the seller's booth by status: itemID, title, currentPrice (USD), quantity, sellingState, sku, category, pictures, item specifics and listing URL. Statuses other than for_sale need the user token, which the connector sends. Up to 500 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booth_id": {
+            "type": "string",
+            "description": "Booth id: the seller's user name from bonanza_get_user, or the booth's URL identifier."
+          },
+          "item_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "for_sale",
+                "ready_to_post",
+                "missing_fields",
+                "reserved",
+                "sold"
+              ]
+            },
+            "description": "Statuses to include (default for_sale)."
+          },
+          "items_per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20,
+            "description": "Items per page, 1 to 500 (default 20)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          },
+          "sort": {
+            "type": "string",
+            "description": "newest sorts newest first; leave out for Bonanza's default order.",
+            "enum": [
+              "newest"
+            ]
+          }
+        },
+        "required": [
+          "booth_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getBoothItemsRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "boothId": "$booth_id",
+            "itemStatus": "$item_status",
+            "itemsPerPage": "$items_per_page",
+            "page": "$page",
+            "order": "$sort"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_get_item",
+      "description": "One of the seller's items by id, including data only the seller sees (getUnlistedItem): title, description, price, quantity, sellingState, item specifics, variations, pictures, shipping and return policy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Bonanza item id (digits)."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getUnlistedItemRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "itemId": "$item_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_add_item",
+      "description": "List a new fixed price item in the seller's booth: title, description, price (USD), quantity, category, pictures, traits, shipping, return policy and variations. Returns itemId, categoryId and sellingState; booths with more than 40,000 items queue the request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Item title (a title identical to another item in the booth is refused as a duplicate)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description; most HTML is allowed, up to 60,000 characters.",
+            "maxLength": 60000
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Price in US dollars."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Quantity for sale; 0 puts the item into Missing required fields."
+          },
+          "primary_category": {
+            "type": "object",
+            "properties": {
+              "categoryId": {
+                "type": "integer",
+                "description": "Leaf category id from bonanza_get_categories."
+              }
+            },
+            "required": [
+              "categoryId"
+            ],
+            "description": "Category as an object with categoryId; Bonanza guesses one when left out."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU, sent as externalProductId."
+          },
+          "picture_details": {
+            "type": "object",
+            "properties": {
+              "pictureURL": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Up to 4 public image URLs; Bonanza downloads them."
+              },
+              "discardOld": {
+                "type": "boolean",
+                "description": "true replaces the existing pictures."
+              }
+            },
+            "required": [
+              "pictureURL"
+            ],
+            "description": "Pictures: pictureURL list (up to 4) and optionally discardOld."
+          },
+          "item_specifics": {
+            "type": "object",
+            "properties": {
+              "specifics": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "description": "Label and value pairs, e.g. condition new, brand Acme."
+              },
+              "discardOld": {
+                "type": "boolean",
+                "description": "true replaces the existing traits."
+              }
+            },
+            "required": [
+              "specifics"
+            ],
+            "description": "Traits (see bonanza_get_category_traits): specifics as label and value pairs, optionally discardOld."
+          },
+          "allow_for_sale": {
+            "type": "boolean",
+            "description": "true sets the item active for sale right away (default false: ready to post)."
+          },
+          "accept_offers": {
+            "type": "boolean",
+            "description": "false refuses best offers (Bonanza default true)."
+          },
+          "shipping_details": {
+            "type": "object",
+            "description": "Bonanza shippingDetails object, e.g. shippingServiceOptions with shippingType Free, Flat (with shippingServiceCost) or Calculated (with calculatedShippingRate), and shipsWithinDays."
+          },
+          "return_policy": {
+            "type": "object",
+            "description": "Bonanza returnPolicy object: returnsAcceptedOption (ReturnsAccepted or ReturnsNotAccepted), returnsWithinOption (days), shippingCostPaidByOption (buyer or seller), description."
+          },
+          "variations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Variations: quantity, price and nameValueList (name and value pairs, at most two names), optionally sku."
+          }
+        },
+        "required": [
+          "title",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "addFixedPriceItemRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "item": {
+              "title": "$title",
+              "description": "$description",
+              "price": "$price",
+              "quantity": "$quantity",
+              "primaryCategory": "$primary_category",
+              "externalProductId": "$sku",
+              "pictureDetails": "$picture_details",
+              "itemSpecifics": "$item_specifics",
+              "allowForSale": "$allow_for_sale",
+              "obo": "$accept_offers",
+              "shippingDetails": "$shipping_details",
+              "returnPolicy": "$return_policy",
+              "variations": "$variations"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_revise_item",
+      "description": "Change an existing item: any of title, description, price, quantity, category, pictures, traits, shipping, return policy or variations. Fields left out stay unchanged; discard_old_variations replaces all variations.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Item id to revise."
+          },
+          "title": {
+            "type": "string",
+            "description": "Item title (a title identical to another item in the booth is refused as a duplicate)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description; most HTML is allowed, up to 60,000 characters.",
+            "maxLength": 60000
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Price in US dollars."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Quantity for sale; 0 puts the item into Missing required fields."
+          },
+          "primary_category": {
+            "type": "object",
+            "properties": {
+              "categoryId": {
+                "type": "integer",
+                "description": "Leaf category id from bonanza_get_categories."
+              }
+            },
+            "required": [
+              "categoryId"
+            ],
+            "description": "Category as an object with categoryId; Bonanza guesses one when left out."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU, sent as externalProductId."
+          },
+          "picture_details": {
+            "type": "object",
+            "properties": {
+              "pictureURL": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Up to 4 public image URLs; Bonanza downloads them."
+              },
+              "discardOld": {
+                "type": "boolean",
+                "description": "true replaces the existing pictures."
+              }
+            },
+            "required": [
+              "pictureURL"
+            ],
+            "description": "Pictures: pictureURL list (up to 4) and optionally discardOld."
+          },
+          "item_specifics": {
+            "type": "object",
+            "properties": {
+              "specifics": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "description": "Label and value pairs, e.g. condition new, brand Acme."
+              },
+              "discardOld": {
+                "type": "boolean",
+                "description": "true replaces the existing traits."
+              }
+            },
+            "required": [
+              "specifics"
+            ],
+            "description": "Traits (see bonanza_get_category_traits): specifics as label and value pairs, optionally discardOld."
+          },
+          "allow_for_sale": {
+            "type": "boolean",
+            "description": "true sets the item active for sale right away (default false: ready to post)."
+          },
+          "accept_offers": {
+            "type": "boolean",
+            "description": "false refuses best offers (Bonanza default true)."
+          },
+          "shipping_details": {
+            "type": "object",
+            "description": "Bonanza shippingDetails object, e.g. shippingServiceOptions with shippingType Free, Flat (with shippingServiceCost) or Calculated (with calculatedShippingRate), and shipsWithinDays."
+          },
+          "return_policy": {
+            "type": "object",
+            "description": "Bonanza returnPolicy object: returnsAcceptedOption (ReturnsAccepted or ReturnsNotAccepted), returnsWithinOption (days), shippingCostPaidByOption (buyer or seller), description."
+          },
+          "variations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Variations: quantity, price and nameValueList (name and value pairs, at most two names), optionally sku."
+          },
+          "discard_old_variations": {
+            "type": "boolean",
+            "description": "true drops existing variations before adding the given ones."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "reviseFixedPriceItemRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "itemId": "$item_id",
+            "discardOldVariations": "$discard_old_variations",
+            "item": {
+              "title": "$title",
+              "description": "$description",
+              "price": "$price",
+              "quantity": "$quantity",
+              "primaryCategory": "$primary_category",
+              "externalProductId": "$sku",
+              "pictureDetails": "$picture_details",
+              "itemSpecifics": "$item_specifics",
+              "allowForSale": "$allow_for_sale",
+              "obo": "$accept_offers",
+              "shippingDetails": "$shipping_details",
+              "returnPolicy": "$return_policy",
+              "variations": "$variations"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_update_inventory",
+      "description": "Update price and quantity of many items in one call, keyed by item id. Up to 99 items are updated at once and answer per item; more are queued. Items with variations are not supported (use bonanza_revise_item).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updates": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "price": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "New price in USD."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New quantity; 0 puts the item into Missing required fields."
+                }
+              }
+            },
+            "description": "Map of item id to the new values, e.g. item id 123456 with price 19.99 and quantity 3."
+          }
+        },
+        "required": [
+          "updates"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "updateInventoryRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "updates": "$updates"
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_end_items",
+      "description": "Remove up to 100 items from the booth (endFixedPriceItem). Returns the number removed. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "integer"
+            },
+            "description": "Item ids to remove."
+          }
+        },
+        "required": [
+          "item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "endFixedPriceItemRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "itemID": "$item_ids"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "bonanza_get_booth",
+      "description": "Public booth information: name, description, policies, logo, activated, onVacation, custom categories and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "booth_id": {
+            "type": "string",
+            "description": "Booth id: the seller's user name or the booth's URL identifier."
+          }
+        },
+        "required": [
+          "booth_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/standard_request",
+        "bodyMapping": {
+          "getBoothRequest": {
+            "boothId": "$booth_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_get_booth_stats",
+      "description": "Per-day statistics of the seller's booth for up to 60 trailing days: item views, booth views, sold offers and revenue per day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 30,
+            "description": "Trailing days, up to 60."
+          },
+          "human_only": {
+            "type": "boolean",
+            "description": "true leaves bots and the seller's own views out of the view counts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getBoothStatsRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "days": "$days",
+            "human": "$human_only"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_get_categories",
+      "description": "Child categories of a category (0 for the top level): categoryId, categoryName, leafCategory, traitCount. Use a leaf id as category_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_category_id": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Parent category id; 0 for the top level."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/standard_request",
+        "bodyMapping": {
+          "getCategoriesRequest": {
+            "categoryParent": "$parent_category_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_get_category_traits",
+      "description": "Item traits of a category (for example Condition, Brand, Size) with their allowed values, to fill item_specifics.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/standard_request",
+        "bodyMapping": {
+          "getCategoryTraitsRequest": {
+            "categoryId": "$category_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_list_message_threads",
+      "description": "Message threads of the seller (one per back-and-forth with a user): first message, latest message, read and saved state. Up to 200 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "read": {
+            "type": "boolean",
+            "description": "true: only fully read threads; false: threads with an unread message."
+          },
+          "saved": {
+            "type": "boolean",
+            "description": "true: only saved threads; false: threads with an unsaved message."
+          },
+          "entries_per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20,
+            "description": "Threads per page, up to 200."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, from 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getMessagesListRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "filter": {
+              "read": "$read",
+              "saved": "$saved"
+            },
+            "pagination": {
+              "entriesPerPage": "$entries_per_page",
+              "pageNumber": "$page_number"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_get_messages",
+      "description": "All messages of the thread that contains a message id: id, from, to, sentAt, subject, body (may contain HTML), read, saved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "integer",
+            "description": "Any message id of the thread."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "getMessagesRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "messageId": "$message_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bonanza_send_message",
+      "description": "Send a message to a user, or reply to a message (reply_to). A new thread needs to and subject.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reply_to": {
+            "type": "integer",
+            "description": "Message id to reply to."
+          },
+          "to": {
+            "type": "string",
+            "description": "User name to write to; not needed with reply_to."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject; not needed for a reply."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text."
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "createMessageRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "replyTo": "$reply_to",
+            "to": "$to",
+            "subject": "$subject",
+            "body": "$body"
+          }
+        }
+      }
+    },
+    {
+      "name": "bonanza_update_message",
+      "description": "Mark a message and its thread as read, or set the thread saved or unsaved (unsaved threads show in the inbox).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "integer",
+            "description": "Message id."
+          },
+          "read": {
+            "type": "boolean",
+            "description": "true marks the thread read (cannot be set back to unread)."
+          },
+          "saved": {
+            "type": "boolean",
+            "description": "true saves, false unsaves."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api_requests/secure_request",
+        "bodyMapping": {
+          "updateMessageRequest": {
+            "requesterCredentials": {
+              "bonanzleAuthToken": "{{BONANZA_USER_TOKEN}}"
+            },
+            "messageId": "$message_id",
+            "read": "$read",
+            "saved": "$saved"
+          }
+        }
+      }
+    }
+  ]
+}

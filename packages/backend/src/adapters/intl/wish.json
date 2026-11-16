@@ -1,0 +1,1277 @@
+{
+  "slug": "wish",
+  "name": "Wish",
+  "description": "Wish Marketplace API v3 for merchants: orders and fulfillment with tracking, products and variations with prices and inventory per warehouse, categories and attributes, customer support tickets, ratings, penalties, warehouses and shipping settings. OAuth access token from a private app.",
+  "instructions": "## Wish\nThis connector works with the **Wish Marketplace API v3** (`https://merchant.wish.com/api/v3`) for merchants selling on Wish, the discount marketplace owned by Qoo10 since 2024: orders and fulfillment, products and variations, categories, support tickets, ratings, penalties, warehouses and shipping settings.\n\n**Setup (about 10 minutes)**\n1. In the Wish merchant dashboard (https://merchant.wish.com) open the Account menu, **API Settings**, and click **Register a private app**. Enter a name and an HTTPS redirect URI you own (any page works, the code only has to appear in its address). Wish allows one private app per merchant.\n2. Open `https://merchant.wish.com/v3/oauth/authorize?client_id=` followed by the app's client ID, sign in and approve. Wish redirects to your redirect URI with `?code=` in the address; the code is valid for 5 minutes and works once.\n3. Exchange the code: open `https://merchant.wish.com/api/v3/oauth/access_token?grant_type=authorization_code&client_id=...&client_secret=...&code=...&redirect_uri=...` with your values. Copy `data.access_token` into `WISH_ACCESS_TOKEN` and keep `data.refresh_token` safe.\n\n**Token lifetime**: Wish access tokens expire after **30 days**. Before that, open `https://merchant.wish.com/api/v3/oauth/refresh_token?grant_type=refresh_token&client_id=...&client_secret=...&refresh_token=...` and paste the new access token into the connector (the old one is revoked). Wish renews tokens only with GET requests, which the connector's automatic OAuth renewal does not send, so the renewal is manual for now.\n\n**Where to start**: `wish_test_token` checks the token and shows its scopes. `wish_list_orders` with states APPROVED lists orders to ship; `wish_list_products` lists the catalog; `wish_list_warehouses` gives the warehouse ids that inventory needs.\n\n**Orders**: `wish_list_orders`, `wish_get_order`. Ship with `wish_fulfill_order` (carrier from `wish_list_shipping_carriers`, tracking number, origin country); the same call corrects tracking later. Shipping and refunds are asynchronous: read the order again for the result. `wish_list_refund_reasons` shows valid reasons; `wish_refund_order` refunds the customer and is installed switched off.\n\n**Products**: `wish_list_products`, `wish_get_product`, `wish_create_product`, `wish_update_product` (price, inventory per warehouse, status of variations by variation id), `wish_create_variation`. Categories: `wish_get_categories`, `wish_get_category`, `wish_get_category_attributes`. `wish_delete_product` is installed switched off; disable variations instead. `wish_get_product_rating` reads the rating.\n\n**Customer tickets**: `wish_list_tickets` (state AWAITING_MERCHANT needs an answer), `wish_get_ticket`, `wish_reply_to_ticket`, `wish_update_ticket` (close, re-open, appeal).\n\n**Account**: `wish_get_account_details`, `wish_list_penalties`, `wish_get_shipping_settings`, `wish_list_warehouses`.\n\n**Paging**: lists return up to `limit` items sorted by time; for the next page call again with `updated_at_max` (or `created_at_max`) set to the last item's time. Every answer has the shape `code`, `message`, `data`; `code` 0 means success.\n\n**Ids and formats**: order, product, variation, ticket and warehouse ids are 24-character hex strings. Times are ISO 8601 (`2026-11-01T00:00:00Z`). Prices are objects with `amount` and `currency_code`. The token's scopes decide what works: a missing scope answers 403.\n\n**Rate limits**: per merchant and app; the header `Wish-Rate-Limit-Remaining` shows what is left and a 429 carries `Wish-Rate-Limit-Reset`. Quote the `Wish-Request-Id` header when contacting Wish about a call.",
+  "aliases": [
+    "Wish for Merchants",
+    "Wish Merchant API",
+    "wish.com"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "wish",
+  "docsUrl": "https://merchant.wish.com/documentation/api/v3/reference",
+  "requiredEnvVars": [
+    "WISH_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "WISH_ACCESS_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "From your Wish private app: authorize it, exchange the code at /api/v3/oauth/access_token and copy data.access_token. It expires after 30 days; renew it with your refresh token and paste the new one.",
+      "link": "https://merchant.wish.com/documentation/api/v3/oauth",
+      "pattern": "^[A-Za-z0-9._-]{16,512}$",
+      "patternMessage": "Paste the access token only, without Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Wish refused the access token: it is wrong, expired (tokens last 30 days) or revoked by a refresh. Renew it with your refresh token at /api/v3/oauth/refresh_token and paste the new access token.",
+    "403": "The token lacks the scope for this call (for example orders:write or tickets:read). Re-authorize the private app with the needed permissions.",
+    "404": "Wish found no order, product, ticket or category with that id for this merchant.",
+    "rate_limited": "Wish limits calls per merchant and app. Wait until the time in Wish-Rate-Limit-Reset and try again."
+  },
+  "probe": {
+    "tool": "wish_test_token",
+    "params": {}
+  },
+  "prerequisites": "A Wish merchant account with access to API Settings to register a private app (one per merchant), and an HTTPS page you own to receive the authorization code. The access token expires after 30 days and is renewed by hand. About 10 minutes.",
+  "connector": {
+    "name": "Wish Marketplace API v3",
+    "type": "REST",
+    "baseUrl": "https://merchant.wish.com/api/v3",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WISH_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "wish_test_token",
+      "description": "Check that the access token works: returns the merchant id and the token's scopes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/oauth/test"
+      }
+    },
+    {
+      "name": "wish_get_account_details",
+      "description": "The merchant account: id, display name, contact, country, status and other account details.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchant/account_details"
+      }
+    },
+    {
+      "name": "wish_list_orders",
+      "description": "List orders, most recently updated first by default: id, state (APPROVED to ship, SHIPPED, REFUNDED, REQUIRE_REVIEW), order type, product and variation, quantity, prices, merchant payout, shipping address (APPROVED orders), fulfillment deadline, tracking and timestamps. Up to 500 per page; page with updated_at_max set to the last order's updated_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "states": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "items": {
+              "type": "string",
+              "enum": [
+                "APPROVED",
+                "SHIPPED",
+                "REFUNDED",
+                "REQUIRE_REVIEW"
+              ]
+            },
+            "description": "Only these order states, e.g. APPROVED for orders to ship."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Orders updated at or after this time. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Orders updated at or before this time. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "released_at_min": {
+            "type": "string",
+            "description": "Orders released at or after this time. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "released_at_max": {
+            "type": "string",
+            "description": "Orders released at or before this time. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "order_type": {
+            "type": "string",
+            "description": "Only one program.",
+            "enum": [
+              "WISH_EXPRESS",
+              "FULFILLED_BY_WISH",
+              "FULFILLED_BY_STORE",
+              "LESS_THAN_TRUCKLOAD",
+              "ADVANCED_LOGISTICS",
+              "WISH_PLUS"
+            ]
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort: updated_at or released_at, optionally .asc or .desc (default updated_at.desc).",
+            "pattern": "^(updated_at|released_at)(\\.(asc|desc))?$"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Orders per call, 1 to 500 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "states": "$states",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "released_at_min": "$released_at_min",
+          "released_at_max": "$released_at_max",
+          "order_type": "$order_type",
+          "sort_by": "$sort_by",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "wish_get_order",
+      "description": "One order by id: state, product and variation, quantity, prices and payout, shipping address, fulfillment requirements and deadline, tracking and refund details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Order id (24 hex characters)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      }
+    },
+    {
+      "name": "wish_list_shipping_carriers",
+      "description": "Accepted shipping carriers: all carriers (GENERAL) or those accepted for the Confirmed Delivery policy to a destination country (CONFIRMED_DELIVERY). Use a returned carrier name as shipping_provider in wish_fulfill_order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_type": {
+            "type": "string",
+            "description": "GENERAL for every accepted carrier, CONFIRMED_DELIVERY for the destination country's confirmed-delivery carriers.",
+            "enum": [
+              "GENERAL",
+              "CONFIRMED_DELIVERY"
+            ],
+            "default": "GENERAL"
+          },
+          "dest_country_code": {
+            "type": "string",
+            "description": "ISO 3166 two-letter destination country; only with CONFIRMED_DELIVERY.",
+            "pattern": "^[A-Za-z]{2}$"
+          }
+        },
+        "required": [
+          "order_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/shipping_carriers",
+        "queryParams": {
+          "order_type": "$order_type",
+          "dest_country_code": "$dest_country_code"
+        }
+      }
+    },
+    {
+      "name": "wish_fulfill_order",
+      "description": "Mark an order shipped, or update its tracking: carrier, tracking number and origin country. Asynchronous; read the order again to see the result. Ship before the fulfillment deadline to avoid penalties.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Order id."
+          },
+          "shipping_provider": {
+            "type": "string",
+            "description": "Carrier name exactly as listed by wish_list_shipping_carriers, e.g. USPS or YunExpress."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number, letters and digits without spaces.",
+            "minLength": 1
+          },
+          "origin_country": {
+            "type": "string",
+            "description": "ISO 3166 two-letter country the parcel ships from, e.g. CN or US.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "ship_note": {
+            "type": "string",
+            "description": "Private note for yourself."
+          }
+        },
+        "required": [
+          "order_id",
+          "shipping_provider",
+          "tracking_number",
+          "origin_country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/tracking",
+        "bodyMapping": {
+          "shipping_provider": "$shipping_provider",
+          "tracking_number": "$tracking_number",
+          "origin_country": "$origin_country",
+          "ship_note": "$ship_note"
+        }
+      }
+    },
+    {
+      "name": "wish_list_refund_reasons",
+      "description": "Refund reasons valid for one order right now (they change during the order's life). Read them just before a refund.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/refund_reasons"
+      }
+    },
+    {
+      "name": "wish_refund_order",
+      "description": "Refund or cancel an order with a reason from wish_list_refund_reasons. The customer gets the money back and it cannot be undone; refunds can count against the merchant. Asynchronous. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Order id."
+          },
+          "refund_reason": {
+            "type": "string",
+            "description": "Reason code from wish_list_refund_reasons, e.g. UNABLE_TO_SHIP or ITEM_IS_DAMAGED."
+          },
+          "refund_reason_note": {
+            "type": "string",
+            "description": "Note to the customer explaining the refund."
+          }
+        },
+        "required": [
+          "order_id",
+          "refund_reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/refund",
+        "bodyMapping": {
+          "refund_reason": "$refund_reason",
+          "refund_reason_note": "$refund_reason_note"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "wish_list_products",
+      "description": "List products, most recently updated first by default: id, parent_sku, name, state, category, images, variations (id, sku, price, inventory per warehouse, status) and shipping. Up to 1,000 per call; page with updated_at_max set to the last product's updated_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_sku": {
+            "type": "string",
+            "description": "Only the product with this parent SKU."
+          },
+          "state": {
+            "type": "string",
+            "description": "Only products in this state: ACTIVE (live), WISH_INACTIVE, MERCHANT_INACTIVE, REMOVED_BY_WISH, REMOVED_BY_MERCHANT.",
+            "enum": [
+              "ACTIVE",
+              "WISH_INACTIVE",
+              "MERCHANT_INACTIVE",
+              "REMOVED_BY_WISH",
+              "REMOVED_BY_MERCHANT"
+            ]
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Created at or after. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Created at or before. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Updated at or after. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Updated at or before. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort: updated_at or created_at, optionally .asc or .desc (default updated_at.desc).",
+            "pattern": "^(updated_at|created_at)(\\.(asc|desc))?$"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Products per call, 1 to 1000 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "parent_sku": "$parent_sku",
+          "state": "$state",
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "sort_by": "$sort_by",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "wish_get_product",
+      "description": "One product by id with its variations, prices, inventory per warehouse, images, attributes, shipping and review state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Product id (24 hex characters)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}"
+      }
+    },
+    {
+      "name": "wish_create_product",
+      "description": "Create a product with at least one variation. Needs name, description (plain text, up to 4,000 characters), parent SKU, category, main image, a default shipping price for the standard warehouse and the variations (sku, price, inventory per warehouse). New listings go through Wish's review before they are live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Plain text description, no HTML, up to 4,000 characters.",
+            "maxLength": 4000
+          },
+          "parent_sku": {
+            "type": "string",
+            "description": "Your parent SKU for the product."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Wish category id from wish_get_categories or wish_get_category."
+          },
+          "main_image_url": {
+            "type": "string",
+            "description": "Public URL of the main image (JPEG, PNG or GIF, at least 500 x 500 pixels)."
+          },
+          "extra_image_urls": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Image URL."
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            "description": "More images: list of objects with url."
+          },
+          "default_shipping_prices": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "warehouse_id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Fa-f]{24}$",
+                  "description": "Warehouse id."
+                },
+                "default_shipping_price": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Amount in decimals, e.g. 9.99."
+                    },
+                    "currency_code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z]{3}$",
+                      "description": "ISO 4217 code, usually USD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency_code"
+                  ],
+                  "description": "Shipping price: amount and currency_code."
+                }
+              },
+              "required": [
+                "warehouse_id",
+                "default_shipping_price"
+              ]
+            },
+            "description": "Default shipping price per warehouse; the standard warehouse is required."
+          },
+          "variations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "description": "Variation SKU."
+                },
+                "price": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Amount in decimals, e.g. 9.99."
+                    },
+                    "currency_code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z]{3}$",
+                      "description": "ISO 4217 code, usually USD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency_code"
+                  ],
+                  "description": "Price: amount and currency_code."
+                },
+                "inventories": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "warehouse_id": {
+                        "type": "string",
+                        "pattern": "^[0-9A-Fa-f]{24}$",
+                        "description": "Warehouse id from wish_list_warehouses."
+                      },
+                      "inventory": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 500000,
+                        "description": "Units in that warehouse."
+                      }
+                    },
+                    "required": [
+                      "warehouse_id",
+                      "inventory"
+                    ]
+                  },
+                  "description": "Stock per warehouse: list of objects with warehouse_id and inventory."
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "Option name, e.g. SIZE or COLOR."
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "Option value."
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "value"
+                    ]
+                  },
+                  "description": "Option values of this variation."
+                },
+                "gtin": {
+                  "type": "string",
+                  "pattern": "^[0-9]{8,14}$",
+                  "description": "GTIN (UPC, EAN, ISBN), 8 to 14 digits."
+                },
+                "image": {
+                  "type": "string",
+                  "description": "Image URL of the variation (required when there are several variations)."
+                }
+              },
+              "required": [
+                "sku",
+                "price",
+                "inventories"
+              ]
+            },
+            "description": "Variations: sku, price and inventories each, plus options when there are several."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Search tags."
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Attribute name from wish_get_category_attributes."
+                },
+                "value": {
+                  "description": "Attribute value (text or list)."
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "description": "Category attributes: list of objects with name and value."
+          },
+          "brand_id": {
+            "type": "string",
+            "description": "Brand id, only for products made by that brand owner."
+          },
+          "condition": {
+            "type": "string",
+            "description": "Product condition.",
+            "enum": [
+              "NEW",
+              "USED",
+              "REFURBISHED"
+            ]
+          },
+          "max_quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum quantity per order."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "parent_sku",
+          "category_id",
+          "main_image_url",
+          "default_shipping_prices",
+          "variations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "parent_sku": "$parent_sku",
+          "category_id": "$category_id",
+          "main_image": {
+            "url": "$main_image_url"
+          },
+          "extra_images": "$extra_image_urls",
+          "default_shipping_prices": "$default_shipping_prices",
+          "variations": "$variations",
+          "tags": "$tags",
+          "attributes": "$attributes",
+          "brand_id": "$brand_id",
+          "condition": "$condition",
+          "max_quantity": "$max_quantity"
+        }
+      }
+    },
+    {
+      "name": "wish_update_product",
+      "description": "Update a product: name, description, tags, category, images, default shipping prices, status, or its existing variations (by variation id: price, inventories per warehouse, sku, status ENABLED or DISABLED). Fields left out stay unchanged. Changes can go through Wish's review.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Product id."
+          },
+          "name": {
+            "type": "string",
+            "description": "New name."
+          },
+          "description": {
+            "type": "string",
+            "description": "New plain text description, up to 4,000 characters.",
+            "maxLength": 4000
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "Replaces the tags."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "New category id."
+          },
+          "main_image": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "Image URL."
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "description": "New main image as an object with url."
+          },
+          "extra_images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Image URL."
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            "description": "Replaces the extra images."
+          },
+          "default_shipping_prices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "warehouse_id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Fa-f]{24}$",
+                  "description": "Warehouse id."
+                },
+                "default_shipping_price": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Amount in decimals, e.g. 9.99."
+                    },
+                    "currency_code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z]{3}$",
+                      "description": "ISO 4217 code, usually USD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency_code"
+                  ],
+                  "description": "Shipping price: amount and currency_code."
+                }
+              },
+              "required": [
+                "warehouse_id",
+                "default_shipping_price"
+              ]
+            },
+            "description": "New default shipping prices per warehouse."
+          },
+          "status": {
+            "type": "string",
+            "description": "ENABLED or DISABLED; DISABLED takes the whole listing off sale.",
+            "enum": [
+              "ENABLED",
+              "DISABLED"
+            ]
+          },
+          "variations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Fa-f]{24}$",
+                  "description": "Variation id from wish_get_product."
+                },
+                "price": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Amount in decimals, e.g. 9.99."
+                    },
+                    "currency_code": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z]{3}$",
+                      "description": "ISO 4217 code, usually USD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency_code"
+                  ],
+                  "description": "New price: amount and currency_code."
+                },
+                "inventories": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "warehouse_id": {
+                        "type": "string",
+                        "pattern": "^[0-9A-Fa-f]{24}$",
+                        "description": "Warehouse id from wish_list_warehouses."
+                      },
+                      "inventory": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 500000,
+                        "description": "Units in that warehouse."
+                      }
+                    },
+                    "required": [
+                      "warehouse_id",
+                      "inventory"
+                    ]
+                  },
+                  "description": "Stock per warehouse: list of objects with warehouse_id and inventory."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "New SKU."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "ENABLED",
+                    "DISABLED"
+                  ],
+                  "description": "ENABLED or DISABLED."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Changes to existing variations, each keyed by id: price, inventories, sku or status."
+          },
+          "max_quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum quantity per order."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "tags": "$tags",
+          "category_id": "$category_id",
+          "main_image": "$main_image",
+          "extra_images": "$extra_images",
+          "default_shipping_prices": "$default_shipping_prices",
+          "status": "$status",
+          "variations": "$variations",
+          "max_quantity": "$max_quantity"
+        }
+      }
+    },
+    {
+      "name": "wish_delete_product",
+      "description": "Delete a product listing. It cannot be undone. Installed switched off; disable variations with wish_update_product instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/{product_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "wish_create_variation",
+      "description": "Add a variation to an existing product: sku, price, inventory per warehouse, option values and image.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Product id."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Variation SKU."
+          },
+          "price": {
+            "type": "object",
+            "properties": {
+              "amount": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Amount in decimals, e.g. 9.99."
+              },
+              "currency_code": {
+                "type": "string",
+                "pattern": "^[A-Za-z]{3}$",
+                "description": "ISO 4217 code, usually USD."
+              }
+            },
+            "required": [
+              "amount",
+              "currency_code"
+            ],
+            "description": "Price: amount and currency_code."
+          },
+          "inventories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "warehouse_id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Fa-f]{24}$",
+                  "description": "Warehouse id from wish_list_warehouses."
+                },
+                "inventory": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 500000,
+                  "description": "Units in that warehouse."
+                }
+              },
+              "required": [
+                "warehouse_id",
+                "inventory"
+              ]
+            },
+            "description": "Stock per warehouse: list of objects with warehouse_id and inventory."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Option name, e.g. SIZE or COLOR."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Option value."
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ]
+            },
+            "description": "Option values of the new variation."
+          },
+          "image": {
+            "type": "string",
+            "description": "Image URL of the variation."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "GTIN (UPC, EAN, ISBN), 8 to 14 digits.",
+            "pattern": "^[0-9]{8,14}$"
+          }
+        },
+        "required": [
+          "product_id",
+          "sku",
+          "price",
+          "inventories"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/{product_id}/variations",
+        "bodyMapping": {
+          "sku": "$sku",
+          "price": "$price",
+          "inventories": "$inventories",
+          "options": "$options",
+          "image": "$image",
+          "gtin": "$gtin"
+        }
+      }
+    },
+    {
+      "name": "wish_get_categories",
+      "description": "The root of Wish's category tree with its child categories (id, name, is_leaf). Walk down with wish_get_category to a leaf for category_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/categories"
+      }
+    },
+    {
+      "name": "wish_get_category",
+      "description": "One category by id with its children; leaf categories can be used as category_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/categories/{category_id}"
+      }
+    },
+    {
+      "name": "wish_get_category_attributes",
+      "description": "Attributes of a category (name, required, allowed values) to fill attributes and options when creating products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Leaf category id."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/attributes",
+        "queryParams": {
+          "category_id": "$category_id"
+        }
+      }
+    },
+    {
+      "name": "wish_get_product_rating",
+      "description": "Overall rating of a product: average rating and rating counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ratings/products/{product_id}"
+      }
+    },
+    {
+      "name": "wish_list_tickets",
+      "description": "Customer support tickets, most recently updated first: id, type (ORDER, PRE_PURCHASE, POST_CUSTOMER_SUPPORT), state (AWAITING_MERCHANT needs your answer), subject, order and product, replies and timestamps. Up to 500 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "states": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "AWAITING_WISH",
+                "AWAITING_USER",
+                "AWAITING_MERCHANT",
+                "CLOSED",
+                "PERMANENTLY_CLOSED"
+              ]
+            },
+            "description": "Only these states, e.g. AWAITING_MERCHANT."
+          },
+          "types": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "ORDER",
+                "PRE_PURCHASE",
+                "POST_CUSTOMER_SUPPORT"
+              ]
+            },
+            "description": "Only these ticket types."
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Updated at or after. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_at_max": {
+            "type": "string",
+            "description": "Updated at or before. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50,
+            "description": "Tickets per call, 1 to 500 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets",
+        "queryParams": {
+          "states": "$states",
+          "types": "$types",
+          "updated_at_min": "$updated_at_min",
+          "updated_at_max": "$updated_at_max",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "wish_get_ticket",
+      "description": "One support ticket with its messages, related order and state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Ticket id."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tickets/{ticket_id}"
+      }
+    },
+    {
+      "name": "wish_reply_to_ticket",
+      "description": "Reply to a ticket in state AWAITING_MERCHANT (up to 2,000 characters, Markdown allowed). Wish updates the state after the reply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Ticket id."
+          },
+          "message": {
+            "type": "string",
+            "description": "Reply to the customer, up to 2,000 characters.",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "ticket_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tickets/{ticket_id}/replies",
+        "bodyMapping": {
+          "message": "$message"
+        }
+      }
+    },
+    {
+      "name": "wish_update_ticket",
+      "description": "Close a ticket (CLOSED), re-open a closed one (AWAITING_MERCHANT, when allowed) or appeal to Wish support (AWAITING_WISH).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{24}$",
+            "description": "Ticket id."
+          },
+          "state": {
+            "type": "string",
+            "description": "New state.",
+            "enum": [
+              "CLOSED",
+              "AWAITING_MERCHANT",
+              "AWAITING_WISH"
+            ]
+          }
+        },
+        "required": [
+          "ticket_id",
+          "state"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tickets/{ticket_id}",
+        "bodyMapping": {
+          "state": "$state"
+        }
+      }
+    },
+    {
+      "name": "wish_list_penalties",
+      "description": "Penalties on the account, newest first: id, type, amount and currency, reason, order or product, created and reversed time. Up to 500 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_at_min": {
+            "type": "string",
+            "description": "Created at or after. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_at_max": {
+            "type": "string",
+            "description": "Created at or before. ISO 8601 date-time, e.g. 2026-11-01T00:00:00Z."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100,
+            "description": "Penalties per call, 1 to 500 (default 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/penalties",
+        "queryParams": {
+          "created_at_min": "$created_at_min",
+          "created_at_max": "$created_at_max",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "wish_get_shipping_settings",
+      "description": "Merchant shipping settings per destination country Wish ships to: enabled countries, shipping prices and regions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchant/shipping_settings"
+      }
+    },
+    {
+      "name": "wish_list_warehouses",
+      "description": "The merchant's warehouses: id, name, type (standard warehouse first), address. Warehouse ids are needed for inventory and shipping prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchant/warehouses"
+      }
+    }
+  ]
+}

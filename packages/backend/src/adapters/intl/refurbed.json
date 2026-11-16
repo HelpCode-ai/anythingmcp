@@ -1,0 +1,1806 @@
+{
+  "slug": "refurbed",
+  "name": "refurbed",
+  "description": "refurbed Seller API for sellers of refurbished electronics: orders and order items (accept, ship with tracking and IMEI), refund dry runs, shipping labels, invoices, returns, support tickets, offers with stock and prices, market prices, product lookup, shipping profiles and carriers. API token from refurbed.",
+  "instructions": "## refurbed\nThis connector works with the **refurbed Seller API** (formerly Merchant API) for sellers on refurbed, the marketplace for refurbished electronics in Austria, Germany and other EU countries: orders and order items (accept, ship with tracking and IMEI, reject), refund dry runs, shipping labels, invoices, returns, support tickets (read), offers with stock and prices, per-market prices, product lookup, shipping profiles, carriers, markets and addresses.\n\n**Setup (about 5 minutes, plus refurbed's answer)**\n1. Request an API token with the form at https://supplier.refurbed.com/api-token-request/ (or ask your account manager or integrations@refurbed.com). refurbed sends a token that looks like a UUID.\n2. Paste it into `REFURBED_API_TOKEN`, install and run `refurbed_list_orders`. The connector sends it as `Authorization: Plain` followed by the token.\n3. A token that is not used for 2 months expires; then request a new one. Some calls must also be enabled by refurbed for your account (shipping labels, new-battery offers).\n\nThe API runs on `https://api.refurbed.com`. refurbed also gives each seller a sandbox on request (https://supplier.refurbed.com/sandbox-request/), at an address like `https://grpc-<name>.qa.refurbed.io`, with test orders; a self-hosted installation can point a copy of this connector there.\n\n**Where to start**: `refurbed_list_orders` with states NEW shows orders to handle; `refurbed_get_order` and `refurbed_list_order_items` show the items. Accept with `refurbed_accept_order_item`, then ship with `refurbed_ship_order_item` (tracking link, or carrier slug from `refurbed_list_available_carriers` plus tracking number, and the IMEI or serial in item_identifiers). `refurbed_batch_update_order_item_states` does up to 50 at once; `refurbed_update_order_item` changes tracking, identifiers, notes or Swiss customs data later; `refurbed_get_order_item` reads one item.\n\n**Order item states**: NEW goes to ACCEPTED, REJECTED or CANCELLED; ACCEPTED goes to SHIPPED or CANCELLED; SHIPPED can become RETURNED. Skipping a step fails with code 9 (cannot change state from new to shipped). REJECTED and CANCELLED are final and do not refund: `refurbed_reject_order_item` is installed switched off, and refurbed expects you to tell the customer through a ticket first. The order state is calculated from its items. Do not use the deprecated fields parcel_tracking_number, parcel_tracking_carrier and the single item_identifier.\n\n**Refunds**: this connector never refunds. `refurbed_calculate_item_refund` and `refurbed_calculate_order_refund` are dry runs that show the amounts; the refund itself is done in the seller interface (it needs an open ticket).\n\n**Labels, invoices, returns, tickets**: `refurbed_list_shipping_labels` gives fresh label links; `refurbed_create_shipping_label` (switched off) creates a real label on refurbed's shipping agreement with each call. `refurbed_get_order_invoice` links the invoice you uploaded. `refurbed_list_returns` lists returns with refurbed return labels; set the item to RETURNED when the parcel arrives. `refurbed_list_tickets` and `refurbed_get_ticket` read customer tickets.\n\n**Offers**: `refurbed_list_offers`, `refurbed_get_offer`, `refurbed_create_offer` (find the product with `refurbed_get_instance`, the profile with `refurbed_list_shipping_profiles`), `refurbed_update_offer` and `refurbed_batch_update_offers` for stock and prices. Identify offers by SKU: offer ids change when an offer is recreated. Pause with stock 0; `refurbed_delete_offer` is switched off. Fixed prices per market: `refurbed_list_market_offers`, `refurbed_create_market_offer`, `refurbed_update_market_offer`, `refurbed_delete_market_offer` (switched off); only site markets of `refurbed_list_markets` take them. Only warranty M12 is accepted for new offers; grading is AA, A, B or C.\n\n**Other lookups**: `refurbed_list_merchant_addresses` (sender address ids for labels) and `refurbed_get_currency` (exchange rates; the setup check uses it).\n\n**How the API works**: every call is a POST of a JSON body to `/refb.merchant.v1.<Service>/<Method>`. Field names are snake_case; ids are whole numbers sent and returned as strings (`\"3496079\"`); money is a decimal string with a dot (`\"199.99\"`, a comma is refused); times are RFC 3339 in UTC; enums are sent by name. Give an offer by sku or by id, never both. Lists page with a cursor: pass the last id as starting_after while `has_more` is true, up to 100 rows. Batches take 1 to 50 items and answer one status per item.\n\n**Limits and errors**: 10 requests per second by default (headers X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset); over it you get 429 RESOURCE_EXHAUSTED. Errors answer `code` and `message` with gRPC codes: 3 invalid argument, 5 not found, 6 already exists, 7 permission denied, 9 failed precondition, 16 unauthenticated.\n\n**Terms**: refurbed's API terms allow integrators acting for sellers, but each action must be traceable to the seller, and API data may not be resold or used for benchmarking or market intelligence.\n\n**Writes: confirm first.** Accepting, shipping, tracking, stock and price changes act on the live account. Before each call show the user what changes and wait for a yes.",
+  "aliases": [
+    "refurbed Merchant API",
+    "refurbed Seller API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "refurbed",
+  "docsUrl": "https://refurbed.notion.site/refurbed-API-7be4e188412d4ea2bd35ef339dab9e3e",
+  "requiredEnvVars": [
+    "REFURBED_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "REFURBED_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Request it at supplier.refurbed.com/api-token-request (or from your account manager or integrations@refurbed.com). Paste the token alone, without the word Plain. Unused tokens expire after 2 months.",
+      "link": "https://supplier.refurbed.com/api-token-request/",
+      "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+      "patternMessage": "The token looks like f4e133d1-6cc4-4792-be5d-80a446a3d0dd. Paste it without the word Plain."
+    }
+  },
+  "verifyHints": {
+    "401": "refurbed refused the token (code 16 unauthenticated). Paste the token alone, without 'Plain'; a token unused for 2 months expires, then request a new one at supplier.refurbed.com/api-token-request.",
+    "403": "The token has no permission for this call (permission denied). Some calls, such as shipping labels, must be enabled by your refurbed account manager.",
+    "404": "refurbed found no order, order item, offer or ticket with that id (NOT_FOUND).",
+    "rate_limited": "refurbed allows 10 requests per second by default. Wait until X-RateLimit-Reset and use the batch tools for many items."
+  },
+  "probe": {
+    "tool": "refurbed_list_merchant_addresses",
+    "params": {}
+  },
+  "prerequisites": "A refurbed seller account and an API token requested from refurbed (form at supplier.refurbed.com/api-token-request, usually answered within a working day). Shipping labels need extra enablement by the account manager.",
+  "connector": {
+    "name": "refurbed Seller API",
+    "type": "REST",
+    "baseUrl": "https://api.refurbed.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Plain {{REFURBED_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "refurbed_list_orders",
+      "description": "List orders, newest first by default: id, released_at, state (NEW, ACCEPTED, SHIPPED, FULFILLED, CANCELLED and others), labels (e.g. MISSING_PARCEL_TRACKING_URLS), customer_email, shipping and invoice address, currency and totals (charged, paid, refunded, with settlement amounts), is_invoiceable, has_invoice and the order items. Cursor paging with has_more, up to 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NEW",
+                "REJECTED",
+                "CANCELLED",
+                "ACCEPTED",
+                "SHIPPED",
+                "RETURNED",
+                "FULFILLED",
+                "UNFULFILLED",
+                "PARTIALLY_FULFILLED"
+              ],
+              "description": "Order state."
+            },
+            "description": "Only orders in these states, e.g. [\"NEW\"] for orders to accept."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PROCESSING",
+                "PARTIALLY_REJECTED",
+                "PARTIALLY_CANCELLED",
+                "PARTIALLY_SHIPPED",
+                "PARTIALLY_RETURNED",
+                "MISSING_PARCEL_TRACKING_URLS",
+                "MISSING_ITEM_IDENTIFIERS"
+              ],
+              "description": "Order label."
+            },
+            "description": "Only orders carrying any of these labels."
+          },
+          "released_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Released at or after this time, RFC 3339 UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "released_before": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Released before this time, RFC 3339 UTC."
+          },
+          "customer_email": {
+            "type": "string",
+            "description": "Only orders whose customer email contains this text."
+          },
+          "item_sku": {
+            "type": "string",
+            "description": "Only orders with an item whose SKU contains this text."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "ID",
+              "RELEASED_AT",
+              "CUSTOMER_EMAIL",
+              "TOTAL_CHARGED",
+              "TOTAL_PAID",
+              "TOTAL_REFUNDED"
+            ],
+            "default": "RELEASED_AT",
+            "description": "Sort field (default RELEASED_AT)."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC",
+            "description": "ASC or DESC (default DESC)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 100)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor: the id of the last row of the previous page; read on while `has_more` is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderService/ListOrders",
+        "bodyMapping": {
+          "pagination": {
+            "limit": "$limit",
+            "starting_after": "$starting_after"
+          },
+          "sort": {
+            "order": "$sort_order",
+            "by": "$sort_by"
+          },
+          "filter": {
+            "state": {
+              "any_of": "$states"
+            },
+            "labels": {
+              "any_of": "$labels"
+            },
+            "released_at": {
+              "ge": "$released_from",
+              "lt": "$released_before"
+            },
+            "customer_email": {
+              "contains": "$customer_email"
+            },
+            "item_sku": {
+              "contains": "$item_sku"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_get_order",
+      "description": "Read one order with all its items: state, labels, customer email, shipping and invoice address (with VAT numbers), totals and settlement amounts, payment_method, refund eligibility, invoice flags and num_active_tickets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order id, a whole number sent as a string, e.g. \"3496079\"."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderService/GetOrder",
+        "bodyMapping": {
+          "id": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_order_items",
+      "description": "List the items of one order: id, name, state, sku, totals, commission, taxation, offer data (offer id, grading, warranty, shipping profile), parcel_tracking_url, item_identifiers, shipment_status and return flags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order id, a whole number sent as a string, e.g. \"3496079\"."
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "NEW",
+                "REJECTED",
+                "CANCELLED",
+                "ACCEPTED",
+                "SHIPPED",
+                "RETURNED"
+              ],
+              "description": "Order item state."
+            },
+            "description": "Only items in these states."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 100)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor: the id of the last row of the previous page; read on while `has_more` is true."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemService/ListOrderItemsByOrder",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "pagination": {
+            "limit": "$limit",
+            "starting_after": "$starting_after"
+          },
+          "filter": {
+            "state": {
+              "any_of": "$states"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_get_order_item",
+      "description": "Read one order item by its own id (not the order id): state, sku, prices and commission, offer data, tracking link and carrier shipment_status, identifiers, notes, VAT and customs fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order item id, a whole number sent as a string, e.g. \"3496079\"."
+          }
+        },
+        "required": [
+          "order_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemService/GetOrderItem",
+        "bodyMapping": {
+          "id": "$order_item_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_accept_order_item",
+      "description": "Accept a NEW order item (state ACCEPTED): you confirm you will ship it. Answers the updated item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order item id, a whole number sent as a string, e.g. \"3496079\"."
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Internal notes on the item, at most 500 characters."
+          }
+        },
+        "required": [
+          "order_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemService/UpdateOrderItemState",
+        "bodyMapping": {
+          "id": "$order_item_id",
+          "state": "ACCEPTED",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "refurbed_ship_order_item",
+      "description": "Mark an ACCEPTED order item as SHIPPED with its tracking: a full parcel_tracking_url, or parcel_carrier_tracking_number (carrier slug and tracking number). Add the IMEI or serial number in item_identifiers. The customer gets the tracking email about 2 hours later. Answers the updated item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order item id, a whole number sent as a string, e.g. \"3496079\"."
+          },
+          "parcel_tracking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Full tracking link of the parcel (https://...). A bare tracking number is refused; use parcel_carrier_tracking_number instead."
+          },
+          "parcel_carrier_tracking_number": {
+            "type": "object",
+            "properties": {
+              "carrier": {
+                "type": "string",
+                "description": "Carrier slug."
+              },
+              "tracking_number": {
+                "type": "string",
+                "description": "Tracking number of that carrier."
+              }
+            },
+            "required": [
+              "carrier",
+              "tracking_number"
+            ],
+            "description": "Instead of a link: the carrier slug (refurbed_list_available_carriers) and the tracking number, e.g. `{\"carrier\": \"dhl\", \"tracking_number\": \"JJD000390007\"}`; refurbed builds the link."
+          },
+          "item_identifiers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "identifier_type": {
+                  "type": "string",
+                  "enum": [
+                    "IMEI",
+                    "IMEI_2",
+                    "SERIAL_NUMBER"
+                  ],
+                  "description": "IMEI, IMEI_2 or SERIAL_NUMBER."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "The identifier."
+                }
+              },
+              "required": [
+                "identifier_type",
+                "value"
+              ]
+            },
+            "description": "Device identifiers: `[{\"identifier_type\": \"IMEI\", \"value\": \"356938035643809\"}]`. identifier_type IMEI (14 to 16 digits), IMEI_2, SERIAL_NUMBER; at most two IMEIs per device."
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Internal notes on the item, at most 500 characters."
+          },
+          "weight_kg": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Weight in kg (Swiss customs)."
+          },
+          "manufacturing_country": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$",
+            "description": "Country of manufacture, ISO 3166-1 alpha-2 in upper case, e.g. CN (Swiss customs)."
+          },
+          "hs_code": {
+            "type": "string",
+            "description": "HS tariff code (Swiss customs)."
+          }
+        },
+        "required": [
+          "order_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemService/UpdateOrderItemState",
+        "bodyMapping": {
+          "id": "$order_item_id",
+          "parcel_tracking_url": "$parcel_tracking_url",
+          "parcel_carrier_tracking_number": "$parcel_carrier_tracking_number",
+          "item_identifiers": "$item_identifiers",
+          "notes": "$notes",
+          "weight_kg": "$weight_kg",
+          "manufacturing_country": "$manufacturing_country",
+          "hs_code": "$hs_code",
+          "state": "SHIPPED"
+        }
+      }
+    },
+    {
+      "name": "refurbed_update_order_item",
+      "description": "Change an order item without changing its state: replace the tracking link or carrier tracking number, add identifiers (IMEI, serial), notes or Swiss customs data (weight, country of manufacture, HS code). A tracking link can be replaced, not cleared.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order item id, a whole number sent as a string, e.g. \"3496079\"."
+          },
+          "parcel_tracking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Full tracking link of the parcel (https://...). A bare tracking number is refused; use parcel_carrier_tracking_number instead."
+          },
+          "parcel_carrier_tracking_number": {
+            "type": "object",
+            "properties": {
+              "carrier": {
+                "type": "string",
+                "description": "Carrier slug."
+              },
+              "tracking_number": {
+                "type": "string",
+                "description": "Tracking number of that carrier."
+              }
+            },
+            "required": [
+              "carrier",
+              "tracking_number"
+            ],
+            "description": "Instead of a link: the carrier slug (refurbed_list_available_carriers) and the tracking number, e.g. `{\"carrier\": \"dhl\", \"tracking_number\": \"JJD000390007\"}`; refurbed builds the link."
+          },
+          "item_identifiers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "identifier_type": {
+                  "type": "string",
+                  "enum": [
+                    "IMEI",
+                    "IMEI_2",
+                    "SERIAL_NUMBER"
+                  ],
+                  "description": "IMEI, IMEI_2 or SERIAL_NUMBER."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "The identifier."
+                }
+              },
+              "required": [
+                "identifier_type",
+                "value"
+              ]
+            },
+            "description": "Device identifiers: `[{\"identifier_type\": \"IMEI\", \"value\": \"356938035643809\"}]`. identifier_type IMEI (14 to 16 digits), IMEI_2, SERIAL_NUMBER; at most two IMEIs per device."
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Internal notes on the item, at most 500 characters."
+          },
+          "weight_kg": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Weight in kg (Swiss customs)."
+          },
+          "manufacturing_country": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$",
+            "description": "Country of manufacture, ISO 3166-1 alpha-2 in upper case, e.g. CN (Swiss customs)."
+          },
+          "hs_code": {
+            "type": "string",
+            "description": "HS tariff code (Swiss customs)."
+          }
+        },
+        "required": [
+          "order_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemService/UpdateOrderItem",
+        "bodyMapping": {
+          "id": "$order_item_id",
+          "parcel_tracking_url": "$parcel_tracking_url",
+          "parcel_carrier_tracking_number": "$parcel_carrier_tracking_number",
+          "item_identifiers": "$item_identifiers",
+          "notes": "$notes",
+          "weight_kg": "$weight_kg",
+          "manufacturing_country": "$manufacturing_country",
+          "hs_code": "$hs_code"
+        }
+      }
+    },
+    {
+      "name": "refurbed_batch_update_order_item_states",
+      "description": "Change the state of up to 50 order items in one call (accept or ship several). Each update has the fields of the single calls; the answer has one result per item with its status code. REJECTED and CANCELLED are refused here: use refurbed_reject_order_item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "updates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Order item id."
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "ACCEPTED",
+                    "SHIPPED"
+                  ],
+                  "description": "ACCEPTED or SHIPPED."
+                },
+                "parcel_tracking_url": {
+                  "type": "string",
+                  "description": "Tracking link (for SHIPPED)."
+                },
+                "parcel_carrier_tracking_number": {
+                  "type": "object",
+                  "description": "Instead of the link: `{\"carrier\": \"dhl\", \"tracking_number\": \"XYZ\"}`."
+                },
+                "item_identifiers": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "IMEI or serial numbers."
+                },
+                "notes": {
+                  "type": "string",
+                  "description": "Notes."
+                }
+              },
+              "required": [
+                "id",
+                "state"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "1 to 50 updates: `[{\"id\": \"456\", \"state\": \"SHIPPED\", \"parcel_tracking_url\": \"https://...\", \"item_identifiers\": [{\"identifier_type\": \"IMEI\", \"value\": \"356938035643809\"}]}]`."
+          }
+        },
+        "required": [
+          "updates"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemService/BatchUpdateOrderItemsState",
+        "bodyMapping": {
+          "updates": "$updates"
+        }
+      }
+    },
+    {
+      "name": "refurbed_reject_order_item",
+      "description": "Reject (NEW item) or cancel (NEW or ACCEPTED item) an order item. Final and cannot be undone; it does not refund the customer by itself, and refurbed expects you to tell the customer through a ticket first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order item id, a whole number sent as a string, e.g. \"3496079\"."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "REJECTED",
+              "CANCELLED"
+            ],
+            "description": "REJECTED (you cannot deliver a NEW item) or CANCELLED."
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Internal notes on the item, at most 500 characters."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "state"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemService/UpdateOrderItemState",
+        "bodyMapping": {
+          "id": "$order_item_id",
+          "state": "$state",
+          "notes": "$notes"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "refurbed_calculate_item_refund",
+      "description": "Dry run: show what refunding an order item would mean (total_paid, total_refunded, refunded, the refurbed and merchant shares) without refunding anything. target_paid_amount is what the customer would have paid after the refund, \"0\" for a full refund.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order item id, a whole number sent as a string, e.g. \"3496079\"."
+          },
+          "currency_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency code, e.g. EUR, PLN, SEK, CHF, DKK, CZK."
+          },
+          "target_paid_amount": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "Amount the customer pays after the refund, decimal string with a dot and at most two decimals, e.g. \"199.99\"; \"0\" = full refund."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "currency_code",
+          "target_paid_amount"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemService/CalculateRefundOrderItem",
+        "bodyMapping": {
+          "id": "$order_item_id",
+          "currency_code": "$currency_code",
+          "target_paid_amount": "$target_paid_amount"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_calculate_order_refund",
+      "description": "Dry run: show what refunding all refundable items of an order would come to, without refunding anything.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order id, a whole number sent as a string, e.g. \"3496079\"."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderService/CalculateRefundOrder",
+        "bodyMapping": {
+          "id": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_shipping_labels",
+      "description": "List the shipping labels created for an order: id, printer PDF links (they expire after about an hour, call again for fresh ones), tracking data (carrier, number, link), parcel weight and sender address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order id, a whole number sent as a string, e.g. \"3496079\"."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderService/ListShippingLabels",
+        "bodyMapping": {
+          "order_id": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_create_shipping_label",
+      "description": "Create a shipping label for an order on refurbed's shipping agreement (DHL Express today). Every call creates a new real label and its tracking is shown to the customer. Needs the feature enabled by your account manager. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order id, a whole number sent as a string, e.g. \"3496079\"."
+          },
+          "merchant_address_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Sender address (refurbed_list_merchant_addresses) id, a whole number sent as a string, e.g. \"3496079\"."
+          },
+          "parcel_weight": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 70,
+            "description": "Parcel weight in kg, at most 70."
+          },
+          "carrier": {
+            "type": "string",
+            "enum": [
+              "DHL_EXPRESS",
+              "UPS",
+              "DHL_GERMANY",
+              "DHL_ECOMMERCE"
+            ],
+            "default": "DHL_EXPRESS",
+            "description": "Carrier (default DHL_EXPRESS, the only one offered today)."
+          }
+        },
+        "required": [
+          "order_id",
+          "merchant_address_id",
+          "parcel_weight"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderService/CreateShippingLabel",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "merchant_address_id": "$merchant_address_id",
+          "parcel_weight": "$parcel_weight",
+          "carrier": "$carrier"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "refurbed_get_order_invoice",
+      "description": "Get a download link (valid 24 hours) for the invoice you uploaded for an order. NOT_FOUND when there is none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Order id, a whole number sent as a string, e.g. \"3496079\"."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderService/GetOrderInvoice",
+        "bodyMapping": {
+          "order_id": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_returns",
+      "description": "List returns that run on refurbed return labels: id, order_id, order_item_id, instance_name, identifiers, state (INITIATED, IN_TRANSIT, DELIVERED, REFUNDED, CONCLUDED), return_initiated_at, delivered_at, tracking number and link, and the support ticket. Fails with FAILED_PRECONDITION when your account has no return shipping.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "INITIATED",
+                "IN_TRANSIT",
+                "DELIVERED",
+                "REFUNDED",
+                "CONCLUDED"
+              ],
+              "description": "Return state."
+            },
+            "description": "Only returns in these states."
+          },
+          "order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Order id."
+            },
+            "description": "Only returns of these orders."
+          },
+          "initiated_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Initiated at or after this time, RFC 3339 UTC."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC",
+            "description": "ASC or DESC (default DESC)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 100)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor: the id of the last row of the previous page; read on while `has_more` is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OrderItemReturnService/ListOrderItemReturns",
+        "bodyMapping": {
+          "pagination": {
+            "limit": "$limit",
+            "starting_after": "$starting_after"
+          },
+          "sort": {
+            "order": "$sort_order",
+            "by": "RETURN_INITIATED_AT"
+          },
+          "filter": {
+            "state": {
+              "any_of": "$states"
+            },
+            "order_id": {
+              "any_of": "$order_ids"
+            },
+            "return_initiated_at": {
+              "ge": "$initiated_from"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_tickets",
+      "description": "List customer support tickets: id, status (OPEN, PENDING, SOLVED, CLOSED), topic, urgency, customer, order and order item, seller_action_needed and SLA dates (sort by NEXT_SLA_BREACH_AT ASC to see the most urgent first). Read-only; answer tickets in the refurbed seller interface.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "PENDING",
+                "SOLVED",
+                "CLOSED"
+              ],
+              "description": "Ticket status."
+            },
+            "description": "Only tickets with these statuses."
+          },
+          "order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Order id."
+            },
+            "description": "Only tickets about these orders."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "CREATED_AT",
+              "UPDATED_AT",
+              "NEXT_SLA_BREACH_AT"
+            ],
+            "default": "UPDATED_AT",
+            "description": "Sort field (default UPDATED_AT)."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC",
+            "description": "ASC or DESC (default DESC)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 100)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor: the id of the last row of the previous page; read on while `has_more` is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.TicketService/ListTickets",
+        "bodyMapping": {
+          "pagination": {
+            "limit": "$limit",
+            "starting_after": "$starting_after"
+          },
+          "sort": {
+            "order": "$sort_order",
+            "by": "$sort_by"
+          },
+          "filter": {
+            "status": {
+              "any_of": "$statuses"
+            },
+            "marketplace_order_id": {
+              "any_of": "$order_ids"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_get_ticket",
+      "description": "Read one support ticket with its messages, topic, status, order references and notes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Ticket id, a whole number sent as a string, e.g. \"3496079\"."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.TicketService/GetTicket",
+        "bodyMapping": {
+          "ticket_id": "$ticket_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_offers",
+      "description": "List your offers: id, sku, instance_id and instance_name, state (OK, UNVERIFIED, PENDING_REVIEW, REJECTED with rejection_reason), grading, warranty, stock, shipping profile, taxation, reference price and min price, and per market the set and calculated prices with visibility and buybox state. Cursor paging, up to 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_contains": {
+            "type": "string",
+            "description": "Only offers whose SKU contains this text."
+          },
+          "skus": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "SKU."
+            },
+            "description": "Only these exact SKUs."
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "OK",
+                "UNVERIFIED",
+                "SUBMITTED",
+                "PENDING_REVIEW",
+                "REJECTED"
+              ],
+              "description": "Offer state."
+            },
+            "description": "Only offers in these states."
+          },
+          "name": {
+            "type": "string",
+            "description": "Full-text match on the product name."
+          },
+          "min_stock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only offers with at least this stock (1 = in stock)."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "ID",
+              "CREATED_AT",
+              "NAME",
+              "SKU",
+              "GRADING",
+              "STOCK",
+              "REFERENCE_PRICE"
+            ],
+            "default": "ID",
+            "description": "Sort field (default ID)."
+          },
+          "sort_order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "ASC",
+            "description": "ASC or DESC (default ASC)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 100)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor: the id of the last row of the previous page; read on while `has_more` is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OfferService/ListOffers",
+        "bodyMapping": {
+          "pagination": {
+            "limit": "$limit",
+            "starting_after": "$starting_after"
+          },
+          "sort": {
+            "order": "$sort_order",
+            "by": "$sort_by"
+          },
+          "filter": {
+            "sku": {
+              "any_of": "$skus",
+              "contains": "$sku_contains"
+            },
+            "state": {
+              "any_of": "$states"
+            },
+            "name": {
+              "matches": "$name"
+            },
+            "stock": {
+              "ge": "$min_stock"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_get_offer",
+      "description": "Read one offer by SKU or by id: state, grading, warranty, stock, shipping profiles, taxation, reference prices and the market prices with buybox information (competitor and suggested price).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your offer SKU (preferred: offer ids change when an offer is recreated)."
+          },
+          "offer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Offer id (string of digits). Give sku or offer_id, not both."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OfferService/GetOffer",
+        "bodyMapping": {
+          "identifier": {
+            "sku": "$sku",
+            "id": "$offer_id"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_create_offer",
+      "description": "Create an offer for a product: instance_id (refurbed_get_instance), or a gtin or mpn (the offer is then UNVERIFIED until refurbed checks it), plus your SKU, grading, warranty M12, stock, shipping profile, taxation and reference price. ALREADY_EXISTS for a duplicate SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your SKU for this offer, unique."
+          },
+          "instance_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "refurbed product (instance) id. Give exactly one of instance_id, gtin, mpn."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "GTIN / EAN of the product instead of instance_id."
+          },
+          "mpn": {
+            "type": "string",
+            "description": "Manufacturer part number instead of instance_id."
+          },
+          "grading": {
+            "type": "string",
+            "enum": [
+              "AA",
+              "A",
+              "B",
+              "C"
+            ],
+            "description": "Grade: AA (like new) to C."
+          },
+          "warranty": {
+            "type": "string",
+            "enum": [
+              "M12"
+            ],
+            "description": "Warranty; only M12 is accepted for new offers."
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units in stock; 0 pauses the offer. refurbed lowers it on each order."
+          },
+          "shipping_profile_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Shipping profile id (refurbed_list_shipping_profiles)."
+          },
+          "taxation": {
+            "type": "string",
+            "enum": [
+              "GROSS",
+              "MARGINAL"
+            ],
+            "description": "GROSS (normal VAT) or MARGINAL (margin scheme)."
+          },
+          "reference_currency_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency code, e.g. EUR, PLN, SEK, CHF, DKK, CZK."
+          },
+          "reference_price": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "Reference price, decimal string with a dot and at most two decimals, e.g. \"199.99\"; market prices are calculated from it."
+          },
+          "reference_min_price": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "Lowest price the automatic pricing may go to, decimal string with a dot and at most two decimals, e.g. \"199.99\"."
+          },
+          "battery_condition": {
+            "type": "string",
+            "enum": [
+              "OPTIMAL",
+              "NEW"
+            ],
+            "description": "Battery: OPTIMAL, or NEW (needs approval)."
+          }
+        },
+        "required": [
+          "sku",
+          "grading",
+          "warranty",
+          "stock",
+          "shipping_profile_id",
+          "taxation",
+          "reference_currency_code",
+          "reference_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OfferService/CreateOffer",
+        "bodyMapping": {
+          "sku": "$sku",
+          "instance_id": "$instance_id",
+          "gtin": "$gtin",
+          "mpn": "$mpn",
+          "grading": "$grading",
+          "warranty": "$warranty",
+          "stock": "$stock",
+          "shipping_profile_id": "$shipping_profile_id",
+          "taxation": "$taxation",
+          "reference_currency_code": "$reference_currency_code",
+          "reference_price": "$reference_price",
+          "reference_min_price": "$reference_min_price",
+          "battery_condition": "$battery_condition"
+        }
+      }
+    },
+    {
+      "name": "refurbed_update_offer",
+      "description": "Change an offer by SKU or id: stock, reference price and min price, grading, warranty, shipping profile or taxation; only the fields given change. Stock 0 pauses the offer. SKU, product and battery condition cannot change. Answers the updated offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your offer SKU (preferred: offer ids change when an offer is recreated)."
+          },
+          "offer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Offer id (string of digits). Give sku or offer_id, not both."
+          },
+          "grading": {
+            "type": "string",
+            "enum": [
+              "AA",
+              "A",
+              "B",
+              "C"
+            ],
+            "description": "Grade: AA (like new) to C."
+          },
+          "warranty": {
+            "type": "string",
+            "enum": [
+              "M12"
+            ],
+            "description": "Warranty; only M12 is accepted for new offers."
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units in stock; 0 pauses the offer. refurbed lowers it on each order."
+          },
+          "shipping_profile_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Shipping profile id (refurbed_list_shipping_profiles)."
+          },
+          "taxation": {
+            "type": "string",
+            "enum": [
+              "GROSS",
+              "MARGINAL"
+            ],
+            "description": "GROSS (normal VAT) or MARGINAL (margin scheme)."
+          },
+          "reference_currency_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency code, e.g. EUR, PLN, SEK, CHF, DKK, CZK."
+          },
+          "reference_price": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "Reference price, decimal string with a dot and at most two decimals, e.g. \"199.99\"; market prices are calculated from it."
+          },
+          "reference_min_price": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "Lowest price the automatic pricing may go to, decimal string with a dot and at most two decimals, e.g. \"199.99\"."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OfferService/UpdateOffer",
+        "bodyMapping": {
+          "identifier": {
+            "sku": "$sku",
+            "id": "$offer_id"
+          },
+          "grading": "$grading",
+          "warranty": "$warranty",
+          "stock": "$stock",
+          "shipping_profile_id": "$shipping_profile_id",
+          "taxation": "$taxation",
+          "reference_currency_code": "$reference_currency_code",
+          "reference_price": "$reference_price",
+          "reference_min_price": "$reference_min_price"
+        }
+      }
+    },
+    {
+      "name": "refurbed_batch_update_offers",
+      "description": "Change up to 50 offers in one call (stock and price updates). Each entry has identifier plus the fields of refurbed_update_offer; the answer has one result per offer with its status code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "identifier": {
+                  "type": "object",
+                  "description": "`{\"sku\": \"SKU-1\"}` or `{\"id\": \"46788\"}`."
+                },
+                "stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New stock."
+                },
+                "reference_price": {
+                  "type": "string",
+                  "description": "New reference price, decimal string."
+                },
+                "reference_min_price": {
+                  "type": "string",
+                  "description": "New minimum price, decimal string."
+                }
+              },
+              "required": [
+                "identifier"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "1 to 50 offers: `[{\"identifier\": {\"sku\": \"SKU-1\"}, \"stock\": 3, \"reference_price\": \"189.99\"}]`. Prices are decimal strings."
+          }
+        },
+        "required": [
+          "offers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OfferService/BatchUpdateOffers",
+        "bodyMapping": {
+          "offers": "$offers"
+        }
+      }
+    },
+    {
+      "name": "refurbed_delete_offer",
+      "description": "Delete an offer by SKU or id. Cannot be undone; to pause an offer set stock 0 with refurbed_update_offer instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your offer SKU (preferred: offer ids change when an offer is recreated)."
+          },
+          "offer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Offer id (string of digits). Give sku or offer_id, not both."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.OfferService/DeleteOffer",
+        "bodyMapping": {
+          "identifier": {
+            "sku": "$sku",
+            "id": "$offer_id"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "refurbed_list_market_offers",
+      "description": "List the per-market prices of one offer: market_code, whether it is a site market, set or calculated price and min price, currency, visibility and buybox state with the competitor and suggested price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your offer SKU (preferred: offer ids change when an offer is recreated)."
+          },
+          "offer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Offer id (string of digits). Give sku or offer_id, not both."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 100)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor from the previous page (the last market offer id)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.MarketOfferService/ListMarketOffersByOffer",
+        "bodyMapping": {
+          "offer_identifier": {
+            "sku": "$sku",
+            "id": "$offer_id"
+          },
+          "pagination": {
+            "limit": "$limit",
+            "starting_after": "$starting_after"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_create_market_offer",
+      "description": "Set a fixed price for an offer in one site market instead of the price calculated from the reference price. ALREADY_EXISTS when the market already has one: use refurbed_update_market_offer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your offer SKU (preferred: offer ids change when an offer is recreated)."
+          },
+          "offer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Offer id (string of digits). Give sku or offer_id, not both."
+          },
+          "market_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z_-]{2,10}$",
+            "description": "Market code in lower case, e.g. de, at, fr, it, nl (see refurbed_list_markets)."
+          },
+          "currency_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency code, e.g. EUR, PLN, SEK, CHF, DKK, CZK."
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "Price in that market, decimal string with a dot and at most two decimals, e.g. \"199.99\"."
+          },
+          "min_price": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "Optional minimum price, decimal string with a dot and at most two decimals, e.g. \"199.99\"."
+          }
+        },
+        "required": [
+          "market_code",
+          "currency_code",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.MarketOfferService/CreateMarketOffer",
+        "bodyMapping": {
+          "identifier": {
+            "sku": "$sku",
+            "id": "$offer_id"
+          },
+          "market_price": {
+            "market_code": "$market_code",
+            "currency_code": "$currency_code",
+            "price": "$price",
+            "min_price": "$min_price"
+          }
+        }
+      }
+    },
+    {
+      "name": "refurbed_update_market_offer",
+      "description": "Change the fixed price of an offer in one market. Give the offer by sku or offer_id and the market_code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your offer SKU (preferred: offer ids change when an offer is recreated)."
+          },
+          "offer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Offer id (string of digits). Give sku or offer_id, not both."
+          },
+          "market_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z_-]{2,10}$",
+            "description": "Market code in lower case, e.g. de, at, fr, it, nl (see refurbed_list_markets)."
+          },
+          "currency_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency code, e.g. EUR, PLN, SEK, CHF, DKK, CZK."
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "New price, decimal string with a dot and at most two decimals, e.g. \"199.99\"."
+          },
+          "min_price": {
+            "type": "string",
+            "pattern": "^[0-9]+([.][0-9]{1,2})?$",
+            "description": "New minimum price, decimal string with a dot and at most two decimals, e.g. \"199.99\"."
+          }
+        },
+        "required": [
+          "market_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.MarketOfferService/UpdateMarketOffer",
+        "bodyMapping": {
+          "identifier": {
+            "offer_id": {
+              "sku": "$sku",
+              "id": "$offer_id"
+            },
+            "market_code": "$market_code"
+          },
+          "market_price": {
+            "currency_code": "$currency_code",
+            "price": "$price",
+            "min_price": "$min_price"
+          }
+        }
+      }
+    },
+    {
+      "name": "refurbed_delete_market_offer",
+      "description": "Remove the fixed price of an offer in one market; the price falls back to the calculation from the reference price. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your offer SKU (preferred: offer ids change when an offer is recreated)."
+          },
+          "offer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Offer id (string of digits). Give sku or offer_id, not both."
+          },
+          "market_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z_-]{2,10}$",
+            "description": "Market code in lower case, e.g. de, at, fr, it, nl (see refurbed_list_markets)."
+          }
+        },
+        "required": [
+          "market_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.MarketOfferService/DeleteMarketOffer",
+        "bodyMapping": {
+          "identifier": {
+            "offer_id": {
+              "sku": "$sku",
+              "id": "$offer_id"
+            },
+            "market_code": "$market_code"
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "refurbed_get_instance",
+      "description": "Look up a refurbed product (instance) by GTIN, MPN or id: id and name. Use the id as instance_id when creating offers. There is no product search, and products cannot be created through the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gtin": {
+            "type": "string",
+            "description": "GTIN / EAN, e.g. 0195949036248."
+          },
+          "mpn": {
+            "type": "string",
+            "description": "Manufacturer part number (an MPN matching several products is refused)."
+          },
+          "instance_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}$",
+            "description": "Instance id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.InstanceService/GetInstance",
+        "bodyMapping": {
+          "gtin": "$gtin",
+          "mpn": "$mpn",
+          "id": "$instance_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_shipping_profiles",
+      "description": "List your shipping profiles: id, name, source country, destination markets with costs and delivery times, and how many offers use each. Offers need a shipping_profile_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 100)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor: the id of the last row of the previous page; read on while `has_more` is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.ShippingProfileService/ListShippingProfiles",
+        "bodyMapping": {
+          "pagination": {
+            "limit": "$limit",
+            "starting_after": "$starting_after"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_available_carriers",
+      "description": "List the carriers refurbed can track: name and slug. Use the slug as carrier when shipping with a tracking number instead of a link. Cache the list; it rarely changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.ShippingProfileService/ListAvailableCarriers",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_markets",
+      "description": "List refurbed markets: code (e.g. de, at, fr), name, type, currency_code and is_site (a market with its own refurbed site, where fixed market prices are allowed).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 100)."
+          },
+          "starting_after": {
+            "type": "string",
+            "description": "Cursor: the code of the last market of the previous page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.MarketService/ListMarkets",
+        "bodyMapping": {
+          "pagination": {
+            "limit": "$limit",
+            "starting_after": "$starting_after"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_list_merchant_addresses",
+      "description": "List your addresses: id, type (DELIVERY or RETURN), company, street, town, post code and country. The id is the sender address of a shipping label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "DELIVERY",
+              "RETURN"
+            ],
+            "description": "Only DELIVERY or RETURN addresses."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.MerchantService/ListMerchantAddresses",
+        "bodyMapping": {
+          "filter": {
+            "type": "$type"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "refurbed_get_currency",
+      "description": "Read a currency and its exchange rates. Needs no seller data; used to check that the token works.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "default": "EUR",
+            "description": "ISO 4217 code, e.g. EUR."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/refb.merchant.v1.CurrencyService/GetCurrency",
+        "bodyMapping": {
+          "code": "$code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
