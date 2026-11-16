@@ -1,0 +1,1152 @@
+{
+  "slug": "apaczka",
+  "name": "Apaczka",
+  "description": "Apaczka.pl API v2, the Polish multi-carrier shipping broker: available services and carriers, shipment prices, parcel points, orders, labels as PDF, dispatch codes, turn-in confirmations, tracking and courier pickup hours. Buying a shipment, cancelling and ordering a courier are included but switched off. App ID and app secret from the Apaczka panel.",
+  "instructions": "## Apaczka\nThis connector works with the **Apaczka.pl API v2** at `https://www.apaczka.pl/api/v2`, the Polish shipping broker that sells courier services of more than 20 carriers (DPD, InPost, DHL, UPS, FedEx, Poczta Polska and others) through one account: available services, prices, parcel points, your orders, labels, tracking and courier pickup hours. Buying a shipment, cancelling an order and ordering a courier pickup are included but installed switched off.\n\n**Setup (about 3 minutes)**\n1. Sign in to the Apaczka panel at https://panel.apaczka.pl with a business account.\n2. Open **Ustawienia** (Settings), **API**, and create an API (WebAPI) application.\n3. Copy its **app_id** into `APACZKA_APP_ID` and its **app_secret** into `APACZKA_APP_SECRET`.\n\nApaczka never receives the secret: every call is a form POST with app_id, request (the call's data as JSON text), expires and a signature, an HMAC-SHA256 over `app_id:route:request:expires` keyed with the secret. The connector signs each call with an expiry 10 minutes ahead; Apaczka accepts at most 15 minutes. This is the production API: sandbox keys from panel-sandbox.apaczka.pl are refused here.\n\n**Where to start**: `apaczka_get_service_structure` lists the services of your account with their `service_id`, the carrier and what each needs. `apaczka_list_orders` shows your orders; `apaczka_get_order` reads one in full.\n\n**Prices**: `apaczka_get_order_valuation` prices a shipment without buying it. Leave out service_id to get a price for every service that can carry the parcel, then check in the service structure what the chosen service needs: `pickup_courier` 2 means a courier pickup is required, the point flags mean a point id is needed, `domestic` 0 means customs data. Courier pickups on the same day, COD and options cost extra, so price the final payload.\n\n**Points**: `apaczka_list_points` lists the lockers and points of one carrier (type INPOST, DPD and so on). Put the point's `foreign_address_id` on the receiver for delivery to a locker, or on the sender to drop the parcel off at a point (pickup type SELF).\n\n**Orders and documents**: `apaczka_list_orders` (up to 25 per page), `apaczka_get_order`, `apaczka_get_waybill` (the label as base64 PDF), `apaczka_get_dispatch_code` (the code some carriers want at a drop-off point) and `apaczka_get_turn_in` (one confirmation, base64 PDF, for several parcels handed to one courier). `apaczka_track_shipment` takes the carrier's waybill number, not the order id, and returns normalised statuses (NEW, PICKUP, IN_TRANSIT, DELIVERED, EXCEPTION, RETURNED_TO_SHIPPER, CANCELLED and others) with the carrier's own text.\n\n**Courier pickups**: `apaczka_get_pickup_hours` returns the pickup windows for a postal code and service. Note the naming trap: in an order the pickup fields are `hours_from` and `hours_to`; the separate pickup orders use `hour_from` and `hour_to`.\n\n**Switched off (they cost money or cannot be undone)**: `apaczka_send_order` buys the shipment and charges your Apaczka account. It is not idempotent: if a call times out, look for the order with `apaczka_list_orders` before trying again, or the parcel is bought twice. `apaczka_cancel_order` works only until the carrier takes the parcel, and a cancelled order no longer serves its label. `apaczka_order_pickup` (DPD only) and `apaczka_order_batch_pickup` order a paid courier pickup for existing orders and need the pickup via API privilege, which Apaczka support enables on request.\n\n**Field notes**: parcel sizes are `dimension1`, `dimension2`, `dimension3` in whole centimetres and `weight` in kilograms. Apaczka silently ignores keys it does not know (length, width, height), so a misnamed field gives a wrong price without any error. Money in requests and in valuations is in grosze (1 PLN = 100 grosze): COD amount, shipment_value, customs unit prices, price and price_gross of the price table. Order details carry price and price_gross as text; read them with care, the documentation describes them as grosze but its example shows złoty with decimals (9.92). Order times are Polish local time, tracking times ISO 8601 in UTC. Service ids differ per account: always take them from the service structure.\n\n**Errors**: Apaczka answers every call with HTTP 200 and puts the real outcome in the body: `status` 200 is success, anything else is an error with a Polish or English `message`. The connector turns such answers into failed calls with that message. \"App not found.\" means the app_id is wrong (or a sandbox key); \"Invalid signature\" means the app_secret does not match it, or the clock of the server is far off. Apaczka does not publish rate limits; avoid polling tracking in a tight loop.",
+  "aliases": [
+    "Apaczka.pl",
+    "apaczka.pl API",
+    "Alsendo"
+  ],
+  "region": "pl",
+  "category": "logistics",
+  "icon": "apaczka",
+  "docsUrl": "https://api-docs.apaczka.pl/introduction",
+  "requiredEnvVars": [
+    "APACZKA_APP_ID",
+    "APACZKA_APP_SECRET"
+  ],
+  "envVarMeta": {
+    "APACZKA_APP_ID": {
+      "label": "App ID",
+      "kind": "credential",
+      "help": "Apaczka panel, Ustawienia (Settings), API: the app_id of your API application. Create an application there if none exists.",
+      "link": "https://panel.apaczka.pl",
+      "pattern": "^[A-Za-z0-9_.-]{4,100}$",
+      "patternMessage": "Paste the app_id alone, without spaces or quotes."
+    },
+    "APACZKA_APP_SECRET": {
+      "label": "App secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown with the app_id in the panel under Ustawienia, API. It signs every call and never leaves the server.",
+      "link": "https://panel.apaczka.pl",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the app_secret alone, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Apaczka refused the signature. Copy the app_id and app_secret again from the Apaczka panel, Ustawienia, API; keys from the sandbox panel do not work on the production API.",
+    "403": "Apaczka refused the call for this account: the method needs a privilege your account does not have (pickups through the API, for example). Ask Apaczka support to enable it.",
+    "404": "Apaczka found no order or waybill with that number. Take the id from apaczka_list_orders and the waybill number from the order.",
+    "rate_limited": "Apaczka is throttling the calls. Wait a moment and try again, and avoid polling tracking in a tight loop."
+  },
+  "probe": {
+    "tool": "apaczka_get_service_structure",
+    "params": {}
+  },
+  "prerequisites": "An Apaczka.pl business account with access to the panel at panel.apaczka.pl, to create an API application under Ustawienia (Settings), API, and copy its app_id and app_secret. About 3 minutes.",
+  "connector": {
+    "name": "Apaczka API v2",
+    "type": "REST",
+    "baseUrl": "https://www.apaczka.pl/api/v2",
+    "authType": "HMAC",
+    "authConfig": {
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex",
+        "secret": "{{APACZKA_APP_SECRET}}",
+        "placement": "form",
+        "paramName": "signature",
+        "bodyParams": {
+          "app_id": "{{APACZKA_APP_ID}}"
+        },
+        "timestampParam": "expires",
+        "timestampOffsetSeconds": 600,
+        "template": "${form.app_id}:${apiPathNoSlash}:${form.request}:${timestamp}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "matches": "^(?!200$)[0-9]+$",
+          "messagePath": "message",
+          "messageMatches": "signature|podpis|app not found|app_id|expire|wygas",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "matches": "^(?!200$)[0-9]+$",
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "apaczka_get_service_structure",
+      "description": "Read the services available on your account: per service service_id, name, supplier (carrier), domestic (1) or international (0), pickup_courier (0 not available, 1 available, 2 required), door_to_door, door_to_point, point_to_point and point_to_door flags; plus package types (PACZKA, PALETA, ...), additional service options with their ids, and pickup types. The ids differ per account. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/service_structure/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_get_order_valuation",
+      "description": "Price a shipment without ordering it: returns price_table keyed by service_id with price (net) and price_gross, in grosze (1220 = 12.20 PLN). Leave out service_id to price every service that can carry the parcel. Takes the same fields as apaczka_send_order; courier pickup, COD, options, points and customs can change the price, so price the final payload. Read-only, costs nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Service id from apaczka_get_service_structure, e.g. 65. Leave out to compare all services."
+          },
+          "sender": {
+            "type": "object",
+            "description": "The sender address. Required: name, line1, postal_code, city, country_code. Optional: line2, state_code (needed for some countries such as the US), is_residential (default false), contact_person, email, phone, and foreign_address_id: the id of a parcel point from apaczka_list_points (on the sender for a drop-off at a point).",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Company or person name."
+              },
+              "line1": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "line2": {
+                "type": "string",
+                "description": "Second address line."
+              },
+              "postal_code": {
+                "type": "string",
+                "description": "Postal code, for Poland NN-NNN (e.g. 05-500)."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country_code": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. PL."
+              },
+              "state_code": {
+                "type": "string",
+                "description": "Region or state code, required for some countries (e.g. NY for the US)."
+              },
+              "is_residential": {
+                "type": "boolean",
+                "description": "true for a private address."
+              },
+              "contact_person": {
+                "type": "string",
+                "description": "Contact person."
+              },
+              "email": {
+                "type": "string",
+                "description": "E-mail address."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number, for Poland 9 digits."
+              },
+              "foreign_address_id": {
+                "type": "string",
+                "description": "Parcel point id (foreign_address_id from apaczka_list_points), for point services."
+              }
+            },
+            "required": [
+              "name",
+              "line1",
+              "postal_code",
+              "city",
+              "country_code"
+            ]
+          },
+          "receiver": {
+            "type": "object",
+            "description": "The receiver address. Required: name, line1, postal_code, city, country_code. Optional: line2, state_code (needed for some countries such as the US), is_residential (default false), contact_person, email, phone, and foreign_address_id: the id of a parcel point from apaczka_list_points (on the receiver for delivery to a locker or point).",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Company or person name."
+              },
+              "line1": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "line2": {
+                "type": "string",
+                "description": "Second address line."
+              },
+              "postal_code": {
+                "type": "string",
+                "description": "Postal code, for Poland NN-NNN (e.g. 05-500)."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country_code": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. PL."
+              },
+              "state_code": {
+                "type": "string",
+                "description": "Region or state code, required for some countries (e.g. NY for the US)."
+              },
+              "is_residential": {
+                "type": "boolean",
+                "description": "true for a private address."
+              },
+              "contact_person": {
+                "type": "string",
+                "description": "Contact person."
+              },
+              "email": {
+                "type": "string",
+                "description": "E-mail address."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number, for Poland 9 digits."
+              },
+              "foreign_address_id": {
+                "type": "string",
+                "description": "Parcel point id (foreign_address_id from apaczka_list_points), for point services."
+              }
+            },
+            "required": [
+              "name",
+              "line1",
+              "postal_code",
+              "city",
+              "country_code"
+            ]
+          },
+          "shipment": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The parcels, one entry each. Dimensions are dimension1, dimension2 and dimension3 in whole centimetres and weight in kilograms: keys such as length or width are silently ignored by Apaczka and the order is priced with default sizes.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shipment_type_code": {
+                  "type": "string",
+                  "description": "Package type code from apaczka_get_service_structure, e.g. PACZKA (parcel), PALETA (pallet)."
+                },
+                "dimension1": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Length in cm."
+                },
+                "dimension2": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Width in cm."
+                },
+                "dimension3": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Height in cm."
+                },
+                "weight": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Weight in kg, e.g. 2.5."
+                },
+                "is_nstd": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "1 for a non-standard parcel (odd shape), 0 (default) otherwise."
+                },
+                "customs_data": {
+                  "type": "array",
+                  "description": "Customs items for international shipments: name, description, made_in (country code), unit_type (e.g. PCS), unit_price in grosze, unit_weight in kg, quantity, hs_code.",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "required": [
+                "dimension1",
+                "dimension2",
+                "dimension3",
+                "weight"
+              ]
+            }
+          },
+          "pickup": {
+            "type": "object",
+            "description": "How the parcel reaches the carrier. type SELF (default): you drop it off yourself (at a depot, or at a point named by the sender's foreign_address_id). type COURIER: a courier collects it, and date (YYYY-MM-DD), hours_from and hours_to (HH:MM, plural names) are required; take a window from apaczka_get_pickup_hours.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SELF",
+                  "COURIER"
+                ],
+                "description": "SELF or COURIER."
+              },
+              "date": {
+                "type": "string",
+                "format": "date",
+                "description": "Pickup date, YYYY-MM-DD (COURIER only)."
+              },
+              "hours_from": {
+                "type": "string",
+                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                "description": "Start of the pickup window, HH:MM (COURIER only)."
+              },
+              "hours_to": {
+                "type": "string",
+                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                "description": "End of the pickup window, HH:MM (COURIER only)."
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "default": {
+              "type": "SELF"
+            }
+          },
+          "content": {
+            "type": "string",
+            "description": "Declared content of the shipment, e.g. Elektronika. Most carriers require it."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Free-text comment on the order."
+          },
+          "cod": {
+            "type": "object",
+            "description": "Cash on delivery: amount in grosze (15000 = 150.00 PLN, required), currency (e.g. PLN), and either bankaccount (account number for the payout) or bankaccount_id (an account saved in the Apaczka panel).",
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "COD amount in grosze."
+              },
+              "currency": {
+                "type": "string",
+                "description": "Currency, e.g. PLN."
+              },
+              "bankaccount": {
+                "type": "string",
+                "description": "Bank account number for the payout."
+              },
+              "bankaccount_id": {
+                "type": "integer",
+                "description": "Id of a bank account saved in the Apaczka panel."
+              }
+            },
+            "required": [
+              "amount"
+            ]
+          },
+          "shipment_value": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Declared (insured) value of the shipment in grosze, e.g. 15000 for 150.00 PLN."
+          },
+          "option": {
+            "type": "object",
+            "description": "Additional services keyed by option id from apaczka_get_service_structure, value 1 to switch one on, e.g. an object with key 19 and value 1.",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "customs": {
+            "type": "object",
+            "description": "Customs clearance block for international services that ask for it: content_type (e.g. SALE), EORI_number, invoice_source, documents (base64 PDFs by kind). Item details go in shipment[].customs_data."
+          }
+        },
+        "required": [
+          "sender",
+          "receiver",
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order_valuation/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {
+              "order": {
+                "service_id": "$service_id",
+                "address": {
+                  "sender": "$sender",
+                  "receiver": "$receiver"
+                },
+                "pickup": "$pickup",
+                "shipment": "$shipment",
+                "content": "$content",
+                "comment": "$comment",
+                "cod": "$cod",
+                "shipment_value": "$shipment_value",
+                "option": "$option",
+                "customs": "$customs"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_list_points",
+      "description": "List parcel points (lockers, PUDO points) of one carrier: per point foreign_address_id (the id to put on an address), type, subtype, name, address with coordinates, open_hours, and option_cod, option_send, option_deliver (whether the point takes COD, accepts parcels, delivers parcels). The answer is an object keyed 1, 2, 3 and can be large. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_]{2,30}$",
+            "description": "Carrier or point network code in capitals, e.g. INPOST, DPD, UPS, DHL, POCZTA (supplier names as in apaczka_get_service_structure)."
+          },
+          "country_code": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$",
+            "default": "PL",
+            "description": "ISO 3166-1 alpha-2 country code, default PL."
+          },
+          "subtype": {
+            "type": "string",
+            "description": "Optional point subtype filter, e.g. parcel_locker."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/points/{type}/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {
+              "country_code": "$country_code",
+              "subtype": "$subtype"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_list_orders",
+      "description": "List your orders, newest first: per order id, service_id, service_name, supplier, waybill_number, tracking_url, status (e.g. NEW), shipments_count, content, receiver, created and delivered (local time, YYYY-MM-DD HH:MM:SS). Read-only. Up to 25 per page; raise page until a page comes back with fewer orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 10,
+            "description": "Orders per page, 1 to 25 (default 10)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {
+              "page": "$page",
+              "limit": "$limit"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_get_order",
+      "description": "Read one order in full: supplier, service, waybill_number, pickup, tracking_url, status, the shipments with type, weight, dimensions and price, sender and receiver addresses, created, delivered, price, price_gross, cod and declaration_value. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Apaczka order id (id from apaczka_list_orders or apaczka_send_order), e.g. 467840212."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/{order_id}/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_get_waybill",
+      "description": "Download the shipping label (waybill) of an order: waybill is the document as base64 text and type its format (pdf). Decode the base64 to get the file. A cancelled order no longer has a label. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Apaczka order id (id from apaczka_list_orders or apaczka_send_order), e.g. 467840212."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/waybill/{order_id}/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_get_dispatch_code",
+      "description": "Read the dispatch (drop-off) code of an order, which some carriers ask for when you hand the parcel in at a point: order_id and dispatch_code. Carriers without such a code return none. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Apaczka order id (id from apaczka_list_orders or apaczka_send_order), e.g. 467840212."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dispatch_code/{order_id}/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_get_turn_in",
+      "description": "Download the turn-in confirmation, one document listing several orders handed to the courier together: turn_in is the PDF as base64 text. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Apaczka order ids to list on the confirmation."
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/turn_in/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {
+              "order_ids": "$order_ids"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_get_pickup_hours",
+      "description": "Read the courier pickup windows for a postal code and service: postal_code and hours, keyed by date (YYYY-MM-DD) with the windows per service. Use it before ordering a COURIER pickup. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postal_code": {
+            "type": "string",
+            "description": "Sender postal code, for Poland NN-NNN (e.g. 05-500)."
+          },
+          "service_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Service id from apaczka_get_service_structure, e.g. 65."
+          },
+          "remove_index": {
+            "type": "boolean",
+            "description": "true: hours as a plain list instead of an object keyed by date. Default false."
+          }
+        },
+        "required": [
+          "postal_code",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pickup_hours/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {
+              "postal_code": "$postal_code",
+              "service_id": "$service_id",
+              "remove_index": "$remove_index"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_track_shipment",
+      "description": "Tracking history of a shipment by its carrier waybill number (not the order id), newest event first: data[] with status (NEW, PICKUP, IN_TRANSIT, DELIVERED, DELIVERED_NO_SYSTEM, EXCEPTION, RETURNED_TO_SHIPPER, CANCELLED, CORRECTION, UNKNOWN), status_original (the carrier's own text), description, place and updated_at (ISO 8601, UTC); service names the carrier. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "waybill": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{4,64}$",
+            "description": "Carrier waybill number (waybill_number of the order), e.g. 0000000012345."
+          }
+        },
+        "required": [
+          "waybill"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tracking/{waybill}/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {}
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "apaczka_send_order",
+      "description": "Create (buy) a shipment order with the carrier: Apaczka charges the price to your account. Returns order with id, service_name, waybill_number, tracking_url, status (NEW) and supplier. Not idempotent: never repeat a call that timed out before checking apaczka_list_orders, or the shipment is bought twice. Price it first with apaczka_get_order_valuation. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Service id from apaczka_get_service_structure, e.g. 65."
+          },
+          "sender": {
+            "type": "object",
+            "description": "The sender address. Required: name, line1, postal_code, city, country_code. Optional: line2, state_code (needed for some countries such as the US), is_residential (default false), contact_person, email, phone, and foreign_address_id: the id of a parcel point from apaczka_list_points (on the sender for a drop-off at a point).",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Company or person name."
+              },
+              "line1": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "line2": {
+                "type": "string",
+                "description": "Second address line."
+              },
+              "postal_code": {
+                "type": "string",
+                "description": "Postal code, for Poland NN-NNN (e.g. 05-500)."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country_code": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. PL."
+              },
+              "state_code": {
+                "type": "string",
+                "description": "Region or state code, required for some countries (e.g. NY for the US)."
+              },
+              "is_residential": {
+                "type": "boolean",
+                "description": "true for a private address."
+              },
+              "contact_person": {
+                "type": "string",
+                "description": "Contact person."
+              },
+              "email": {
+                "type": "string",
+                "description": "E-mail address."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number, for Poland 9 digits."
+              },
+              "foreign_address_id": {
+                "type": "string",
+                "description": "Parcel point id (foreign_address_id from apaczka_list_points), for point services."
+              }
+            },
+            "required": [
+              "name",
+              "line1",
+              "postal_code",
+              "city",
+              "country_code"
+            ]
+          },
+          "receiver": {
+            "type": "object",
+            "description": "The receiver address. Required: name, line1, postal_code, city, country_code. Optional: line2, state_code (needed for some countries such as the US), is_residential (default false), contact_person, email, phone, and foreign_address_id: the id of a parcel point from apaczka_list_points (on the receiver for delivery to a locker or point).",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Company or person name."
+              },
+              "line1": {
+                "type": "string",
+                "description": "Street and number."
+              },
+              "line2": {
+                "type": "string",
+                "description": "Second address line."
+              },
+              "postal_code": {
+                "type": "string",
+                "description": "Postal code, for Poland NN-NNN (e.g. 05-500)."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country_code": {
+                "type": "string",
+                "description": "ISO 3166-1 alpha-2 country code, e.g. PL."
+              },
+              "state_code": {
+                "type": "string",
+                "description": "Region or state code, required for some countries (e.g. NY for the US)."
+              },
+              "is_residential": {
+                "type": "boolean",
+                "description": "true for a private address."
+              },
+              "contact_person": {
+                "type": "string",
+                "description": "Contact person."
+              },
+              "email": {
+                "type": "string",
+                "description": "E-mail address."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number, for Poland 9 digits."
+              },
+              "foreign_address_id": {
+                "type": "string",
+                "description": "Parcel point id (foreign_address_id from apaczka_list_points), for point services."
+              }
+            },
+            "required": [
+              "name",
+              "line1",
+              "postal_code",
+              "city",
+              "country_code"
+            ]
+          },
+          "shipment": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The parcels, one entry each. Dimensions are dimension1, dimension2 and dimension3 in whole centimetres and weight in kilograms: keys such as length or width are silently ignored by Apaczka and the order is priced with default sizes.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shipment_type_code": {
+                  "type": "string",
+                  "description": "Package type code from apaczka_get_service_structure, e.g. PACZKA (parcel), PALETA (pallet)."
+                },
+                "dimension1": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Length in cm."
+                },
+                "dimension2": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Width in cm."
+                },
+                "dimension3": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Height in cm."
+                },
+                "weight": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Weight in kg, e.g. 2.5."
+                },
+                "is_nstd": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "1 for a non-standard parcel (odd shape), 0 (default) otherwise."
+                },
+                "customs_data": {
+                  "type": "array",
+                  "description": "Customs items for international shipments: name, description, made_in (country code), unit_type (e.g. PCS), unit_price in grosze, unit_weight in kg, quantity, hs_code.",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "required": [
+                "dimension1",
+                "dimension2",
+                "dimension3",
+                "weight"
+              ]
+            }
+          },
+          "pickup": {
+            "type": "object",
+            "description": "How the parcel reaches the carrier. type SELF (default): you drop it off yourself (at a depot, or at a point named by the sender's foreign_address_id). type COURIER: a courier collects it, and date (YYYY-MM-DD), hours_from and hours_to (HH:MM, plural names) are required; take a window from apaczka_get_pickup_hours.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SELF",
+                  "COURIER"
+                ],
+                "description": "SELF or COURIER."
+              },
+              "date": {
+                "type": "string",
+                "format": "date",
+                "description": "Pickup date, YYYY-MM-DD (COURIER only)."
+              },
+              "hours_from": {
+                "type": "string",
+                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                "description": "Start of the pickup window, HH:MM (COURIER only)."
+              },
+              "hours_to": {
+                "type": "string",
+                "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+                "description": "End of the pickup window, HH:MM (COURIER only)."
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "default": {
+              "type": "SELF"
+            }
+          },
+          "content": {
+            "type": "string",
+            "description": "Declared content of the shipment, e.g. Elektronika. Most carriers require it."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Free-text comment on the order."
+          },
+          "cod": {
+            "type": "object",
+            "description": "Cash on delivery: amount in grosze (15000 = 150.00 PLN, required), currency (e.g. PLN), and either bankaccount (account number for the payout) or bankaccount_id (an account saved in the Apaczka panel).",
+            "properties": {
+              "amount": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "COD amount in grosze."
+              },
+              "currency": {
+                "type": "string",
+                "description": "Currency, e.g. PLN."
+              },
+              "bankaccount": {
+                "type": "string",
+                "description": "Bank account number for the payout."
+              },
+              "bankaccount_id": {
+                "type": "integer",
+                "description": "Id of a bank account saved in the Apaczka panel."
+              }
+            },
+            "required": [
+              "amount"
+            ]
+          },
+          "shipment_value": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Declared (insured) value of the shipment in grosze, e.g. 15000 for 150.00 PLN."
+          },
+          "option": {
+            "type": "object",
+            "description": "Additional services keyed by option id from apaczka_get_service_structure, value 1 to switch one on, e.g. an object with key 19 and value 1.",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "customs": {
+            "type": "object",
+            "description": "Customs clearance block for international services that ask for it: content_type (e.g. SALE), EORI_number, invoice_source, documents (base64 PDFs by kind). Item details go in shipment[].customs_data."
+          },
+          "push_tracking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional https URL that receives Apaczka's tracking webhooks for this order (supported carriers only)."
+          }
+        },
+        "required": [
+          "service_id",
+          "sender",
+          "receiver",
+          "shipment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order_send/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {
+              "order": {
+                "service_id": "$service_id",
+                "address": {
+                  "sender": "$sender",
+                  "receiver": "$receiver"
+                },
+                "pickup": "$pickup",
+                "shipment": "$shipment",
+                "content": "$content",
+                "comment": "$comment",
+                "cod": "$cod",
+                "shipment_value": "$shipment_value",
+                "option": "$option",
+                "customs": "$customs",
+                "push_tracking_url": "$push_tracking_url"
+              }
+            }
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "apaczka_cancel_order",
+      "description": "Cancel an order while the carrier has not taken the parcel yet; afterwards Apaczka answers with an error. A cancelled order no longer serves its label or turn-in confirmation, so download them first. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Apaczka order id (id from apaczka_list_orders or apaczka_send_order), e.g. 467840212."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/cancel_order/{order_id}/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {}
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "apaczka_order_pickup",
+      "description": "Order a courier pickup for one existing order, for a fee. Only for DPD orders, and only when Apaczka support enabled pickups through the API on your account. Returns foreign_courier_id, the carrier's pickup order number. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Apaczka order id (id from apaczka_list_orders or apaczka_send_order), e.g. 467840212."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Pickup date, YYYY-MM-DD (check apaczka_get_pickup_hours)."
+          },
+          "hour_from": {
+            "type": "string",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+            "description": "Start of the window, HH:MM."
+          },
+          "hour_to": {
+            "type": "string",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+            "description": "End of the window, HH:MM."
+          }
+        },
+        "required": [
+          "order_id",
+          "date",
+          "hour_from",
+          "hour_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pickup/{order_id}/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {
+              "date": "$date",
+              "hour_from": "$hour_from",
+              "hour_to": "$hour_to"
+            }
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "apaczka_order_batch_pickup",
+      "description": "Order one courier pickup for several existing orders, for a fee. All orders need the same sender address and the same service, the service must support batch pickup, and pickups through the API must be enabled on your account by Apaczka support. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Apaczka order ids to collect together."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Pickup date, YYYY-MM-DD (check apaczka_get_pickup_hours)."
+          },
+          "hour_from": {
+            "type": "string",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+            "description": "Start of the window, HH:MM."
+          },
+          "hour_to": {
+            "type": "string",
+            "pattern": "^[0-2][0-9]:[0-5][0-9]$",
+            "description": "End of the window, HH:MM."
+          }
+        },
+        "required": [
+          "order_ids",
+          "date",
+          "hour_from",
+          "hour_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/batch_pickup/",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request": {
+            "__json": {
+              "order_ids": "$order_ids",
+              "date": "$date",
+              "hour_from": "$hour_from",
+              "hour_to": "$hour_to"
+            }
+          }
+        }
+      },
+      "enabled": false
+    }
+  ]
+}
