@@ -1912,6 +1912,8 @@ describe('McpEndpointController — upload box resource', () => {
     const read = await r.read();
     expect(read.contents[0]._meta.ui.csp.connectDomains).toEqual(['https://cloud.example.com']);
     expect(read.contents[0].text).toContain('ui/initialize');
+    // ui/message carries a ContentBlock[] (MCP Apps spec), not a single block.
+    expect(read.contents[0].text).toContain("request('ui/message', { role: 'user', content: block })");
     expect(read.contents[0].text).not.toMatch(/<script[^>]+src=/);
   });
 });

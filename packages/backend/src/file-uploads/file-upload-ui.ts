@@ -127,15 +127,32 @@ export const UPLOAD_UI_HTML = `<!doctype html>
     $('dtext').textContent = bytes ? '(' + mb(bytes) + ')' : '';
     if (tell && !sent && info) {
       sent = true;
-      request('ui/message', { role: 'user', content: { type: 'text', text: 'I uploaded ' + (info.filename || 'the file') + ' in the upload box (' + info.file_ref + '). Please continue with it.' } })
-        .then(function () { $('dtext').textContent += ' The AI has been told.'; })
+      var text = 'I uploaded ' + (info.filename || 'the file') + ' in the upload box (' + info.file_ref + '). Please continue with it.';
+      var block = [{ type: 'text', text: text }];
+      // Context first (kept for the model's next turn even if the message is
+      // refused), then the chat message that makes the AI continue at once.
+      request('ui/update-model-context', { content: block }).catch(function () {});
+      request('ui/message', { role: 'user', content: block })
+        .then(function (r) {
+          if (r && r.isError) throw new Error('refused');
+          $('dtext').textContent += ' The AI has been told.';
+        })
         .catch(function () { $('dtext').textContent += ' Now tell the AI "uploaded" to continue.'; });
     }
   }
 
+  function ext(name) { var i = (name || '').lastIndexOf('.'); return i > 0 ? name.slice(i).toLowerCase() : ''; }
+  var confirmed = null;
   function upload(file) {
     if (!info || !file) return;
     show('error', false);
+    var want = ext(info.filename), got = ext(file.name);
+    if (want && got !== want && confirmed !== file) {
+      confirmed = file;
+      fail('You picked ' + file.name + ', but the AI asked for ' + info.filename + '. Choose that file, or pick ' + file.name + ' again to upload it anyway.');
+      $('file').value = '';
+      return;
+    }
     if (info.max_bytes && file.size > info.max_bytes) { fail('This file is ' + mb(file.size) + '; the limit is ' + mb(info.max_bytes) + '.'); return; }
     show('pick', false); show('progress', true);
     $('ptext').textContent = 'Uploading ' + file.name + '…';
