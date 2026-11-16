@@ -49,7 +49,7 @@ import { describeSpecError, normalizeSpecUrl, readRemoteSpec } from './parsers/s
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
 import { connectorOAuthCallbackUrl, startConnectorAuthorization } from './connector-authorization';
-import { CatalogResyncService } from './catalog-resync.service';
+import { CatalogResyncService, toPublicCatalogDiff } from './catalog-resync.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { DeploymentService } from '../common/deployment.service';
 import { validateBaseUrl } from './base-url.util';
@@ -2892,7 +2892,7 @@ export class ConnectorsController {
     if (!diff) {
       return { catalogManaged: false };
     }
-    return { catalogManaged: true, ...diff };
+    return { catalogManaged: true, ...toPublicCatalogDiff(diff) };
   }
 
   @Post(':id/resync-catalog')
@@ -2919,7 +2919,7 @@ export class ConnectorsController {
     if (applied) {
       await this.mcpServer.reloadConnectorTools(id);
     }
-    return { applied, ...diff };
+    return { applied, ...toPublicCatalogDiff(diff) };
   }
 
   /**
