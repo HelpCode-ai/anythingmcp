@@ -59,6 +59,9 @@ export function proxy(request: NextRequest) {
     // Reactivation links an AI client shows once the trial ended: the token
     // names the workspace and the page sells its plans without a sign-in.
     pathname.startsWith('/reactivate/') ||
+    // One-time upload links from an AI client (file_upload_link): the token
+    // is the credential, no sign-in.
+    pathname.startsWith('/upload/') ||
     // The File Search plugin's hand-off from its authorization page: it opens
     // a session from the sign-in just made there, or shows how to go on.
     pathname === '/setup/file-search' ||

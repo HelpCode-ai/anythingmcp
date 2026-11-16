@@ -919,3 +919,44 @@ describe('ChatGPT tool set', () => {
     expect(out.body.dashboardUrl).toBe('https://cloud.example.com/connectors');
   });
 });
+
+describe('shared toolset — agent file uploads', () => {
+  const ETSY_FILE = tool({
+    name: 'etsy_upload_listing_file',
+    connectorId: 'c-etsy',
+    endpointMapping: { method: 'POST', path: '/files', bodyEncoding: 'form-data', bodyMapping: { file: { __file: '$file_url' } } } as any,
+    parameters: { type: 'object', properties: { file_url: { type: 'string', description: 'Public URL of the file.' } }, required: ['file_url'] },
+  });
+  const uploads = () => ({
+    createLink: jest.fn(async (filename: string, size: number | null) => ({ file_ref: 'amcp-file:0123456789abcdef01234567', filename, size, browser_upload_url: 'https://cloud.example.com/upload/tok' })),
+    publicUrl: jest.fn(async (ref: string) => ({ public_url: `https://cloud.example.com/api/uploads/f/${ref.slice(10)}` })),
+  });
+
+  it('runs file_upload_link and file_public_url through the write tool, for the caller workspace', async () => {
+    const fileUploads = uploads();
+    const { client } = await connect([ETSY_FILE], makeDeps({ fileUploads }));
+    const link = await call(client, 'anythingmcp_run_write_tool', { tool: 'file_upload_link', arguments: { filename: 'pattern.zip', size_bytes: 1200 } });
+    expect(link).toEqual({ isError: false, body: expect.objectContaining({ file_ref: 'amcp-file:0123456789abcdef01234567', browser_upload_url: expect.any(String) }) });
+    expect(fileUploads.createLink).toHaveBeenCalledWith('pattern.zip', 1200);
+    const pub = await call(client, 'anythingmcp_run_write_tool', { tool: 'file_public_url', arguments: { file_ref: 'amcp-file:0123456789abcdef01234567' } });
+    expect(pub.isError).toBe(false);
+    expect((await call(client, 'anythingmcp_run_read_tool', { tool: 'file_upload_link', arguments: { filename: 'a.png' } })).isError).toBe(true);
+    expect((await call(client, 'anythingmcp_run_write_tool', { tool: 'file_upload_link', arguments: {} })).body.error).toMatch(/filename/);
+  });
+
+  it('describes the upload tools and hints file parameters', async () => {
+    const { client } = await connect([ETSY_FILE], makeDeps({ fileUploads: uploads() }));
+    const d = await call(client, 'anythingmcp_describe_tool', { tool: 'file_upload_link' });
+    expect(d.body).toMatchObject({ name: 'file_upload_link', runWith: 'anythingmcp_run_write_tool' });
+    const etsy = await call(client, 'anythingmcp_describe_tool', { tool: 'etsy_upload_listing_file' });
+    expect(etsy.body.inputSchema.properties.file_url.description).toContain('amcp-file:');
+    expect(etsy.body.description).toContain('file_upload_link');
+  });
+
+  it('knows nothing about uploads when they are off', async () => {
+    const { client } = await connect([ETSY_FILE]);
+    expect((await call(client, 'anythingmcp_run_write_tool', { tool: 'file_upload_link', arguments: { filename: 'a.png' } })).body.error).toMatch(/No tool named/);
+    const etsy = await call(client, 'anythingmcp_describe_tool', { tool: 'etsy_upload_listing_file' });
+    expect(etsy.body.inputSchema.properties.file_url.description).toBe('Public URL of the file.');
+  });
+});

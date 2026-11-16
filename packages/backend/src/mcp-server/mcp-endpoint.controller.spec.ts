@@ -1877,7 +1877,10 @@ describe('McpEndpointController — file upload tools', () => {
     // Optional parameters wrap the described schema.
     expect(imageParam.description ?? imageParam.unwrap?.().description).toContain('amcp-file:<id>');
 
-    await server.tools.get('file_upload_link')!.handler({ filename: 'cover.png', organizationId: 'org-EVIL' });
+    expect(server.tools.get('file_upload_link')!.meta._meta.ui.resourceUri).toBe('ui://anythingmcp/file-upload');
+    const linkResult = await server.tools.get('file_upload_link')!.handler({ filename: 'cover.png', organizationId: 'org-EVIL' });
+    // The upload box reads the link from structuredContent.
+    expect(linkResult.structuredContent).toEqual({ file_ref: 'amcp-file:0123456789abcdef01234567' });
     expect(uploads.createLink).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: 'org-A', userId: 'user-1', mcpServerId: 'srv-1', filename: 'cover.png' }),
     );
@@ -1889,5 +1892,26 @@ describe('McpEndpointController — file upload tools', () => {
     const names = (c: any, tools: any[]) => c.planToolSet(params(tools)).map((e: any) => e.name);
     expect(names(make().controller, [plainTool])).not.toContain('file_upload_link');
     expect(names(make(false).controller, [fileTool])).not.toContain('file_upload_link');
+  });
+});
+
+describe('McpEndpointController — upload box resource', () => {
+  it('serves the MCP App with our origin as the only network target', async () => {
+    process.env.SERVER_URL = 'https://cloud.example.com/';
+    const controller: any = new McpEndpointController(
+      {} as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+      { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
+    );
+    const registered: any[] = [];
+    const server = { registerResource: jest.fn((name, uri, meta, read) => { registered.push({ name, uri, meta, read }); return {}; }) };
+    controller.registerUploadUiResource(server, 'srv-1');
+    expect(registered).toHaveLength(1);
+    const r = registered[0];
+    expect(r.uri).toBe('ui://anythingmcp/file-upload');
+    expect(r.meta.mimeType).toBe('text/html;profile=mcp-app');
+    const read = await r.read();
+    expect(read.contents[0]._meta.ui.csp.connectDomains).toEqual(['https://cloud.example.com']);
+    expect(read.contents[0].text).toContain('ui/initialize');
+    expect(read.contents[0].text).not.toMatch(/<script[^>]+src=/);
   });
 });
