@@ -116,7 +116,7 @@
     "imapkit": "^5.3.1",
     "jest": "^30.5.2",
     "pino-pretty": "^13.2.0",
-    "prettier": "^3.9.10",
+    "prettier": "^3.10.1",
     "prisma": "^7.10.1",
     "smtp-server": "^3.21.3",
     "source-map-support": "^0.5.21",
