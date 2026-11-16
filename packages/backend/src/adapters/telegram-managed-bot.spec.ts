@@ -2,6 +2,10 @@ import {
   MANAGER_WEBHOOK_PATH,
   TELEGRAM_CONNECTED_REQUEST,
   claimLink,
+  claimWebLink,
+  creationWebLink,
+  qrPath,
+  telegramWebLink,
   claimParameter,
   cleanClientName,
   clientConnectedMessage,
@@ -261,5 +265,39 @@ describe('one-tap Telegram bot: what the bot tells its creator', () => {
       }),
     ).toEqual({ client: 'Claude', claude: true, clientNoticeAt: '2026-11-15T10:09:00.000Z' });
     expect(readManagedBotState({ telegramManagedBot: { client: 'see https://evil.example', claude: 'yes', clientNoticeAt: 'soon' } })).toEqual({});
+  });
+});
+
+describe('Telegram in the browser, and the QR code', () => {
+  const SECRET = 'a-webhook-secret-of-32-characters';
+
+  it('wraps a tg:// link the way Telegram\'s own pages hand it to the web client', () => {
+    expect(telegramWebLink('tg://resolve?domain=x&start=y')).toBe(
+      'https://web.telegram.org/a/#?tgaddr=tg%3A%2F%2Fresolve%3Fdomain%3Dx%26start%3Dy',
+    );
+  });
+
+  it('carries the same manager, username and name as the creation link', () => {
+    const web = creationWebLink('AnythingMCP_Setup_Bot', '1a2b3c4d');
+    expect(web.startsWith('https://web.telegram.org/a/#?tgaddr=')).toBe(true);
+    const tg = new URL(decodeURIComponent(web.split('tgaddr=')[1]));
+    expect(tg.protocol).toBe('tg:');
+    expect(tg.host).toBe('newbot');
+    expect(Object.fromEntries(tg.searchParams)).toEqual({
+      manager: 'AnythingMCP_Setup_Bot',
+      username: 'amcp_1a2b3c4d_bot',
+      name: 'My AnythingMCP bot',
+    });
+  });
+
+  it('carries the same signed start parameter as the claim link', () => {
+    const start = new URL(claimLink('AnythingMCP_Setup_Bot', '1a2b3c4d', SECRET)).searchParams.get('start');
+    const tg = new URL(decodeURIComponent(claimWebLink('AnythingMCP_Setup_Bot', '1a2b3c4d', SECRET).split('tgaddr=')[1]));
+    expect(tg.host).toBe('resolve');
+    expect(Object.fromEntries(tg.searchParams)).toEqual({ domain: 'AnythingMCP_Setup_Bot', start });
+  });
+
+  it('gives the QR code a path on this server that holds only the code', () => {
+    expect(qrPath('1a2b3c4d')).toBe('/auth/first-app/telegram/qr/1a2b3c4d');
   });
 });

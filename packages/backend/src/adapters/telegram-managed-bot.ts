@@ -198,6 +198,36 @@ export function creationLink(managerUsername: string, code: string, name = SUGGE
   return `https://t.me/newbot/${encodeURIComponent(managerUsername)}/${suggestedUsername(code)}?name=${encodeURIComponent(name)}`;
 }
 
+/**
+ * A `tg://` link opened in Telegram's web client. On a computer the t.me page
+ * of a creation link only offers the Telegram app; someone who uses Telegram
+ * in the browser needs this address instead. Web A (`/a/`) is the web client
+ * that handles creation links; `tgaddr` is how Telegram's own pages hand a
+ * link to it.
+ */
+export function telegramWebLink(tgUrl: string): string {
+  return `https://web.telegram.org/a/#?tgaddr=${encodeURIComponent(tgUrl)}`;
+}
+
+/** The creation link, for Telegram in the browser. */
+export function creationWebLink(managerUsername: string, code: string, name = SUGGESTED_BOT_NAME): string {
+  return telegramWebLink(
+    `tg://newbot?manager=${encodeURIComponent(managerUsername)}&username=${suggestedUsername(code)}&name=${encodeURIComponent(name)}`,
+  );
+}
+
+/** A setup code as issued by newSetupCode. */
+export const SETUP_CODE_PATTERN = /^[0-9a-f]{8}$/;
+
+/**
+ * Where the QR code of the creation link points: an address of this server
+ * that sends the phone on to Telegram, so a scan can be counted (a QR code
+ * that held the t.me link itself told the server nothing).
+ */
+export function qrPath(code: string): string {
+  return `/auth/first-app/telegram/qr/${code}`;
+}
+
 /** Hex characters of the keyed check that follows the code in a `/start` parameter. */
 const CLAIM_CHECK_LENGTH = 16;
 
@@ -230,6 +260,13 @@ export function codeFromClaimParameter(parameter: unknown, webhookSecret: string
  */
 export function claimLink(managerUsername: string, code: string, webhookSecret: string): string {
   return `https://t.me/${encodeURIComponent(managerUsername)}?start=${claimParameter(code, webhookSecret)}`;
+}
+
+/** The link that claims a renamed bot, for Telegram in the browser. */
+export function claimWebLink(managerUsername: string, code: string, webhookSecret: string): string {
+  return telegramWebLink(
+    `tg://resolve?domain=${encodeURIComponent(managerUsername)}&start=${claimParameter(code, webhookSecret)}`,
+  );
 }
 
 /**
@@ -373,16 +410,36 @@ export interface TelegramOneTap {
     userId: string;
     /** The AI client being connected: its name, and whether it is Claude. */
     client?: { name: string; claude: boolean };
-  }): Promise<{ link: string; username: string; claimLink: string } | null>;
+  }): Promise<TelegramOneTapStart | null>;
   status(input: {
     organizationId: string;
     userId: string;
     opened?: boolean;
+    /** Which link was clicked: the Telegram app's, or Telegram in the browser. */
+    openedVia?: 'app' | 'web';
     /** The page shows "Link your bot" now (reported once). */
     claimOffered?: boolean;
     device?: 'mobile' | 'desktop';
   }): Promise<TelegramOneTapStatus>;
   saveToken(input: { organizationId: string; userId: string; token: unknown }): Promise<TelegramTokenAnswer>;
+  /**
+   * The QR code of a creation link was scanned: notes it once and answers
+   * with the Telegram link to send the phone to. Null when the feature is
+   * off or the code is not one of ours.
+   */
+  qrScanned(code: unknown): Promise<string | null>;
+}
+
+/** What a setup hands the page. */
+export interface TelegramOneTapStart {
+  link: string;
+  username: string;
+  claimLink: string;
+  /** The same two links for Telegram in the browser (a computer without the app). */
+  webLink: string;
+  claimWebLink: string;
+  /** The path on this server the creation link's QR code points to. */
+  qrPath: string;
 }
 
 export type TelegramOneTapStatus =

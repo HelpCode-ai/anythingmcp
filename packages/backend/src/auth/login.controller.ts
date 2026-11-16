@@ -1892,7 +1892,7 @@ export class LoginController {
   private async beginTelegramOneTap(
     req: Request,
     setup: { userId: string; organizationId: string; connectorId: string; client: string; redirectHost?: string },
-  ): Promise<{ link: string; claim: string; qr?: string; claimQr?: string } | null> {
+  ): Promise<{ link: string; claim: string; qr?: string; claimQr?: string; web?: string; claimWeb?: string } | null> {
     const service = this.telegramOneTap();
     if (!service?.isEnabledFor(setup.organizationId)) return null;
     try {
@@ -1917,7 +1917,17 @@ export class LoginController {
       return {
         link: started.link,
         claim: started.claimLink,
-        ...(onPhone ? {} : { qr: telegramQrDataUri(started.link), claimQr: telegramQrDataUri(started.claimLink) }),
+        // A computer: the QR code for the phone (through this server's own
+        // address, so a scan is counted), and Telegram in the browser for
+        // someone who has no Telegram app on the computer.
+        ...(onPhone
+          ? {}
+          : {
+              qr: telegramQrDataUri(`${this.getBaseUrl(req)}${started.qrPath}`),
+              claimQr: telegramQrDataUri(started.claimLink),
+              web: started.webLink,
+              claimWeb: started.claimWebLink,
+            }),
       };
     } catch (err) {
       this.logger.warn(`The one-tap Telegram bot could not be offered (${(err as Error)?.name || 'error'})`);
@@ -1956,6 +1966,25 @@ export class LoginController {
   }
 
   /**
+   * The address in the QR code of a creation link (a computer's page shows
+   * it, a phone scans it): notes the scan and sends the phone on to Telegram.
+   * Open to anyone, like the Telegram link it stands for: the code in it is
+   * the one in that link, and the only place it can lead is Telegram's
+   * creation screen for this server's own manager bot.
+   */
+  @Get('first-app/telegram/qr/:code')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async telegramOneTapQr(@Param('code') code: string, @Res() res: Response) {
+    const link = await this.telegramOneTap()
+      ?.qrScanned(code)
+      .catch(() => null);
+    if (!link) return res.status(404).type('text/plain').send('Not found');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.redirect(302, link);
+  }
+
+  /**
    * The Telegram panel asks this every two seconds while its page is visible:
    * has the bot been created and its token stored? Read-only for the page,
    * apart from noting the first click on the link (`opened`) and the first
@@ -1969,7 +1998,7 @@ export class LoginController {
   @ApiExcludeEndpoint()
   async telegramOneTapStatus(
     @Req() req: Request,
-    @Body() body: { csrf?: unknown; opened?: unknown; offered?: unknown },
+    @Body() body: { csrf?: unknown; opened?: unknown; offered?: unknown; via?: unknown },
     @Res() res: Response,
   ) {
     const caller = await this.firstAppTelegramCaller(req, body?.csrf);
@@ -1979,6 +2008,7 @@ export class LoginController {
         organizationId: caller.organizationId,
         userId: caller.userId,
         opened: body?.opened === true,
+        openedVia: body?.via === 'web' ? 'web' : 'app',
         claimOffered: body?.offered === true,
         device: isPhoneUserAgent(req.headers['user-agent']) ? 'mobile' : 'desktop',
       });
