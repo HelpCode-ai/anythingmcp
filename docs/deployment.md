@@ -14,11 +14,13 @@ The fastest way to get AnythingMCP running — no local setup required:
 |----------|------|
 | **Railway** | [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic) |
 | **DigitalOcean Marketplace** | [![Install on DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://marketplace.digitalocean.com/apps/anythingmcp) |
+| **ZopDay** | [![Deploy to ZopDay](https://zop.dev/deploytozopday-inkhard.svg)](https://zop.dev/zopday/app/deploy?image=helpcodeai/anythingmcp:latest&port=3000&name=anythingmcp&env=PORT=4000&utm_source=github&utm_medium=one_click&utm_content=anythingmcp) |
 
 - **Railway** builds the container and provisions a managed PostgreSQL database automatically. Fill in the environment variables and click Deploy.
 - **DigitalOcean Marketplace** creates a pre-configured Droplet with AnythingMCP installed. Choose your droplet size and region, then open the droplet IP in your browser.
+- **ZopDay** runs the published image on ZopCloud or in your own AWS, GCP or Azure account, with port 3000 already set. Point `DATABASE_URL` at a PostgreSQL database, set `JWT_SECRET`, `ENCRYPTION_KEY`, `FRONTEND_URL` and `SERVER_URL`, then click Deploy.
 
-In both cases, the first user to register becomes **Admin**.
+In each case, the first user to register becomes **Admin**.
 
 ### Coolify
 

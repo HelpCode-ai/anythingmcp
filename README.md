@@ -87,7 +87,7 @@ On amd64 the image pulls in about 30 s and the API is healthy 24 s later. The im
 The quickstart binds to `127.0.0.1` on purpose, because nothing in front of it terminates TLS. **For an instance other people or a cloud AI client can reach**, clone the repo and run `./setup.sh`: it asks for a domain, gets certificates through Caddy, generates the secrets and sets the MCP auth mode. See the [Deployment Guide](docs/deployment.md).
 
 <details>
-<summary><strong>Other ways to run it:</strong> managed cloud, Railway, DigitalOcean</summary>
+<summary><strong>Other ways to run it:</strong> managed cloud, Railway, DigitalOcean, ZopDay</summary>
 
 <br/>
 
@@ -96,6 +96,8 @@ The quickstart binds to `127.0.0.1` on purpose, because nothing in front of it t
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/8-X4WD?referralCode=k30bPV&utm_medium=integration&utm_source=template&utm_campaign=generic)
 &nbsp;
 [![Install on DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://marketplace.digitalocean.com/apps/anythingmcp)
+&nbsp;
+[![Deploy to ZopDay](https://zop.dev/deploytozopday-inkhard.svg)](https://zop.dev/zopday/app/deploy?image=helpcodeai/anythingmcp:latest&port=3000&name=anythingmcp&env=PORT=4000&utm_source=github&utm_medium=one_click&utm_content=anythingmcp)
 
 </details>
 

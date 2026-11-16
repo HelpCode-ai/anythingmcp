@@ -58,7 +58,7 @@ On amd64 the image pulls in about 30 s and the API is healthy 24 s later. The im
 
 The quickstart binds to `127.0.0.1` on purpose, because nothing in front of it terminates TLS. **For an instance other people or a cloud AI client can reach**, clone the repo and run `./setup.sh`: it asks for a domain, gets certificates through Caddy, generates the secrets and sets the MCP auth mode. See the [Deployment Guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md>).
 
-### Other ways to run it: managed cloud, Railway, DigitalOcean
+### Other ways to run it: managed cloud, Railway, DigitalOcean, ZopDay
 
 [**AnythingMCP Cloud**](<https://cloud.anythingmcp.com>) is the same AGPL code, operated by us in **Frankfurt, Germany**, with a 7-day free trial. Start there to try it on your own APIs, and move it in-house when you want the credentials to stop travelling; the connectors are the same either way. DPA/AVV on request via [info@helpcode.ai](<mailto:info@helpcode.ai>). SSO and SCIM are self-hosted only, with an Enterprise licence.
 
@@ -292,11 +292,13 @@ The fastest way to get AnythingMCP running — no local setup required:
 |----------|------|
 | **Railway** |  |
 | **DigitalOcean Marketplace** |  |
+| **ZopDay** |  |
 
 - **Railway** builds the container and provisions a managed PostgreSQL database automatically. Fill in the environment variables and click Deploy.
 - **DigitalOcean Marketplace** creates a pre-configured Droplet with AnythingMCP installed. Choose your droplet size and region, then open the droplet IP in your browser.
+- **ZopDay** runs the published image on ZopCloud or in your own AWS, GCP or Azure account, with port 3000 already set. Point `DATABASE_URL` at a PostgreSQL database, set `JWT_SECRET`, `ENCRYPTION_KEY`, `FRONTEND_URL` and `SERVER_URL`, then click Deploy.
 
-In both cases, the first user to register becomes **Admin**.
+In each case, the first user to register becomes **Admin**.
 
 ### Coolify
 
