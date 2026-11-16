@@ -3,6 +3,11 @@ import { outboundRequest } from '../common/outbound-http';
 /** The catalog adapters that talk to an Odoo and take its database name. */
 const ODOO_ADAPTERS = new Set(['odoo', 'odoo-jsonrpc']);
 
+/** True for the catalog adapters that take an Odoo database name (ODOO_DB). */
+export function isOdooAdapter(slug: string): boolean {
+  return ODOO_ADAPTERS.has(slug);
+}
+
 /** The adapter on Odoo's JSON-2 API (Odoo 19+), whose base URL ends in /json/2. */
 const JSON2_ADAPTER = 'odoo';
 
@@ -84,15 +89,17 @@ async function databaseListSentence(
   return (await databaseList(origin, enteredDatabase))?.sentence;
 }
 
-async function databaseList(
-  origin: string,
-  enteredDatabase: string | undefined,
-): Promise<DatabaseFix | undefined> {
+/**
+ * The databases an Odoo address serves, from its unauthenticated
+ * `/web/database/list`; undefined when it does not say (the list switched
+ * off, not an Odoo, unreachable).
+ */
+export async function odooDatabasesAt(baseUrl: string): Promise<string[] | undefined> {
   let databases: unknown;
   try {
     const response = await outboundRequest({
       method: 'POST',
-      url: `${origin}/web/database/list`,
+      url: `${odooOrigin(baseUrl)}/web/database/list`,
       data: { jsonrpc: '2.0', method: 'call', params: {} },
       headers: { 'Content-Type': 'application/json' },
       timeout: PROBE_TIMEOUT_MS,
@@ -103,6 +110,43 @@ async function databaseList(
   }
   if (!Array.isArray(databases)) return undefined;
   const served = databases.filter((name): name is string => typeof name === 'string' && name !== '');
+  return served.length > 0 ? served : undefined;
+}
+
+/** `mycompany` for `https://mycompany.odoo.com`; undefined for any other host. */
+function odooOnlineName(baseUrl: string): string | undefined {
+  try {
+    const m = /^([a-z0-9][a-z0-9-]*)\.odoo\.com$/i.exec(new URL(baseUrl).hostname);
+    return m && m[1].toLowerCase() !== 'www' ? m[1].toLowerCase() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The database name for a setup that left the field empty, found from the
+ * address: the one database it lists; when it lists none, on Odoo Online
+ * (`<name>.odoo.com`) the subdomain, which is the database's name there. The
+ * setup check then tries it, so a wrong guess is refused like a wrong name
+ * typed in. `several`: the address lists more than one, for the user to pick.
+ * Empty when nothing can be said: the field is then asked for as before.
+ */
+export async function odooDatabaseForEmptyField(
+  baseUrl: string,
+): Promise<{ database?: string; several?: string[] }> {
+  const served = await odooDatabasesAt(baseUrl);
+  if (served?.length === 1) return { database: served[0] };
+  if (served && served.length > 1) return { several: served };
+  const online = odooOnlineName(baseUrl);
+  return online ? { database: online } : {};
+}
+
+async function databaseList(
+  origin: string,
+  enteredDatabase: string | undefined,
+): Promise<DatabaseFix | undefined> {
+  const served = await odooDatabasesAt(origin);
+  if (!served) return undefined;
   const names = served.filter((name) => name !== enteredDatabase);
   if (names.length === 0) return undefined;
   if (names.length === 1) {

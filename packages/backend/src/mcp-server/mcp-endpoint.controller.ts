@@ -687,6 +687,17 @@ export class McpEndpointController {
             },
           }
         : {}),
+      // A connector waiting for its credentials: a one-time link straight
+      // to its setup form, for a caller who may finish it, in the workspace
+      // the setup tools act on (a link is bound to one workspace).
+      ...(canSetUp && setupProvider?.createLink && setupCtx
+        ? {
+            finishSetupLink: (connectorId: string, toolOrganizationId: string) =>
+              toolOrganizationId === setupCtx.organizationId
+                ? setupProvider.createLink!(setupCtx, connectorId)
+                : Promise.resolve(undefined),
+          }
+        : {}),
       ...(canSetUp && setupProvider && setupCtx
         ? {
             setup: {

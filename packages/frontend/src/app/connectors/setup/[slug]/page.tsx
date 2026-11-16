@@ -514,7 +514,8 @@ function SetupContent() {
     for (const f of only ? fields.filter((x) => only.includes(x.name)) : fields) {
       if (hiddenField(f.name)) continue;
       const v = withMissingScheme(f, (values[f.name] ?? '').trim());
-      if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = t('field.required');
+      // A value the check finds by itself (an Odoo database name) may stay empty.
+      if (f.required && !f.advanced && !f.lookedUp && !v && !storedSecrets.includes(f.name)) errs[f.name] = t('field.required');
       else if (f.options?.length) {
         // A fixed list of choices: anything else (a value stored before the
         // list existed, one handed over in a link) is not accepted.
@@ -1019,6 +1020,9 @@ function SetupContent() {
         <label htmlFor={id} className="mb-1 block text-sm font-medium text-[var(--text)]">
           {f.label}
           {!f.required && <span className="ml-1 font-normal text-[var(--text-3)]">{t('field.optional')}</span>}
+          {f.required && f.lookedUp && (
+            <span className="ml-1 font-normal text-[var(--text-3)]">{t('field.lookedUp')}</span>
+          )}
         </label>
         {options ? (
           <select
