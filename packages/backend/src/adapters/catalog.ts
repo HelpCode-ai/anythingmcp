@@ -90,9 +90,11 @@ import * as oddsrelay from './gb/oddsrelay.json';
 import * as onbuy from './gb/onbuy.json';
 import * as peoplehr from './gb/peoplehr.json';
 import * as pinpoint from './gb/pinpoint.json';
+import * as romanOriginals from './gb/roman-originals.json';
 import * as sage200 from './gb/sage-200.json';
 import * as superdrug from './gb/superdrug.json';
 import * as tesco from './gb/tesco.json';
+import * as theRange from './gb/the-range.json';
 import * as wise from './gb/wise.json';
 import * as aboutYou from './intl/about-you.json';
 import * as activecampaign from './intl/activecampaign.json';
@@ -1253,9 +1255,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   onbuy as unknown as AdapterDefinition,
   peoplehr as unknown as AdapterDefinition,
   pinpoint as unknown as AdapterDefinition,
+  romanOriginals as unknown as AdapterDefinition,
   sage200 as unknown as AdapterDefinition,
   superdrug as unknown as AdapterDefinition,
   tesco as unknown as AdapterDefinition,
+  theRange as unknown as AdapterDefinition,
   wise as unknown as AdapterDefinition,
   aboutYou as unknown as AdapterDefinition,
   activecampaign as unknown as AdapterDefinition,

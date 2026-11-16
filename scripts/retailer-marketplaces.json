@@ -947,6 +947,61 @@
         "https://github.com/invoice-collector/invoice-collector/blob/HEAD/src/collectors/sketch/mirakl_modivo/mirakl_modivo.ts",
         "https://support.channelengine.com/hc/en-us/articles/12770067029789-MODIVO-marketplace-guide"
       ]
+    },
+    {
+      "slug": "the-range",
+      "name": "The Range Marketplace",
+      "retailer": "The Range",
+      "nameInSentence": "The Range marketplace",
+      "region": "gb",
+      "brandColor": "#F04C24",
+      "monogram": "TR",
+      "hosts": [{ "value": "https://therangeuk-prod.mirakl.net", "label": "United Kingdom" }],
+      "countries": ["GB"],
+      "countriesNote": "Sellers can also choose to deliver to the Republic of Ireland, the Channel Islands and the Isle of Man.",
+      "shopIdNeeded": false,
+      "access": "The Range takes applications on its marketplace sign-up page and verifies each seller: it asks for a UK company registration number that matches Companies House and for the UK VAT details of the business.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://marketplace.therange.co.uk",
+      "notes": [
+        "The Range moved its marketplace to a new seller back office in 2026 and migrated the existing seller accounts. The user name and password of the earlier Partner Central API do not work here; the connector needs the API key from the new back office."
+      ],
+      "aliases": ["The Range seller API", "The Range Mirakl", "Range Plus", "therange.co.uk"],
+      "sources": [
+        "https://mirakl.com/news/the-range-advances-its-online-marketplace-with-strategic-mirakl-partnership",
+        "https://channelx.world/2026/04/the-range-marketplace-re-platforms-with-mirakl/",
+        "https://support.channelengine.com/hc/en-us/articles/38633472209565-The-Range-marketplace-guide",
+        "https://help.selro.com/en/articles/13374929-range-integration-via-mirakl-api",
+        "https://marketplacetherange.zendesk.com/hc/en-gb/articles/21204780703900-Seller-Information-Form-Guidance",
+        "https://marketplacetherange.zendesk.com/hc/en-gb/articles/4411338201745-FAQ-s-general-questions",
+        "https://marketplacetherange.zendesk.com/hc/en-gb/articles/24553536165020-Seller-Onboarding-Guide-Webinar",
+        "https://marketplacetherange.zendesk.com/hc/en-gb/articles/360018520198-API-Delivery-Service-Names",
+        "https://marketplacetherange.zendesk.com/hc/en-gb/articles/19176197834780-GPSR-Requirements",
+        "https://en.wikipedia.org/wiki/File:The_Range_logo_22.png"
+      ]
+    },
+    {
+      "slug": "roman-originals",
+      "name": "Roman Marketplace",
+      "retailer": "Roman",
+      "region": "gb",
+      "brandColor": "#000000",
+      "monogram": "Ro",
+      "hosts": [{ "value": "https://romanoriginalsuk-prod.mirakl.net", "label": "United Kingdom" }],
+      "countries": ["GB"],
+      "countriesNote": "Products from marketplace sellers are delivered only to UK addresses, including Northern Ireland, the Channel Islands and the Isle of Man.",
+      "shopIdNeeded": false,
+      "access": "Roman selects its sellers through an enquiry form on its seller page, which asks, among other things, whether the business ships its orders from the UK.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.roman.co.uk/become-a-seller",
+      "notes": [],
+      "aliases": ["Roman seller API", "Roman Mirakl", "Roman Originals seller API", "Roman Originals Mirakl", "Roman Originals", "roman.co.uk"],
+      "sources": [
+        "https://www.roman.co.uk/become-a-seller",
+        "https://www.surveymonkey.com/r/TN2P8GT",
+        "https://www.roman.co.uk/help/delivery",
+        "https://www.roman.co.uk/content/img/brand/roman-logo.svg"
+      ]
     }
   ]
 }

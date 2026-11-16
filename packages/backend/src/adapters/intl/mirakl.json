@@ -3,7 +3,7 @@
   "name": "Mirakl Seller API",
   "aliases": ["Mirakl Marketplace Platform"],
   "description": "Run your shop on any Mirakl-powered marketplace that has no connector of its own in the catalog from an AI agent: orders, acceptance, tracking and shipping, incidents, offers with prices and stock, offer and product imports, customer and operator messages, returns, order documents, invoices and transactions. One install per marketplace.",
-  "instructions": "## Mirakl Seller API\nThis connector uses the **Mirakl Marketplace Platform (MMP) shop API**, the same REST API on every marketplace that runs on Mirakl. Each marketplace operator has its own Mirakl instance, so **one install covers one marketplace**: install the connector once per marketplace you sell on (for example once for Leroy Merlin and once for Conforama) and give each install a name that says which one it is.\n\n**Retailers with their own connector**: Auchan, B&Q, Best Buy, Boulanger, Bricomarché, BUT, Carrefour, Conforama, Conrad, Cultura, Debenhams, Decathlon, Douglas Partner Program, El Corte Inglés, EmpikPlace, ePRICE, home24, HORNBACH, INNO, La Redoute, Leen Bakker, Leroy Merlin, Macy's, Maisons du Monde, MediaMarkt, MODIVO, Mountain Warehouse, Nature & Découvertes, Nordstrom, Obelink, PcComponentes, Rue du Commerce, Sarenza, Shop Apotheke, Sprinter, Superdrug, Tesco, Vente-unique, Worten, XXXLutz each have a dedicated connector in the catalog with the seller address already set. Install that one instead; use this generic connector for any other marketplace that runs on Mirakl.\n\n**Setup (about 5 minutes per marketplace)**\n1. Sign in to the marketplace's seller back office (the Mirakl portal the operator gave you).\n2. Copy the address of the portal without any path into `MIRAKL_URL`. The connector adds `/api` itself, so do not paste it. Addresses of common marketplaces:\n   - Leroy Merlin (ADEO): `https://adeo-marketplace.mirakl.net`\n   - BUT: `https://but-prod.mirakl.net`\n   - Conforama: `https://conforama-prod.mirakl.net`\n   - home24: `https://home24.mirakl.net`\n   - Maisons du Monde: `https://maisonsdumonde-prod.mirakl.net`\n   - Vente-unique: `https://venteunique-prod.mirakl.net`\n   - ePrice: `https://marketplace.eprice.it`\n   Other operators work the same way, also those on their own domain: use the address of the seller back office you sign in to.\n3. Click your user name in the top right corner, open **My user settings** and the **API Key** tab, and generate a key (or copy the existing one). Paste it into `MIRAKL_API_KEY`. The key is sent as is in the `Authorization` header, without `Bearer`. Generating a new key invalidates the old one, so any other tool using it stops working.\n4. Only if your user manages several shops on this marketplace (common on home24 and Vente-unique): set `MIRAKL_SHOP_ID` to the shop to work on (shown in the back office and in `mirakl_get_account`). Without it Mirakl uses your default shop.\n5. Install and run `mirakl_get_account`.\n\n**Order workflow**: a new order waits in `WAITING_ACCEPTANCE`. `mirakl_accept_order` accepts (or refuses) every line; after the customer is debited the order moves to `SHIPPING`. Then `mirakl_update_tracking` stores the carrier and tracking number (carrier codes come from `mirakl_list_carriers`) and `mirakl_ship_order` confirms the shipment (`SHIPPED`). Later states are `TO_COLLECT`, `RECEIVED`, `CLOSED`, `REFUSED` and `CANCELED`. Use `mirakl_list_orders` with `order_state_codes=WAITING_ACCEPTANCE` for the daily to-do list and `has_incident=true` for open incidents; `mirakl_resolve_incident` closes an incident on one order line once it is solved. Documents attached to orders (delivery notes, labels, customer invoices) are listed by `mirakl_list_order_documents`.\n\n**Writes: confirm first.** `mirakl_accept_order`, `mirakl_update_tracking`, `mirakl_ship_order`, `mirakl_resolve_incident`, `mirakl_accept_return`, `mirakl_receive_return`, `mirakl_update_offers`, `mirakl_reply_thread`, `mirakl_create_order_thread` and `mirakl_import_products` act on the live marketplace. Before each call, show the user what will change (order id and lines, tracking number, offer SKU with the old and new price or stock, the message text and recipients) and wait for a yes. Refusing an order line cancels it for good. No tool here refunds, cancels orders or moves money; do that in the back office. `mirakl_import_offers` can delete offers (REPLACE mode deletes every offer missing from the file), so it is installed switched off.\n\n**Updating offers (prices and stock)**: `mirakl_update_offers` (OF24) replaces the whole offer. Every field you leave out is reset: a missing `quantity` becomes 0, a missing `discount` or `description` is deleted. Always read the offer first (`mirakl_get_offer` or `mirakl_list_offers` with `sku`) and send it back complete with only the intended change: `shop_sku`, `product_id` and `product_id_type` (from `product_references`), `state_code`, `price`, `quantity`, `leadtime_to_ship`, `logistic_class` (its code), `min_quantity_alert`, `description`, `discount`, `all_prices`, `available_started` / `available_ended` (read as `available_start_date` / `available_end_date`) and any `offer_additional_fields`. Leave `update_delete` empty or `update`. The call returns an `import_id`; the change is applied asynchronously, so check it with `mirakl_get_offer_import` before reading the offer again. Condition codes for `state_code` come from `mirakl_list_offer_conditions`, logistic class codes from `mirakl_list_logistic_classes`.\n\n**File imports**: `mirakl_import_products` (P41) and `mirakl_import_offers` (OF01) take the URL of a CSV, XLSX or XML file in the operator's format; the connector downloads it and uploads it to Mirakl. Track them with `mirakl_list_product_imports` / `mirakl_get_product_import` and `mirakl_list_offer_imports` / `mirakl_get_offer_import`.\n\n**Returns**: `mirakl_list_returns` (RT11) lists return requests. Where the operator lets the shop decide, `mirakl_accept_return` accepts or refuses one in `WAITING_ACCEPTANCE` and `mirakl_receive_return` confirms the goods arrived. Refunds stay in the back office.\n\n**Messages**: `mirakl_list_threads` lists conversations (filter with `entity_type=MMP_ORDER` and `entity_id=<order id>` for one order; Mirakl refuses `entity_id` without `entity_type`), `mirakl_get_thread` reads one with its messages, `mirakl_reply_thread` answers (recipient `CUSTOMER` or `OPERATOR`) and `mirakl_create_order_thread` opens a new conversation on an order. Reason codes for topics come from `mirakl_list_reasons`; leave its `locale` empty unless you know the marketplace has that language (an inactive locale answers 400).\n\n**Money**: `mirakl_list_invoices` (IV01) lists the operator's accounting documents and `mirakl_list_transactions` (TL02) the transaction lines (sales, commissions, refunds, payouts). On marketplaces with Enhanced Seller Invoicing IV01 returns no new documents; use `mirakl_list_document_requests` (DR11) and the transactions then.\n\n**Reference lists**: `mirakl_list_channels` (country sites), `mirakl_list_carriers`, `mirakl_list_shipping_zones`, `mirakl_list_shipping_methods` and `mirakl_list_logistic_classes` change rarely; read them once per conversation.\n\n**Pagination**: orders, offers, invoices and product imports page with `max` (at most 100) and `offset`. Threads, returns, transactions, document requests and offer imports return a `next_page_token`; pass it as `page_token` to get the next page (all other filters are then ignored) until it is missing.\n\n**Dates** are ISO 8601, e.g. `2026-10-01T00:00:00Z`; Mirakl answers in UTC.\n\n**Rate limits**: Mirakl limits each API separately and the operator can tighten them. Listing offers and orders is meant for interactive use, product and offer imports at most every 15 minutes, `mirakl_get_account` and the reference lists about once a day. A 429 carries a `Retry-After` header with the seconds to wait; do not retry in a loop.\n\n**Errors**: 401 means the key is wrong or belongs to another marketplace, 403 that your user lacks the right for this action, 404 that the order, offer or thread does not exist for this shop (or that `MIRAKL_URL` is not a Mirakl instance), 400 a wrong parameter or an order in the wrong state (the message names it, e.g. `ORDER_INVALID_STATE`).",
+  "instructions": "## Mirakl Seller API\nThis connector uses the **Mirakl Marketplace Platform (MMP) shop API**, the same REST API on every marketplace that runs on Mirakl. Each marketplace operator has its own Mirakl instance, so **one install covers one marketplace**: install the connector once per marketplace you sell on (for example once for Leroy Merlin and once for Conforama) and give each install a name that says which one it is.\n\n**Retailers with their own connector**: Auchan, B&Q, Best Buy, Boulanger, Bricomarché, BUT, Carrefour, Conforama, Conrad, Cultura, Debenhams, Decathlon, Douglas Partner Program, El Corte Inglés, EmpikPlace, ePRICE, home24, HORNBACH, INNO, La Redoute, Leen Bakker, Leroy Merlin, Macy's, Maisons du Monde, MediaMarkt, MODIVO, Mountain Warehouse, Nature & Découvertes, Nordstrom, Obelink, PcComponentes, Roman, Rue du Commerce, Sarenza, Shop Apotheke, Sprinter, Superdrug, Tesco, The Range, Vente-unique, Worten, XXXLutz each have a dedicated connector in the catalog with the seller address already set. Install that one instead; use this generic connector for any other marketplace that runs on Mirakl.\n\n**Setup (about 5 minutes per marketplace)**\n1. Sign in to the marketplace's seller back office (the Mirakl portal the operator gave you).\n2. Copy the address of the portal without any path into `MIRAKL_URL`. The connector adds `/api` itself, so do not paste it. Addresses of common marketplaces:\n   - Leroy Merlin (ADEO): `https://adeo-marketplace.mirakl.net`\n   - BUT: `https://but-prod.mirakl.net`\n   - Conforama: `https://conforama-prod.mirakl.net`\n   - home24: `https://home24.mirakl.net`\n   - Maisons du Monde: `https://maisonsdumonde-prod.mirakl.net`\n   - Vente-unique: `https://venteunique-prod.mirakl.net`\n   - ePrice: `https://marketplace.eprice.it`\n   Other operators work the same way, also those on their own domain: use the address of the seller back office you sign in to.\n3. Click your user name in the top right corner, open **My user settings** and the **API Key** tab, and generate a key (or copy the existing one). Paste it into `MIRAKL_API_KEY`. The key is sent as is in the `Authorization` header, without `Bearer`. Generating a new key invalidates the old one, so any other tool using it stops working.\n4. Only if your user manages several shops on this marketplace (common on home24 and Vente-unique): set `MIRAKL_SHOP_ID` to the shop to work on (shown in the back office and in `mirakl_get_account`). Without it Mirakl uses your default shop.\n5. Install and run `mirakl_get_account`.\n\n**Order workflow**: a new order waits in `WAITING_ACCEPTANCE`. `mirakl_accept_order` accepts (or refuses) every line; after the customer is debited the order moves to `SHIPPING`. Then `mirakl_update_tracking` stores the carrier and tracking number (carrier codes come from `mirakl_list_carriers`) and `mirakl_ship_order` confirms the shipment (`SHIPPED`). Later states are `TO_COLLECT`, `RECEIVED`, `CLOSED`, `REFUSED` and `CANCELED`. Use `mirakl_list_orders` with `order_state_codes=WAITING_ACCEPTANCE` for the daily to-do list and `has_incident=true` for open incidents; `mirakl_resolve_incident` closes an incident on one order line once it is solved. Documents attached to orders (delivery notes, labels, customer invoices) are listed by `mirakl_list_order_documents`.\n\n**Writes: confirm first.** `mirakl_accept_order`, `mirakl_update_tracking`, `mirakl_ship_order`, `mirakl_resolve_incident`, `mirakl_accept_return`, `mirakl_receive_return`, `mirakl_update_offers`, `mirakl_reply_thread`, `mirakl_create_order_thread` and `mirakl_import_products` act on the live marketplace. Before each call, show the user what will change (order id and lines, tracking number, offer SKU with the old and new price or stock, the message text and recipients) and wait for a yes. Refusing an order line cancels it for good. No tool here refunds, cancels orders or moves money; do that in the back office. `mirakl_import_offers` can delete offers (REPLACE mode deletes every offer missing from the file), so it is installed switched off.\n\n**Updating offers (prices and stock)**: `mirakl_update_offers` (OF24) replaces the whole offer. Every field you leave out is reset: a missing `quantity` becomes 0, a missing `discount` or `description` is deleted. Always read the offer first (`mirakl_get_offer` or `mirakl_list_offers` with `sku`) and send it back complete with only the intended change: `shop_sku`, `product_id` and `product_id_type` (from `product_references`), `state_code`, `price`, `quantity`, `leadtime_to_ship`, `logistic_class` (its code), `min_quantity_alert`, `description`, `discount`, `all_prices`, `available_started` / `available_ended` (read as `available_start_date` / `available_end_date`) and any `offer_additional_fields`. Leave `update_delete` empty or `update`. The call returns an `import_id`; the change is applied asynchronously, so check it with `mirakl_get_offer_import` before reading the offer again. Condition codes for `state_code` come from `mirakl_list_offer_conditions`, logistic class codes from `mirakl_list_logistic_classes`.\n\n**File imports**: `mirakl_import_products` (P41) and `mirakl_import_offers` (OF01) take the URL of a CSV, XLSX or XML file in the operator's format; the connector downloads it and uploads it to Mirakl. Track them with `mirakl_list_product_imports` / `mirakl_get_product_import` and `mirakl_list_offer_imports` / `mirakl_get_offer_import`.\n\n**Returns**: `mirakl_list_returns` (RT11) lists return requests. Where the operator lets the shop decide, `mirakl_accept_return` accepts or refuses one in `WAITING_ACCEPTANCE` and `mirakl_receive_return` confirms the goods arrived. Refunds stay in the back office.\n\n**Messages**: `mirakl_list_threads` lists conversations (filter with `entity_type=MMP_ORDER` and `entity_id=<order id>` for one order; Mirakl refuses `entity_id` without `entity_type`), `mirakl_get_thread` reads one with its messages, `mirakl_reply_thread` answers (recipient `CUSTOMER` or `OPERATOR`) and `mirakl_create_order_thread` opens a new conversation on an order. Reason codes for topics come from `mirakl_list_reasons`; leave its `locale` empty unless you know the marketplace has that language (an inactive locale answers 400).\n\n**Money**: `mirakl_list_invoices` (IV01) lists the operator's accounting documents and `mirakl_list_transactions` (TL02) the transaction lines (sales, commissions, refunds, payouts). On marketplaces with Enhanced Seller Invoicing IV01 returns no new documents; use `mirakl_list_document_requests` (DR11) and the transactions then.\n\n**Whole catalogue**: to read every offer (a stock or price check across the catalogue, counting offers), start an export with `mirakl_export_offers`, poll `mirakl_get_offer_export_status` about once a minute until it is `COMPLETED`, and read the files one by one with `mirakl_get_offer_export_file`; `include_fields` keeps only the columns you need. A full export is allowed once a day; for what changed since, pass `last_request_date` (a differential export, at most once a minute). Do not page through every offer with `mirakl_list_offers`: it is meant for a few offers at a time and answers 429 when paged through a large catalogue.\n\n**Several shops**: every tool takes an optional `shop_id`. A user who manages several shops on this marketplace (an agency, or one shop per country) can work on all of them with one install: pass the shop's id on each call and check which shop it is with `mirakl_get_account` and the same `shop_id`. Without `shop_id` a call uses `MIRAKL_SHOP_ID`, or the user's default shop when that is empty. Ask the user for the ids of their shops; the back office shows them.\n\n**Reference lists**: `mirakl_list_channels` (country sites), `mirakl_list_carriers`, `mirakl_list_shipping_zones`, `mirakl_list_shipping_methods` and `mirakl_list_logistic_classes` change rarely; read them once per conversation.\n\n**Pagination**: orders, offers, invoices and product imports page with `max` (at most 100) and `offset`. Threads, returns, transactions, document requests and offer imports return a `next_page_token`; pass it as `page_token` to get the next page (all other filters are then ignored) until it is missing.\n\n**Dates** are ISO 8601, e.g. `2026-10-01T00:00:00Z`; Mirakl answers in UTC.\n\n**Rate limits**: Mirakl limits each API separately and the operator can tighten them. Listing offers and orders is meant for interactive use, product and offer imports at most every 15 minutes, `mirakl_get_account` and the reference lists about once a day. A 429 carries a `Retry-After` header with the seconds to wait; do not retry in a loop.\n\n**Errors**: 401 means the key is wrong or belongs to another marketplace, 403 that your user lacks the right for this action, 404 that the order, offer or thread does not exist for this shop or that the marketplace does not use that feature, such as returns (or that `MIRAKL_URL` is not a Mirakl instance), 400 a wrong parameter or an order in the wrong state (the message names it, e.g. `ORDER_INVALID_STATE`).",
   "region": "intl",
   "category": "e-commerce",
   "icon": "mirakl",
@@ -70,13 +70,21 @@
       "description": "Read the shop behind the API key on this marketplace (A01): shop id and name, state, channels, currency, grade and approval rate, contact and shipping settings. The quickest check that MIRAKL_URL and the key belong together. Mirakl recommends calling it about once a day.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/account",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -139,12 +147,19 @@
             "type": "string",
             "enum": ["asc", "desc"],
             "description": "Sort direction by creation date (default asc). desc lists the newest first."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/orders",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "order_state_codes": "$order_state_codes",
           "order_ids": "$order_ids",
@@ -159,13 +174,13 @@
           "max": "$max",
           "offset": "$offset",
           "order": "$order",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
     {
       "name": "mirakl_list_offers",
-      "description": "List the shop's offers (OF21): SKU, product, price and discount, all channel prices, quantity in stock, condition, lead time and whether the offer is active (with the inactivity reasons). Filter by sku or product. Pages with max (at most 100) and offset.",
+      "description": "List the shop's offers (OF21): SKU, product, price and discount, all channel prices, quantity in stock, condition, lead time and whether the offer is active (with the inactivity reasons). Filter by sku or product. Pages with max (at most 100) and offset. Meant for a few offers at a time: paging through a whole catalogue is rate-limited (429); to read every offer use mirakl_export_offers.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -203,12 +218,19 @@
             "type": "string",
             "enum": ["asc", "desc"],
             "description": "Sort direction (default asc)."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/offers",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "sku": "$sku",
           "product_id": "$product_id",
@@ -218,7 +240,7 @@
           "offset": "$offset",
           "sort": "$sort",
           "order": "$order",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -231,6 +253,10 @@
           "offer_id": {
             "type": "integer",
             "description": "Mirakl offer id (offer_id in mirakl_list_offers), not your SKU."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["offer_id"]
@@ -238,9 +264,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/offers/{offer_id}",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -249,13 +278,21 @@
       "description": "List the offer conditions (OF61) the marketplace accepts, e.g. new or used, with the code to put in state_code when updating offers.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/offers/states",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -290,12 +327,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/offers/imports",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "status": "$status",
           "mode": "$mode",
@@ -303,7 +347,7 @@
           "end_date": "$end_date",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -316,6 +360,10 @@
           "import_id": {
             "type": "integer",
             "description": "The import_id returned by mirakl_update_offers or mirakl_import_offers."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["import_id"]
@@ -323,9 +371,146 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/offers/imports/{import_id}",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
+        }
+      }
+    },
+    {
+      "name": "mirakl_export_offers",
+      "description": "Start an export of all the shop's offers as files (OF52), the way to read the whole catalogue (every SKU with price and stock) instead of paging mirakl_list_offers. Without last_request_date it exports every active offer (a full export: at most once a day); with it, only offers changed since then, including deleted and inactive ones (a differential export: at most once a minute). Returns a tracking_id: poll mirakl_get_offer_export_status about once a minute until COMPLETED, then read each file with mirakl_get_offer_export_file. Keep files small with include_fields (for example shop-sku, product-sku, quantity, price) and items_per_chunk. Asking again for the same export returns the same tracking_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "export_type": {
+            "type": "string",
+            "enum": ["application/json", "text/csv"],
+            "default": "application/json",
+            "description": "File format: application/json (default here) or text/csv."
+          },
+          "include_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these fields, by their export names (for example shop-sku, product-sku, quantity, price, state-code, active). All fields when left out."
+          },
+          "channel_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only offers sellable on these channels (codes from mirakl_list_channels)."
+          },
+          "include_inactive_offers": {
+            "type": "boolean",
+            "description": "Full export only: true to include inactive offers. Leave it out with last_request_date, which already returns inactive and deleted offers (the call is refused otherwise)."
+          },
+          "last_request_date": {
+            "type": "string",
+            "description": "Differential export: only offers changed since this time, ISO 8601 (e.g. 2026-11-16T08:00:00Z). Leave out for a full export."
+          },
+          "items_per_chunk": {
+            "type": "integer",
+            "description": "Maximum offers per file. Smaller files are easier to read one at a time."
+          },
+          "megabytes_per_chunk": {
+            "type": "integer",
+            "description": "Maximum size of each file in megabytes."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers/export/async",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
+        "queryParams": {
+          "shop_id": "$shop_id"
+        },
+        "bodyMapping": {
+          "export_type": "$export_type",
+          "include_fields": "$include_fields",
+          "channel_codes": "$channel_codes",
+          "include_inactive_offers": "$include_inactive_offers",
+          "last_request_date": "$last_request_date",
+          "items_per_chunk": "$items_per_chunk",
+          "megabytes_per_chunk": "$megabytes_per_chunk"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mirakl_get_offer_export_status",
+      "description": "Status of an offer export started with mirakl_export_offers (OF53): PENDING, COMPLETED or FAILED (with error.code and error.detail), and once COMPLETED the urls of the files. Call it about once a minute until it is no longer PENDING (never more than every 10 seconds). Each url looks like .../offers/export/async/file/<tracking_id>?file=<file>: pass that tracking_id and the file value to mirakl_get_offer_export_file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "description": "tracking_id returned by mirakl_export_offers."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        },
+        "required": ["tracking_id"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/export/async/status/{tracking_id}",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "$shop_id"
+        }
+      }
+    },
+    {
+      "name": "mirakl_get_offer_export_file",
+      "description": "Read one file of a completed offer export (OF54): the offers with their SKU, product, quantity, prices and the other exported fields, as JSON or CSV depending on export_type. Take tracking_id and file from one of the urls returned by mirakl_get_offer_export_status (the file value is the part after ?file=, decoded, e.g. of52-export/<tracking_id>/0.json) and read the files one by one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "description": "tracking_id of the export (the path segment after /file/ in the url)."
+          },
+          "file": {
+            "type": "string",
+            "description": "The file value of the url, decoded: of52-export/<tracking_id>/0.json (slashes, not %2F)."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        },
+        "required": ["tracking_id", "file"]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/export/async/file/{tracking_id}",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "file": "$file",
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -357,19 +542,26 @@
             "type": "string",
             "enum": ["asc", "desc"],
             "description": "Sort direction by creation date (default asc). desc lists the newest first."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/products/imports",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "status": "$status",
           "last_request_date": "$last_request_date",
           "max": "$max",
           "offset": "$offset",
           "order": "$order",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -382,6 +574,10 @@
           "import_id": {
             "type": "integer",
             "description": "The import_id returned by mirakl_import_products."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["import_id"]
@@ -389,9 +585,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/products/imports/{import_id}",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -404,6 +603,10 @@
           "product_references": {
             "type": "string",
             "description": "Comma-separated <type>|<value> pairs, e.g. EAN|3276000000000,EAN|4000000000000. The types are the operator's product references (EAN, UPC...); SKU and SHOP_SKU are not accepted."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["product_references"]
@@ -411,9 +614,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/products",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "product_references": "$product_references",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -446,12 +652,19 @@
           "offset": {
             "type": "integer",
             "description": "Number of products to skip, for paging."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/products/offers",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "product_ids": "$product_ids",
           "product_references": "$product_references",
@@ -459,7 +672,7 @@
           "channel_codes": "$channel_codes",
           "max": "$max",
           "offset": "$offset",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -493,12 +706,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/inbox/threads",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "entity_type": "$entity_type",
           "entity_id": "$entity_id",
@@ -506,7 +726,7 @@
           "with_messages": "$with_messages",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -519,6 +739,10 @@
           "thread_id": {
             "type": "string",
             "description": "Thread id (a UUID) from mirakl_list_threads."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["thread_id"]
@@ -526,9 +750,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/inbox/threads/{thread_id}",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -565,12 +792,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/returns",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "return_state": "$return_state",
           "order_commercial_id": "$order_commercial_id",
@@ -579,7 +813,7 @@
           "return_last_updated_from": "$return_last_updated_from",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -592,15 +826,22 @@
           "locale": {
             "type": "string",
             "description": "Language of the labels, e.g. fr_FR. Only a locale active on this marketplace works (others answer 400); leave empty for the default."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/reasons",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "locale": "$locale",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -609,13 +850,21 @@
       "description": "List the carriers the marketplace knows (SH21) with their code, label and tracking URL. Use the code as carrier_code in mirakl_update_tracking.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shipping/carriers",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -651,12 +900,19 @@
           "offset": {
             "type": "integer",
             "description": "Number of documents to skip, for paging."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/invoices",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "start_date": "$start_date",
           "end_date": "$end_date",
@@ -664,7 +920,7 @@
           "payment_status": "$payment_status",
           "max": "$max",
           "offset": "$offset",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -718,12 +974,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/sellerpayment/transactions_logs",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "date_created_from": "$date_created_from",
           "date_created_to": "$date_created_to",
@@ -736,7 +999,7 @@
           "accounting_document_number": "$accounting_document_number",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -794,12 +1057,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/document-request/requests",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "state": "$state",
           "type": "$type",
@@ -812,7 +1082,7 @@
           "payment_state": "$payment_state",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -825,6 +1095,10 @@
           "order_ids": {
             "type": "string",
             "description": "Comma-separated order ids, e.g. 1234567-A,1234568-A."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["order_ids"]
@@ -832,9 +1106,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/orders/documents",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
           "order_ids": "$order_ids",
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -843,13 +1120,21 @@
       "description": "List the marketplace's sales channels (CH11), usually one per country site, with code and label. Use the codes as channel_codes in mirakl_list_orders and mirakl_list_product_offers. Changes rarely: call it once, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/channels",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -858,13 +1143,21 @@
       "description": "List the active shipping zones of the marketplace (SH11) with code and label, e.g. mainland France or Corsica. Changes rarely: call it once, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shipping/zones",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -873,13 +1166,21 @@
       "description": "List the active shipping methods of the marketplace (SH12), e.g. standard, express or pick-up, with code, label, whether a tracking number is mandatory and whether it is click and collect. The code appears as shipping_type_code on orders. Changes rarely: call it once, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shipping/types",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -888,13 +1189,21 @@
       "description": "List the marketplace's logistic classes (SH31), the size or weight bands that decide shipping prices, with code and label. Use the code as logistic_class in mirakl_update_offers. Changes rarely: call it once, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shipping/logistic_classes",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -925,6 +1234,10 @@
               },
               "required": ["id", "accepted"]
             }
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["order_id", "order_lines"]
@@ -932,9 +1245,12 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/orders/{order_id}/accept",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "order_lines": "$order_lines"
@@ -975,6 +1291,10 @@
           "carrier_standard_code": {
             "type": "string",
             "description": "Standard carrier code, when the marketplace uses them."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["order_id"]
@@ -982,9 +1302,12 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/orders/{order_id}/tracking",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "tracking_number": "$tracking_number",
@@ -1009,6 +1332,10 @@
           "order_id": {
             "type": "string",
             "description": "Order id, e.g. 1234567-A."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["order_id"]
@@ -1016,9 +1343,12 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/orders/{order_id}/ship",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       },
       "annotations": {
@@ -1094,6 +1424,10 @@
               },
               "required": ["shop_sku", "state_code", "price"]
             }
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["offers"]
@@ -1101,8 +1435,11 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/offers",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "offers": "$offers"
@@ -1148,6 +1485,10 @@
           "topic": {
             "type": "object",
             "description": "Optional new topic: {\"type\": \"FREE_TEXT\", \"value\": \"...\"} or {\"type\": \"REASON_CODE\", \"value\": \"<code from mirakl_list_reasons>\"}."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["thread_id", "body", "to"]
@@ -1155,9 +1496,12 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/inbox/threads/{thread_id}/message",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyEncoding": "form-data",
         "bodyMapping": {
@@ -1207,6 +1551,10 @@
           "topic_value": {
             "type": "string",
             "description": "The subject text, or the reason code."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["order_id", "body", "to", "topic_value"]
@@ -1214,9 +1562,12 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/orders/{order_id}/threads",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyEncoding": "form-data",
         "bodyMapping": {
@@ -1255,6 +1606,10 @@
           "reason_code": {
             "type": "string",
             "description": "Code of an INCIDENT_CLOSE reason from mirakl_list_reasons."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["order_id", "order_line_id", "reason_code"]
@@ -1262,9 +1617,12 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/orders/{order_id}/lines/{order_line_id}/resolve_incident",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "reason_code": "$reason_code"
@@ -1294,6 +1652,10 @@
             "type": "string",
             "enum": ["RETURN_REJECTION_NOT_ELIGIBLE", "RETURN_REJECTION_NOT_NEEDED", "RETURN_REJECTION_WINDOW_CLOSED"],
             "description": "Required when accepted is false: not eligible, no return needed, or return window closed."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["return_id", "accepted"]
@@ -1301,8 +1663,11 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/returns/accept",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "returns": [
@@ -1329,6 +1694,10 @@
           "return_id": {
             "type": "string",
             "description": "Return id from mirakl_list_returns."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["return_id"]
@@ -1336,8 +1705,11 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/returns/receive",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "returns": [
@@ -1367,6 +1739,10 @@
           "operator_format": {
             "type": "boolean",
             "description": "true when the file already uses the operator's product format."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["file_url"]
@@ -1374,8 +1750,11 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/products/imports",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyEncoding": "form-data",
         "bodyMapping": {
@@ -1411,6 +1790,10 @@
           "with_products": {
             "type": "boolean",
             "description": "true when the file also carries product data."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by mirakl_get_account, also shown in the back office). Leave it out to use MIRAKL_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": ["file_url"]
@@ -1418,8 +1801,11 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/offers/imports",
+        "envDefaults": {
+          "shop_id": "MIRAKL_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${MIRAKL_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyEncoding": "form-data",
         "bodyMapping": {

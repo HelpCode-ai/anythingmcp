@@ -107,6 +107,8 @@ function declaredVars(adapter) {
 function isPlaceholderReferenced(envVar, adapter) {
   const json = JSON.stringify(adapter);
   if (json.includes(`{{${envVar}}}`) || json.includes(`\${${envVar}}`)) return true;
+  // A tool parameter left out takes the variable named in envDefaults.
+  if ((adapter.tools || []).some((tool) => Object.values(tool?.endpointMapping?.envDefaults || {}).includes(envVar))) return true;
   // A bearer-token renewal names its optional variables instead of using
   // placeholders (see bearer-token-renewal.service.ts); configIdVar is the
   // Meta Unified Login configuration the sign-in reads (meta-login.util.ts).
