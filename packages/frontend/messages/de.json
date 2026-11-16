@@ -1407,6 +1407,10 @@
     "active": "Aktiv",
     "inactive": "Inaktiv",
     "dismiss": "Ausblenden",
+    "memberView": {
+      "title": "Mit Ihnen geteilt",
+      "body": "Sie können die Tools unten über Ihren KI-Client nutzen. Die Einstellungen dieses Connectors sehen nur sein Inhaber und die Workspace-Admins."
+    },
     "actions": {
       "test": "Testen",
       "edit": "Bearbeiten",
@@ -1751,6 +1755,7 @@
       "import": "Importieren"
     },
     "empty": "Keine Tools konfiguriert. Importieren Sie sie aus einer Spezifikation, einer Postman-Collection oder einem cURL-Befehl, oder fügen Sie Tools manuell hinzu.",
+    "emptyReadOnly": "Keine Tools konfiguriert.",
     "card": {
       "enabled": "aktiviert",
       "disabled": "deaktiviert",

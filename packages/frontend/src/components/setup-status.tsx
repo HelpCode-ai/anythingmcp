@@ -34,11 +34,18 @@ export function SetupStatusPill({ status }: { status?: ConnectorSetupStatus | nu
   );
 }
 
-/** On the connector page: what is missing and the way to finish it. */
+/**
+ * On the connector page: what is missing and the way to finish it. The way
+ * ("Finish setup") is offered only to someone who may change the connector
+ * (`canManage`, default true): the setup page saves, and a save by anyone
+ * else answers 403.
+ */
 export function SetupStatusBanner({
   connector,
+  canManage = true,
 }: {
   connector: { id: string; setupStatus?: ConnectorSetupStatus | null; missingVariables?: string[]; config?: { adapterSlug?: string } | null };
+  canManage?: boolean;
 }) {
   const t = useTranslations('setupStatus');
   const { token } = useAuth();
@@ -62,7 +69,7 @@ export function SetupStatusBanner({
         <p className="font-medium">{t(`${KEYS[status]}.banner`)}</p>
         {missing.length > 0 && <p className="mt-0.5 text-xs">{t('stillEmpty', { names: missing.join(', ') })}</p>}
       </div>
-      {catalog && (
+      {catalog && canManage && (
         <Link href={finishSetupHref(connector)} className={cn(buttonVariants({ size: 'sm' }))}>
           {t('finishSetup')}
         </Link>
