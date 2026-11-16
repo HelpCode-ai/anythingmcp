@@ -372,6 +372,9 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
     const [, id, organizationId, expRaw, sig] = m;
     const expected = this.sign(`${id}.${organizationId}.${expRaw}`);
     const given = Buffer.from(sig, 'base64url');
+    // Node's base64url decoder ignores the unused low bits of the last character, so several
+    // spellings decode to the same bytes. Accept only the canonical one.
+    if (given.toString('base64url') !== sig) throw new NotFoundException('Invalid link.');
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) throw new NotFoundException('Invalid link.');
     if (Number(expRaw) < Math.floor(Date.now() / 1000)) throw new GoneException('This link has expired.');
     const counted = await this.prisma.fileUpload.updateMany({
