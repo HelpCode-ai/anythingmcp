@@ -45,7 +45,7 @@ import { GraphqlParser } from './parsers/graphql.parser';
 import { PostmanParser } from './parsers/postman.parser';
 import { CurlParser } from './parsers/curl.parser';
 import { HarParser } from './parsers/har.parser';
-import { describeSpecError, readRemoteSpec } from './parsers/spec-read-error';
+import { describeSpecError, normalizeSpecUrl, readRemoteSpec } from './parsers/spec-read-error';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
 import { connectorOAuthCallbackUrl, startConnectorAuthorization } from './connector-authorization';
@@ -2519,6 +2519,10 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
+
+    if (dto.url && ['openapi', 'wsdl', 'graphql', 'postman'].includes(dto.source)) {
+      dto.url = normalizeSpecUrl(dto.url);
+    }
 
     let parsedTools: any[] = [];
     // An OData import covers one service: only that service's tools may be
