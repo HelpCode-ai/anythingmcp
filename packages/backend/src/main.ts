@@ -33,6 +33,7 @@ import { mcpStrategy } from './mcp-server/mcp-strategy';
 import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
 import { McpEmailVerificationFilter } from './auth/mcp-email-verification';
 import { validateRequiredSecretsAtStartup } from './common/secrets.util';
+import { cookieSecrets } from './common/cookie-secrets.util';
 import { startMetricsServer, stopMetricsServer } from './common/metrics';
 
 async function bootstrap() {
@@ -86,28 +87,24 @@ async function bootstrap() {
   const port = configService.get<number>('PORT') || 4000;
   const isProduction = configService.get<string>('NODE_ENV') === 'production';
 
-  // Cookie parser with HMAC secret so we can use signed cookies for the
-  // OAuth callback flow. Falls back to JWT_SECRET to avoid forcing every
-  // self-hoster to add a new env var; logs a startup warning when the
-  // fallback is used in production.
-  const cookieSecret =
-    configService.get<string>('COOKIE_SECRET') ||
-    configService.get<string>('JWT_SECRET');
-  if (!cookieSecret) {
-    throw new Error(
-      'COOKIE_SECRET (or fallback JWT_SECRET) must be set for signed cookies',
-    );
-  }
-  if (
-    isProduction &&
-    !configService.get<string>('COOKIE_SECRET')
-  ) {
+  // Cookie parser with HMAC secrets for the signed cookies of the OAuth and
+  // connect flows. Falls back to JWT_SECRET to avoid forcing every self-hoster
+  // to add a new env var; logs a startup warning when the fallback is used in
+  // production. See cookieSecrets for adding COOKIE_SECRET to a running server.
+  if (isProduction && !configService.get<string>('COOKIE_SECRET')?.trim()) {
     Logger.warn(
       'COOKIE_SECRET not set in production — falling back to JWT_SECRET. Set COOKIE_SECRET to a separate value for defense-in-depth.',
       'Bootstrap',
     );
   }
-  app.use(cookieParser(cookieSecret));
+  app.use(
+    cookieParser(
+      cookieSecrets({
+        COOKIE_SECRET: configService.get<string>('COOKIE_SECRET'),
+        JWT_SECRET: configService.get<string>('JWT_SECRET'),
+      }),
+    ),
+  );
 
   // Security headers (CSP relaxed because Swagger UI ships inline scripts/styles)
   app.use(

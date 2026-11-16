@@ -109,6 +109,8 @@ x-backend: &backend
     # server (codeMode), so setting this alone exposes nothing.
     - CODE_RUNNER_URL=${CODE_RUNNER_URL:-}
     - JWT_SECRET=${JWT_SECRET}
+    # Signs the cookies of the sign-in and connect flows; empty = JWT_SECRET.
+    - COOKIE_SECRET=${COOKIE_SECRET:-}
     - ENCRYPTION_KEY=${ENCRYPTION_KEY}
     # `plaintext` only to roll back past encrypted connector variables (docs/operations/backup-restore.md)
     - ENV_VARS_AT_REST=${ENV_VARS_AT_REST:-}
