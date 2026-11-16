@@ -1,0 +1,1055 @@
+{
+  "slug": "opencart-bridge",
+  "name": "OpenCart Bridge",
+  "aliases": [
+    "AnythingMCP Bridge for OpenCart",
+    "OpenCart extension"
+  ],
+  "description": "Ask questions about an OpenCart shop through the free AnythingMCP Bridge extension, read-only: orders and sales per day, products, stock and variants, categories, customers, returns and reviews. OpenCart 3.0 and 4.x, no database access or Remote MySQL needed.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "opencart",
+  "docsUrl": "https://www.opencart.com/index.php?route=marketplace/extension&filter_search=AnythingMCP",
+  "instructions": "## OpenCart Bridge\n\nReads an OpenCart shop through the free **AnythingMCP Bridge** extension, which adds a read-only JSON API to the shop: orders, sales per day, products with stock, prices and variants, categories, manufacturers, customers, returns and reviews. It works on OpenCart 3.0.x and 4.0.2 and later, in a subfolder too, with SEO URLs on or off. Nothing can be changed through it.\n\n**Setup**\n1. Install the extension: OpenCart Marketplace (search for AnythingMCP Bridge), or upload the zip under **Extensions > Installer**. Then **Extensions > Extensions**, type **Modules**, **AnythingMCP Bridge**, the green install button.\n2. Open the module (pencil), switch **Status** on, save, and click **Generate token**. The token (it starts with `ocbridge_`) is shown once: copy it. The shop keeps only a fingerprint of it.\n3. Paste the **Shop URL** shown on the module page into `OPENCART_SHOP_URL` and the token into `OPENCART_BRIDGE_TOKEN`. The **Set up in AnythingMCP** button on the module page opens this setup with the shop URL filled in; the token is never part of that link.\n\nThe shop must be reachable over HTTPS. The IP allow-list on the module page is optional: AnythingMCP Cloud calls from the outbound address shown on the setup page; a self-hosted AnythingMCP calls from its own address.\n\n**Bridge or database connector**\n- This connector (OpenCart Bridge) needs only the shop admin: no database user, no Remote MySQL, no firewall change. It answers with fixed, tested queries and leaves out passwords, tokens, IP addresses and payment data by design, and the shop owner can switch customer data off. Use it on shared hosting and whenever the hosting panel is out of reach.\n- The **OpenCart** database connector reads the shop's MySQL database directly with a read-only database user. Use it when you need free SQL over any table (`opencart_query`), tables of other extensions, or reports the bridge does not offer, and you can create a database user and allow remote access.\n\n**Where to start**\n- `opencart_bridge_get_store_info`: version, currencies, languages and their ids, stores, time zone, which order statuses count as sales, and whether customer data is shared.\n- Sales: `opencart_bridge_get_sales_summary` for totals per day or month, per status and the best sellers; `opencart_bridge_list_order_statuses` for the status ids; `opencart_bridge_list_orders` and `opencart_bridge_get_order` for single orders.\n- Catalogue: `opencart_bridge_list_products`, `opencart_bridge_get_product`, `opencart_bridge_list_categories`, `opencart_bridge_list_manufacturers`, `opencart_bridge_list_stock` (low stock with `max_quantity`).\n- Customers and service: `opencart_bridge_list_customers`, `opencart_bridge_get_customer`, `opencart_bridge_list_customer_groups`, `opencart_bridge_list_returns`, `opencart_bridge_list_reviews`.\n\n**Data notes**\n- Order totals are in the shop's default currency and include tax and shipping; line prices on an order are without tax, `tax` is per unit. `currency_code` is what the customer paid in.\n- An order with `order_status_id` 0 is a checkout that was never completed; lists leave those out unless `include_missing` is 1. Which statuses are sales is the shop's choice: the sales summary uses the shop's processing and complete statuses unless `status_id` is given.\n- Dates are shop time (see `timezone` and `server_time` in the store info). Date filters take `YYYY-MM-DD` and include both days.\n- Lists return at most 100 rows per page; page with `page` and `limit` and read `pagination.total`.\n- Texts exist per language; `language_id` picks one, the default is the shop's default language. `get_product` returns every language.\n- `out_of_stock_status` is the label shown when stock runs out (for example 2-3 Days), not the current stock: read `quantity`.\n- OpenCart 4 variants carry `master_id`; `get_product` on the master lists them. OpenCart 4.1 keeps SKU and the other codes apart from the product; the bridge returns them as the same fields on every version.\n- Errors come as JSON with a code: `missing_token` or `invalid_token` (401), `disabled`, `ip_not_allowed`, `not_configured` or `scope_disabled` (403), `not_found` or `unknown_endpoint` (404), `invalid_parameter` (400), `rate_limited` (429, default 120 calls a minute).\n\n**Not included**\n- No writes: orders, prices, stock and texts cannot be changed.\n- Never sent: passwords, salts, tokens, IP addresses, payment card data, the `setting` table, API keys and admin users. With customer data switched off, the customer tools answer 403 and orders and returns come without names, e-mail addresses, phone numbers and addresses.\n- The shop never calls AnythingMCP or anyone else: it only answers.\n",
+  "requiredEnvVars": [
+    "OPENCART_SHOP_URL",
+    "OPENCART_BRIDGE_TOKEN"
+  ],
+  "envVarMeta": {
+    "OPENCART_SHOP_URL": {
+      "label": "Shop URL",
+      "kind": "address",
+      "secret": false,
+      "help": "The shop's address as shown under Shop URL on the AnythingMCP Bridge page in the OpenCart admin, with https:// and the subfolder if the shop has one, without index.php.",
+      "example": "https://shop.example.com",
+      "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%-]+)*/?$",
+      "patternMessage": "Enter the shop address starting with https://, for example https://shop.example.com or https://example.com/shop, without index.php or ?route=."
+    },
+    "OPENCART_BRIDGE_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Generated on the AnythingMCP Bridge page in the OpenCart admin (Extensions > Modules). It starts with ocbridge_ and is shown only once; generate a new one if it is lost.",
+      "pattern": "^ocbridge_[0-9a-f]{64}$",
+      "patternMessage": "The token starts with ocbridge_ followed by 64 letters and digits. Copy it again from the OpenCart admin, or generate a new one."
+    }
+  },
+  "prerequisites": "An OpenCart 3.0.x or 4.0.2+ shop reachable over HTTPS and an admin login to install the free AnythingMCP Bridge extension. No database access needed. About 5 minutes.",
+  "verifyHints": {
+    "401": {
+      "hint": "The shop refused the token. Copy it again from Extensions > Modules > AnythingMCP Bridge, or generate a new one there (an old token stops working at once). If the shop says no token reached it, the web server drops the Authorization header: see the extension documentation.",
+      "field": "OPENCART_BRIDGE_TOKEN"
+    },
+    "missing_token": "No token reached the shop although AnythingMCP sent one: the web server (often Apache with PHP as CGI or FastCGI) drops the Authorization header. Add CGIPassAuth On, or SetEnvIf Authorization \"(.*)\" HTTP_AUTHORIZATION=$1, to the shop's .htaccess, or ask the host.",
+    "invalid_token": {
+      "hint": "The token is wrong or was replaced by a newer one. Copy the current token from the AnythingMCP Bridge page, or generate a new one.",
+      "field": "OPENCART_BRIDGE_TOKEN"
+    },
+    "403": "The bridge refused the call: it is switched off, no token has been generated yet, or the IP allow-list on the AnythingMCP Bridge page does not include the AnythingMCP address. Check Status and the allow-list in Extensions > Modules > AnythingMCP Bridge.",
+    "disabled": "The AnythingMCP Bridge is switched off. Open Extensions > Modules > AnythingMCP Bridge in the OpenCart admin, switch Status on and save.",
+    "ip_not_allowed": "The IP allow-list on the AnythingMCP Bridge page does not include the address AnythingMCP calls from. Add the outbound address shown on this page (AnythingMCP Cloud) or your server's address (self-hosted), or leave the list empty.",
+    "not_configured": "No access token exists yet. Click Generate token on the AnythingMCP Bridge page in the OpenCart admin and paste it here.",
+    "scope_disabled": "The shop owner switched customer data off on the AnythingMCP Bridge page: the customer tools are closed and orders come without contact details.",
+    "404": {
+      "hint": "No AnythingMCP Bridge answered at this address. Install the extension and click install under Extensions > Extensions > Modules, and use the Shop URL shown on its page (with the subfolder, without index.php).",
+      "field": "OPENCART_SHOP_URL"
+    },
+    "rate_limited": "The shop allows a set number of calls per minute (120 unless the owner changed it on the AnythingMCP Bridge page). Wait for the Retry-After seconds and try again."
+  },
+  "probe": {
+    "tool": "opencart_bridge_get_store_info",
+    "params": {}
+  },
+  "setupGuide": {
+    "effort": "api_key",
+    "minutes": 5,
+    "examples": [
+      "What did we sell per day last week?",
+      "Which products are almost out of stock?",
+      "Show the open returns and their reasons."
+    ],
+    "needs": [
+      "An admin login to your OpenCart shop (3.0.x or 4.0.2 and later)",
+      "The shop reachable over https://"
+    ],
+    "why": "OpenCart has no API for reports, products or customers. The free AnythingMCP Bridge extension adds a read-only one to the shop, protected by a token only you can generate, so no database access or Remote MySQL is needed.",
+    "steps": [
+      {
+        "id": "install",
+        "title": "Install the AnythingMCP Bridge extension",
+        "body": "Get the free **AnythingMCP Bridge** from the OpenCart Marketplace, or download the zip for your OpenCart version and upload it under **Extensions > Installer**. On OpenCart 4, click the install button next to it in the installer list.\n\nThen open **Extensions > Extensions**, choose **Modules** and click the green install button next to **AnythingMCP Bridge**.",
+        "action": {
+          "label": "Open the OpenCart Marketplace",
+          "url": "https://www.opencart.com/index.php?route=marketplace/extension&filter_search=AnythingMCP"
+        },
+        "confirm": "AnythingMCP Bridge is installed under Extensions > Modules",
+        "problems": [
+          {
+            "q": "Which zip do I need?",
+            "a": "anythingmcp_bridge.ocmod.zip for OpenCart 4.0.2 and later, anythingmcp_bridge_oc3.ocmod.zip for OpenCart 3.0.x. The admin footer shows your version."
+          },
+          {
+            "q": "The installer refuses the upload",
+            "a": "Check that you picked the zip for your version, and that the folders the installer writes to are writable by the web server."
+          }
+        ]
+      },
+      {
+        "id": "token",
+        "title": "Switch it on and generate a token",
+        "body": "Open **AnythingMCP Bridge** (pencil button), switch **Status** on and save. Then click **Generate token** and copy the token: it starts with `ocbridge_` and is shown only once.\n\nOptional: limit access with the **IP allow-list** on the same page. Enter the outbound address shown on this page; a self-hosted AnythingMCP calls from its own address.",
+        "confirm": "Status is on and I copied the token",
+        "problems": [
+          {
+            "q": "I lost the token",
+            "a": "Click Generate new token. The old one stops working at once."
+          }
+        ]
+      },
+      {
+        "id": "connect",
+        "title": "Paste the shop URL and the token",
+        "body": "Copy the **Shop URL** from the AnythingMCP Bridge page and paste it here with the token. AnythingMCP checks both against your shop before it saves anything.",
+        "fields": [
+          "OPENCART_SHOP_URL",
+          "OPENCART_BRIDGE_TOKEN"
+        ],
+        "problems": [
+          {
+            "q": "The check says no token reached the shop",
+            "a": "Some Apache setups drop the Authorization header. Add `CGIPassAuth On` to the .htaccess file in the shop folder, or ask your host to pass the Authorization header to PHP."
+          },
+          {
+            "q": "The check says 404",
+            "a": "Use the Shop URL exactly as the extension page shows it, with the subfolder if the shop has one, and check that the module is installed under Extensions > Modules."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "OpenCart Bridge",
+    "type": "REST",
+    "baseUrl": "{{OPENCART_SHOP_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{OPENCART_BRIDGE_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "opencart_bridge_get_store_info",
+      "description": "Shop overview: name, URL, OpenCart and bridge version, default currency and language, time zone and current shop time, the order status ids OpenCart counts as processing and complete, counts of products, orders and customers, languages (language_id, code), currencies (code, value against the default currency), stores (store_id, name, url) and whether customer data is shared. Costs one cheap call; start here.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "store"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_orders",
+      "description": "List orders, newest first: order_id, invoice, store, customer_id, name, email, telephone, total (default currency, tax and shipping included), currency_code, order_status_id and status name, payment and shipping method names, item_count, date_added and date_modified. Unfinished checkouts (status 0) are left out unless include_missing is 1. Up to 100 per page; read pagination.total for the count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,10}(,[0-9]{1,10}){0,49}$",
+            "description": "One order status id or several separated by commas, for example 2,3,5 (ids from opencart_bridge_list_order_statuses)."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "First day, YYYY-MM-DD, shop time, included."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Last day, YYYY-MM-DD, shop time, included."
+          },
+          "modified_since": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$",
+            "description": "Only orders changed at or after this time, YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, shop time."
+          },
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only orders of this registered customer."
+          },
+          "customer": {
+            "type": "string",
+            "description": "Part of the customer name or e-mail address, for example Rossi."
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact e-mail address of the customer."
+          },
+          "store_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only orders of this store (0 is the main store)."
+          },
+          "include_missing": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also lists unfinished checkouts (order_status_id 0). Default 0."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "date_added",
+              "date_modified",
+              "total",
+              "order_id"
+            ],
+            "default": "date_added",
+            "description": "Sort field (default date_added)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "default": "desc",
+            "description": "desc (default, newest first) or asc."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer's pagination says how many pages there are."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "orders",
+          "status_id": "$status_id",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "modified_since": "$modified_since",
+          "customer_id": "$customer_id",
+          "customer": "$customer",
+          "email": "$email",
+          "store_id": "$store_id",
+          "include_missing": "$include_missing",
+          "sort": "$sort",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_get_order",
+      "description": "One order in full: customer, billing and shipping address, payment and shipping method (name and code), comment, total, currency, status, products (name, model, quantity, price and total without tax, tax per unit, options such as size or colour), order totals (sub-total, shipping, tax, total) and the status history with comments. Never card data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The order id, for example 1042."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "order",
+          "order_id": "$order_id",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_order_statuses",
+      "description": "All order statuses: order_status_id and name, and whether the shop counts the status as processing or complete (the statuses OpenCart treats as sales).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "order_statuses",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_customers",
+      "description": "List or search registered customers, newest first: customer_id, customer group, store, firstname, lastname, email, telephone, newsletter, status and date_added. Never passwords, tokens or IP addresses. Refused with 403 scope_disabled when the shop owner switched customer data off. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the name, e-mail address or phone number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Exact e-mail address."
+          },
+          "customer_group_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only this customer group (ids from opencart_bridge_list_customer_groups)."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 only enabled accounts, 0 only disabled ones."
+          },
+          "newsletter": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 only newsletter subscribers, 0 only the others."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Registered on or after this day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Registered on or before this day, YYYY-MM-DD."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "date_added",
+              "name",
+              "email",
+              "customer_id"
+            ],
+            "default": "date_added",
+            "description": "Sort field (default date_added; name sorts by last name)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "desc",
+              "asc"
+            ],
+            "default": "desc",
+            "description": "desc (default) or asc."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer's pagination says how many pages there are."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "customers",
+          "search": "$search",
+          "email": "$email",
+          "customer_group_id": "$customer_group_id",
+          "status": "$status",
+          "newsletter": "$newsletter",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "sort": "$sort",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_get_customer",
+      "description": "One customer: account fields, all addresses (with country and zone names and which one is the default), an order summary (number of orders, revenue in the default currency, first and last order date) and the five most recent orders. Refused with 403 scope_disabled when customer data is switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The customer id, from opencart_bridge_list_customers or an order."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "customer",
+          "customer_id": "$customer_id",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_customer_groups",
+      "description": "All customer groups: customer_group_id, name, description, whether new accounts need approval, sort_order and which group is the default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "customer_groups",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_products",
+      "description": "List or search products, by name by default: product_id, model, SKU and the other product codes, name, price, current special price (default customer group, or null), quantity, out_of_stock_status (the label shown when stock runs out), status, manufacturer, image and image_url, date_available, date_added, date_modified, and master_id for OpenCart 4 variants. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the product name, model or SKU."
+          },
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only products in this category (ids from opencart_bridge_list_categories; subcategories are not included)."
+          },
+          "manufacturer_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only products of this manufacturer (ids from opencart_bridge_list_manufacturers)."
+          },
+          "store_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only products shown in this store (0 is the main store)."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 only enabled products, 0 only disabled ones."
+          },
+          "modified_since": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}([ T][0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$",
+            "description": "Only products changed at or after this time, YYYY-MM-DD or YYYY-MM-DD HH:MM:SS."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "name",
+              "model",
+              "price",
+              "quantity",
+              "date_added",
+              "date_modified",
+              "product_id"
+            ],
+            "default": "name",
+            "description": "Sort field (default name)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "asc",
+            "description": "asc (default) or desc."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer's pagination says how many pages there are."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "products",
+          "search": "$search",
+          "category_id": "$category_id",
+          "manufacturer_id": "$manufacturer_id",
+          "store_id": "$store_id",
+          "status": "$status",
+          "modified_since": "$modified_since",
+          "sort": "$sort",
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_get_product",
+      "description": "One product in full: codes (SKU, EAN, MPN and others), prices, current special, stock, weight and size with units, tax class, descriptions and SEO texts in every language, categories, stores, images, attributes, options with their values (price and stock per value), OpenCart 4 variants, specials and quantity discounts per customer group, SEO keywords, related product ids and the number and average of approved reviews.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The product id, from opencart_bridge_list_products or an order line."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "product",
+          "product_id": "$product_id",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_categories",
+      "description": "List categories sorted by their full path: category_id, parent_id, name, path (for example Components > Monitors), status, sort_order, product_count (products directly in the category) and seo_keyword. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only the direct children of this category; 0 for top-level categories."
+          },
+          "search": {
+            "type": "string",
+            "description": "Part of the category name."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 only enabled categories, 0 only disabled ones."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer's pagination says how many pages there are."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "categories",
+          "parent_id": "$parent_id",
+          "search": "$search",
+          "status": "$status",
+          "page": "$page",
+          "limit": "$limit",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_manufacturers",
+      "description": "List manufacturers (brands) by name: manufacturer_id, name, image_url, sort_order and product_count. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Part of the manufacturer name."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer's pagination says how many pages there are."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "manufacturers",
+          "search": "$search",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_returns",
+      "description": "List product returns (RMA), newest first: return_id, order_id, product, model, quantity, opened, reason, action and return status names, comment, date_ordered, date_added, and the customer's name and contact (left out when customer data is switched off). Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_status_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only returns with this return status id."
+          },
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only returns of this order."
+          },
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only returns of this customer."
+          },
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only returns of this product."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Returns requested on or after this day, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Returns requested on or before this day, YYYY-MM-DD."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer's pagination says how many pages there are."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "returns",
+          "return_status_id": "$return_status_id",
+          "order_id": "$order_id",
+          "customer_id": "$customer_id",
+          "product_id": "$product_id",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "page": "$page",
+          "limit": "$limit",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_reviews",
+      "description": "List product reviews, newest first: review_id, product_id and product name, customer_id, author, rating (1 to 5), text, status (true when approved and shown in the shop), date_added. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only reviews of this product."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 only approved reviews, 0 only reviews waiting for approval."
+          },
+          "min_rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Only ratings of at least this many stars."
+          },
+          "max_rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Only ratings of at most this many stars, for example 2 for bad reviews."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "First day, YYYY-MM-DD, shop time, included."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Last day, YYYY-MM-DD, shop time, included."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer's pagination says how many pages there are."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "reviews",
+          "product_id": "$product_id",
+          "status": "$status",
+          "min_rating": "$min_rating",
+          "max_rating": "$max_rating",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "page": "$page",
+          "limit": "$limit",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_list_stock",
+      "description": "Stock levels, lowest quantity first: product_id, model, SKU, name, quantity, subtract (true when sales reduce stock), minimum order quantity, status and out_of_stock_status. With include_options 1 also the stock per option value (size, colour) in option_stock. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_quantity": {
+            "type": "integer",
+            "description": "Only products with at most this quantity, for example 5 for low stock or 0 for sold out."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 only enabled products, 0 only disabled ones."
+          },
+          "tracked_only": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 only products whose stock is reduced by sales (subtract on)."
+          },
+          "include_options": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 adds the stock of each option value."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. The answer's pagination says how many pages there are."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Rows per page, 1 to 100 (default 20)."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "stock",
+          "max_quantity": "$max_quantity",
+          "status": "$status",
+          "tracked_only": "$tracked_only",
+          "include_options": "$include_options",
+          "page": "$page",
+          "limit": "$limit",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "opencart_bridge_get_sales_summary",
+      "description": "Sales for a date range: totals (orders, revenue, average order value, items sold), one row per day or month, a breakdown by order status (all statuses, cancelled included) and the ten best-selling products. Revenue is order totals in the default currency, tax and shipping included. Without status_id, the orders in the statuses the shop counts as processing or complete. Default range: the last 30 days; at most about three years.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "First day, YYYY-MM-DD, shop time. Default: 29 days before date_to."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Last day, YYYY-MM-DD, shop time, included. Default: today."
+          },
+          "group_by": {
+            "type": "string",
+            "enum": [
+              "day",
+              "month"
+            ],
+            "default": "day",
+            "description": "One row per day (default) or per month."
+          },
+          "status_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,10}(,[0-9]{1,10}){0,49}$",
+            "description": "Order status ids that count as sales, separated by commas. Default: the shop's processing and complete statuses."
+          },
+          "store_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only this store (0 is the main store)."
+          },
+          "language_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Language of names and texts (a language_id from opencart_bridge_get_store_info). Default: the shop's default language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/index.php",
+        "queryParams": {
+          "route": "extension/anythingmcp_bridge/api",
+          "endpoint": "sales_summary",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "group_by": "$group_by",
+          "status_id": "$status_id",
+          "store_id": "$store_id",
+          "language_id": "$language_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
