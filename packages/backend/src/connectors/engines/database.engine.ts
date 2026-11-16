@@ -259,7 +259,9 @@ export class DatabaseEngine {
       config.baseUrl,
       config.authConfig,
     );
-    const safeHost = connectionString.split('@')[1] ?? 'unknown';
+    // The host only. What follows the first `@` can be the rest of a
+    // password that contains one.
+    const safeHost = this.extractHosts(connectionString).join(',') || 'unknown';
     this.logger.debug(`PostgreSQL query → ${safeHost}`);
 
     try {
@@ -394,7 +396,8 @@ export class DatabaseEngine {
       };
     } else if (user) {
       // SQL Server Authentication
-      this.logger.debug(`MSSQL auth: SQL Server user=${user}`);
+      // Which kind of login, not who: a user name is half a credential.
+      this.logger.debug('MSSQL auth: SQL Server login');
       baseConfig.user = user;
       baseConfig.password = password;
     }

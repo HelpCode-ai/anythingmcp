@@ -49,7 +49,7 @@ import { describeSpecError, normalizeSpecUrl, readRemoteSpec } from './parsers/s
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { McpOAuthService } from './mcp-oauth.service';
 import { connectorOAuthCallbackUrl, startConnectorAuthorization } from './connector-authorization';
-import { CatalogResyncService } from './catalog-resync.service';
+import { CatalogResyncService, toPublicCatalogDiff } from './catalog-resync.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { DeploymentService } from '../common/deployment.service';
 import { validateBaseUrl } from './base-url.util';
@@ -81,6 +81,7 @@ import {
   secretContext,
   toPublicConnector,
 } from './connector-secrets.util';
+import { seesMemberView, toMemberConnector } from './connector-member-view.util';
 import { rebuildCatalogCredentials, variablesForAuthFields } from './catalog-env-rebuild.util';
 import {
   buildODataBuiltinTools,
@@ -736,13 +737,27 @@ function mayExportSecrets(req: any): boolean {
 const UNRESTRICTED_SCOPE: VisibilityScope = Object.freeze({ restricted: false as const });
 
 /**
+ * The health check's `message` for a restricted member who does not own the
+ * connector, by status. The real one quotes the provider or the driver.
+ */
+const MEMBER_HEALTH_MESSAGES: Record<string, string> = {
+  healthy: 'Connection successful',
+  unhealthy: 'Connection failed. The connector owner or a workspace admin can see why.',
+  needs_reauth: 'The provider refused the credential. The connector owner or a workspace admin has to authorize again.',
+};
+
+/**
  * Member visibility (settings/member-visibility.service.ts) on this
  * controller: in a workspace set to `restricted`, a member who is not an admin
- * reads only the connectors they own or that hold a tool their roles allow,
- * and of those only the allowed tools unless they own the connector. Every GET
- * route with a connector id answers a hidden connector with exactly the 404 an
- * unknown id gets; exports cover owned connectors only. Writes keep their
- * owner-or-admin rule. Admins and open workspaces take today's code path.
+ * reads only the connectors they own or that hold a tool their roles allow.
+ * A connector they own they read in full. One they do not own they read in
+ * the reduced view of connector-member-view.util.ts: its name, type, status
+ * and the allowed tools by name and description, never its address, settings
+ * or the tools' mappings; routes whose whole answer is settings (the OAuth
+ * settings) answer 404 for it. Every GET route with a connector id answers a
+ * hidden connector with exactly the 404 an unknown id gets; exports cover
+ * owned connectors only. Writes keep their owner-or-admin rule. Admins and
+ * open workspaces take today's code path.
  * The route-by-route rules are listed in connectors.member-visibility.spec.ts.
  */
 
@@ -822,6 +837,31 @@ export class ConnectorsController {
     return { ...view, tools: visibleTools(scope, connector, tools as Array<{ id: string }>) };
   }
 
+  /**
+   * What a restricted member reads of a connector they can see: all of it
+   * when they own it, otherwise the reduced view (connector-member-view.util.ts)
+   * with the tools their roles allow.
+   */
+  private viewFor<V extends object>(scope: VisibilityScope, connector: { userId: string }, view: V) {
+    const narrowed = this.narrowTools(scope, connector, view);
+    return seesMemberView(scope, connector) ? toMemberConnector(narrowed) : narrowed;
+  }
+
+  /**
+   * For a restricted member: 404 (the body an unknown id gets) unless they own
+   * the connector, for a route whose whole answer is the connector's settings.
+   * Another workspace's connector stays the 403 it is today. Nothing at all
+   * for admins and open workspaces.
+   */
+  private async hideUnlessFullView(req: any, connector: any, id: string): Promise<void> {
+    const scope = await this.scopeFor(req);
+    if (!scope.restricted) return;
+    this.assertOrgMatch(connector, req);
+    if (seesMemberView(scope, connector)) {
+      throw new NotFoundException(`Connector ${id} not found`);
+    }
+  }
+
   private assertCanCreate(req: any) {
     if (req.user.role === 'VIEWER') {
       throw new ForbiddenException('Viewers cannot modify connectors');
@@ -850,7 +890,10 @@ export class ConnectorsController {
       'Without `limit` all connectors are returned.\n\n' +
       '```bash\namcp api GET "/api/connectors?limit=50"\n```\n\n' +
       'In a workspace with restricted member visibility, a member who is not an admin gets only the connectors they own ' +
-      'or that hold a tool their roles allow, each with only the allowed tools unless they own it.',
+      'or that hold a tool their roles allow. A connector they do not own comes back in a reduced view, marked ' +
+      '`memberView: true`: `id`, `name`, `type`, `icon`, `isActive`, `credentialScope`, `setupStatus`, `authStatus`, ' +
+      '`authStatusCode` and, of the tools their roles allow, `id`, `name`, `description` and `isEnabled`. Its address, ' +
+      'variables, headers, instructions and the tools\' parameters and endpoint mappings are left out.',
   })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size, 1..200. Omit for all.', example: 50 })
   @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip.', example: 0 })
@@ -869,7 +912,7 @@ export class ConnectorsController {
       limit: pagination.limit,
       offset: pagination.offset,
     });
-    return rows.map((c) => this.narrowTools(scope, c, this.withSetupState(c)));
+    return rows.map((c) => this.viewFor(scope, c, this.withSetupState(c)));
   }
 
   /**
@@ -1286,7 +1329,9 @@ export class ConnectorsController {
       'Runs a health check against all active connectors and returns their status. Each check is a real request to the ' +
       'provider (the connector\'s `healthcheckPath`, or its type\'s test). A connector whose credential the provider ' +
       'refused for good is reported as `needs_reauth` without being called again. In a workspace with restricted ' +
-      'member visibility, a member who is not an admin gets only the connectors they can see in the list.',
+      'member visibility, a member who is not an admin gets only the connectors they can see in the list; for one ' +
+      'they do not own, `message` is a fixed sentence per status instead of the provider\'s answer, which can name ' +
+      'the host or the database.',
   })
   @ApiResponse({
     status: 200,
@@ -1348,9 +1393,15 @@ export class ConnectorsController {
       }),
     );
 
-    const statuses = results.map((r) =>
-      r.status === 'fulfilled' ? r.value : { status: 'error', message: 'Check failed' },
-    );
+    const statuses = results.map((r, i) => {
+      if (r.status !== 'fulfilled') return { status: 'error', message: 'Check failed' };
+      // A restricted member who does not own the connector gets the outcome,
+      // not the provider's or driver's own words: those can name the host,
+      // the port or the database.
+      return seesMemberView(scope, active[i])
+        ? { ...r.value, message: MEMBER_HEALTH_MESSAGES[r.value.status] ?? MEMBER_HEALTH_MESSAGES.unhealthy }
+        : r.value;
+    });
 
     const healthy = statuses.filter((s: any) => s.status === 'healthy').length;
 
@@ -1452,7 +1503,10 @@ export class ConnectorsController {
     summary: 'Get connector details',
     description:
       'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they ' +
-      'cannot see, only the tools their roles allow unless they own it, and only the MCP servers they can see.',
+      'cannot see. For a connector they own they get all of it, with only the MCP servers they can see. For one they ' +
+      'do not own they get the reduced view of `GET /api/connectors` (`memberView: true`): what it is called, whether ' +
+      'it works and the tools their roles allow by name and description, without its address, variables, headers, ' +
+      'instructions, MCP servers or the tools\' parameters and endpoint mappings.',
   })
   async findOne(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
@@ -1462,6 +1516,9 @@ export class ConnectorsController {
       return this.withSetupState(connector);
     }
     this.assertVisible(scope, connector as any, id);
+    if (seesMemberView(scope, connector)) {
+      return this.viewFor(scope, connector, this.withSetupState(connector));
+    }
     // findById loads `mcpServers: [{ mcpServerId }]` with the connector.
     const view: any = this.narrowTools(scope, connector, this.withSetupState(connector));
     const servers: Array<{ mcpServerId: string }> = Array.isArray(view.mcpServers) ? view.mcpServers : [];
@@ -1717,12 +1774,12 @@ export class ConnectorsController {
       'UI can show the current configuration. The client secret and the issued ' +
       'tokens are never returned — only booleans saying whether they are set. ' +
       'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector ' +
-      'they cannot see.',
+      'they do not own: the client id, endpoints and scopes are settings of the connector.',
   })
   async getOAuthConfig(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
     this.assertOrgMatch(connector, req);
-    await this.hideUnlessVisible(req, connector, id);
+    await this.hideUnlessFullView(req, connector, id);
 
     let cfg: Record<string, unknown> = {};
     if (connector.authConfig) {
@@ -2835,7 +2892,7 @@ export class ConnectorsController {
     if (!diff) {
       return { catalogManaged: false };
     }
-    return { catalogManaged: true, ...diff };
+    return { catalogManaged: true, ...toPublicCatalogDiff(diff) };
   }
 
   @Post(':id/resync-catalog')
@@ -2862,7 +2919,7 @@ export class ConnectorsController {
     if (applied) {
       await this.mcpServer.reloadConnectorTools(id);
     }
-    return { applied, ...diff };
+    return { applied, ...toPublicCatalogDiff(diff) };
   }
 
   /**

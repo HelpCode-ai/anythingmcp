@@ -26,6 +26,7 @@ import remarkGfm from 'remark-gfm';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
+import { canManageConnector } from '@/lib/can-manage-connector';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
 import { WebhookCard } from '@/components/webhook-card';
@@ -404,13 +405,20 @@ export default function ConnectorDetailPage() {
       const c = await connectors.get(id, token);
       setConnector(c);
       // Only catalog-installed connectors have anything to compare against;
-      // the endpoint answers catalogManaged:false for the rest.
-      connectors
-        .catalogDiff(id, token)
-        .then((d) => setCatalogDiff(d.catalogManaged && !d.isUpToDate ? d : null))
-        .catch(() => setCatalogDiff(null));
+      // the endpoint answers catalogManaged:false for the rest. Owner or admin
+      // only (the route answers 403 to anyone else), so nobody else asks.
+      if (canManageConnector(user, c)) {
+        connectors
+          .catalogDiff(id, token)
+          .then((d) => setCatalogDiff(d.catalogManaged && !d.isUpToDate ? d : null))
+          .catch(() => setCatalogDiff(null));
+      } else {
+        setCatalogDiff(null);
+      }
       setEditName(c.name);
-      setEditBaseUrl(c.baseUrl);
+      // The reduced view (memberView) has no address or settings; the edit
+      // form these feed is not shown for it.
+      setEditBaseUrl(c.baseUrl || '');
       setEditHealthcheckPath(c.healthcheckPath || '');
       setEditActive(c.isActive);
       setEditAuthType(c.authType || 'NONE');
@@ -1270,6 +1278,12 @@ export default function ConnectorDetailPage() {
 
   if (!connector) return null;
 
+  // The server's reduced view of a connector the caller may use but does not
+  // own, in a workspace with restricted member visibility: its name, status
+  // and tools, none of its settings.
+  const memberView = connector.memberView === true;
+  const canManage = canManageConnector(user, connector);
+
   const oauthKeysMissing =
     connector.authType === 'OAUTH2' ? missingOAuthClientKeys(connector, oauthClientIdRaw) : [];
 
@@ -1305,18 +1319,23 @@ export default function ConnectorDetailPage() {
       title={connector.name}
       maxWidth={880}
       actions={
+        // Test, Edit and Delete for the owner or an admin; Export for anyone
+        // who reads the full connector. Nothing in the reduced view.
+        (canManage || !memberView) && (
         <div className="flex gap-2 flex-wrap">
+          {canManage && (
           <Button variant="secondary" size="md" onClick={handleTest}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5L20 7" /></svg>
             {t('actions.test')}
           </Button>
+          )}
           {/* File Search is edited on its Files panel (source, selection, description). */}
-          {connector?.type !== 'FILE_SEARCH' && (
+          {canManage && connector?.type !== 'FILE_SEARCH' && (
           <Button variant="secondary" size="md" onClick={() => setEditing(!editing)}>
             {editing ? t('actions.cancel') : t('actions.edit')}
           </Button>
           )}
-          {connector?.type !== 'FILE_SEARCH' && (
+          {!memberView && connector?.type !== 'FILE_SEARCH' && (
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <Button variant="secondary" size="md" title={t('actions.exportTitle')}>
@@ -1343,10 +1362,13 @@ export default function ConnectorDetailPage() {
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
           )}
+          {canManage && (
           <Button variant="outlineDanger" size="md" onClick={handleDelete}>
             {t('actions.delete')}
           </Button>
+          )}
         </div>
+        )
       }
     >
       {swap && (
@@ -1405,9 +1427,11 @@ export default function ConnectorDetailPage() {
               {!connector.isActive && pausedByPlan ? (
                 <>
                   <PausedByPlanBadge />
-                  <Button size="sm" variant="secondary" onClick={handleActivateNow}>
-                    {tSwap('activate')}
-                  </Button>
+                  {canManage && (
+                    <Button size="sm" variant="secondary" onClick={handleActivateNow}>
+                      {tSwap('activate')}
+                    </Button>
+                  )}
                 </>
               ) : (
                 <StatusPill
@@ -1420,17 +1444,19 @@ export default function ConnectorDetailPage() {
               <SetupStatusPill status={connector.setupStatus} />
               <AuthStatusPill connector={connector} />
             </div>
-            <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">
-              {connector.baseUrl}
-            </div>
+            {connector.baseUrl && (
+              <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">
+                {connector.baseUrl}
+              </div>
+            )}
           </div>
         </div>
 
-        <SetupStatusBanner connector={connector} />
+        <SetupStatusBanner connector={connector} canManage={canManage} />
         <AuthStatusBanner
           connector={connector}
           action={
-            isCredentialsRefused(connector) ? (
+            canManage && isCredentialsRefused(connector) ? (
               connector.config?.adapterSlug ? (
                 // A catalog connector: its setup page asks for the credentials
                 // again, with the provider's own help, and checks them.
@@ -1517,7 +1543,7 @@ export default function ConnectorDetailPage() {
             listed apart from the rest and ticked separately: correcting a
             wrong hostname and overwriting a deliberate one look identical
             from here, and getting it wrong takes every tool down at once. */}
-        {catalogDiff && (
+        {catalogDiff && canManage && (
           <Card className="p-[22px]">
             <div className="flex items-start justify-between gap-4 mb-3">
               <div>
@@ -1606,10 +1632,10 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* File Search: sync state, selection, description (#1385). */}
-        {connector.type === 'FILE_SEARCH' && !(connector.config as { fileShare?: boolean } | null)?.fileShare && (
+        {!memberView && connector.type === 'FILE_SEARCH' && !(connector.config as { fileShare?: boolean } | null)?.fileShare && (
           <FilesPanel connectorId={connector.id} />
         )}
-        {connector.type === 'FILE_SEARCH' && (connector.config as { fileShare?: boolean } | null)?.fileShare && (
+        {!memberView && connector.type === 'FILE_SEARCH' && (connector.config as { fileShare?: boolean } | null)?.fileShare && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold">{tfs('shareConnector.title')}</h3>
             <p className="mt-1 text-[13px] text-[var(--text-2)]">{tfs('shareConnector.text')}</p>
@@ -1619,8 +1645,16 @@ export default function ConnectorDetailPage() {
           </Card>
         )}
 
+        {/* The reduced view: say why the page shows so little. */}
+        {memberView && (
+          <Card className="p-[22px]" data-testid="member-view-note">
+            <h3 className="text-sm font-semibold">{t('memberView.title')}</h3>
+            <p className="mt-1 text-[13px] text-[var(--text-2)]">{t('memberView.body')}</p>
+          </Card>
+        )}
+
         {/* Connector Details */}
-        {connector.type !== 'FILE_SEARCH' && (
+        {!memberView && connector.type !== 'FILE_SEARCH' && (
         <Card id="connector-details" className="scroll-mt-6 p-[22px]">
           <h3 className="text-sm font-semibold mb-4">{t('details.title')}</h3>
           {editing ? (
@@ -2160,20 +2194,22 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* Who signs in: one shared authorization, or each user (Enterprise) */}
-        {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
+        {/* The reduced view names no auth type: per-user sign-in exists only
+            on connectors users authorize in the browser, so the scope decides. */}
+        {(memberView
+          ? connector.credentialScope === 'USER'
+          : connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant))) && (
           <UserCredentialsCard
             connectorId={connector.id}
             credentialScope={connector.credentialScope === 'USER' ? 'USER' : 'SHARED'}
-            canManage={
-              user?.role === 'ADMIN' || (user?.role !== 'VIEWER' && user?.id === connector.userId)
-            }
+            canManage={canManage}
             isMcp={connector.type === 'MCP'}
             onScopeChanged={fetchConnector}
           />
         )}
 
         {/* OAuth2 Authorization (shared sign-in; per-user sign-in lives in the card above) */}
-        {connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
+        {canManage && connector.authType === 'OAUTH2' && (connector.type === 'MCP' || !isMachineGrant(loadedOauthGrant)) && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold mb-2">{t('oauthCard.title')}</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
@@ -2233,7 +2269,7 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* Shopee shop authorization (HMAC-signed, Shopee's own flow) */}
-        {connector.authType === 'HMAC' && (connector.config as any)?.adapterSlug === 'shopee' && (
+        {canManage && connector.authType === 'HMAC' && (connector.config as any)?.adapterSlug === 'shopee' && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold mb-2">{t('shopee.title')}</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
@@ -2246,7 +2282,7 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* TikTok Shop seller authorization (HMAC-signed, TikTok Shop's own flow) */}
-        {connector.authType === 'HMAC' && (connector.config as any)?.adapterSlug === 'tiktok-shop' && (
+        {canManage && connector.authType === 'HMAC' && (connector.config as any)?.adapterSlug === 'tiktok-shop' && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold mb-2">{t('tiktokShop.title')}</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
@@ -2259,7 +2295,7 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* Seller authorization at an IOP gateway (HMAC-signed: Lazada, Miravia, AliExpress seller) */}
-        {connector.authType === 'HMAC' && connector.tokenProvider === 'iop' && (
+        {canManage && connector.authType === 'HMAC' && connector.tokenProvider === 'iop' && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold mb-2">{t('iopSeller.title')}</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
@@ -2272,7 +2308,7 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* SHEIN store authorization (HMAC-signed with the shop's openKeyId and secretKey) */}
-        {connector.authType === 'HMAC' && connector.tokenProvider === 'shein' && (
+        {canManage && connector.authType === 'HMAC' && connector.tokenProvider === 'shein' && (
           <Card className="p-[22px]">
             <h3 className="text-sm font-semibold mb-2">{t('sheinShop.title')}</h3>
             <p className="text-sm text-[var(--text-3)] mb-4">
@@ -2285,7 +2321,8 @@ export default function ConnectorDetailPage() {
         )}
 
         {/* Instagram sign-in (Meta's Facebook Login or Instagram Login) */}
-        {connector.authType === 'BEARER_TOKEN' &&
+        {canManage &&
+          connector.authType === 'BEARER_TOKEN' &&
           ['instagram', 'instagram-login'].includes((connector.config as any)?.adapterSlug) && (
             <Card className="p-[22px]">
               <h3 className="text-sm font-semibold mb-2">
@@ -2306,17 +2343,18 @@ export default function ConnectorDetailPage() {
 
         {/* Inbound webhook ingestion (#1393): only where it applies — a Stripe
             connector, or any connector someone already turned it on for via the API. */}
-        {((connector.config as any)?.adapterSlug === 'stripe' || connector.webhookEnabled) && (
+        {/* Its URL and deliveries are read by the owner or an admin only. */}
+        {canManage && ((connector.config as any)?.adapterSlug === 'stripe' || connector.webhookEnabled) && (
           <WebhookCard
             connectorId={connector.id}
             webhookEnabled={!!connector.webhookEnabled}
-            canManage={user?.role === 'ADMIN' || (user?.role !== 'VIEWER' && user?.id === connector.userId)}
+            canManage={canManage}
             onChanged={fetchConnector}
           />
         )}
 
         {/* Environment Variables */}
-        {connector.type !== 'FILE_SEARCH' && (
+        {canManage && connector.type !== 'FILE_SEARCH' && (
         <Card id="connector-variables" className="scroll-mt-6 p-[22px]">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -2395,12 +2433,15 @@ export default function ConnectorDetailPage() {
         </Card>
         )}
 
-        <NetworkNote
-          ips={egressIps}
-          name={connector.name}
-          mentionProxy={proxyAvailable && connector.type !== 'FILE_SEARCH'}
-          className="bg-[var(--surface)]"
-        />
+        {/* For whoever sets the connector up, not for the reduced view. */}
+        {!memberView && (
+          <NetworkNote
+            ips={egressIps}
+            name={connector.name}
+            mentionProxy={proxyAvailable && connector.type !== 'FILE_SEARCH'}
+            className="bg-[var(--surface)]"
+          />
+        )}
 
         {/* Tools Section */}
         <Card className="p-[22px]">
@@ -2408,6 +2449,7 @@ export default function ConnectorDetailPage() {
             <h3 className="text-sm font-semibold">
               {tt('title', { count: toolList.length })}
             </h3>
+            {canManage && (
             <div className="flex gap-2 flex-wrap">
               {/* An email connector's tools are its built-ins: nothing to import. */}
               {connector.type !== 'EMAIL' && connector.type !== 'FILE_SEARCH' && (
@@ -2437,6 +2479,7 @@ export default function ConnectorDetailPage() {
               </Button>
               )}
             </div>
+            )}
           </div>
 
           {/* Import Panel */}
@@ -2564,7 +2607,7 @@ export default function ConnectorDetailPage() {
 
           {toolList.length === 0 ? (
             <p className="text-sm text-[var(--text-3)] py-4 text-center">
-              {tt('empty')}
+              {canManage ? tt('empty') : tt('emptyReadOnly')}
             </p>
           ) : (
             <div className="space-y-3">
@@ -2653,6 +2696,9 @@ export default function ConnectorDetailPage() {
                             )}
                           </div>
                         </div>
+                        {/* Test, edit, hints, enable, proxy and delete all answer 403
+                            to anyone but the owner or an admin. */}
+                        {canManage && (
                         <div className="flex gap-2 flex-wrap sm:flex-nowrap sm:ml-4 flex-shrink-0">
                           <button
                             onClick={() => {
@@ -2731,6 +2777,7 @@ export default function ConnectorDetailPage() {
                           </button>
                           )}
                         </div>
+                        )}
                       </div>
 
                       {/* MCP annotations (hints) */}
@@ -2871,6 +2918,7 @@ export default function ConnectorDetailPage() {
         </Card>
 
         {/* Danger zone */}
+        {canManage && (
         <div
           className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border p-[18px]"
           style={{ borderColor: 'var(--t-danger-bg)', background: 'color-mix(in srgb, var(--danger) 5%, transparent)' }}
@@ -2888,6 +2936,7 @@ export default function ConnectorDetailPage() {
             {t('danger.delete')}
           </button>
         </div>
+        )}
       </div>
 
       {/* MCP Server Assignment Modal — shown after tools are added and connector is unassigned */}

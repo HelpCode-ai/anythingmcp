@@ -5,7 +5,11 @@ import { expect, test, type Page } from '@playwright/test';
  * the mode; a member whose workspace is restricted sees a note on Logs and
  * Analytics, no "by user" panel, an empty state on Connectors and MCP
  * Servers, and is not sent into the setup wizard. An open workspace shows
- * none of it. The API is mocked, as in the other smoke tests.
+ * none of it. A connector shared with a restricted member arrives in a
+ * reduced view (`memberView`): the pages show its name, status and tools, no
+ * settings, and no control that writes. In every mode the write controls are
+ * shown to the owner or an admin only. The API is mocked, as in the other
+ * smoke tests.
  */
 
 const BASE_URL = 'http://localhost:3100';
@@ -20,6 +24,8 @@ interface Setup {
   /** Delay of the member visibility answer, in ms. */
   visibilityDelay?: number;
   onboardingDone?: boolean;
+  /** Rows of GET /api/connectors; each is also served at /api/connectors/<id>. */
+  connectors?: Array<{ id: string } & Record<string, unknown>>;
 }
 
 function userFor(role: Role) {
@@ -30,6 +36,8 @@ async function fakeSession(page: Page, setup: Setup) {
   const user = userFor(setup.role);
   const state = { mode: setup.mode };
   const puts: unknown[] = [];
+  /** Every API path the page asked for. */
+  const paths: string[] = [];
   await page.context().addCookies([{ name: 'amcp_token', value: 't', url: BASE_URL }]);
   await page.addInitScript((u) => {
     localStorage.setItem('amcp_token', 't');
@@ -38,6 +46,7 @@ async function fakeSession(page: Page, setup: Setup) {
   await page.route(/\/(api|health)\//, async (route) => {
     const request = route.request();
     const p = new URL(request.url()).pathname;
+    paths.push(p);
     const json = (body: unknown) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
 
@@ -63,7 +72,10 @@ async function fakeSession(page: Page, setup: Setup) {
     if (p === '/api/organizations/mine') return json([{ id: 'o1', name: 'Acme', role: setup.role, joinedAt: '2026-01-01' }]);
     if (p === '/api/license/status') return json({ plan: 'community', status: 'active' });
     if (p === '/api/adapters/starter-pack') return json([]);
-    if (p === '/api/connectors') return json([]);
+    if (p === '/api/connectors') return json(setup.connectors ?? []);
+    const byId = /^\/api\/connectors\/([^/]+)$/.exec(p);
+    const row = byId && setup.connectors?.find((c) => c.id === byId[1]);
+    if (row) return json(row);
     if (p === '/api/mcp-servers') return json([]);
     if (p === '/api/audit/invocations') return json([]);
     if (p === '/api/audit/stats') return json({ invocations24h: 0, errors24h: 0 });
@@ -80,8 +92,59 @@ async function fakeSession(page: Page, setup: Setup) {
     if (p === '/api/audit/tool-performance') return json({ items: [], hasMore: false });
     return json({});
   });
-  return { puts };
+  return { puts, paths };
 }
+
+/** What a restricted member gets of a connector they may use but do not own. */
+const REDUCED_CONNECTOR = {
+  id: 'c1',
+  name: 'Ledger',
+  type: 'DATABASE',
+  icon: null,
+  isActive: true,
+  credentialScope: 'USER',
+  setupStatus: 'ready',
+  authStatus: null,
+  authStatusCode: null,
+  memberView: true,
+  tools: [{ id: 't1', name: 'ledger_list', description: 'Lists ledger entries', isEnabled: true }],
+};
+
+/** The same connector in full, owned by someone else, as an open workspace returns it. */
+const FULL_CONNECTOR = {
+  id: 'c1',
+  userId: 'u2',
+  organizationId: 'o1',
+  name: 'Ledger',
+  type: 'REST',
+  baseUrl: 'https://ledger.example.test',
+  authType: 'NONE',
+  isActive: true,
+  credentialScope: 'SHARED',
+  envVars: { REGION: 'eu' },
+  maskedEnvVars: [],
+  headers: null,
+  maskedHeaders: [],
+  config: null,
+  instructions: null,
+  specUrl: null,
+  setupStatus: 'ready',
+  missingVariables: [],
+  createdAt: '2026-01-01T00:00:00Z',
+  tools: [
+    {
+      id: 't1',
+      name: 'ledger_list',
+      description: 'Lists ledger entries',
+      isEnabled: true,
+      parameters: { type: 'object', properties: {} },
+      endpointMapping: { method: 'GET', path: '/entries' },
+    },
+  ],
+};
+
+/** The controls of the connector page that write. */
+const WRITE_BUTTONS = ['Test', 'Edit', 'Delete', 'Import Tools', 'Add Tool', 'Disable', 'Hints'];
 
 const OWN_CALLS = 'You see your own calls. Workspace admins see all calls.';
 const NOTHING_SHARED = 'Nothing has been shared with you yet. Ask a workspace admin for a role.';
@@ -158,6 +221,31 @@ test.describe('restricted member', () => {
     await expect(page.getByRole('button', { name: 'Create your first MCP Server' })).toHaveCount(0);
   });
 
+  test('sees a shared connector in the reduced view: name, status and tools, nothing to change', async ({ page }) => {
+    const { paths } = await fakeSession(page, { role: 'VIEWER', mode: 'restricted', connectors: [REDUCED_CONNECTOR] });
+    await page.goto('/connectors');
+    await expect(page.getByRole('link', { name: 'Ledger', exact: true })).toBeVisible();
+    // No address to search in: the filter must still work.
+    await page.getByLabel('Search connectors by name or URL').fill('led');
+    await expect(page.getByRole('link', { name: 'Ledger', exact: true })).toBeVisible();
+    await expect(page.getByText('Auth', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
+
+    await page.goto('/connectors/c1');
+    await expect(page.getByTestId('member-view-note')).toContainText('Shared with you');
+    await expect(page.getByText('ledger_list', { exact: true })).toBeVisible();
+    await expect(page.getByText('Lists ledger entries')).toBeVisible();
+    // Per-user sign-in is the one thing a member does here.
+    await expect(page.getByRole('button', { name: 'Connect my account' })).toBeVisible();
+    for (const name of [...WRITE_BUTTONS, 'Export']) {
+      await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+    }
+    await expect(page.getByText('Connector Details', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Environment Variables', { exact: true })).toHaveCount(0);
+    // Nothing is asked that the member may not read.
+    expect(paths.filter((p) => /catalog-diff|oauth-config|webhook|file-search/.test(p))).toEqual([]);
+  });
+
   test('is not sent to /welcome, even while the setting is still loading', async ({ page }) => {
     await fakeSession(page, { role: 'VIEWER', mode: 'restricted', onboardingDone: false, visibilityDelay: 1500 });
     await page.goto('/');
@@ -186,6 +274,35 @@ test.describe('open workspace', () => {
     await page.goto('/mcp-server');
     await expect(page.getByText('No MCP servers configured yet.', { exact: false })).toBeVisible();
     await expect(page.getByText(NOTHING_SHARED)).toHaveCount(0);
+  });
+
+  test('a member who does not own a connector reads it in full, without the controls that write', async ({ page }) => {
+    const { paths } = await fakeSession(page, { role: 'EDITOR', mode: 'open', connectors: [FULL_CONNECTOR] });
+    await page.goto('/connectors');
+    await expect(page.getByText('https://ledger.example.test')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Import Spec', exact: true })).toHaveCount(0);
+
+    await page.goto('/connectors/c1');
+    await expect(page.getByText('https://ledger.example.test')).toBeVisible();
+    await expect(page.getByText('Connector Details', { exact: true })).toBeVisible();
+    await expect(page.getByText('ledger_list', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('member-view-note')).toHaveCount(0);
+    // Exporting is a read every member of an open workspace has.
+    await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
+    for (const name of WRITE_BUTTONS) {
+      await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+    }
+    expect(paths.filter((p) => /catalog-diff|webhook/.test(p))).toEqual([]);
+  });
+
+  test('the owner of a connector keeps every control', async ({ page }) => {
+    await fakeSession(page, { role: 'EDITOR', mode: 'open', connectors: [{ ...FULL_CONNECTOR, userId: 'u1' }] });
+    await page.goto('/connectors/c1');
+    await expect(page.getByText('ledger_list', { exact: true })).toBeVisible();
+    for (const name of ['Test', 'Edit', 'Export', 'Add Tool']) {
+      await expect(page.getByRole('button', { name, exact: true }).first()).toBeVisible();
+    }
   });
 
   test('a new member with no connectors is still sent to /welcome', async ({ page }) => {
