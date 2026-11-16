@@ -3,7 +3,7 @@ import * as sourceAdapter from './intl/mirakl.json';
 import { RestEngine } from '../connectors/engines/rest.engine';
 import { OAuth2TokenService } from '../connectors/engines/oauth2-token.service';
 import { LoginTokenService } from '../connectors/engines/login-token.service';
-import { applySchemaDefaults } from '../common/schema-defaults.util';
+import { applyEnvDefaults, applySchemaDefaults } from '../common/schema-defaults.util';
 import { interpolateConnectorConfig, interpolateDeep } from '../common/env-interpolation.util';
 import { needsBrowserAuthorization } from './env-var-meta';
 
@@ -47,7 +47,7 @@ type Tool = {
   description: string;
   enabled?: boolean;
   parameters: { properties?: Record<string, unknown>; required?: string[] };
-  endpointMapping: { method: string; path: string; queryParams?: Record<string, unknown> };
+  endpointMapping: { method: string; path: string; queryParams?: Record<string, unknown>; envDefaults?: Record<string, string> };
   annotations?: Record<string, unknown>;
 };
 type EnvVarMeta = { pattern?: string; secret?: boolean; link?: string; options?: Array<{ value: string; label: string }> };
@@ -115,7 +115,8 @@ export function describeRetailerAdapter(adapter: unknown, expected: { slug: stri
     if (!t) throw new Error(`missing tool ${name}`);
     return t;
   };
-  // Mirrors DynamicMcpTools: {{VAR}} interpolated, env vars also passed as params.
+  // Mirrors DynamicMcpTools: {{VAR}} interpolated, env vars passed as params the
+  // caller left out, then envDefaults, then the schema defaults.
   const execute = (name: string, env: Record<string, string>, params: Record<string, unknown>) => {
     const { config, endpointMapping } = interpolateConnectorConfig(
       { baseUrl: a.connector.baseUrl, headers: a.connector.headers },
@@ -130,7 +131,7 @@ export function describeRetailerAdapter(adapter: unknown, expected: { slug: stri
         headers: config.headers,
       },
       endpointMapping,
-      { ...applySchemaDefaults(tool(name).parameters, params), ...env },
+      applySchemaDefaults(tool(name).parameters, applyEnvDefaults(tool(name).endpointMapping, { ...env, ...params }, env)),
     ) as Promise<any>;
   };
   const sent = () => mockedAxios.mock.calls[0][0];
@@ -186,11 +187,17 @@ export function describeRetailerAdapter(adapter: unknown, expected: { slug: stri
       expect(sent().url).not.toContain(KEY);
     });
 
-    it('sends shop_id on every call when the shop id is set, and leaves it out otherwise', async () => {
+    it('takes shop_id on every call, from the argument or else the shop id variable, and leaves it out otherwise', async () => {
       expect(a.optionalEnvVars).toEqual([SHOP_VAR]);
       expect(new RegExp(a.envVarMeta[SHOP_VAR].pattern!).test('2001')).toBe(true);
-      for (const t of a.tools) expect(`${t.name}:${JSON.stringify(t.endpointMapping.queryParams?.shop_id)}`).toBe(`${t.name}:"\${${SHOP_VAR}}"`);
+      for (const t of a.tools) {
+        expect(`${t.name}:${JSON.stringify(t.endpointMapping.queryParams?.shop_id)}`).toBe(`${t.name}:"$shop_id"`);
+        expect(`${t.name}:${t.endpointMapping.envDefaults?.shop_id}`).toBe(`${t.name}:${SHOP_VAR}`);
+      }
       mockedAxios.mockResolvedValue({ data: {} });
+      await execute(`${prefix}list_offers`, { ...envFor(origins[0]), [SHOP_VAR]: '2001' }, { shop_id: '3003' });
+      expect(sent().params.shop_id).toBe('3003');
+      mockedAxios.mockClear();
       await execute(`${prefix}list_offers`, { ...envFor(origins[0]), [SHOP_VAR]: '2001' }, {});
       expect(sent().params.shop_id).toBe('2001');
       mockedAxios.mockClear();

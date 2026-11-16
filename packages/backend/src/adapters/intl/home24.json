@@ -7,7 +7,7 @@
     "Home 24"
   ],
   "description": "Run your shop on the home24 marketplace from an AI agent: orders, acceptance, tracking and shipping, incidents, offers with prices and stock, imports, messages, returns, invoices and transactions. The marketplace sells in Germany, Austria, Switzerland, France and the Netherlands; sign in with the shop API key from your home24 seller back office.",
-  "instructions": "## home24 Marketplace\nRun your shop on the home24 marketplace from an AI agent: orders, acceptance, tracking and shipping, incidents, offers with prices and stock, offer and product imports, messages with customers and home24, returns, order documents, invoices and transactions. The connector calls the home24 seller platform at `https://home24.mirakl.net` with the API key of your shop, so it can see and do what your seller user can.\n\n**Countries**: Germany, Austria, Switzerland, France and the Netherlands.\n\n**Who can sell**: home24 selects its sellers: after a first contact it sends an invitation link to open the shop. The connector needs a seller account that home24 has already opened.\n\n**Setup (about 5 minutes)**\n1. Sign in to the home24 seller back office: `https://home24.mirakl.net/login`.\n2. In the back office open your user name (top right) > **My user settings** > **API key** and click **Generate a new key** (or copy the existing key). Paste it into `HOME24_API_KEY`. The key is sent as is in the `Authorization` header, without `Bearer`. Generating a new key invalidates the old one, so any other tool using it stops working.\n3. home24 opens one shop per country, so a seller in several countries has several shops under one user. If your user has more than one shop, set `HOME24_SHOP_ID` to the numeric id of the shop this connector should work on (shown on the dashboard of the back office next to **Identifier** or **Shop ID**, and returned as `shop_id` by `home24_get_account`); to work on several shops, install the connector once per shop. Without it your default shop is used.\n4. Install and run `home24_get_account`: it returns the shop the key belongs to.\n\n**Platform**: the home24 seller back office runs on Mirakl software, so the operation codes in the tool descriptions (OR11, OF24 and so on) and the error names are those of that software.\n\n**Where to start**: `home24_get_account` shows the shop behind the key (id, name, state, currency and channels). For the daily work use `home24_list_orders` with `order_state_codes=WAITING_ACCEPTANCE`, `home24_list_offers` for prices and stock and `home24_list_threads` for messages that wait for a reply.\n\n**Products and competing offers**: `home24_get_products` looks products up in the home24 catalog by EAN or another reference and returns the marketplace product SKU; `home24_list_product_offers` lists the offers of every shop for given products, best price first, at about 5 calls a minute.\n\n**Order workflow**: a new order waits in `WAITING_ACCEPTANCE`. `home24_accept_order` accepts (or refuses) every line; after the customer is debited the order moves to `SHIPPING`. Then `home24_update_tracking` stores the carrier and tracking number (carrier codes come from `home24_list_carriers`) and `home24_ship_order` confirms the shipment (`SHIPPED`). Later states are `TO_COLLECT`, `RECEIVED`, `CLOSED`, `REFUSED` and `CANCELED`. Use `home24_list_orders` with `order_state_codes=WAITING_ACCEPTANCE` for the daily to-do list and `has_incident=true` for open incidents; `home24_resolve_incident` closes an incident on one order line once it is solved. Documents attached to orders (delivery notes, labels, customer invoices) are listed by `home24_list_order_documents`.\n\n**Writes: confirm first.** `home24_accept_order`, `home24_update_tracking`, `home24_ship_order`, `home24_resolve_incident`, `home24_accept_return`, `home24_receive_return`, `home24_update_offers`, `home24_reply_thread`, `home24_create_order_thread` and `home24_import_products` act on the live marketplace. Before each call, show the user what will change (order id and lines, tracking number, offer SKU with the old and new price or stock, the message text and recipients) and wait for a yes. Refusing an order line cancels it for good. No tool here refunds, cancels orders or moves money; do that in the back office. `home24_import_offers` can delete offers (REPLACE mode deletes every offer missing from the file), so it is installed switched off.\n\n**Updating offers (prices and stock)**: `home24_update_offers` (OF24) replaces the whole offer. Every field you leave out is reset: a missing `quantity` becomes 0, a missing `discount` or `description` is deleted. Always read the offer first (`home24_get_offer` or `home24_list_offers` with `sku`) and send it back complete with only the intended change: `shop_sku`, `product_id` and `product_id_type` (from `product_references`), `state_code`, `price`, `quantity`, `leadtime_to_ship`, `logistic_class` (its code), `min_quantity_alert`, `description`, `discount`, `all_prices`, `available_started` / `available_ended` (read as `available_start_date` / `available_end_date`) and any `offer_additional_fields`. Leave `update_delete` empty or `update`. The call returns an `import_id`; the change is applied asynchronously, so check it with `home24_get_offer_import` before reading the offer again. Condition codes for `state_code` come from `home24_list_offer_conditions`, logistic class codes from `home24_list_logistic_classes`.\n\n**File imports**: `home24_import_products` (P41) and `home24_import_offers` (OF01) take the URL of a CSV, XLSX or XML file in the file format home24 asks for; the connector downloads it and uploads it to home24. Track them with `home24_list_product_imports` / `home24_get_product_import` and `home24_list_offer_imports` / `home24_get_offer_import`.\n\n**Returns**: `home24_list_returns` (RT11) lists return requests. Where home24 lets the shop decide, `home24_accept_return` accepts or refuses one in `WAITING_ACCEPTANCE` and `home24_receive_return` confirms the goods arrived. Refunds stay in the back office.\n\n**Messages**: `home24_list_threads` lists conversations (filter with `entity_type=MMP_ORDER` and `entity_id=<order id>` for one order; `entity_id` without `entity_type` is refused), `home24_get_thread` reads one with its messages, `home24_reply_thread` answers (recipient `CUSTOMER` or `OPERATOR`, which is home24) and `home24_create_order_thread` opens a new conversation on an order. Reason codes for topics come from `home24_list_reasons`; leave its `locale` empty unless you know the marketplace has that language (an inactive locale answers 400).\n\n**Money**: `home24_list_invoices` (IV01) lists the accounting documents home24 issues to the shop and `home24_list_transactions` (TL02) the transaction lines (sales, commissions, refunds, payouts). If home24 uses Enhanced Seller Invoicing, IV01 returns no new documents; use `home24_list_document_requests` (DR11) and the transactions then.\n\n**Reference lists**: `home24_list_channels` (country sites), `home24_list_carriers`, `home24_list_shipping_zones`, `home24_list_shipping_methods` and `home24_list_logistic_classes` change rarely; read them once per conversation.\n\n**Pagination**: orders, offers, invoices and product imports page with `max` (at most 100) and `offset`. Threads, returns, transactions, document requests and offer imports return a `next_page_token`; pass it as `page_token` to get the next page (all other filters are then ignored) until it is missing.\n\n**Dates** are ISO 8601, e.g. `2026-10-01T00:00:00Z`; answers are in UTC.\n\n**Rate limits**: Each API has its own limit and home24 can tighten them. Listing offers and orders is meant for interactive use, product and offer imports at most every 15 minutes, `home24_get_account` and the reference lists about once a day. A 429 carries a `Retry-After` header with the seconds to wait; do not retry in a loop.\n\n**Errors**: 401 means the key is wrong or was replaced by a newer one, 403 that your user lacks the right for this action, 404 that the order, offer or thread does not exist for this shop, 400 a wrong parameter or an order in the wrong state (the message names it, e.g. `ORDER_INVALID_STATE`).",
+  "instructions": "## home24 Marketplace\nRun your shop on the home24 marketplace from an AI agent: orders, acceptance, tracking and shipping, incidents, offers with prices and stock, offer and product imports, messages with customers and home24, returns, order documents, invoices and transactions. The connector calls the home24 seller platform at `https://home24.mirakl.net` with the API key of your shop, so it can see and do what your seller user can.\n\n**Countries**: Germany, Austria, Switzerland, France and the Netherlands.\n\n**Who can sell**: home24 selects its sellers: after a first contact it sends an invitation link to open the shop. The connector needs a seller account that home24 has already opened.\n\n**Setup (about 5 minutes)**\n1. Sign in to the home24 seller back office: `https://home24.mirakl.net/login`.\n2. In the back office open your user name (top right) > **My user settings** > **API key** and click **Generate a new key** (or copy the existing key). Paste it into `HOME24_API_KEY`. The key is sent as is in the `Authorization` header, without `Bearer`. Generating a new key invalidates the old one, so any other tool using it stops working.\n3. home24 opens one shop per country, so a seller in several countries has several shops under one user. If your user has more than one shop, set `HOME24_SHOP_ID` to the numeric id of the shop this connector should work on (shown on the dashboard of the back office next to **Identifier** or **Shop ID**, and returned as `shop_id` by `home24_get_account`); to work on several shops, install the connector once per shop. Without it your default shop is used.\n4. Install and run `home24_get_account`: it returns the shop the key belongs to.\n\n**Platform**: the home24 seller back office runs on Mirakl software, so the operation codes in the tool descriptions (OR11, OF24 and so on) and the error names are those of that software.\n\n**Where to start**: `home24_get_account` shows the shop behind the key (id, name, state, currency and channels). For the daily work use `home24_list_orders` with `order_state_codes=WAITING_ACCEPTANCE`, `home24_list_offers` for prices and stock and `home24_list_threads` for messages that wait for a reply.\n\n**Products and competing offers**: `home24_get_products` looks products up in the home24 catalog by EAN or another reference and returns the marketplace product SKU; `home24_list_product_offers` lists the offers of every shop for given products, best price first, at about 5 calls a minute.\n\n**Order workflow**: a new order waits in `WAITING_ACCEPTANCE`. `home24_accept_order` accepts (or refuses) every line; after the customer is debited the order moves to `SHIPPING`. Then `home24_update_tracking` stores the carrier and tracking number (carrier codes come from `home24_list_carriers`) and `home24_ship_order` confirms the shipment (`SHIPPED`). Later states are `TO_COLLECT`, `RECEIVED`, `CLOSED`, `REFUSED` and `CANCELED`. Use `home24_list_orders` with `order_state_codes=WAITING_ACCEPTANCE` for the daily to-do list and `has_incident=true` for open incidents; `home24_resolve_incident` closes an incident on one order line once it is solved. Documents attached to orders (delivery notes, labels, customer invoices) are listed by `home24_list_order_documents`.\n\n**Writes: confirm first.** `home24_accept_order`, `home24_update_tracking`, `home24_ship_order`, `home24_resolve_incident`, `home24_accept_return`, `home24_receive_return`, `home24_update_offers`, `home24_reply_thread`, `home24_create_order_thread` and `home24_import_products` act on the live marketplace. Before each call, show the user what will change (order id and lines, tracking number, offer SKU with the old and new price or stock, the message text and recipients) and wait for a yes. Refusing an order line cancels it for good. No tool here refunds, cancels orders or moves money; do that in the back office. `home24_import_offers` can delete offers (REPLACE mode deletes every offer missing from the file), so it is installed switched off.\n\n**Updating offers (prices and stock)**: `home24_update_offers` (OF24) replaces the whole offer. Every field you leave out is reset: a missing `quantity` becomes 0, a missing `discount` or `description` is deleted. Always read the offer first (`home24_get_offer` or `home24_list_offers` with `sku`) and send it back complete with only the intended change: `shop_sku`, `product_id` and `product_id_type` (from `product_references`), `state_code`, `price`, `quantity`, `leadtime_to_ship`, `logistic_class` (its code), `min_quantity_alert`, `description`, `discount`, `all_prices`, `available_started` / `available_ended` (read as `available_start_date` / `available_end_date`) and any `offer_additional_fields`. Leave `update_delete` empty or `update`. The call returns an `import_id`; the change is applied asynchronously, so check it with `home24_get_offer_import` before reading the offer again. Condition codes for `state_code` come from `home24_list_offer_conditions`, logistic class codes from `home24_list_logistic_classes`.\n\n**File imports**: `home24_import_products` (P41) and `home24_import_offers` (OF01) take the URL of a CSV, XLSX or XML file in the file format home24 asks for; the connector downloads it and uploads it to home24. Track them with `home24_list_product_imports` / `home24_get_product_import` and `home24_list_offer_imports` / `home24_get_offer_import`.\n\n**Returns**: `home24_list_returns` (RT11) lists return requests. Where home24 lets the shop decide, `home24_accept_return` accepts or refuses one in `WAITING_ACCEPTANCE` and `home24_receive_return` confirms the goods arrived. Refunds stay in the back office.\n\n**Messages**: `home24_list_threads` lists conversations (filter with `entity_type=MMP_ORDER` and `entity_id=<order id>` for one order; `entity_id` without `entity_type` is refused), `home24_get_thread` reads one with its messages, `home24_reply_thread` answers (recipient `CUSTOMER` or `OPERATOR`, which is home24) and `home24_create_order_thread` opens a new conversation on an order. Reason codes for topics come from `home24_list_reasons`; leave its `locale` empty unless you know the marketplace has that language (an inactive locale answers 400).\n\n**Money**: `home24_list_invoices` (IV01) lists the accounting documents home24 issues to the shop and `home24_list_transactions` (TL02) the transaction lines (sales, commissions, refunds, payouts). If home24 uses Enhanced Seller Invoicing, IV01 returns no new documents; use `home24_list_document_requests` (DR11) and the transactions then.\n\n**Whole catalogue**: to read every offer (a stock or price check across the catalogue, counting offers), start an export with `home24_export_offers`, poll `home24_get_offer_export_status` about once a minute until it is `COMPLETED`, and read the files one by one with `home24_get_offer_export_file`; `include_fields` keeps only the columns you need. A full export is allowed once a day; for what changed since, pass `last_request_date` (a differential export, at most once a minute). Do not page through every offer with `home24_list_offers`: it is meant for a few offers at a time and answers 429 when paged through a large catalogue.\n\n**Several shops**: every tool takes an optional `shop_id`. A user who manages several shops on this marketplace (an agency, or one shop per country) can work on all of them with one install: pass the shop's id on each call and check which shop it is with `home24_get_account` and the same `shop_id`. Without `shop_id` a call uses `HOME24_SHOP_ID`, or the user's default shop when that is empty. Ask the user for the ids of their shops; the back office shows them.\n\n**Reference lists**: `home24_list_channels` (country sites), `home24_list_carriers`, `home24_list_shipping_zones`, `home24_list_shipping_methods` and `home24_list_logistic_classes` change rarely; read them once per conversation.\n\n**Pagination**: orders, offers, invoices and product imports page with `max` (at most 100) and `offset`. Threads, returns, transactions, document requests and offer imports return a `next_page_token`; pass it as `page_token` to get the next page (all other filters are then ignored) until it is missing.\n\n**Dates** are ISO 8601, e.g. `2026-10-01T00:00:00Z`; answers are in UTC.\n\n**Rate limits**: Each API has its own limit and home24 can tighten them. Listing offers and orders is meant for interactive use, product and offer imports at most every 15 minutes, `home24_get_account` and the reference lists about once a day. A 429 carries a `Retry-After` header with the seconds to wait; do not retry in a loop.\n\n**Errors**: 401 means the key is wrong or was replaced by a newer one, 403 that your user lacks the right for this action, 404 that the order, offer or thread does not exist for this shop or that the marketplace does not use that feature, such as returns, 400 a wrong parameter or an order in the wrong state (the message names it, e.g. `ORDER_INVALID_STATE`).",
   "region": "intl",
   "category": "e-commerce",
   "icon": "home24",
@@ -136,13 +136,21 @@
       "description": "Read the shop behind the API key on this marketplace (A01): shop id and name, state, channels, currency, grade and approval rate, contact and shipping settings. The quickest check that the key works. Meant to be called about once a day, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/account",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -208,12 +216,19 @@
               "desc"
             ],
             "description": "Sort direction by creation date (default asc). desc lists the newest first."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/orders",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "order_state_codes": "$order_state_codes",
           "order_ids": "$order_ids",
@@ -228,13 +243,13 @@
           "max": "$max",
           "offset": "$offset",
           "order": "$order",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
     {
       "name": "home24_list_offers",
-      "description": "List the shop's offers (OF21): SKU, product, price and discount, all channel prices, quantity in stock, condition, lead time and whether the offer is active (with the inactivity reasons). Filter by sku or product. Pages with max (at most 100) and offset.",
+      "description": "List the shop's offers (OF21): SKU, product, price and discount, all channel prices, quantity in stock, condition, lead time and whether the offer is active (with the inactivity reasons). Filter by sku or product. Pages with max (at most 100) and offset. Meant for a few offers at a time: paging through a whole catalogue is rate-limited (429); to read every offer use home24_export_offers.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -279,12 +294,19 @@
               "desc"
             ],
             "description": "Sort direction (default asc)."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/offers",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "sku": "$sku",
           "product_id": "$product_id",
@@ -294,7 +316,7 @@
           "offset": "$offset",
           "sort": "$sort",
           "order": "$order",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -307,6 +329,10 @@
           "offer_id": {
             "type": "integer",
             "description": "Offer id on the marketplace (offer_id in home24_list_offers), not your SKU."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -316,9 +342,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/offers/{offer_id}",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -327,13 +356,21 @@
       "description": "List the offer conditions (OF61) the marketplace accepts, e.g. new or used, with the code to put in state_code when updating offers.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/offers/states",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -377,12 +414,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/offers/imports",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "status": "$status",
           "mode": "$mode",
@@ -390,7 +434,7 @@
           "end_date": "$end_date",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -403,6 +447,10 @@
           "import_id": {
             "type": "integer",
             "description": "The import_id returned by home24_update_offers or home24_import_offers."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -412,9 +460,154 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/offers/imports/{import_id}",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
+        }
+      }
+    },
+    {
+      "name": "home24_export_offers",
+      "description": "Start an export of all the shop's offers as files (OF52), the way to read the whole catalogue (every SKU with price and stock) instead of paging home24_list_offers. Without last_request_date it exports every active offer (a full export: at most once a day); with it, only offers changed since then, including deleted and inactive ones (a differential export: at most once a minute). Returns a tracking_id: poll home24_get_offer_export_status about once a minute until COMPLETED, then read each file with home24_get_offer_export_file. Keep files small with include_fields (for example shop-sku, product-sku, quantity, price) and items_per_chunk. Asking again for the same export returns the same tracking_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "export_type": {
+            "type": "string",
+            "enum": [
+              "application/json",
+              "text/csv"
+            ],
+            "default": "application/json",
+            "description": "File format: application/json (default here) or text/csv."
+          },
+          "include_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these fields, by their export names (for example shop-sku, product-sku, quantity, price, state-code, active). All fields when left out."
+          },
+          "channel_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only offers sellable on these channels (codes from home24_list_channels)."
+          },
+          "include_inactive_offers": {
+            "type": "boolean",
+            "description": "Full export only: true to include inactive offers. Leave it out with last_request_date, which already returns inactive and deleted offers (the call is refused otherwise)."
+          },
+          "last_request_date": {
+            "type": "string",
+            "description": "Differential export: only offers changed since this time, ISO 8601 (e.g. 2026-11-16T08:00:00Z). Leave out for a full export."
+          },
+          "items_per_chunk": {
+            "type": "integer",
+            "description": "Maximum offers per file. Smaller files are easier to read one at a time."
+          },
+          "megabytes_per_chunk": {
+            "type": "integer",
+            "description": "Maximum size of each file in megabytes."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/offers/export/async",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
+        "queryParams": {
+          "shop_id": "$shop_id"
+        },
+        "bodyMapping": {
+          "export_type": "$export_type",
+          "include_fields": "$include_fields",
+          "channel_codes": "$channel_codes",
+          "include_inactive_offers": "$include_inactive_offers",
+          "last_request_date": "$last_request_date",
+          "items_per_chunk": "$items_per_chunk",
+          "megabytes_per_chunk": "$megabytes_per_chunk"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "home24_get_offer_export_status",
+      "description": "Status of an offer export started with home24_export_offers (OF53): PENDING, COMPLETED or FAILED (with error.code and error.detail), and once COMPLETED the urls of the files. Call it about once a minute until it is no longer PENDING (never more than every 10 seconds). Each url looks like .../offers/export/async/file/<tracking_id>?file=<file>: pass that tracking_id and the file value to home24_get_offer_export_file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "description": "tracking_id returned by home24_export_offers."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        },
+        "required": [
+          "tracking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/export/async/status/{tracking_id}",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "shop_id": "$shop_id"
+        }
+      }
+    },
+    {
+      "name": "home24_get_offer_export_file",
+      "description": "Read one file of a completed offer export (OF54): the offers with their SKU, product, quantity, prices and the other exported fields, as JSON or CSV depending on export_type. Take tracking_id and file from one of the urls returned by home24_get_offer_export_status (the file value is the part after ?file=, decoded, e.g. of52-export/<tracking_id>/0.json) and read the files one by one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "description": "tracking_id of the export (the path segment after /file/ in the url)."
+          },
+          "file": {
+            "type": "string",
+            "description": "The file value of the url, decoded: of52-export/<tracking_id>/0.json (slashes, not %2F)."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        },
+        "required": [
+          "tracking_id",
+          "file"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/offers/export/async/file/{tracking_id}",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "file": "$file",
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -456,19 +649,26 @@
               "desc"
             ],
             "description": "Sort direction by creation date (default asc). desc lists the newest first."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/products/imports",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "status": "$status",
           "last_request_date": "$last_request_date",
           "max": "$max",
           "offset": "$offset",
           "order": "$order",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -481,6 +681,10 @@
           "import_id": {
             "type": "integer",
             "description": "The import_id returned by home24_import_products."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -490,9 +694,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/products/imports/{import_id}",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -505,6 +712,10 @@
           "product_references": {
             "type": "string",
             "description": "Comma-separated <type>|<value> pairs, e.g. EAN|3276000000000,EAN|4000000000000. The types are the product references home24 uses (EAN, UPC...); SKU and SHOP_SKU are not accepted."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -514,9 +725,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/products",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "product_references": "$product_references",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -549,12 +763,19 @@
           "offset": {
             "type": "integer",
             "description": "Number of products to skip, for paging."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/products/offers",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "product_ids": "$product_ids",
           "product_references": "$product_references",
@@ -562,7 +783,7 @@
           "channel_codes": "$channel_codes",
           "max": "$max",
           "offset": "$offset",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -602,12 +823,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/inbox/threads",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "entity_type": "$entity_type",
           "entity_id": "$entity_id",
@@ -615,7 +843,7 @@
           "with_messages": "$with_messages",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -628,6 +856,10 @@
           "thread_id": {
             "type": "string",
             "description": "Thread id (a UUID) from home24_list_threads."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -637,9 +869,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/inbox/threads/{thread_id}",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -676,12 +911,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/returns",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "return_state": "$return_state",
           "order_commercial_id": "$order_commercial_id",
@@ -690,7 +932,7 @@
           "return_last_updated_from": "$return_last_updated_from",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -703,15 +945,22 @@
           "locale": {
             "type": "string",
             "description": "Language of the labels, e.g. fr_FR. Only a locale active on this marketplace works (others answer 400); leave empty for the default."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/reasons",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "locale": "$locale",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -720,13 +969,21 @@
       "description": "List the carriers the marketplace knows (SH21) with their code, label and tracking URL. Use the code as carrier_code in home24_update_tracking.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shipping/carriers",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -771,12 +1028,19 @@
           "offset": {
             "type": "integer",
             "description": "Number of documents to skip, for paging."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/invoices",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "start_date": "$start_date",
           "end_date": "$end_date",
@@ -784,7 +1048,7 @@
           "payment_status": "$payment_status",
           "max": "$max",
           "offset": "$offset",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -838,12 +1102,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/sellerpayment/transactions_logs",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "date_created_from": "$date_created_from",
           "date_created_to": "$date_created_to",
@@ -856,7 +1127,7 @@
           "accounting_document_number": "$accounting_document_number",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -928,12 +1199,19 @@
           "page_token": {
             "type": "string",
             "description": "next_page_token from the previous page. All other filters are then ignored."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/document-request/requests",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "state": "$state",
           "type": "$type",
@@ -946,7 +1224,7 @@
           "payment_state": "$payment_state",
           "limit": "$limit",
           "page_token": "$page_token",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -959,6 +1237,10 @@
           "order_ids": {
             "type": "string",
             "description": "Comma-separated order ids, e.g. 1234567-A,1234568-A."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -968,9 +1250,12 @@
       "endpointMapping": {
         "method": "GET",
         "path": "/orders/documents",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
           "order_ids": "$order_ids",
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -979,13 +1264,21 @@
       "description": "List the marketplace's sales channels (CH11), usually one per country site, with code and label. Use the codes as channel_codes in home24_list_orders and home24_list_product_offers. Changes rarely: call it once, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/channels",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -994,13 +1287,21 @@
       "description": "List the active shipping zones of the marketplace (SH11) with code and label, e.g. mainland France or Corsica. Changes rarely: call it once, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shipping/zones",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -1009,13 +1310,21 @@
       "description": "List the active shipping methods of the marketplace (SH12), e.g. standard, express or pick-up, with code, label, whether a tracking number is mandatory and whether it is click and collect. The code appears as shipping_type_code on orders. Changes rarely: call it once, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shipping/types",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -1024,13 +1333,21 @@
       "description": "List the marketplace's logistic classes (SH31), the size or weight bands that decide shipping prices, with code and label. Use the code as logistic_class in home24_update_offers. Changes rarely: call it once, not on every question.",
       "parameters": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
+          }
+        }
       },
       "endpointMapping": {
         "method": "GET",
         "path": "/shipping/logistic_classes",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       }
     },
@@ -1064,6 +1381,10 @@
                 "accepted"
               ]
             }
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1074,9 +1395,12 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/orders/{order_id}/accept",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "order_lines": "$order_lines"
@@ -1117,6 +1441,10 @@
           "carrier_standard_code": {
             "type": "string",
             "description": "Standard carrier code, when the marketplace uses them."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1126,9 +1454,12 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/orders/{order_id}/tracking",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "tracking_number": "$tracking_number",
@@ -1153,6 +1484,10 @@
           "order_id": {
             "type": "string",
             "description": "Order id, e.g. 1234567-A."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1162,9 +1497,12 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/orders/{order_id}/ship",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         }
       },
       "annotations": {
@@ -1246,6 +1584,10 @@
                 "price"
               ]
             }
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1255,8 +1597,11 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/offers",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "offers": "$offers"
@@ -1308,6 +1653,10 @@
           "topic": {
             "type": "object",
             "description": "Optional new topic: {\"type\": \"FREE_TEXT\", \"value\": \"...\"} or {\"type\": \"REASON_CODE\", \"value\": \"<code from home24_list_reasons>\"}."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1319,9 +1668,12 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/inbox/threads/{thread_id}/message",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyEncoding": "form-data",
         "bodyMapping": {
@@ -1377,6 +1729,10 @@
           "topic_value": {
             "type": "string",
             "description": "The subject text, or the reason code."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1389,9 +1745,12 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/orders/{order_id}/threads",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyEncoding": "form-data",
         "bodyMapping": {
@@ -1430,6 +1789,10 @@
           "reason_code": {
             "type": "string",
             "description": "Code of an INCIDENT_CLOSE reason from home24_list_reasons."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1441,9 +1804,12 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/orders/{order_id}/lines/{order_line_id}/resolve_incident",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "encodePathParams": true,
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "reason_code": "$reason_code"
@@ -1477,6 +1843,10 @@
               "RETURN_REJECTION_WINDOW_CLOSED"
             ],
             "description": "Required when accepted is false: not eligible, no return needed, or return window closed."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1487,8 +1857,11 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/returns/accept",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "returns": [
@@ -1515,6 +1888,10 @@
           "return_id": {
             "type": "string",
             "description": "Return id from home24_list_returns."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1524,8 +1901,11 @@
       "endpointMapping": {
         "method": "PUT",
         "path": "/returns/receive",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyMapping": {
           "returns": [
@@ -1555,6 +1935,10 @@
           "operator_format": {
             "type": "boolean",
             "description": "true when the file is already in the product format home24 defines."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1564,8 +1948,11 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/products/imports",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyEncoding": "form-data",
         "bodyMapping": {
@@ -1604,6 +1991,10 @@
           "with_products": {
             "type": "boolean",
             "description": "true when the file also carries product data."
+          },
+          "shop_id": {
+            "type": "string",
+            "description": "Shop to work on, for a user who manages several shops on this marketplace: the numeric shop_id (returned by home24_get_account, also shown in the back office). Leave it out to use HOME24_SHOP_ID, or the user's default shop when that is empty."
           }
         },
         "required": [
@@ -1613,8 +2004,11 @@
       "endpointMapping": {
         "method": "POST",
         "path": "/offers/imports",
+        "envDefaults": {
+          "shop_id": "HOME24_SHOP_ID"
+        },
         "queryParams": {
-          "shop_id": "${HOME24_SHOP_ID}"
+          "shop_id": "$shop_id"
         },
         "bodyEncoding": "form-data",
         "bodyMapping": {

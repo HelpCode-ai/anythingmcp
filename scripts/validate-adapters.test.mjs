@@ -142,6 +142,17 @@ test('an optional key used as ${VAR} in a tool header counts as referenced', () 
   assert.equal(validateAdapter(unused, 'good.json', 'de').warnings[0].rule, 'optional-env-reference');
 });
 
+test('an optional variable named in a tool envDefaults counts as referenced', () => {
+  const withDefault = adapter({
+    requiredEnvVars: [],
+    optionalEnvVars: ['GOOD_SHOP'],
+    tools: [{ name: 'good_lookup', description: 'x'.repeat(60),
+      parameters: { type: 'object', properties: { shop: { type: 'string', description: 'Shop; GOOD_SHOP when left out.' } } },
+      endpointMapping: { method: 'GET', path: '/x', envDefaults: { shop: 'GOOD_SHOP' }, queryParams: { shop: '$shop' } } }],
+  });
+  assert.deepEqual(validateAdapter(withDefault, 'good.json', 'de').warnings, []);
+});
+
 test('leftover TODO markers are non-blocking warnings with the path of each one', () => {
   const draft = adapter({
     description: 'TODO: describe this adapter',

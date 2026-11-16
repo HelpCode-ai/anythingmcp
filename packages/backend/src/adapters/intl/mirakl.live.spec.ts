@@ -6,7 +6,7 @@ import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.servic
 import { LoginTokenService } from '../../connectors/engines/login-token.service';
 import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { deriveToolAnnotations } from '../../mcp-server/tool-annotations';
-import { applySchemaDefaults } from '../../common/schema-defaults.util';
+import { applyEnvDefaults, applySchemaDefaults } from '../../common/schema-defaults.util';
 import { interpolateConnectorConfig, interpolateDeep } from '../../common/env-interpolation.util';
 import { describeAdapterEnvVars, needsBrowserAuthorization } from '../env-var-meta';
 import { getAdapter, listAdapters } from '../catalog';
@@ -57,6 +57,7 @@ type Tool = {
     method: string;
     path: string;
     encodePathParams?: boolean;
+    envDefaults?: Record<string, string>;
     bodyEncoding?: string;
     queryParams?: Record<string, unknown>;
     bodyMapping?: Record<string, unknown>;
@@ -95,7 +96,8 @@ const KEY = ['1b2c3d4e', '5f60', '7182', '93a4', 'b5c6d7e8f901'].join('-');
 const HOST = 'https://adeo-marketplace.mirakl.net';
 const ENV = { MIRAKL_URL: HOST, MIRAKL_API_KEY: KEY };
 const BASE = `${HOST}/api`;
-// Mirrors DynamicMcpTools: {{VAR}} interpolated, env vars also passed as params.
+// Mirrors DynamicMcpTools: {{VAR}} interpolated, env vars passed as params the
+// caller left out, then envDefaults, then the schema defaults.
 const execute = (name: string, env: Record<string, string>, params: Record<string, unknown>) => {
   const { config, endpointMapping } = interpolateConnectorConfig(
     { baseUrl: a.connector.baseUrl, headers: a.connector.headers },
@@ -110,7 +112,7 @@ const execute = (name: string, env: Record<string, string>, params: Record<strin
       headers: config.headers,
     },
     endpointMapping,
-    { ...applySchemaDefaults(tool(name).parameters, params), ...env },
+    applySchemaDefaults(tool(name).parameters, applyEnvDefaults(tool(name).endpointMapping, { ...env, ...params }, env)),
   ) as Promise<any>;
 };
 const call = (name: string, params: Record<string, unknown>) => execute(name, ENV, params);
@@ -189,9 +191,21 @@ describe('mirakl adapter: static spec conformance', () => {
     expect(described.find((d) => d.name === 'MIRAKL_URL')!.kind).toBe('address');
   });
 
-  it('sends shop_id on every call when MIRAKL_SHOP_ID is set, and leaves it out otherwise', async () => {
+  it('takes shop_id on every call, from the argument or else MIRAKL_SHOP_ID, and leaves it out otherwise', async () => {
     mockedAxios.mockResolvedValue({ data: {} });
-    for (const t of a.tools) expect(`${t.name}:${JSON.stringify(t.endpointMapping.queryParams?.shop_id)}`).toBe(`${t.name}:"\${MIRAKL_SHOP_ID}"`);
+    for (const t of a.tools) {
+      expect(`${t.name}:${JSON.stringify(t.endpointMapping.queryParams?.shop_id)}`).toBe(`${t.name}:"$shop_id"`);
+      expect(`${t.name}:${t.endpointMapping.envDefaults?.shop_id}`).toBe(`${t.name}:MIRAKL_SHOP_ID`);
+      expect(`${t.name}:${t.parameters.properties?.shop_id?.type}`).toBe(`${t.name}:string`);
+      expect(t.parameters.required ?? []).not.toContain('shop_id');
+    }
+    // A user with several shops names one per call; the argument wins over the variable.
+    await execute('mirakl_list_offers', { ...ENV, MIRAKL_SHOP_ID: '2001' }, { shop_id: '3003' });
+    expect(sent().params.shop_id).toBe('3003');
+    mockedAxios.mockClear();
+    await call('mirakl_list_orders', { shop_id: '3003' });
+    expect(sent().params.shop_id).toBe('3003');
+    mockedAxios.mockClear();
     await execute('mirakl_list_offers', { ...ENV, MIRAKL_SHOP_ID: '2001' }, {});
     expect(sent().params.shop_id).toBe('2001');
     mockedAxios.mockClear();
@@ -218,8 +232,10 @@ describe('mirakl adapter: static spec conformance', () => {
   });
 
   it('marks reads read-only, asks for confirmation on every write and installs only the bulk offer import switched off', () => {
-    for (const t of a.tools) expect(`${t.name}:${annotationsOf(t).readOnlyHint === true}`).toBe(`${t.name}:${t.endpointMapping.method === 'GET'}`);
-    expect(a.tools.filter((t) => t.endpointMapping.method !== 'GET').map((t) => t.name).sort()).toEqual(WRITES);
+    // Starting an offer export is a POST that only reads.
+    const isRead = (t: Tool) => t.endpointMapping.method === 'GET' || t.name === 'mirakl_export_offers';
+    for (const t of a.tools) expect(`${t.name}:${annotationsOf(t).readOnlyHint === true}`).toBe(`${t.name}:${isRead(t)}`);
+    expect(a.tools.filter((t) => !isRead(t)).map((t) => t.name).sort()).toEqual(WRITES);
     for (const name of WRITES) expect(tool(name).description).toMatch(/get a yes from the user first/);
     expect(a.tools.filter((t) => t.enabled === false).map((t) => t.name)).toEqual(['mirakl_import_offers']);
     for (const name of WRITES.filter((n) => n !== 'mirakl_import_products')) {
@@ -255,6 +271,9 @@ describe('mirakl adapter: static spec conformance', () => {
     ['mirakl_list_offer_conditions', {}, 'GET', '/offers/states', 'OF61'],
     ['mirakl_list_offer_imports', {}, 'GET', '/offers/imports', 'OF04'],
     ['mirakl_get_offer_import', { import_id: 77 }, 'GET', '/offers/imports/77', 'OF02'],
+    ['mirakl_export_offers', {}, 'POST', '/offers/export/async', 'OF52'],
+    ['mirakl_get_offer_export_status', { tracking_id: 'b2a0-4fdd' }, 'GET', '/offers/export/async/status/b2a0-4fdd', 'OF53'],
+    ['mirakl_get_offer_export_file', { tracking_id: 'b2a0-4fdd', file: 'of52-export/b2a0-4fdd/0.json' }, 'GET', '/offers/export/async/file/b2a0-4fdd', 'OF54'],
     ['mirakl_list_product_imports', {}, 'GET', '/products/imports', 'P51'],
     ['mirakl_get_product_import', { import_id: 78 }, 'GET', '/products/imports/78', 'P42'],
     ['mirakl_get_products', { product_references: 'EAN|3276000000000' }, 'GET', '/products', 'P31'],
@@ -300,6 +319,22 @@ describe('mirakl adapter: static spec conformance', () => {
     await call(name, params);
     expect(mockedAxios).toHaveBeenCalledWith(expect.objectContaining({ method, url: `${BASE}${path}` }));
     expect(tool(name).description).toContain(`(${code})`);
+  });
+
+  it('exports the whole catalogue as JSON files and reads one file back by its tracking id and file name', async () => {
+    mockedAxios.mockResolvedValue({ data: { tracking_id: 'b2a0-4fdd' } });
+    await call('mirakl_export_offers', { include_fields: ['shop-sku', 'quantity', 'price'], items_per_chunk: 5000 });
+    expect(sent().data).toEqual({ export_type: 'application/json', include_fields: ['shop-sku', 'quantity', 'price'], items_per_chunk: 5000 });
+    mockedAxios.mockClear();
+    await call('mirakl_export_offers', { last_request_date: '2026-11-16T08:00:00Z', export_type: 'text/csv' });
+    expect(sent().data).toEqual({ export_type: 'text/csv', last_request_date: '2026-11-16T08:00:00Z' });
+    mockedAxios.mockClear();
+    await call('mirakl_get_offer_export_file', { tracking_id: 'b2a0-4fdd', file: 'of52-export/b2a0-4fdd/0.json' });
+    expect(sent().url).toBe(`${BASE}/offers/export/async/file/b2a0-4fdd`);
+    expect(sent().params).toEqual({ file: 'of52-export/b2a0-4fdd/0.json' });
+    expect(tool('mirakl_list_offers').description).toContain('mirakl_export_offers');
+    expect(a.instructions).toContain('**Whole catalogue**');
+    expect(a.instructions).toContain('**Several shops**');
   });
 
   it('pages orders 20 at a time and passes the filters through', async () => {
