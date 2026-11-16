@@ -40,6 +40,11 @@ updates:
           - "jest"
           - "ts-jest"
           - "@types/jest"
+      # The OpenTelemetry packages share internal versions: bumping one alone
+      # nests copies the runtime image leaves out (scripts/check-runtime-deps.mjs).
+      opentelemetry:
+        patterns:
+          - "@opentelemetry/*"
     ignore:
       # Major upgrades require manual review (often include breaking API changes).
       - dependency-name: "*"
