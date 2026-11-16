@@ -1,0 +1,1375 @@
+{
+ "opencart_version": "3.0.5.1",
+ "source": "AnythingMCP Bridge 1.0.0 against a Docker test shop (dev/functional_test.py)",
+ "responses": {
+  "categories": {
+   "data": [
+    {
+     "category_id": 33,
+     "parent_id": 0,
+     "name": "Cameras",
+     "path": "Cameras",
+     "status": true,
+     "sort_order": 6,
+     "product_count": 2,
+     "seo_keyword": "camera"
+    },
+    {
+     "category_id": 25,
+     "parent_id": 0,
+     "name": "Components",
+     "path": "Components",
+     "status": true,
+     "sort_order": 3,
+     "product_count": 0,
+     "seo_keyword": "component"
+    },
+    {
+     "category_id": 29,
+     "parent_id": 25,
+     "name": "Mice and Trackballs",
+     "path": "Components > Mice and Trackballs",
+     "status": true,
+     "sort_order": 1,
+     "product_count": 0,
+     "seo_keyword": "mouse"
+    },
+    {
+     "category_id": 28,
+     "parent_id": 25,
+     "name": "Monitors",
+     "path": "Components > Monitors",
+     "status": true,
+     "sort_order": 1,
+     "product_count": 2,
+     "seo_keyword": "monitor"
+    },
+    {
+     "category_id": 35,
+     "parent_id": 28,
+     "name": "test 1",
+     "path": "Components > Monitors > test 1",
+     "status": true,
+     "sort_order": 0,
+     "product_count": 0,
+     "seo_keyword": "test1"
+    },
+    {
+     "category_id": 36,
+     "parent_id": 28,
+     "name": "test 2",
+     "path": "Components > Monitors > test 2",
+     "status": true,
+     "sort_order": 0,
+     "product_count": 0,
+     "seo_keyword": "test2"
+    },
+    {
+     "category_id": 30,
+     "parent_id": 25,
+     "name": "Printers",
+     "path": "Components > Printers",
+     "status": true,
+     "sort_order": 1,
+     "product_count": 0,
+     "seo_keyword": "printer"
+    },
+    {
+     "category_id": 31,
+     "parent_id": 25,
+     "name": "Scanners",
+     "path": "Components > Scanners",
+     "status": true,
+     "sort_order": 1,
+     "product_count": 0,
+     "seo_keyword": "scanner"
+    },
+    {
+     "category_id": 32,
+     "parent_id": 25,
+     "name": "Web Cameras",
+     "path": "Components > Web Cameras",
+     "status": true,
+     "sort_order": 1,
+     "product_count": 0,
+     "seo_keyword": "web-camera"
+    },
+    {
+     "category_id": 20,
+     "parent_id": 0,
+     "name": "Desktops",
+     "path": "Desktops",
+     "status": true,
+     "sort_order": 1,
+     "product_count": 12,
+     "seo_keyword": "desktops"
+    }
+   ],
+   "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 38,
+    "pages": 4
+   }
+  },
+  "customer": {
+   "data": {
+    "customer_id": 2,
+    "customer_group_id": 1,
+    "customer_group": "Default",
+    "store_id": 0,
+    "language_id": 1,
+    "firstname": "Sean",
+    "lastname": "O'Brien",
+    "email": "sean.obrien@example.com",
+    "telephone": "+353 1 555 0101",
+    "newsletter": false,
+    "status": true,
+    "date_added": "2026-10-17 10:00:00",
+    "addresses": [
+     {
+      "address_id": 2,
+      "firstname": "Sean",
+      "lastname": "O'Brien",
+      "company": "",
+      "address_1": "12 Grafton Street",
+      "address_2": "",
+      "city": "Dublin",
+      "postcode": "D02",
+      "country_id": 103,
+      "country": "Ireland",
+      "zone_id": 1592,
+      "zone": "Galway",
+      "default": true
+     }
+    ],
+    "order_summary": {
+     "orders": 1,
+     "revenue": 847.4,
+     "first_order": "2026-11-04 10:00:00",
+     "last_order": "2026-11-04 10:00:00",
+     "currency": "USD"
+    },
+    "recent_orders": [
+     {
+      "order_id": 2,
+      "date_added": "2026-11-04 10:00:00",
+      "total": 847.4,
+      "currency_code": "USD",
+      "order_status_id": 5,
+      "status": "Complete"
+     }
+    ]
+   }
+  },
+  "customer_groups": {
+   "data": [
+    {
+     "customer_group_id": 1,
+     "name": "Default",
+     "description": "test",
+     "approval": false,
+     "sort_order": 1,
+     "default": true
+    }
+   ]
+  },
+  "customers": {
+   "data": [
+    {
+     "customer_id": 3,
+     "customer_group_id": 1,
+     "customer_group": "Default",
+     "store_id": 0,
+     "language_id": 1,
+     "firstname": "Giulia",
+     "lastname": "Rossi",
+     "email": "giulia.rossi@example.com",
+     "telephone": "+39 02 555 0199",
+     "newsletter": true,
+     "status": true,
+     "date_added": "2026-10-22 10:00:00"
+    },
+    {
+     "customer_id": 2,
+     "customer_group_id": 1,
+     "customer_group": "Default",
+     "store_id": 0,
+     "language_id": 1,
+     "firstname": "Sean",
+     "lastname": "O'Brien",
+     "email": "sean.obrien@example.com",
+     "telephone": "+353 1 555 0101",
+     "newsletter": false,
+     "status": true,
+     "date_added": "2026-10-17 10:00:00"
+    },
+    {
+     "customer_id": 1,
+     "customer_group_id": 1,
+     "customer_group": "Default",
+     "store_id": 0,
+     "language_id": 1,
+     "firstname": "Anna",
+     "lastname": "Schmidt",
+     "email": "anna.schmidt@example.com",
+     "telephone": "+49 761 1234567",
+     "newsletter": true,
+     "status": true,
+     "date_added": "2026-10-12 10:00:00"
+    }
+   ],
+   "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 3,
+    "pages": 1
+   }
+  },
+  "manufacturers": {
+   "data": [
+    {
+     "manufacturer_id": 8,
+     "name": "Apple",
+     "image": "catalog/demo/apple_logo.jpg",
+     "sort_order": 0,
+     "product_count": 10,
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/apple_logo.jpg"
+    },
+    {
+     "manufacturer_id": 9,
+     "name": "Canon",
+     "image": "catalog/demo/canon_logo.jpg",
+     "sort_order": 0,
+     "product_count": 1,
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/canon_logo.jpg"
+    },
+    {
+     "manufacturer_id": 7,
+     "name": "Hewlett-Packard",
+     "image": "catalog/demo/hp_logo.jpg",
+     "sort_order": 0,
+     "product_count": 1,
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/hp_logo.jpg"
+    },
+    {
+     "manufacturer_id": 5,
+     "name": "HTC",
+     "image": "catalog/demo/htc_logo.jpg",
+     "sort_order": 0,
+     "product_count": 1,
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/htc_logo.jpg"
+    },
+    {
+     "manufacturer_id": 6,
+     "name": "Palm",
+     "image": "catalog/demo/palm_logo.jpg",
+     "sort_order": 0,
+     "product_count": 1,
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/palm_logo.jpg"
+    },
+    {
+     "manufacturer_id": 10,
+     "name": "Sony",
+     "image": "catalog/demo/sony_logo.jpg",
+     "sort_order": 0,
+     "product_count": 1,
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/sony_logo.jpg"
+    }
+   ],
+   "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 6,
+    "pages": 1
+   }
+  },
+  "order": {
+   "data": {
+    "order_id": 2,
+    "invoice": "INV-2026-002",
+    "store_id": 0,
+    "store_name": "Your Store",
+    "store_url": "http://127.0.0.1/",
+    "customer_id": 2,
+    "customer_group_id": 1,
+    "firstname": "Sean",
+    "lastname": "O'Brien",
+    "email": "sean.obrien@example.com",
+    "telephone": "+353 1 555 0101",
+    "payment_address": {
+     "firstname": "Sean",
+     "lastname": "O'Brien",
+     "company": "",
+     "address_1": "12 Grafton Street",
+     "address_2": "",
+     "city": "Dublin",
+     "postcode": "D02",
+     "country": "Ireland",
+     "country_id": 103,
+     "zone": "Dublin",
+     "zone_id": 1592
+    },
+    "shipping_address": {
+     "firstname": "Sean",
+     "lastname": "O'Brien",
+     "company": "",
+     "address_1": "12 Grafton Street",
+     "address_2": "",
+     "city": "Dublin",
+     "postcode": "D02",
+     "country": "Ireland",
+     "country_id": 103,
+     "zone": "Dublin",
+     "zone_id": 1592
+    },
+    "payment_method": {
+     "name": "Cash On Delivery",
+     "code": "cod"
+    },
+    "shipping_method": {
+     "name": "Flat Shipping Rate",
+     "code": "flat.flat"
+    },
+    "comment": "Please ring twice & leave at the door",
+    "total": 847.4,
+    "currency_code": "USD",
+    "currency_value": 1,
+    "order_status_id": 5,
+    "status": "Complete",
+    "completed_checkout": true,
+    "language_id": 1,
+    "affiliate_id": 0,
+    "commission": 0,
+    "tracking": "",
+    "date_added": "2026-11-04 10:00:00",
+    "date_modified": "2026-11-04 12:00:00",
+    "products": [
+     {
+      "order_product_id": 21,
+      "product_id": 43,
+      "name": "MacBook",
+      "model": "Product 16",
+      "quantity": 1,
+      "price": 500,
+      "total": 500,
+      "tax": 100,
+      "reward": 0,
+      "options": []
+     },
+     {
+      "order_product_id": 22,
+      "product_id": 40,
+      "name": "iPhone",
+      "model": "product 11",
+      "quantity": 2,
+      "price": 101,
+      "total": 202,
+      "tax": 20.2,
+      "reward": 0,
+      "options": []
+     }
+    ],
+    "totals": [
+     {
+      "code": "sub_total",
+      "title": "Sub-Total",
+      "value": 702,
+      "sort_order": 1
+     },
+     {
+      "code": "shipping",
+      "title": "Flat Shipping Rate",
+      "value": 5,
+      "sort_order": 3
+     },
+     {
+      "code": "tax",
+      "title": "VAT (20%)",
+      "value": 140.4,
+      "sort_order": 5
+     },
+     {
+      "code": "total",
+      "title": "Total",
+      "value": 847.4,
+      "sort_order": 9
+     }
+    ],
+    "history": [
+     {
+      "date_added": "2026-11-04 10:00:00",
+      "order_status_id": 1,
+      "status": "Pending",
+      "notify": true,
+      "comment": ""
+     },
+     {
+      "date_added": "2026-11-04 12:00:00",
+      "order_status_id": 5,
+      "status": "Complete",
+      "notify": false,
+      "comment": "Shipped with DHL"
+     }
+    ]
+   }
+  },
+  "order_statuses": {
+   "data": [
+    {
+     "order_status_id": 1,
+     "name": "Pending",
+     "processing": true,
+     "complete": false
+    },
+    {
+     "order_status_id": 2,
+     "name": "Processing",
+     "processing": true,
+     "complete": false
+    },
+    {
+     "order_status_id": 3,
+     "name": "Shipped",
+     "processing": true,
+     "complete": true
+    },
+    {
+     "order_status_id": 5,
+     "name": "Complete",
+     "processing": true,
+     "complete": true
+    },
+    {
+     "order_status_id": 7,
+     "name": "Canceled",
+     "processing": false,
+     "complete": false
+    },
+    {
+     "order_status_id": 8,
+     "name": "Denied",
+     "processing": false,
+     "complete": false
+    },
+    {
+     "order_status_id": 9,
+     "name": "Canceled Reversal",
+     "processing": false,
+     "complete": false
+    },
+    {
+     "order_status_id": 10,
+     "name": "Failed",
+     "processing": false,
+     "complete": false
+    },
+    {
+     "order_status_id": 11,
+     "name": "Refunded",
+     "processing": false,
+     "complete": false
+    },
+    {
+     "order_status_id": 12,
+     "name": "Reversed",
+     "processing": true,
+     "complete": false
+    },
+    {
+     "order_status_id": 13,
+     "name": "Chargeback",
+     "processing": false,
+     "complete": false
+    },
+    {
+     "order_status_id": 14,
+     "name": "Expired",
+     "processing": false,
+     "complete": false
+    },
+    {
+     "order_status_id": 15,
+     "name": "Processed",
+     "processing": false,
+     "complete": false
+    },
+    {
+     "order_status_id": 16,
+     "name": "Voided",
+     "processing": false,
+     "complete": false
+    }
+   ]
+  },
+  "order_without_customer_data": {
+   "data": {
+    "order_id": 2,
+    "invoice": "INV-2026-002",
+    "store_id": 0,
+    "store_name": "Your Store",
+    "store_url": "http://127.0.0.1/",
+    "customer_id": 2,
+    "customer_group_id": 1,
+    "payment_method": {
+     "name": "Cash On Delivery",
+     "code": "cod"
+    },
+    "shipping_method": {
+     "name": "Flat Shipping Rate",
+     "code": "flat.flat"
+    },
+    "comment": "Please ring twice & leave at the door",
+    "total": 847.4,
+    "currency_code": "USD",
+    "currency_value": 1,
+    "order_status_id": 5,
+    "status": "Complete",
+    "completed_checkout": true,
+    "language_id": 1,
+    "affiliate_id": 0,
+    "commission": 0,
+    "tracking": "",
+    "date_added": "2026-11-04 10:00:00",
+    "date_modified": "2026-11-04 12:00:00",
+    "products": [
+     {
+      "order_product_id": 21,
+      "product_id": 43,
+      "name": "MacBook",
+      "model": "Product 16",
+      "quantity": 1,
+      "price": 500,
+      "total": 500,
+      "tax": 100,
+      "reward": 0,
+      "options": []
+     },
+     {
+      "order_product_id": 22,
+      "product_id": 40,
+      "name": "iPhone",
+      "model": "product 11",
+      "quantity": 2,
+      "price": 101,
+      "total": 202,
+      "tax": 20.2,
+      "reward": 0,
+      "options": []
+     }
+    ],
+    "totals": [
+     {
+      "code": "sub_total",
+      "title": "Sub-Total",
+      "value": 702,
+      "sort_order": 1
+     },
+     {
+      "code": "shipping",
+      "title": "Flat Shipping Rate",
+      "value": 5,
+      "sort_order": 3
+     },
+     {
+      "code": "tax",
+      "title": "VAT (20%)",
+      "value": 140.4,
+      "sort_order": 5
+     },
+     {
+      "code": "total",
+      "title": "Total",
+      "value": 847.4,
+      "sort_order": 9
+     }
+    ],
+    "history": [
+     {
+      "date_added": "2026-11-04 10:00:00",
+      "order_status_id": 1,
+      "status": "Pending",
+      "notify": true,
+      "comment": ""
+     },
+     {
+      "date_added": "2026-11-04 12:00:00",
+      "order_status_id": 5,
+      "status": "Complete",
+      "notify": false,
+      "comment": "Shipped with DHL"
+     }
+    ]
+   }
+  },
+  "orders": {
+   "data": [
+    {
+     "order_id": 5,
+     "invoice_no": 0,
+     "store_id": 0,
+     "store_name": "Your Store",
+     "customer_id": 0,
+     "customer_group_id": 1,
+     "firstname": "Guest",
+     "lastname": "Buyer",
+     "email": "guest@example.com",
+     "telephone": "+1 555 0100",
+     "total": 125,
+     "currency_code": "USD",
+     "currency_value": 1,
+     "order_status_id": 7,
+     "status": "Canceled",
+     "payment_method": "Cash On Delivery",
+     "shipping_method": "Flat Shipping Rate",
+     "date_added": "2026-11-15 10:00:00",
+     "date_modified": "2026-11-15 12:00:00",
+     "item_count": 1,
+     "invoice": null
+    },
+    {
+     "order_id": 4,
+     "invoice_no": 0,
+     "store_id": 0,
+     "store_name": "Your Store",
+     "customer_id": 1,
+     "customer_group_id": 1,
+     "firstname": "Anna",
+     "lastname": "Schmidt",
+     "email": "anna.schmidt@example.com",
+     "telephone": "+49 761 1234567",
+     "total": 101,
+     "currency_code": "USD",
+     "currency_value": 1,
+     "order_status_id": 1,
+     "status": "Pending",
+     "payment_method": "Cash On Delivery",
+     "shipping_method": "Flat Shipping Rate",
+     "date_added": "2026-11-14 10:00:00",
+     "date_modified": "2026-11-14 12:00:00",
+     "item_count": 1,
+     "invoice": null
+    },
+    {
+     "order_id": 3,
+     "invoice_no": 3,
+     "store_id": 0,
+     "store_name": "Your Store",
+     "customer_id": 3,
+     "customer_group_id": 1,
+     "firstname": "Giulia",
+     "lastname": "Rossi",
+     "email": "giulia.rossi@example.com",
+     "telephone": "+39 02 555 0199",
+     "total": 125,
+     "currency_code": "USD",
+     "currency_value": 1,
+     "order_status_id": 2,
+     "status": "Processing",
+     "payment_method": "Cash On Delivery",
+     "shipping_method": "Flat Shipping Rate",
+     "date_added": "2026-11-10 10:00:00",
+     "date_modified": "2026-11-10 12:00:00",
+     "item_count": 1,
+     "invoice": "INV-2026-003"
+    },
+    {
+     "order_id": 2,
+     "invoice_no": 2,
+     "store_id": 0,
+     "store_name": "Your Store",
+     "customer_id": 2,
+     "customer_group_id": 1,
+     "firstname": "Sean",
+     "lastname": "O'Brien",
+     "email": "sean.obrien@example.com",
+     "telephone": "+353 1 555 0101",
+     "total": 847.4,
+     "currency_code": "USD",
+     "currency_value": 1,
+     "order_status_id": 5,
+     "status": "Complete",
+     "payment_method": "Cash On Delivery",
+     "shipping_method": "Flat Shipping Rate",
+     "date_added": "2026-11-04 10:00:00",
+     "date_modified": "2026-11-04 12:00:00",
+     "item_count": 3,
+     "invoice": "INV-2026-002"
+    },
+    {
+     "order_id": 1,
+     "invoice_no": 1,
+     "store_id": 0,
+     "store_name": "Your Store",
+     "customer_id": 1,
+     "customer_group_id": 1,
+     "firstname": "Anna",
+     "lastname": "Schmidt",
+     "email": "anna.schmidt@example.com",
+     "telephone": "+49 761 1234567",
+     "total": 126.2,
+     "currency_code": "USD",
+     "currency_value": 1,
+     "order_status_id": 5,
+     "status": "Complete",
+     "payment_method": "Cash On Delivery",
+     "shipping_method": "Flat Shipping Rate",
+     "date_added": "2026-10-27 10:00:00",
+     "date_modified": "2026-10-27 12:00:00",
+     "item_count": 1,
+     "invoice": "INV-2026-001"
+    }
+   ],
+   "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 5,
+    "pages": 1
+   }
+  },
+  "product": {
+   "data": {
+    "product_id": 40,
+    "model": "product 11",
+    "sku": "IPH-001",
+    "upc": "",
+    "ean": "0885909950805",
+    "jan": "",
+    "isbn": "",
+    "mpn": "",
+    "location": "",
+    "points": 0,
+    "viewed": 1,
+    "name": "iPhone",
+    "quantity": 970,
+    "stock_status_id": 5,
+    "out_of_stock_status": "Out Of Stock",
+    "image": "catalog/demo/iphone_1.jpg",
+    "manufacturer_id": 8,
+    "manufacturer": "Apple",
+    "shipping": true,
+    "price": 101,
+    "special": 90.9,
+    "tax_class_id": 9,
+    "tax_class": "Taxable Goods",
+    "date_available": "2009-02-03",
+    "weight": 10,
+    "weight_unit": "kg",
+    "length": 0,
+    "width": 0,
+    "height": 0,
+    "length_unit": "cm",
+    "subtract": true,
+    "minimum": 1,
+    "sort_order": 0,
+    "status": true,
+    "date_added": "2009-02-03 21:07:12",
+    "date_modified": "2011-09-30 01:06:53",
+    "image_url": "http://127.0.0.1:18083/image/catalog/demo/iphone_1.jpg",
+    "descriptions": [
+     {
+      "language_id": 1,
+      "language_code": "en-gb",
+      "name": "iPhone",
+      "description": "<p class=\"intro\">\r\n\tiPhone is a revolutionary new mobile phone that allows you to make a call by simply tapping a name or number in your address book, a favorites list, or a call log. It also automatically syncs all your contacts from a PC, Mac, or Internet service. And it lets you select and listen to voicemail messages in whatever order you want just like email.</p>\r\n",
+      "tag": "",
+      "meta_title": "iPhone",
+      "meta_description": "",
+      "meta_keyword": ""
+     }
+    ],
+    "categories": [
+     {
+      "category_id": 20,
+      "name": "Desktops"
+     },
+     {
+      "category_id": 24,
+      "name": "Phones & PDAs"
+     }
+    ],
+    "store_ids": [
+     0
+    ],
+    "images": [
+     {
+      "image": "catalog/demo/iphone_6.jpg",
+      "sort_order": 0,
+      "image_url": "http://127.0.0.1:18083/image/catalog/demo/iphone_6.jpg"
+     },
+     {
+      "image": "catalog/demo/iphone_2.jpg",
+      "sort_order": 0,
+      "image_url": "http://127.0.0.1:18083/image/catalog/demo/iphone_2.jpg"
+     },
+     {
+      "image": "catalog/demo/iphone_5.jpg",
+      "sort_order": 0,
+      "image_url": "http://127.0.0.1:18083/image/catalog/demo/iphone_5.jpg"
+     },
+     {
+      "image": "catalog/demo/iphone_3.jpg",
+      "sort_order": 0,
+      "image_url": "http://127.0.0.1:18083/image/catalog/demo/iphone_3.jpg"
+     },
+     {
+      "image": "catalog/demo/iphone_4.jpg",
+      "sort_order": 0,
+      "image_url": "http://127.0.0.1:18083/image/catalog/demo/iphone_4.jpg"
+     }
+    ],
+    "attributes": [],
+    "options": [],
+    "variants": [],
+    "specials": [
+     {
+      "customer_group_id": 1,
+      "priority": 1,
+      "price": 90.9,
+      "date_start": "0000-00-00",
+      "date_end": "0000-00-00"
+     }
+    ],
+    "discounts": [],
+    "seo_keywords": [
+     {
+      "store_id": 0,
+      "language_id": 1,
+      "keyword": "iphone"
+     }
+    ],
+    "related_product_ids": [
+     42
+    ],
+    "reviews": {
+     "approved": 2,
+     "average_rating": 3.5
+    }
+   }
+  },
+  "products": {
+   "data": [
+    {
+     "product_id": 42,
+     "model": "Product 15",
+     "sku": "",
+     "upc": "",
+     "ean": "",
+     "jan": "",
+     "isbn": "",
+     "mpn": "",
+     "name": "Apple Cinema 30\"",
+     "price": 100,
+     "special": 90,
+     "quantity": 990,
+     "stock_status_id": 5,
+     "out_of_stock_status": "Out Of Stock",
+     "status": true,
+     "manufacturer_id": 8,
+     "manufacturer": "Apple",
+     "image": "catalog/demo/apple_cinema_30.jpg",
+     "date_available": "2009-02-04",
+     "date_added": "2009-02-03 21:07:37",
+     "date_modified": "2011-09-30 00:46:19",
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/apple_cinema_30.jpg"
+    },
+    {
+     "product_id": 30,
+     "model": "Product 3",
+     "sku": "",
+     "upc": "",
+     "ean": "",
+     "jan": "",
+     "isbn": "",
+     "mpn": "",
+     "name": "Canon EOS 5D",
+     "price": 100,
+     "special": 80,
+     "quantity": 2,
+     "stock_status_id": 6,
+     "out_of_stock_status": "2-3 Days",
+     "status": true,
+     "manufacturer_id": 9,
+     "manufacturer": "Canon",
+     "image": "catalog/demo/canon_eos_5d_1.jpg",
+     "date_available": "2009-02-03",
+     "date_added": "2009-02-03 16:59:00",
+     "date_modified": "2011-09-30 01:05:23",
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/canon_eos_5d_1.jpg"
+    },
+    {
+     "product_id": 47,
+     "model": "Product 21",
+     "sku": "",
+     "upc": "",
+     "ean": "",
+     "jan": "",
+     "isbn": "",
+     "mpn": "",
+     "name": "HP LP3065",
+     "price": 100,
+     "special": null,
+     "quantity": 0,
+     "stock_status_id": 5,
+     "out_of_stock_status": "Out Of Stock",
+     "status": true,
+     "manufacturer_id": 7,
+     "manufacturer": "Hewlett-Packard",
+     "image": "catalog/demo/hp_1.jpg",
+     "date_available": "2009-02-03",
+     "date_added": "2009-02-03 21:08:40",
+     "date_modified": "2011-09-30 01:05:28",
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/hp_1.jpg"
+    },
+    {
+     "product_id": 28,
+     "model": "Product 1",
+     "sku": "",
+     "upc": "",
+     "ean": "",
+     "jan": "",
+     "isbn": "",
+     "mpn": "",
+     "name": "HTC Touch HD",
+     "price": 100,
+     "special": null,
+     "quantity": 939,
+     "stock_status_id": 7,
+     "out_of_stock_status": "In Stock",
+     "status": true,
+     "manufacturer_id": 5,
+     "manufacturer": "HTC",
+     "image": "catalog/demo/htc_touch_hd_1.jpg",
+     "date_available": "2009-02-03",
+     "date_added": "2009-02-03 16:06:50",
+     "date_modified": "2011-09-30 01:05:39",
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/htc_touch_hd_1.jpg"
+    },
+    {
+     "product_id": 41,
+     "model": "Product 14",
+     "sku": "",
+     "upc": "",
+     "ean": "",
+     "jan": "",
+     "isbn": "",
+     "mpn": "",
+     "name": "iMac",
+     "price": 100,
+     "special": null,
+     "quantity": 977,
+     "stock_status_id": 5,
+     "out_of_stock_status": "Out Of Stock",
+     "status": true,
+     "manufacturer_id": 8,
+     "manufacturer": "Apple",
+     "image": "catalog/demo/imac_1.jpg",
+     "date_available": "2009-02-03",
+     "date_added": "2009-02-03 21:07:26",
+     "date_modified": "2011-09-30 01:06:44",
+     "image_url": "http://127.0.0.1:18083/image/catalog/demo/imac_1.jpg"
+    }
+   ],
+   "pagination": {
+    "page": 1,
+    "limit": 5,
+    "total": 19,
+    "pages": 4
+   }
+  },
+  "returns": {
+   "data": [
+    {
+     "return_id": 1,
+     "order_id": 2,
+     "product_id": 40,
+     "product": "iPhone",
+     "model": "product 11",
+     "quantity": 1,
+     "opened": true,
+     "return_reason_id": 4,
+     "return_reason": "Faulty, please supply details",
+     "return_action_id": 0,
+     "return_action": null,
+     "return_status_id": 2,
+     "return_status": "Awaiting Products",
+     "comment": "Screen arrived scratched",
+     "date_ordered": "2026-11-04",
+     "date_added": "2026-11-08 10:00:00",
+     "date_modified": "2026-11-08 10:00:00",
+     "customer_id": 2,
+     "firstname": "Sean",
+     "lastname": "O'Brien",
+     "email": "sean.obrien@example.com",
+     "telephone": "+353 1 555 0101"
+    }
+   ],
+   "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 1,
+    "pages": 1
+   }
+  },
+  "reviews": {
+   "data": [
+    {
+     "review_id": 3,
+     "product_id": 43,
+     "product": "MacBook",
+     "customer_id": 3,
+     "author": "Giulia",
+     "rating": 4,
+     "text": "Very good laptop, a bit heavy.",
+     "status": false,
+     "date_added": "2026-11-13 10:00:00",
+     "date_modified": "2026-11-13 10:00:00"
+    },
+    {
+     "review_id": 2,
+     "product_id": 40,
+     "product": "iPhone",
+     "customer_id": 2,
+     "author": "Sean",
+     "rating": 2,
+     "text": "Arrived with a scratch & had to return it.",
+     "status": true,
+     "date_added": "2026-11-09 10:00:00",
+     "date_modified": "2026-11-09 10:00:00"
+    },
+    {
+     "review_id": 1,
+     "product_id": 40,
+     "product": "iPhone",
+     "customer_id": 1,
+     "author": "Anna S.",
+     "rating": 5,
+     "text": "Great phone, fast delivery.",
+     "status": true,
+     "date_added": "2026-11-01 10:00:00",
+     "date_modified": "2026-11-01 10:00:00"
+    }
+   ],
+   "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 3,
+    "pages": 1
+   }
+  },
+  "sales_summary": {
+   "data": {
+    "date_from": "2026-10-01",
+    "date_to": "2026-11-16",
+    "group_by": "day",
+    "currency": "USD",
+    "status_ids": [
+     5,
+     1,
+     2,
+     12,
+     3
+    ],
+    "status_source": "shop_processing_and_complete",
+    "totals": {
+     "orders": 4,
+     "revenue": 1199.6,
+     "average_order_value": 299.9,
+     "items_sold": 6
+    },
+    "periods": [
+     {
+      "period": "2026-10-27",
+      "orders": 1,
+      "revenue": 126.2
+     },
+     {
+      "period": "2026-11-04",
+      "orders": 1,
+      "revenue": 847.4
+     },
+     {
+      "period": "2026-11-10",
+      "orders": 1,
+      "revenue": 125
+     },
+     {
+      "period": "2026-11-14",
+      "orders": 1,
+      "revenue": 101
+     }
+    ],
+    "by_status": [
+     {
+      "order_status_id": 5,
+      "status": "Complete",
+      "orders": 2,
+      "revenue": 973.6
+     },
+     {
+      "order_status_id": 1,
+      "status": "Pending",
+      "orders": 1,
+      "revenue": 101
+     },
+     {
+      "order_status_id": 2,
+      "status": "Processing",
+      "orders": 1,
+      "revenue": 125
+     },
+     {
+      "order_status_id": 7,
+      "status": "Canceled",
+      "orders": 1,
+      "revenue": 125
+     }
+    ],
+    "top_products": [
+     {
+      "product_id": 40,
+      "name": "iPhone",
+      "model": "product 11",
+      "quantity": 3,
+      "revenue": 363.6
+     },
+     {
+      "product_id": 43,
+      "name": "MacBook",
+      "model": "Product 16",
+      "quantity": 1,
+      "revenue": 600
+     },
+     {
+      "product_id": 42,
+      "name": "Apple Cinema 30\"",
+      "model": "Product 15",
+      "quantity": 1,
+      "revenue": 120
+     },
+     {
+      "product_id": 30,
+      "name": "Canon EOS 5D",
+      "model": "Product 3",
+      "quantity": 1,
+      "revenue": 96
+     }
+    ]
+   }
+  },
+  "stock": {
+   "data": [
+    {
+     "product_id": 47,
+     "model": "Product 21",
+     "sku": "",
+     "upc": "",
+     "ean": "",
+     "jan": "",
+     "isbn": "",
+     "mpn": "",
+     "name": "HP LP3065",
+     "quantity": 0,
+     "subtract": false,
+     "minimum": 1,
+     "status": true,
+     "stock_status_id": 5,
+     "out_of_stock_status": "Out Of Stock",
+     "option_stock": []
+    },
+    {
+     "product_id": 49,
+     "model": "SAM1",
+     "sku": "",
+     "upc": "",
+     "ean": "",
+     "jan": "",
+     "isbn": "",
+     "mpn": "",
+     "name": "Samsung Galaxy Tab 10.1",
+     "quantity": 0,
+     "subtract": true,
+     "minimum": 1,
+     "status": true,
+     "stock_status_id": 8,
+     "out_of_stock_status": "Pre-Order",
+     "option_stock": []
+    },
+    {
+     "product_id": 30,
+     "model": "Product 3",
+     "sku": "",
+     "upc": "",
+     "ean": "",
+     "jan": "",
+     "isbn": "",
+     "mpn": "",
+     "name": "Canon EOS 5D",
+     "quantity": 2,
+     "subtract": true,
+     "minimum": 1,
+     "status": true,
+     "stock_status_id": 6,
+     "out_of_stock_status": "2-3 Days",
+     "option_stock": [
+      {
+       "option": "Select",
+       "value": "Red",
+       "product_option_value_id": 15,
+       "quantity": 2,
+       "subtract": true
+      },
+      {
+       "option": "Select",
+       "value": "Blue",
+       "product_option_value_id": 16,
+       "quantity": 5,
+       "subtract": true
+      }
+     ]
+    }
+   ],
+   "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 3,
+    "pages": 1
+   }
+  },
+  "store": {
+   "data": {
+    "name": "Your Store",
+    "url": "http://127.0.0.1:18083/",
+    "opencart_version": "3.0.5.1",
+    "bridge_version": "1.0.0",
+    "default_currency": "USD",
+    "default_language": "en-gb",
+    "default_language_id": 1,
+    "default_customer_group_id": 1,
+    "timezone": "UTC",
+    "server_time": "2026-11-16 07:20:01",
+    "processing_status_ids": [
+     5,
+     1,
+     2,
+     12,
+     3
+    ],
+    "complete_status_ids": [
+     5,
+     3
+    ],
+    "customer_data": true,
+    "counts": {
+     "products": 19,
+     "orders": 5,
+     "customers": 3
+    },
+    "languages": [
+     {
+      "language_id": 1,
+      "name": "English",
+      "code": "en-gb",
+      "status": true,
+      "sort_order": 1
+     }
+    ],
+    "currencies": [
+     {
+      "currency_id": 3,
+      "title": "Euro",
+      "code": "EUR",
+      "symbol_left": "",
+      "symbol_right": "€",
+      "decimal_place": 2,
+      "value": 0.78460002,
+      "status": true
+     },
+     {
+      "currency_id": 1,
+      "title": "Pound Sterling",
+      "code": "GBP",
+      "symbol_left": "£",
+      "symbol_right": "",
+      "decimal_place": 2,
+      "value": 0.61250001,
+      "status": true
+     },
+     {
+      "currency_id": 2,
+      "title": "US Dollar",
+      "code": "USD",
+      "symbol_left": "$",
+      "symbol_right": "",
+      "decimal_place": 2,
+      "value": 1,
+      "status": true
+     }
+    ],
+    "stores": [
+     {
+      "store_id": 0,
+      "name": "Your Store",
+      "url": "http://127.0.0.1:18083/"
+     }
+    ],
+    "endpoints": [
+     "store",
+     "orders",
+     "order",
+     "order_statuses",
+     "customers",
+     "customer",
+     "customer_groups",
+     "products",
+     "product",
+     "categories",
+     "manufacturers",
+     "returns",
+     "reviews",
+     "stock",
+     "sales_summary"
+    ],
+    "max_page_size": 100
+   }
+  }
+ },
+ "errors": {
+  "disabled": {
+   "error": {
+    "code": "disabled",
+    "message": "The AnythingMCP Bridge is switched off in the shop admin (Extensions > Modules > AnythingMCP Bridge)."
+   }
+  },
+  "invalid_token": {
+   "error": {
+    "code": "invalid_token",
+    "message": "The access token is wrong or was rotated. Copy the current token from the shop admin."
+   }
+  },
+  "ip_not_allowed": {
+   "error": {
+    "code": "ip_not_allowed",
+    "message": "Requests from 172.20.0.1 are not on the IP allow-list in the shop admin."
+   }
+  },
+  "missing_token": {
+   "error": {
+    "code": "missing_token",
+    "message": "No access token reached the shop. Send it as \"Authorization: Bearer <token>\". If you did, the web server drops the Authorization header: see the extension documentation."
+   }
+  },
+  "not_configured": {
+   "error": {
+    "code": "not_configured",
+    "message": "No access token has been generated yet. Generate one in the shop admin under Extensions > Modules > AnythingMCP Bridge."
+   }
+  },
+  "rate_limited": {
+   "error": {
+    "code": "rate_limited",
+    "message": "Too many requests: at most 5 per minute. Try again in 59 seconds."
+   }
+  }
+ }
+}

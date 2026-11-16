@@ -1,6 +1,9 @@
+import * as fs from 'fs';
+import * as http from 'http';
+import { AddressInfo } from 'net';
 import * as path from 'path';
 import axios from 'axios';
-import { WsdlParser } from './wsdl.parser';
+import { notXmlReason, WsdlParser } from './wsdl.parser';
 import { SoapEngine } from '../engines/soap.engine';
 
 // The soap library reads a local path from disk, so the fixtures are parsed
@@ -582,6 +585,55 @@ describe('WsdlParser', () => {
 </soapenv:Envelope>`);
       // The WSDL's soapAction is empty: SOAP 1.1 requires the header anyway.
       expect(options.headers).toEqual({ 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '""' });
+    });
+  });
+
+  describe('a URL that does not return XML', () => {
+    let server: http.Server;
+    let base: string;
+
+    beforeAll(async () => {
+      const wsdl = fs.readFileSync(fixture('wrapped-operation-name'), 'utf8');
+      server = http.createServer((req, res) => {
+        if (req.url === '/swagger.json') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ swagger: '2.0', paths: { '/a': {} }, pad: 'x'.repeat(100_000) }));
+        } else if (req.url === '/readme.txt') {
+          res.writeHead(200, { 'Content-Type': 'text/plain' });
+          res.end('Service moved, see the new address.');
+        } else {
+          res.writeHead(200, { 'Content-Type': 'text/xml' });
+          res.end(`\uFEFF\n  ${wsdl}`);
+        }
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    });
+    afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+    it('refuses JSON before the XML parser reads it, and points to the OpenAPI import', async () => {
+      await expect(parser.parse(`${base}/swagger.json`)).rejects.toThrow(
+        /returned JSON, not a WSDL.*import it as OpenAPI/,
+      );
+    });
+
+    it('refuses other text that is not XML', async () => {
+      await expect(parser.parse(`${base}/readme.txt`)).rejects.toThrow(/not XML/);
+    });
+
+    it('still reads a WSDL served over HTTP, also after a BOM and blank lines', async () => {
+      const tools = await parser.parse(`${base}/Service.svc?wsdl`);
+      expect(tools.length).toBeGreaterThan(0);
+    });
+
+    it('tells XML from other documents', () => {
+      expect(notXmlReason('<?xml version="1.0"?><definitions/>')).toBeNull();
+      expect(notXmlReason('\uFEFF \r\n<definitions/>')).toBeNull();
+      expect(notXmlReason('')).toBeNull();
+      expect(notXmlReason(Buffer.from('{}'))).toBeNull();
+      expect(notXmlReason(' [1]')).toMatch(/returned JSON/);
+      expect(notXmlReason('{"openapi":"3.0.0"}')).toMatch(/returned JSON/);
+      expect(notXmlReason('Moved')).toMatch(/not XML/);
     });
   });
 });

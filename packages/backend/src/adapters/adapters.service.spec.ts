@@ -382,6 +382,73 @@ describe('AdaptersService — values that cannot be the real ones', () => {
     expect(out.fields).toBeUndefined();
     expect(execute).toHaveBeenCalled();
   });
+
+  describe('a variable with a fixed list of choices (envVarMeta.options)', () => {
+    // No catalog adapter is pinned here: a real one with choices put on its address.
+    const { getAdapter } = jest.requireActual('./catalog');
+    const magento = getAdapter('magento');
+    const withChoices = {
+      ...magento,
+      envVarMeta: {
+        ...magento.envVarMeta,
+        MAGENTO_BASE_URL: {
+          label: 'Country',
+          kind: 'address',
+          options: [
+            { value: 'https://fr.shop.example.test', label: 'France' },
+            { value: 'https://es.shop.example.test', label: 'Spain' },
+          ],
+        },
+      },
+    };
+    const buildWithChoices = () => {
+      const built = build();
+      jest.spyOn(built.service, 'getBySlug').mockReturnValue(withChoices);
+      return built;
+    };
+    const refusal = 'Country must be one of: France (https://fr.shop.example.test), Spain (https://es.shop.example.test).';
+
+    it('describes the choices to the setup form', () => {
+      const { service } = buildWithChoices();
+      const address = service.describe('magento').envVars.find((v) => v.name === 'MAGENTO_BASE_URL');
+      expect(address?.options).toEqual(withChoices.envVarMeta.MAGENTO_BASE_URL.options);
+      expect(build().service.describe('magento').envVars.every((v) => !('options' in v))).toBe(true);
+    });
+
+    it('the check refuses a value that is not one of them and sends nothing', async () => {
+      const { service, execute } = buildWithChoices();
+      const out: any = await service.verifyCredentials('magento', 'org1', {
+        MAGENTO_BASE_URL: 'https://de.shop.example.test',
+        MAGENTO_ACCESS_TOKEN: 'not-a-real-token',
+      });
+      expect(out).toMatchObject({ ok: false, kind: 'invalid_input', fields: { MAGENTO_BASE_URL: refusal }, message: refusal });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('the check and the install accept a listed value', async () => {
+      const { service, execute, prisma } = buildWithChoices();
+      const values = { MAGENTO_BASE_URL: 'https://es.shop.example.test', MAGENTO_ACCESS_TOKEN: 'not-a-real-token' };
+      const out: any = await service.verifyCredentials('magento', 'org1', values);
+      expect(out.fields).toBeUndefined();
+      expect(execute).toHaveBeenCalled();
+
+      await service.importAdapter('magento', 'u1', 'org1', values);
+      const { data } = prisma.connector.create.mock.calls[0][0];
+      expect(data.baseUrl).toBe('https://es.shop.example.test/rest/default/V1');
+      expect(data.envVars).toMatchObject({ MAGENTO_BASE_URL: 'https://es.shop.example.test' });
+    });
+
+    it('"Save anyway" (the install) refuses another value, before anything is written', async () => {
+      const { service, prisma } = buildWithChoices();
+      await expect(
+        service.importAdapter('magento', 'u1', 'org1', {
+          MAGENTO_BASE_URL: 'https://shop.example.test',
+          MAGENTO_ACCESS_TOKEN: 'not-a-real-token',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'invalid_values', fields: { MAGENTO_BASE_URL: refusal } } });
+      expect(prisma.connector.create).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('AdaptersService install — weclapp tenant pasted as an address (#733)', () => {

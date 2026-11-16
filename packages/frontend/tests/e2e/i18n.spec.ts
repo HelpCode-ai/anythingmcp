@@ -368,7 +368,7 @@ test.describe('auth and onboarding pages from Accept-Language', () => {
       await page.goto('/start-trial');
       await expect(page.getByRole('heading', { level: 1, name: 'Ihre kostenlose Testphase', exact: true })).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText(/^Kostenlos bis \d{1,2}\. \S+ \d{4}$/)).toBeVisible();
-      await expect(page.getByText(/^Heute 0 €\./)).toBeVisible();
+      await expect(page.getByTestId('payment-methods')).toHaveText('Heute 0 € · Karte, PayPal und weitere Methoden');
       await expect(page.getByRole('button', { name: 'Ohne Zahlungsdaten fortfahren', exact: true })).toBeVisible();
     });
   });
@@ -1781,6 +1781,16 @@ test.describe('message files', () => {
   for (const locale of ['de', 'it']) {
     test(`${locale}.json has exactly the keys of en.json`, () => {
       expect(keys(read(locale)).sort()).toEqual(english);
+    });
+  }
+
+  // The paywall's extra languages (PaywallIntl) translate these groups in full.
+  const PAYWALL_GROUPS = ['licenseWall', 'planPicker', 'cardCheckout', 'trialBanner', 'planFit', 'startTrial'];
+  const paywallEnglish = english.filter((key) => PAYWALL_GROUPS.includes(key.split('.')[0]));
+
+  for (const locale of ['es', 'zh', 'ja', 'ru']) {
+    test(`paywall/${locale}.json has exactly the paywall keys of en.json`, () => {
+      expect(keys(read(`paywall/${locale}`)).sort()).toEqual(paywallEnglish);
     });
   }
 });

@@ -1,0 +1,1000 @@
+{
+  "slug": "color-me-shop",
+  "name": "Color Me Shop",
+  "description": "Color Me Shop (カラーミーショップ) API for shops in Japan: orders with tracking numbers, payment status and buyer emails, customers, products, variants and stock, categories, payment and delivery methods, reviews and sales totals. OAuth private app.",
+  "instructions": "## Color Me Shop\nThis connector works with the **Color Me Shop API** of GMO Pepabo (`https://api.shop-pro.jp/v1`), for shops on カラーミーショップ (Japan): orders (sales) with shipment, payment and buyer emails, customers, products, variants and stock, categories, payment and delivery methods, reviews and sales totals.\n\n**Setup (about 10 minutes)**\n1. Create a free developer account at `https://api.shop-pro.jp/developers/sign_up` and add a **private app** (アプリ名 and Redirect URI only; no review).\n2. As the Redirect URI enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud (or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself).\n3. Copy the app's **Client ID** into `COLORME_CLIENT_ID` and **Client Secret** into `COLORME_CLIENT_SECRET`, and install the connector.\n4. Click **Authorize with Provider** on the connector page and log in with your Color Me Shop admin account. The connector asks for `read_products write_products read_sales write_sales`.\n\nThe access token does not expire and has no refresh token; the shop owner can revoke it in the shop admin (installed apps). Then authorize again.\n\n**Where to start**: `color_me_shop_list_sales` with delivered false (orders still to ship; the default period is the last 7 days, widen it with after), then `color_me_shop_get_sale` for the buyer, the items and the delivery ids.\n\n**Orders**: `color_me_shop_list_sales`, `color_me_shop_get_sale`, `color_me_shop_get_sales_stat`. Shipping: `color_me_shop_update_sale_delivery` sets the slip (tracking) number and delivered on one delivery of the order (sale_deliveries[].id), then `color_me_shop_send_sale_mail` with type delivered emails the buyer. `color_me_shop_set_sale_paid` records a received payment; `color_me_shop_send_sale_mail` also sends the accepted and paid mails. `color_me_shop_cancel_sale` is installed switched off: it cannot be undone.\n\n**Customers**: `color_me_shop_list_customers` and `color_me_shop_get_customer` (personal data; scope read_sales).\n\n**Products and stock**: `color_me_shop_list_products`, `color_me_shop_get_product`, `color_me_shop_list_product_variants`, `color_me_shop_list_stocks` (low or recent zero stock), `color_me_shop_update_product` (name, prices, cost, model number, short description, stock of a product without options), `color_me_shop_update_variant` (stock and option price of one variant). `color_me_shop_set_product_display` is switched off, because hidden takes a product off the shop. `color_me_shop_list_categories`, `color_me_shop_list_payments`, `color_me_shop_list_deliveries`, `color_me_shop_list_reviews` and `color_me_shop_get_shop` give the reference data. Creating products and orders, images and coupons are not included.\n\n**Formats**: prices in yen; dates in filters are `YYYY-MM-DD` or `YYYY-MM-DD hh:mm:ss`; times in answers are Unix seconds. Lists take `limit` (orders and customers up to 100, products and stock up to 50) and `offset`, with `meta.total`. Errors are `errors` with `code`, `message` and `status`: 401010 invalid token or missing scope, 401011 revoked token, 403000 a sub-admin without the right, 404100 not found, 422 invalid input.\n\n**Rate limit**: about 120 requests per minute per token; above that 429 (code 429000). GMO Pepabo also runs an official Color Me Shop MCP server for the AI connector app; this connector talks to the REST API directly.",
+  "aliases": [
+    "カラーミーショップ",
+    "ColorMe Shop",
+    "shop-pro.jp",
+    "GMO Pepabo Color Me"
+  ],
+  "region": "jp",
+  "category": "e-commerce",
+  "icon": "color-me-shop",
+  "docsUrl": "https://developer.shop-pro.jp/docs/colorme-api",
+  "requiredEnvVars": [
+    "COLORME_CLIENT_ID",
+    "COLORME_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "COLORME_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Color Me Shop developer site, your private app: Client ID.",
+      "link": "https://api.shop-pro.jp/developers/sign_up",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the Client ID only, without spaces."
+    },
+    "COLORME_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Color Me Shop developer site, your private app: Client Secret.",
+      "link": "https://developer.shop-pro.jp/docs/colorme-api",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the Client Secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Color Me Shop refused the token (401010 invalid or missing scope, 401011 revoked). Click Authorize with Provider again.",
+    "403": "The logged-in admin lacks the right for this feature (403000), or the token lacks a scope. Authorize again with the shop owner account.",
+    "404": "Color Me Shop found no order, customer or product with that id (404100).",
+    "rate_limited": "Color Me Shop allows about 120 requests per minute per token. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "color_me_shop_get_shop",
+    "params": {}
+  },
+  "prerequisites": "A Color Me Shop (カラーミーショップ) shop and a free developer account at api.shop-pro.jp to create a private app. About 10 minutes.",
+  "connector": {
+    "name": "Color Me Shop API",
+    "type": "REST",
+    "baseUrl": "https://api.shop-pro.jp",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{COLORME_CLIENT_ID}}",
+      "clientSecret": "{{COLORME_CLIENT_SECRET}}",
+      "authorizationUrl": "https://api.shop-pro.jp/oauth/authorize",
+      "tokenUrl": "https://api.shop-pro.jp/oauth/token",
+      "tokenAuthMethod": "client_secret_post",
+      "scopes": "read_products write_products read_sales write_sales"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "color_me_shop_get_shop",
+      "description": "The shop behind the token: id, state, contract plan, url, open state, login id, title, owner email and tax settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/shop"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_sales",
+      "description": "List orders (sales), newest first: id, make_date, update_date, payment_id, paid, delivered, canceled, accepted, paid and delivered mail states, product_total_price, delivery_total_charge, fee, tax, total_price, customer, details (product, option, price, quantity) and sale_deliveries (id, delivery method, address, slip_number, delivered), with `meta` (total, limit, offset). Without dates the last 7 days. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "string",
+            "description": "Ordered on or after (default: 7 days ago): YYYY-MM-DD or YYYY-MM-DD hh:mm:ss, Japan time."
+          },
+          "before": {
+            "type": "string",
+            "description": "Ordered on or before: YYYY-MM-DD or YYYY-MM-DD hh:mm:ss, Japan time."
+          },
+          "update_date_min": {
+            "type": "string",
+            "description": "Updated on or after: YYYY-MM-DD or YYYY-MM-DD hh:mm:ss, Japan time."
+          },
+          "update_date_max": {
+            "type": "string",
+            "description": "Updated on or before: YYYY-MM-DD or YYYY-MM-DD hh:mm:ss, Japan time."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Order ids, comma-separated."
+          },
+          "customer_ids": {
+            "type": "string",
+            "description": "Customer ids, comma-separated."
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Customer name (partial match)."
+          },
+          "customer_mail": {
+            "type": "string",
+            "description": "Customer email (partial match)."
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "true: only paid orders."
+          },
+          "delivered": {
+            "type": "boolean",
+            "description": "true: only delivered (shipped) orders."
+          },
+          "canceled": {
+            "type": "boolean",
+            "description": "true: only cancelled orders."
+          },
+          "accepted_mail_state": {
+            "type": "string",
+            "description": "Order confirmation mail: not_yet (not sent), sent or pass (not to be sent).",
+            "enum": [
+              "not_yet",
+              "sent",
+              "pass"
+            ]
+          },
+          "paid_mail_state": {
+            "type": "string",
+            "description": "Payment confirmation mail: not_yet (not sent), sent or pass (not to be sent).",
+            "enum": [
+              "not_yet",
+              "sent",
+              "pass"
+            ]
+          },
+          "delivered_mail_state": {
+            "type": "string",
+            "description": "Shipping mail: not_yet (not sent), sent or pass (not to be sent).",
+            "enum": [
+              "not_yet",
+              "sent",
+              "pass"
+            ]
+          },
+          "payment_ids": {
+            "type": "string",
+            "description": "Payment method ids, comma-separated (from color_me_shop_list_payments)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Only these response keys, comma-separated."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Orders to skip.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sales",
+        "queryParams": {
+          "after": "$after",
+          "before": "$before",
+          "update_date_min": "$update_date_min",
+          "update_date_max": "$update_date_max",
+          "ids": "$ids",
+          "customer_ids": "$customer_ids",
+          "customer_name": "$customer_name",
+          "customer_mail": "$customer_mail",
+          "paid": "$paid",
+          "delivered": "$delivered",
+          "canceled": "$canceled",
+          "accepted_mail_state": "$accepted_mail_state",
+          "paid_mail_state": "$paid_mail_state",
+          "delivered_mail_state": "$delivered_mail_state",
+          "payment_ids": "$payment_ids",
+          "fields": "$fields",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_get_sale",
+      "description": "Read one order: dates, payment method, paid, delivered, canceled, mail states, point state, totals, customer (name, furigana, email, address, phone), details (product, options, price, quantity) and sale_deliveries (id, delivery method, recipient, preferred date and period, slip_number, delivered). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Order (sale) id, e.g. 123456789 (id of color_me_shop_list_sales).",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sales/{sale_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_get_sales_stat",
+      "description": "Sales totals for fixed periods around a day: amount and count for that day, the last 7 days and that month. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "make_date": {
+            "type": "string",
+            "description": "Reference day, YYYY-MM-DD (default today).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/sales/stat",
+        "queryParams": {
+          "make_date": "$make_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_customers",
+      "description": "List customers: id, name, furigana, mail, postal, address, tel, member, points, membership and mail magazine consent, with `meta`. Filter by name, email, phone, postal code or dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Customer ids, comma-separated."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name (partial match)."
+          },
+          "mail": {
+            "type": "string",
+            "description": "Email (partial match)."
+          },
+          "tel": {
+            "type": "string",
+            "description": "Phone number (partial match)."
+          },
+          "postal": {
+            "type": "string",
+            "description": "Postal code (partial match)."
+          },
+          "member": {
+            "type": "boolean",
+            "description": "true: only registered members."
+          },
+          "make_date_min": {
+            "type": "string",
+            "description": "Registered on or after: YYYY-MM-DD or YYYY-MM-DD hh:mm:ss, Japan time."
+          },
+          "make_date_max": {
+            "type": "string",
+            "description": "Registered on or before: YYYY-MM-DD or YYYY-MM-DD hh:mm:ss, Japan time."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Customers per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Customers to skip.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers",
+        "queryParams": {
+          "ids": "$ids",
+          "name": "$name",
+          "mail": "$mail",
+          "tel": "$tel",
+          "postal": "$postal",
+          "member": "$member",
+          "make_date_min": "$make_date_min",
+          "make_date_max": "$make_date_max",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_get_customer",
+      "description": "Read one customer: name, furigana, email, address, phones, member, points, membership and order count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "description": "Customer id (customer.id of an order).",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers/{customer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_products",
+      "description": "List products, newest first: id, name, model_number, price (list price), sales_price, members_price, cost, display_state, stock_managed, stocks, categories, groups, variants and images, with `meta` (total, limit, offset). Up to 50 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Product ids, comma-separated."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name (partial match)."
+          },
+          "model_number": {
+            "type": "string",
+            "description": "Model number (partial match)."
+          },
+          "category_id_big": {
+            "type": "integer",
+            "description": "Large category id.",
+            "minimum": 0
+          },
+          "category_id_small": {
+            "type": "integer",
+            "description": "Small category id.",
+            "minimum": 0
+          },
+          "display_state": {
+            "type": "string",
+            "description": "showing, hidden, showing_for_members or sale_for_members.",
+            "enum": [
+              "showing",
+              "hidden",
+              "showing_for_members",
+              "sale_for_members"
+            ]
+          },
+          "stocks": {
+            "type": "integer",
+            "description": "Only stock-managed products with at most this many in stock (per option where options carry the stock).",
+            "minimum": 0
+          },
+          "recent_zero_stocks": {
+            "type": "boolean",
+            "description": "true: only products that dropped to 0 stock in the last week."
+          },
+          "update_date_min": {
+            "type": "string",
+            "description": "Updated on or after: YYYY-MM-DD or YYYY-MM-DD hh:mm:ss, Japan time."
+          },
+          "update_date_max": {
+            "type": "string",
+            "description": "Updated on or before: YYYY-MM-DD or YYYY-MM-DD hh:mm:ss, Japan time."
+          },
+          "jan_code": {
+            "type": "string",
+            "description": "JAN code (exact match)."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort columns, comma-separated, `-` for descending, e.g. `-update_date` (default `-make_date`)."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Only these response keys, comma-separated."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Products to skip.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/products",
+        "queryParams": {
+          "ids": "$ids",
+          "name": "$name",
+          "model_number": "$model_number",
+          "category_id_big": "$category_id_big",
+          "category_id_small": "$category_id_small",
+          "display_state": "$display_state",
+          "stocks": "$stocks",
+          "recent_zero_stocks": "$recent_zero_stocks",
+          "update_date_min": "$update_date_min",
+          "update_date_max": "$update_date_max",
+          "jan_code": "$jan_code",
+          "sort": "$sort",
+          "fields": "$fields",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_get_product",
+      "description": "Read one product: name, prices, cost, model number, descriptions, display_state, stock settings and stocks, categories, groups, options, variants (with their stock) and images. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, e.g. 123456 (id of color_me_shop_list_products).",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_product_variants",
+      "description": "Variants (option combinations) of one product: id, option1_value, option2_value, title, stocks, few_num (low-stock warning level), model_number and option prices. Up to 50 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, e.g. 123456 (id of color_me_shop_list_products).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "model_number": {
+            "type": "string",
+            "description": "Model number (partial match)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Variants per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Variants to skip.",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/products/{product_id}/variants",
+        "queryParams": {
+          "model_number": "$model_number",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_stocks",
+      "description": "Stock per product and option: product_id, name, model number, option1_value, option2_value and stocks. Filter by low stock or recent zero stock. Up to 50 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Product ids, comma-separated."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name (partial match)."
+          },
+          "model_number": {
+            "type": "string",
+            "description": "Model number (partial match)."
+          },
+          "category_id_big": {
+            "type": "integer",
+            "description": "Large category id.",
+            "minimum": 0
+          },
+          "category_id_small": {
+            "type": "integer",
+            "description": "Small category id.",
+            "minimum": 0
+          },
+          "display_state": {
+            "type": "string",
+            "description": "showing, hidden, showing_for_members or sale_for_members.",
+            "enum": [
+              "showing",
+              "hidden",
+              "showing_for_members",
+              "sale_for_members"
+            ]
+          },
+          "stocks": {
+            "type": "integer",
+            "description": "Only stock-managed products with at most this many in stock (per option where options carry the stock).",
+            "minimum": 0
+          },
+          "recent_zero_stocks": {
+            "type": "boolean",
+            "description": "true: only products that dropped to 0 stock in the last week."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/stocks",
+        "queryParams": {
+          "ids": "$ids",
+          "name": "$name",
+          "model_number": "$model_number",
+          "category_id_big": "$category_id_big",
+          "category_id_small": "$category_id_small",
+          "display_state": "$display_state",
+          "stocks": "$stocks",
+          "recent_zero_stocks": "$recent_zero_stocks",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_categories",
+      "description": "Product categories: id_big, id_small, name, display_state and children. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/categories"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_payments",
+      "description": "Payment methods of the shop: id, name, type and fees. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payments"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_deliveries",
+      "description": "Delivery methods of the shop: id, name, method type, charges and settings (delivery_id of an order delivery). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deliveries"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_list_reviews",
+      "description": "Product reviews: product, rating, title, body, reviewer and dates, with `meta`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Reviews per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Reviews to skip.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/reviews",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "color_me_shop_update_sale_delivery",
+      "description": "Record the shipment of one delivery of an order: the tracking (slip) number and whether it is delivered (shipped). Send the shipping mail afterwards with color_me_shop_send_sale_mail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Order (sale) id, e.g. 123456789 (id of color_me_shop_list_sales).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "delivery_id": {
+            "type": "integer",
+            "description": "Id of the order delivery (sale_deliveries[].id of color_me_shop_get_sale), not the delivery method.",
+            "minimum": 1
+          },
+          "slip_number": {
+            "type": "string",
+            "description": "Tracking (slip) number."
+          },
+          "delivered": {
+            "type": "boolean",
+            "description": "true: shipped."
+          }
+        },
+        "required": [
+          "sale_id",
+          "delivery_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/sales/{sale_id}",
+        "bodyMapping": {
+          "sale": {
+            "sale_deliveries": [
+              {
+                "id": "$delivery_id",
+                "slip_number": "$slip_number",
+                "delivered": "$delivered"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "color_me_shop_set_sale_paid",
+      "description": "Mark an order as paid (payment received, e.g. a bank transfer arrived) or back to unpaid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Order (sale) id, e.g. 123456789 (id of color_me_shop_list_sales).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "true paid, false unpaid."
+          }
+        },
+        "required": [
+          "sale_id",
+          "paid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/sales/{sale_id}",
+        "bodyMapping": {
+          "sale": {
+            "paid": "$paid"
+          }
+        }
+      }
+    },
+    {
+      "name": "color_me_shop_send_sale_mail",
+      "description": "Send the buyer the order confirmation (accepted), payment confirmation (paid) or shipping (delivered) email of an order, with the shop template. Answers 201 with no body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Order (sale) id, e.g. 123456789 (id of color_me_shop_list_sales).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "type": {
+            "type": "string",
+            "description": "accepted, paid or delivered.",
+            "enum": [
+              "accepted",
+              "paid",
+              "delivered"
+            ]
+          }
+        },
+        "required": [
+          "sale_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/sales/{sale_id}/mails",
+        "bodyMapping": {
+          "mail": {
+            "type": "$type"
+          }
+        }
+      }
+    },
+    {
+      "name": "color_me_shop_update_product",
+      "description": "Change the name, list price, selling price, members price, cost, model number, short description or stock of one product (stock only for a product without option stock; use color_me_shop_update_variant for those). Fields left out keep their value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, e.g. 123456 (id of color_me_shop_list_products).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "price": {
+            "type": "integer",
+            "description": "List price in yen.",
+            "minimum": 0
+          },
+          "sales_price": {
+            "type": "integer",
+            "description": "Selling price in yen.",
+            "minimum": 0
+          },
+          "members_price": {
+            "type": "integer",
+            "description": "Members price in yen.",
+            "minimum": 0
+          },
+          "cost": {
+            "type": "integer",
+            "description": "Cost in yen.",
+            "minimum": 0
+          },
+          "model_number": {
+            "type": "string",
+            "description": "Model number."
+          },
+          "simple_expl": {
+            "type": "string",
+            "description": "Short description."
+          },
+          "stocks": {
+            "type": "integer",
+            "description": "New stock quantity (absolute).",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/products/{product_id}",
+        "bodyMapping": {
+          "product": {
+            "name": "$name",
+            "price": "$price",
+            "sales_price": "$sales_price",
+            "members_price": "$members_price",
+            "cost": "$cost",
+            "model_number": "$model_number",
+            "simple_expl": "$simple_expl",
+            "stocks": "$stocks"
+          }
+        }
+      }
+    },
+    {
+      "name": "color_me_shop_update_variant",
+      "description": "Change the stock, low-stock warning level, model number or option price of one variant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, e.g. 123456 (id of color_me_shop_list_products).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "variant_id": {
+            "type": "string",
+            "description": "Variant id from color_me_shop_list_product_variants.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "stocks": {
+            "type": "integer",
+            "description": "New stock quantity (absolute).",
+            "minimum": 0
+          },
+          "few_num": {
+            "type": "integer",
+            "description": "Low-stock warning level.",
+            "minimum": 0
+          },
+          "model_number": {
+            "type": "string",
+            "description": "Model number of the variant."
+          },
+          "option_price": {
+            "type": "integer",
+            "description": "Selling price of the variant in yen.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "product_id",
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/products/{product_id}/variants/{variant_id}",
+        "bodyMapping": {
+          "variant": {
+            "stocks": "$stocks",
+            "few_num": "$few_num",
+            "model_number": "$model_number",
+            "option_price": "$option_price"
+          }
+        }
+      }
+    },
+    {
+      "name": "color_me_shop_set_product_display",
+      "description": "Change where a product is shown: showing, hidden, showing_for_members or sale_for_members. hidden takes it off the shop.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id, e.g. 123456 (id of color_me_shop_list_products).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "display_state": {
+            "type": "string",
+            "description": "showing, hidden, showing_for_members or sale_for_members.",
+            "enum": [
+              "showing",
+              "hidden",
+              "showing_for_members",
+              "sale_for_members"
+            ]
+          }
+        },
+        "required": [
+          "product_id",
+          "display_state"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/products/{product_id}",
+        "bodyMapping": {
+          "product": {
+            "display_state": "$display_state"
+          }
+        }
+      }
+    },
+    {
+      "name": "color_me_shop_cancel_sale",
+      "description": "Cancel an order, optionally putting the stock back. Cannot be undone. Split orders and card payments linked to Epsilon cannot be cancelled here.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "description": "Order (sale) id, e.g. 123456789 (id of color_me_shop_list_sales).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "restock": {
+            "type": "boolean",
+            "description": "true: return the items to stock."
+          }
+        },
+        "required": [
+          "sale_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/sales/{sale_id}/cancel",
+        "bodyMapping": {
+          "restock": "$restock"
+        }
+      }
+    }
+  ]
+}

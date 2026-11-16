@@ -477,6 +477,8 @@ export interface Connector {
   icon?: string | null;
   setupStatus?: string;
   missingVariables?: string[];
+  /** 'iop': the seller authorizes at an Alibaba IOP gateway (Lazada, Miravia, AliExpress seller); 'shein': SHEIN's store authorization. */
+  tokenProvider?: string;
   /** Credential health: 'needs_reauth' (calls fail until fixed) or 'expiring'. */
   authStatus?: string | null;
   authStatusCode?: string | null;
@@ -673,6 +675,34 @@ export const connectors = {
       '/api/tiktok-shop/complete',
       { method: 'POST', token, body: { state, code } },
     ),
+  /** "Authorize with Provider" for a seller at an IOP gateway (Lazada, Miravia, AliExpress seller). */
+  iopAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
+      `/api/iop-auth/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of an IOP seller authorization: exchange the code the gateway sent back. */
+  iopComplete: (state: string, code: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/iop-auth/complete',
+      { method: 'POST', token, body: { state, code } },
+    ),
+  /** The callback URL to register on a Lazada, Miravia or AliExpress seller app. */
+  iopRedirectUri: (token: string) => request<{ redirectUri: string }>('/api/iop-auth/redirect-uri', { token }),
+  /** "Authorize with Provider" for a SHEIN shop (SHEIN's store authorization). */
+  sheinAuthorize: (id: string, token: string, returnTo?: string) =>
+    request<{ authorizationUrl?: string; redirectUrl?: string; error?: string }>(
+      `/api/shein-auth/connectors/${id}/authorize`,
+      { method: 'POST', token, body: returnTo ? { returnTo } : undefined },
+    ),
+  /** Second half of a SHEIN store authorization: exchange the tempToken SHEIN sent back. */
+  sheinComplete: (state: string, tempToken: string, token: string) =>
+    request<{ connectorId: string; toolsImported: number; returnTo?: string }>(
+      '/api/shein-auth/complete',
+      { method: 'POST', token, body: { state, tempToken } },
+    ),
+  /** The redirect URL of a SHEIN store authorization. */
+  sheinRedirectUri: (token: string) => request<{ redirectUri: string }>('/api/shein-auth/redirect-uri', { token }),
   /** Whether this server has its own TikTok Shop app, and the Redirect URL for a seller's own app. */
   tiktokShopPlatform: (token: string) =>
     request<{ available: boolean; redirectUrl: string }>('/api/tiktok-shop/platform', { token }),
@@ -827,6 +857,14 @@ export const fileSearchSetup = {
 // Adapters (built-in connector recipes)
 export type SetupKind = 'none' | 'credentials' | 'oauth_browser';
 
+/** One choice of a variable that takes one of a fixed list of values. */
+export interface EnvVarOption {
+  /** What is stored and sent. */
+  value: string;
+  /** What the user picks. */
+  label: string;
+}
+
 export interface EnvVarDescriptor {
   name: string;
   required: boolean;
@@ -840,6 +878,8 @@ export interface EnvVarDescriptor {
   patternMessage?: string;
   link?: string;
   advanced?: boolean;
+  /** A fixed list of choices: the form shows a select, and only these values are accepted. */
+  options?: EnvVarOption[];
 }
 
 export interface AdapterSetupInfo {
@@ -849,7 +889,14 @@ export interface AdapterSetupInfo {
   instructions?: string;
   icon: string;
   docsUrl?: string;
-  connector: { name: string; type: string; baseUrl: string; authType: string };
+  connector: {
+    name: string;
+    type: string;
+    baseUrl: string;
+    authType: string;
+    /** The adapter's template (no secrets): `tokenProvider` says how a shop is authorized. */
+    authConfig?: { tokenProvider?: string };
+  };
   envVars: EnvVarDescriptor[];
   setupKind: SetupKind;
   /** What is needed before starting (Markdown), shown above the form. */
@@ -1338,6 +1385,8 @@ export interface KgSettings {
   enabled: boolean;
   llmEnabled: boolean;
   llmAvailable: boolean;
+  /** The scheduled job behind `autoExtend` runs on this instance. */
+  scheduledAvailable?: boolean;
   captureIntent: boolean;
   autoExtend: boolean;
   skillAutoApply: boolean;
@@ -1550,7 +1599,7 @@ export interface KgSkill {
   kind?: string;
   /** For a `code` proposal: the candidate code tool an admin approves. */
   payload?: KgCodeProposalPayload | null;
-  /** manual | llm | finder | agent */
+  /** manual | llm | finder | agent | learning */
   source?: string;
   /** Optional full procedure (markdown), served on demand by skill_get. */
   body?: string | null;
@@ -1560,7 +1609,159 @@ export interface KgSkill {
   folderId?: string | null;
   /** For a merge proposal: the active skills applying it deactivates. */
   replaces?: string[];
+  /** Free labels; a learned skill carries `learned` and its project's labels. */
+  tags?: string[];
+  /** Set on a learning project's draft: only this member's AI is served it. */
+  audienceUserId?: string | null;
+  learningProjectId?: string | null;
 }
+
+// ── Learning projects (#1695) ──────────────────────────────────────────────
+
+export type LearningProjectStatus = 'draft' | 'active' | 'paused' | 'ended';
+export type LearningLessonStatus = 'draft' | 'confirmed' | 'rejected' | 'superseded';
+
+/** What the workspace's plan includes, and how many projects are open. */
+export interface LearningAllowance {
+  /** null = no limit; 0 = not in this plan. */
+  max: number | null;
+  /** The Enterprise parts are included. */
+  full: boolean;
+  plan: string;
+  used: number;
+}
+
+export interface LearningLessonCounts {
+  draft: number;
+  confirmed: number;
+  rejected: number;
+}
+
+export interface LearningProject {
+  id: string;
+  name: string;
+  status: LearningProjectStatus;
+  /** Open, but past the number the plan includes: nothing is captured. */
+  overPlan: boolean;
+  publishMode: 'manual' | 'confirmed';
+  tags: string[];
+  showExpertName: boolean;
+  /** Null for viewers who may not see who the project learns from. */
+  expert: { id: string; name: string | null; email?: string } | null;
+  mcpServer: { id: string; name: string } | null;
+  folder: { id: string; name: string } | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  consentAt: string | null;
+  createdAt: string;
+  topics: number;
+  lessons: LearningLessonCounts;
+}
+
+export interface LearningTopic {
+  id: string;
+  title: string;
+  whenToUse: string;
+  draftSkillId: string | null;
+  publishedSkillId: string | null;
+  publishedAt: string | null;
+  lessons: LearningLessonCounts;
+  /** Confirmed lessons changed since the last publication. */
+  unpublished: boolean;
+}
+
+export type LearningProjectDetail = Omit<LearningProject, 'topics'> & { topics: LearningTopic[] };
+
+export interface LearningLesson {
+  id: string;
+  projectId: string;
+  topicId: string;
+  kind: 'rule' | 'fact' | 'correction' | 'example';
+  text: string;
+  detail: { before?: string; after?: string; reason?: string; tool?: string; needsReason?: boolean } | null;
+  status: LearningLessonStatus;
+  source: 'model' | 'diff' | 'interview' | 'manual';
+  seenCount: number;
+  confirmedAt: string | null;
+  createdAt: string;
+  topic?: { title: string };
+}
+
+/** One of the caller's own learning projects (profile page). */
+export interface MyLearningProject {
+  id: string;
+  name: string;
+  status: LearningProjectStatus;
+  mcpServer: { id: string; name: string } | null;
+  consentAt: string | null;
+  endsAt: string | null;
+  showExpertName: boolean;
+}
+
+export interface LearningProjectInput {
+  name: string;
+  userId: string;
+  mcpServerId: string;
+  folderId?: string | null;
+  endsAt?: string | null;
+  tags?: string[];
+  publishMode?: 'manual' | 'confirmed';
+  showExpertName?: boolean;
+}
+
+export const learning = {
+  allowance: (token: string) => request<LearningAllowance>('/api/learning/allowance', { token }),
+  list: (token: string) =>
+    request<{ allowance: LearningAllowance; projects: LearningProject[] }>('/api/learning/projects', { token }),
+  get: (token: string, id: string) => request<LearningProjectDetail>(`/api/learning/projects/${id}`, { token }),
+  create: (token: string, body: LearningProjectInput) =>
+    request<{ id: string }>('/api/learning/projects', { token, method: 'POST', body }),
+  update: (token: string, id: string, body: Partial<Omit<LearningProjectInput, 'userId' | 'mcpServerId'>>) =>
+    request<{ id: string }>(`/api/learning/projects/${id}`, { token, method: 'PATCH', body }),
+  setStatus: (token: string, id: string, action: 'pause' | 'resume' | 'end') =>
+    request<{ id: string; status: LearningProjectStatus }>(`/api/learning/projects/${id}/${action}`, {
+      token,
+      method: 'POST',
+    }),
+  remove: (token: string, id: string) =>
+    request<{ ok: boolean; lessons: number }>(`/api/learning/projects/${id}`, { token, method: 'DELETE' }),
+  lessons: (
+    token: string,
+    id: string,
+    params: { status?: LearningLessonStatus; topicId?: string; take?: number; skip?: number } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set('status', params.status);
+    if (params.topicId) qs.set('topicId', params.topicId);
+    if (params.take != null) qs.set('take', String(params.take));
+    if (params.skip != null) qs.set('skip', String(params.skip));
+    return request<{ items: LearningLesson[]; total: number; take: number; skip: number }>(
+      `/api/learning/projects/${id}/lessons?${qs.toString()}`,
+      { token },
+    );
+  },
+  setLesson: (token: string, lessonId: string, body: { status?: 'draft' | 'confirmed' | 'rejected'; text?: string }) =>
+    request<LearningLesson>(`/api/learning/lessons/${lessonId}`, { token, method: 'PATCH', body }),
+  preview: (token: string, topicId: string) =>
+    request<{ topic: { id: string; title: string }; instruction: string; body: string | null; included: number; dropped: number }>(
+      `/api/learning/topics/${topicId}/preview`,
+      { token },
+    ),
+  publish: (token: string, topicId: string) =>
+    request<{ skillId: string; lessons: number; dropped: number }>(`/api/learning/topics/${topicId}/publish`, {
+      token,
+      method: 'POST',
+    }),
+  mine: (token: string) => request<MyLearningProject[]>('/api/learning/me', { token }),
+  consent: (token: string, id: string, notice: string) =>
+    request<{ id: string }>(`/api/learning/projects/${id}/consent`, { token, method: 'POST', body: { notice } }),
+  withdraw: (token: string, id: string, erase: boolean) =>
+    request<{ ok: boolean; erased: number }>(`/api/learning/projects/${id}/withdraw`, {
+      token,
+      method: 'POST',
+      body: { erase },
+    }),
+};
 
 export interface KnowledgeFolder {
   id: string;

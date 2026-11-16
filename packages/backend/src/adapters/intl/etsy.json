@@ -2,7 +2,7 @@
   "slug": "etsy",
   "name": "Etsy",
   "description": "Run an Etsy shop from any AI agent: create draft listings, edit and publish them, add photos, videos and digital files, set price, stock, attributes and translations, add tracking to orders, and read listings, orders, receipts and reviews. OAuth2 with automatic refresh-token rotation + x-api-key dual auth.",
-  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com). You authorize it once, in AnythingMCP; from then on the short-lived access token (1 hour) is renewed automatically, and the refresh token Etsy replaces on every renewal is stored for you.\n\n**Setup**:\n1. Register an app at https://www.etsy.com/developers/register (for your own shop: a personal app). Etsy lists it on https://www.etsy.com/developers/your-apps under **Personal Apps**, with the status *Pending Personal Approval*.\n2. Copy the app's **Keystring** and **Shared Secret** from that list into `ETSY_CLIENT_ID` and `ETSY_CLIENT_SECRET`, leave `ETSY_REFRESH_TOKEN` empty, and save. This works while the app is still pending.\n3. Wait for Etsy's approval (Etsy emails you; most apps are approved within a day). Until then Etsy refuses the keys with a 403 and the app's page does not open.\n4. Once the app is active, click its name to open its page and add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Etsy compares it character for character (https, upper/lower case, no trailing slash).\n5. Open the connector and click **Authorize with Provider**. Sign in to Etsy, approve, and you land back on the connector page with the tools ready. AnythingMCP runs Etsy's OAuth2 PKCE flow (S256) for you.\n\n**Scopes**: the connector asks for `email_r shops_r listings_r listings_w listings_d transactions_r transactions_w`: read your account, shops, listings and orders, edit listings, delete listings (the delete tool is installed switched off), and add tracking to orders. **Connectors authorized with an earlier scope list** (only the read scopes, or without `listings_d`) get the current list when you click **Authorize with Provider** again; until then Etsy answers \"Access token lacks scope\" to the tools that need the missing scope.\n\n**Already have a refresh token?** You can paste it into `ETSY_REFRESH_TOKEN` instead of step 5, if you obtained it yourself through Etsy's OAuth2 PKCE flow for the same app. Connectors set up that way keep working as they are; there is nothing to do. Clicking **Authorize with Provider** on one replaces its token with a new one, and needs the callback URL from step 4.\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**If a call says the access token could not be renewed**: an Etsy refresh token works once and expires after 90 days unused. Click **Authorize with Provider** on the connector page to get a new one.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Reading the shop**: `etsy_get_listings_by_shop` lists your own listings in any state (active, draft, inactive, sold out); `etsy_get_shop_listings_active` is the public view any visitor sees; `etsy_list_shop_sections` and `etsy_get_listings_by_shop_section` go by shop section; `etsy_get_shop_reviews` lists the reviews. `etsy_list_taxonomy_properties` gives the properties (size, colour, material) a category allows.\n\n**Orders and sales**: `etsy_get_shop_receipts` lists orders and `etsy_get_shop_receipt` reads one with its line items. `etsy_get_shop_transactions` lists the sold line items of the whole shop (listing, SKU, quantity, price, variations), the view for sales per product. `etsy_get_listings_by_ids` then reads up to 100 of the listings behind them in one call. `etsy_add_order_tracking` marks an order as shipped with its tracking code, and Etsy e-mails the buyer at once.\n\n**Attributes, translations and media**: `etsy_get_listing_properties` reads a listing's attributes (colour, material, size) and `etsy_set_listing_property` sets one, with ids from `etsy_list_taxonomy_properties`. `etsy_read_listing_translation`, `etsy_add_listing_translation` (new language) and `etsy_replace_listing_translation` (existing one) handle titles, descriptions and tags in de, en, es, fr, it, ja, nl, pl and pt. `etsy_list_listing_images` lists the photos; `etsy_list_listing_variation_images` and `etsy_assign_variation_images` link photos to variation values (the assign call replaces every link). `etsy_list_listing_videos` and `etsy_add_listing_video` handle the listing video (one per listing, 5 to 15 seconds); `etsy_list_listing_files` and `etsy_upload_listing_file` the files buyers download from a digital listing. Uploads take a public URL that AnythingMCP downloads, up to the server's upload limit (10 MB by default). `etsy_list_production_partners` gives the ids for production_partner_ids.\n\n**Beyond your shop**: `etsy_search_active_listings` searches every active listing on Etsy (keywords, category, price range) and `etsy_search_shops` finds shops by name.\n\n**Switched off at install**: `etsy_delete_listing_permanently` (deletes a listing for good; to hide one, set state=inactive with `etsy_edit_listing`), `etsy_delete_listing_image` and `etsy_delete_listing_property`. Turn them on under the connector's tools when you need them.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Creating a listing** takes a few steps, in this order: find the category with `etsy_list_seller_taxonomy`; for a physical item get a shipping profile (`etsy_list_shipping_profiles`), a processing profile (`etsy_list_processing_profiles`) and, outside the EU, a return policy (`etsy_list_return_policies`); create the draft with `etsy_create_listing_draft`; add at least one photo with `etsy_add_listing_image`; publish with `etsy_edit_listing` and `state=active`. Change price or stock with `etsy_read_listing_inventory` then `etsy_set_listing_inventory`, which replaces the whole inventory. Etsy rejects titles with more than three words in capitals and tags longer than 20 characters; a shop on vacation cannot change listings.\n\n**Out of scope here**: shop settings and shop sections (they need the `shops_w` scope), payment account, billing, taxonomy edits.",
+  "instructions": "This connector uses the Etsy Open API v3 (developers.etsy.com). You authorize it once, in AnythingMCP; from then on the short-lived access token (1 hour) is renewed automatically, and the refresh token Etsy replaces on every renewal is stored for you.\n\n**Setup**:\n1. Create an app at Etsy. For your own shop that is a **seller app**: https://www.etsy.com/developers/register-seller-app (two fields; Etsy approves it automatically, usually within minutes, for an active shop that has no other app). When Etsy does not offer you one, register a personal app at https://www.etsy.com/developers/register instead, which Etsy reviews by hand (status *Pending Personal Approval*, usually about a day). Etsy lists the app on https://www.etsy.com/developers/your-apps under **Seller Apps** or **Personal Apps**. Leave **Developer Mode** in Etsy's developer settings switched off: it takes the shop out of Etsy's search, and only Etsy's support can switch it back.\n2. Copy the app's **Keystring** and **Shared Secret** (the eye icon next to it shows it) from that list into `ETSY_CLIENT_ID` and `ETSY_CLIENT_SECRET`, leave `ETSY_REFRESH_TOKEN` empty, and save. This works while the app is still pending.\n3. Wait until Etsy has approved the app: minutes for a seller app, about a day for a personal app (Etsy emails you). Until then Etsy refuses the keys with a 403 and the app's page does not open.\n4. Once the app is active, open it (click its name, or **Edit callback URLs** in the menu next to it) and add this **callback URL**: `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. Etsy compares it character for character (https, upper/lower case, no trailing slash).\n5. Open the connector and click **Authorize with Provider**. Sign in to Etsy, approve, and you land back on the connector page with the tools ready. AnythingMCP runs Etsy's OAuth2 PKCE flow (S256) for you.\n\n**Scopes**: the connector asks for `email_r shops_r listings_r listings_w listings_d transactions_r transactions_w`: read your account, shops, listings and orders, edit listings, delete listings (the delete tool is installed switched off), and add tracking to orders. **Connectors authorized with an earlier scope list** (only the read scopes, or without `listings_d`) get the current list when you click **Authorize with Provider** again; until then Etsy answers \"Access token lacks scope\" to the tools that need the missing scope.\n\n**Already have a refresh token?** You can paste it into `ETSY_REFRESH_TOKEN` instead of step 5, if you obtained it yourself through Etsy's OAuth2 PKCE flow for the same app. Connectors set up that way keep working as they are; there is nothing to do. Clicking **Authorize with Provider** on one replaces its token with a new one, and needs the callback URL from step 4.\n\n**Authentication**: the connector attaches both headers on every request:\n  - `Authorization: Bearer <auto-refreshed access token>`\n  - `x-api-key: ${ETSY_CLIENT_ID}:${ETSY_CLIENT_SECRET}`\n\nEtsy requires the API key on **every** request, OAuth or not, and it must carry the\nKeystring AND the Shared secret separated by a colon. The Keystring alone earns a\n`403 {\"error\":\"Invalid API key: should be in the format 'keystring:shared_secret'.\"}`\non every call.\n\nThe access token is kept in memory and written back, together with the rotated refresh token, into this connector's own encrypted configuration, so a restart does not lose it. Per Etsy's policy, **refresh tokens rotate on each use**; AnythingMCP stores the new one from every refresh response and re-uses it automatically.\n\n**If a call says the access token could not be renewed**: an Etsy refresh token works once and expires after 90 days unused. Click **Authorize with Provider** on the connector page to get a new one.\n\n**Shop ID**: every account has a shop_id. Get it from `etsy_get_authenticated_user` then `etsy_get_user_shops`.\n\n**Reading the shop**: `etsy_get_listings_by_shop` lists your own listings in any state (active, draft, inactive, sold out); `etsy_get_shop_listings_active` is the public view any visitor sees; `etsy_list_shop_sections` and `etsy_get_listings_by_shop_section` go by shop section; `etsy_get_shop_reviews` lists the reviews. `etsy_list_taxonomy_properties` gives the properties (size, colour, material) a category allows.\n\n**Orders and sales**: `etsy_get_shop_receipts` lists orders and `etsy_get_shop_receipt` reads one with its line items. `etsy_get_shop_transactions` lists the sold line items of the whole shop (listing, SKU, quantity, price, variations), the view for sales per product. `etsy_get_listings_by_ids` then reads up to 100 of the listings behind them in one call. `etsy_add_order_tracking` marks an order as shipped with its tracking code, and Etsy e-mails the buyer at once.\n\n**Attributes, translations and media**: `etsy_get_listing_properties` reads a listing's attributes (colour, material, size) and `etsy_set_listing_property` sets one, with ids from `etsy_list_taxonomy_properties`. `etsy_read_listing_translation`, `etsy_add_listing_translation` (new language) and `etsy_replace_listing_translation` (existing one) handle titles, descriptions and tags in de, en, es, fr, it, ja, nl, pl and pt. `etsy_list_listing_images` lists the photos; `etsy_list_listing_variation_images` and `etsy_assign_variation_images` link photos to variation values (the assign call replaces every link). `etsy_list_listing_videos` and `etsy_add_listing_video` handle the listing video (one per listing, 5 to 15 seconds); `etsy_list_listing_files` and `etsy_upload_listing_file` the files buyers download from a digital listing. Uploads take a public URL that AnythingMCP downloads, up to the server's upload limit (10 MB by default). `etsy_list_production_partners` gives the ids for production_partner_ids.\n\n**Beyond your shop**: `etsy_search_active_listings` searches every active listing on Etsy (keywords, category, price range) and `etsy_search_shops` finds shops by name.\n\n**Switched off at install**: `etsy_delete_listing_permanently` (deletes a listing for good; to hide one, set state=inactive with `etsy_edit_listing`), `etsy_delete_listing_image` and `etsy_delete_listing_property`. Turn them on under the connector's tools when you need them.\n\n**Pagination**: `?limit=N&offset=M` (limit max 100).\n\n**Rate limits**: 10k req/24h per app. On 429 back off.\n\n**Creating a listing** takes a few steps, in this order: find the category with `etsy_list_seller_taxonomy`; for a physical item get a shipping profile (`etsy_list_shipping_profiles`), a processing profile (`etsy_list_processing_profiles`) and, outside the EU, a return policy (`etsy_list_return_policies`); create the draft with `etsy_create_listing_draft`; add at least one photo with `etsy_add_listing_image`; publish with `etsy_edit_listing` and `state=active`. Change price or stock with `etsy_read_listing_inventory` then `etsy_set_listing_inventory`, which replaces the whole inventory. Etsy rejects titles with more than three words in capitals and tags longer than 20 characters; a shop on vacation cannot change listings.\n\n**Out of scope here**: shop settings and shop sections (they need the `shops_w` scope), payment account, billing, taxonomy edits.",
   "region": "intl",
   "category": "e-commerce",
   "icon": "etsy",
@@ -18,19 +18,19 @@
     "email_r shops_r listings_r transactions_r",
     "email_r shops_r listings_r listings_w transactions_r transactions_w"
   ],
-  "appRegistrationUrl": "https://www.etsy.com/developers/register",
+  "appRegistrationUrl": "https://www.etsy.com/developers/register-seller-app",
   "envVarMeta": {
     "ETSY_CLIENT_ID": {
       "label": "Keystring",
       "kind": "credential",
-      "help": "Etsy's apps page, under Personal Apps: the Keystring of your app. Shown while the app is still pending.",
+      "help": "Etsy's apps page, in the row of your app (under Seller Apps or Personal Apps): its Keystring. Shown while the app is still pending.",
       "link": "https://www.etsy.com/developers/your-apps",
       "pattern": "^[a-z0-9]{20,30}$",
       "patternMessage": "The Keystring is 24 lowercase letters and digits, nothing else (no spaces, no colon)."
     },
     "ETSY_CLIENT_SECRET": {
       "label": "Shared Secret",
-      "help": "Same row, under Shared Secret. Paste it on its own: not the Keystring, not \"keystring:secret\".",
+      "help": "Same row, under Shared Secret: click the eye icon next to it to show it. Paste it on its own: not the Keystring, not \"keystring:secret\".",
       "link": "https://www.etsy.com/developers/your-apps",
       "pattern": "^[a-z0-9]{8,32}$",
       "patternMessage": "Paste the Shared Secret alone: lowercase letters and digits, without the Keystring and without a colon."
@@ -41,9 +41,9 @@
       "advanced": true
     }
   },
-  "prerequisites": "An Etsy app of your own ([create one on Etsy](https://www.etsy.com/developers/register)). Etsy reviews every new app before it can be used, usually within a day: until then its Status says *Pending Personal Approval*, and its page, where the callback URL goes, does not open yet. You can enter the app's **Keystring** and **Shared Secret** while you wait: they are saved, and AnythingMCP tells you when Etsy accepts them. Once the app is active, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself) on the app's page, character for character: without it Etsy refuses the sign-in.",
+  "prerequisites": "An Etsy app of your own. For your own shop, create a **seller app** ([Etsy's seller app form](https://www.etsy.com/developers/register-seller-app)): Etsy approves it automatically, usually within minutes. When Etsy does not offer you one, create a personal app ([Etsy's other form](https://www.etsy.com/developers/register)): Etsy reviews it by hand, usually within a day, and until then its Status says *Pending Personal Approval*. You can enter the app's **Keystring** and **Shared Secret** while you wait: they are saved, and AnythingMCP tells you when Etsy accepts them. Once the app is active, add the callback URL `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself) on the app's page (click its name, or **Edit callback URLs** in the menu next to it), character for character: without it Etsy refuses the sign-in.",
   "verifyHints": {
-    "403": "Etsy does not accept these app keys yet. A new Etsy app stays Pending Personal Approval until Etsy approves it (Etsy emails you, usually within a day), and signing in only works after that. If your app already says Active, copy the Shared Secret again from the same row as this Keystring."
+    "403": "Etsy does not accept these app keys yet. A new seller app is usually approved within minutes; a personal app stays Pending Personal Approval until Etsy approves it (Etsy emails you, usually within a day). Signing in only works after that. If your app already says Approved or Active, copy the Shared Secret again from the same row as this Keystring."
   },
   "checkBeforeAuthorization": {
     "path": "/openapi-ping",
@@ -62,75 +62,54 @@
     ],
     "needs": [
       "Your Etsy seller account, the one that owns the shop",
-      "About 10 minutes, plus Etsy's review of your new app: usually within a day",
+      "About 10 minutes. Etsy approves a seller app automatically, usually within minutes",
       "You can stop at any point: your keys are saved, and this page reopens where you left off."
     ],
-    "why": "Etsy lets other tools reach a shop only through an app registered in the shop owner's account. Creating one is free: you fill in a short form at Etsy, and AnythingMCP uses the app's two keys to ask Etsy for access to your shop. Etsy reviews every new app before it can be used, which is why the setup has a short wait in the middle.\n\nYou approve that access on Etsy's own page. AnythingMCP never sees your Etsy password, and deleting the connector removes the keys and the access it holds.",
+    "why": "Etsy lets other tools reach a shop only through an app registered in the shop owner's account. Creating one is free: you fill in a short form at Etsy, and AnythingMCP uses the app's two keys to ask Etsy for access to your shop. For a shop owner Etsy has the **seller app**: two fields, approved automatically.\n\nYou approve that access on Etsy's own page. AnythingMCP never sees your Etsy password, and deleting the connector removes the keys and the access it holds.",
     "steps": [
       {
         "id": "create-app",
-        "title": "Create your Etsy app",
-        "body": "Etsy opens its **Create a New App** form. Sign in with the account that owns your shop if Etsy asks, fill in the form as below, then click **Read Terms and Create App**.\n\nEtsy then lists your app under **Personal Apps** with the status *Pending Personal Approval*. That is normal: you can go on right away.",
+        "title": "Create your Etsy seller app",
+        "body": "Etsy has an app type for exactly this: a **seller app**, for a shop owner who connects only their own shop. Etsy approves it automatically, usually within minutes.\n\nEtsy opens its seller app form. Sign in with the account that owns your shop if Etsy asks, fill in the two fields as below, then click **Read Terms and Create App**.\n\nLeave **Developer Mode** on Etsy's Settings page switched off. AnythingMCP does not need it: it takes your shop out of Etsy's search, and only Etsy's support can switch it back.",
         "action": {
-          "label": "Open Etsy's app form",
-          "url": "https://www.etsy.com/developers/register"
+          "label": "Open Etsy's seller app form",
+          "url": "https://www.etsy.com/developers/register-seller-app"
         },
         "values": [
           {
-            "label": "Name",
+            "label": "App name",
             "value": "AnythingMCP",
-            "note": "Any name works. Etsy shows it when you approve access."
+            "note": "Any name works; if Etsy does not accept this one, add your shop's name to it. Etsy shows it when you approve access."
           },
           {
-            "label": "Describe your application",
-            "value": "Connects my own Etsy shop to my AI assistant through AnythingMCP, so I can manage my listings and orders from a chat. Only I use it."
-          },
-          {
-            "label": "Website URL",
-            "value": "https://anythingmcp.com"
-          },
-          {
-            "label": "Application type",
-            "value": "Seller Tools",
-            "pick": true
-          },
-          {
-            "label": "Who will be the users",
-            "value": "Just myself or colleagues",
-            "pick": true
-          },
-          {
-            "label": "Is your application commercial",
-            "value": "No",
-            "pick": true,
-            "note": "You do not charge anyone for this app."
-          },
-          {
-            "label": "Features",
-            "value": "Upload or edit listings, Read sales data",
-            "pick": true
+            "label": "Why you want to use the API",
+            "value": "I connect my own Etsy shop to my AI assistant through AnythingMCP, to manage my listings and orders from a chat: read orders and listings, create and edit listings, add tracking numbers. Only I use it, and only for my own shop."
           }
         ],
         "confirm": "I created the app",
         "problems": [
           {
             "q": "Etsy shows a sign-in page instead of the form",
-            "a": "Sign in with the Etsy account that owns your shop, then click **Open Etsy's app form** again."
+            "a": "Sign in with the Etsy account that owns your shop, then click **Open Etsy's seller app form** again."
           },
           {
-            "q": "Does it matter what I write in the description?",
-            "a": "Etsy reads it when it reviews the app. Describe what you will really do with it; the text above fits a shop owner connecting their own shop."
+            "q": "Etsy says I already have an app",
+            "a": "Use that one: Etsy offers a seller app only to an account without another app, and your existing app works the same way here. It is listed on [Etsy's apps page](https://www.etsy.com/developers/your-apps), under **Seller Apps** or **Personal Apps**. Tick the box and continue with its keys."
           },
           {
-            "q": "Etsy says I already have an app in review",
-            "a": "You created one before: use that one. It is listed under **Personal Apps** on [Etsy's apps page](https://www.etsy.com/developers/your-apps). Tick the box and continue."
+            "q": "Etsy does not offer me a seller app, or refused it",
+            "a": "Etsy gives seller apps to active shops in good standing that have no other app. If yours is refused, create a **personal app** on [Etsy's other form](https://www.etsy.com/developers/register) instead. Its answers: name `AnythingMCP`, the description above, website `https://anythingmcp.com`, application type **Seller Tools**, users **Just myself or colleagues**, commercial **No**, features **Upload or edit listings** and **Read sales data**. Etsy reviews a personal app by hand, usually within a day; the next steps are the same."
+          },
+          {
+            "q": "Does it matter what I write in the second field?",
+            "a": "Etsy reads it when it checks the app. Describe what you will really do with it; the text above fits a shop owner connecting their own shop."
           }
         ]
       },
       {
         "id": "keys",
         "title": "Copy your two keys",
-        "body": "On Etsy's apps page your app is listed under **Personal Apps**. Copy its **Keystring** and its **Shared Secret** into the fields below. This works while the app is still pending.\n\nAnythingMCP saves them and asks Etsy whether your app is active yet.",
+        "body": "On Etsy's apps page your app is listed under **Seller Apps** (a personal app: under **Personal Apps**). Copy its **Keystring** and its **Shared Secret** into the fields below; Etsy shows the Shared Secret when you click the eye icon next to it. This works while Etsy is still checking the app.\n\nAnythingMCP saves them and asks Etsy whether your app is active yet.",
         "action": {
           "label": "Open your Etsy apps",
           "url": "https://www.etsy.com/developers/your-apps"
@@ -143,7 +122,7 @@
         "problems": [
           {
             "q": "Where is the Shared Secret?",
-            "a": "In the same row as the Keystring, under **Shared Secret**. Paste it on its own: not the Keystring, and not `keystring:secret`."
+            "a": "In the same row as the Keystring, under **Shared Secret**. Etsy hides it until you click the eye icon next to it. Paste it on its own: not the Keystring, and not `keystring:secret`."
           },
           {
             "q": "I have more than one app on Etsy",
@@ -154,7 +133,7 @@
       {
         "id": "approval",
         "title": "Wait for Etsy's approval",
-        "body": "Etsy reviews every new app before it can be used. Until then the **Status** of your app says **Pending Personal Approval**, and clicking its name does nothing.\n\nMost apps are approved within a day, some take a few days. Etsy emails you when yours is approved. There is nothing else to do in the meantime.",
+        "body": "Etsy checks every new app before it can be used. A **seller app** is approved automatically, usually within minutes: press **Check again** in a moment.\n\nA **personal app** is reviewed by hand. Until then its **Status** says **Pending Personal Approval** and clicking its name does nothing; most are approved within a day, some take a few days, and Etsy emails you. There is nothing else to do in the meantime.",
         "action": {
           "label": "Open your Etsy apps",
           "url": "https://www.etsy.com/developers/your-apps"
@@ -166,23 +145,23 @@
             "a": "That is normal while the app is pending. Etsy opens the app's page only after the approval; you add the callback URL there in the next step."
           },
           {
-            "q": "The Status says Active, but this page still waits",
-            "a": "Then Etsy refused the Shared Secret: it must belong to the Keystring in the same row. Go back one step and copy both keys again."
+            "q": "The Status says Approved or Active, but this page still waits",
+            "a": "Wait a few minutes and press **Check again**. If it still waits, Etsy refuses the Shared Secret: it must belong to the Keystring in the same row. Go back one step and copy both keys again."
           },
           {
             "q": "Etsy rejected my app",
-            "a": "Etsy's email gives the reason. Create a new app (step 1) with the description shown there, which tells Etsy the app is only for your own shop, then copy the new app's keys in step 2."
+            "a": "A refused seller app: see step 1 for the personal app Etsy offers instead. A refused personal app: Etsy's email gives the reason. Create a new one with the description from step 1, which tells Etsy the app is only for your own shop, then copy the new app's keys in step 2."
           },
           {
             "q": "It has been more than a week",
-            "a": "Etsy reviews apps on its own schedule, and nobody outside Etsy can speed it up. Check that your app is still listed under **Personal Apps**, and if Etsy has not emailed you, ask Etsy's developer support about it."
+            "a": "Etsy reviews personal apps on its own schedule, and nobody outside Etsy can speed it up. Check that your app is still listed on Etsy's apps page, and if Etsy has not emailed you, ask Etsy's developer support about it."
           }
         ]
       },
       {
         "id": "callback",
         "title": "Add the callback URL",
-        "body": "Your app is active. On Etsy's apps page, click your app's name under **Personal Apps** to open its page, add this address under **Callback URLs**, then save.\n\nPaste it exactly as shown: Etsy compares it character for character, and without it Etsy refuses the sign-in.",
+        "body": "Your app is active. On Etsy's apps page, open your app (click its name, or **Edit callback URLs** in the menu next to it), add this address under **Callback URLs**, then save.\n\nPaste it exactly as shown: Etsy compares it character for character, and without it Etsy refuses the sign-in.",
         "action": {
           "label": "Open your Etsy apps",
           "url": "https://www.etsy.com/developers/your-apps"
@@ -197,7 +176,7 @@
         "problems": [
           {
             "q": "I can't find Callback URLs",
-            "a": "Click the name of your app under **Personal Apps** to open its page: the callback URLs are there. If clicking the name does nothing, the app is not approved yet; go back one step."
+            "a": "Click the name of your app, or open the menu next to it and choose **Edit callback URLs**. If neither opens, the app is not approved yet; go back one step."
           },
           {
             "q": "Later Etsy says the redirect URI does not match",
@@ -432,7 +411,7 @@
           "includes": {
             "type": "string",
             "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice. Etsy answers 400 to anything else, Inventory included: for SKUs, quantities and prices per variation call etsy_read_listing_inventory. Shipping comes with the shop's shipping profiles, not with the listing.",
-            "pattern": "^(Images|Shop|User|Translations|Videos|Personalization|BuyerPrice)(,(Images|Shop|User|Translations|Videos|Personalization|BuyerPrice))*$"
+            "pattern": "^([Ii]mages|[Ss]hop|[Uu]ser|[Tt]ranslations|[Vv]ideos|[Pp]ersonalization|[Bb]uyer[Pp]rice)(,([Ii]mages|[Ss]hop|[Uu]ser|[Tt]ranslations|[Vv]ideos|[Pp]ersonalization|[Bb]uyer[Pp]rice))*$"
           }
         },
         "required": [
@@ -460,7 +439,7 @@
           "includes": {
             "type": "string",
             "description": "Optional extra data, comma-separated, any of: Images, Shop, User, Translations, Videos, Personalization, BuyerPrice. Etsy answers 400 to anything else, Inventory included: for SKUs, quantities and prices per variation call etsy_read_listing_inventory. Shipping comes with the shop's shipping profiles, not with the listing.",
-            "pattern": "^(Images|Shop|User|Translations|Videos|Personalization|BuyerPrice)(,(Images|Shop|User|Translations|Videos|Personalization|BuyerPrice))*$"
+            "pattern": "^([Ii]mages|[Ss]hop|[Uu]ser|[Tt]ranslations|[Vv]ideos|[Pp]ersonalization|[Bb]uyer[Pp]rice)(,([Ii]mages|[Ss]hop|[Uu]ser|[Tt]ranslations|[Vv]ideos|[Pp]ersonalization|[Bb]uyer[Pp]rice))*$"
           },
           "currency": {
             "type": "string",

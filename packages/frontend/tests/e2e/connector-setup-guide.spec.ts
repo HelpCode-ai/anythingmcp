@@ -286,6 +286,58 @@ test('Etsy: "Check again" asks right away, and a wrong secret leads back to the 
   await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled();
 });
 
+test('Etsy: the setup reports the device, the visit to Etsy and a key the page itself refuses', async ({ page }) => {
+  const calls = await setup(page);
+  // The Keystring's pattern, as the catalog adapter has it (registered last, so it answers first).
+  await page.route(/\/api\/adapters\/etsy$/, (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...ETSY,
+        envVars: [
+          { ...ETSY.envVars[0], pattern: '^[a-z0-9]{20,30}$', patternMessage: 'The Keystring is 24 lowercase letters and digits.' },
+          ...ETSY.envVars.slice(1),
+        ],
+      }),
+    }),
+  );
+  await page.context().route('https://www.etsy.com/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: 'Etsy' }));
+  await page.goto('/connectors/setup/etsy');
+  await page.getByRole('button', { name: 'Start' }).click();
+
+  // Step 1: off to Etsy's form in a new tab, then back.
+  const [etsyTab] = await Promise.all([
+    page.waitForEvent('popup'),
+    page.getByRole('link', { name: /Open Etsy's app form/ }).click(),
+  ]);
+  await etsyTab.close();
+  await page.getByLabel('I created the app').check();
+  await page.getByRole('button', { name: 'Continue' }).click();
+
+  // Step 2: nothing entered, then "keystring:secret" pasted into the Keystring.
+  await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
+  await expect(page.getByText('Required').first()).toBeVisible();
+  await page.getByLabel('Keystring').fill('a1b2c3d4e5f6g7h8i9j0k1l2:s3cr3t0abc');
+  await page.getByLabel('Shared secret').fill('s3cr3t0abc');
+  await page.getByRole('button', { name: 'Save and check with Etsy' }).click();
+  await expect(page.getByText('The Keystring is 24 lowercase letters and digits.')).toBeVisible();
+  // Neither try reached the server: only these events say that it happened.
+  expect(calls.verify).toHaveLength(0);
+  expect(calls.imports).toHaveLength(0);
+
+  const of = (event: string) => calls.events.filter((e) => e.event === event).map((e) => e.metadata);
+  await expect.poll(() => of('setup_fields_refused').length).toBe(2);
+  expect(of('setup_started')).toEqual([{ adapterSlug: 'etsy', kind: 'oauth_browser', device: 'desktop' }]);
+  expect(of('setup_step_action_opened')).toEqual([{ adapterSlug: 'etsy', step: 'create-app', index: 1 }]);
+  expect(of('setup_fields_refused')).toEqual([
+    { adapterSlug: 'etsy', kind: 'required', field: 'ETSY_CLIENT_ID,ETSY_CLIENT_SECRET', step: 'keys', index: 2 },
+    { adapterSlug: 'etsy', kind: 'format', field: 'ETSY_CLIENT_ID', step: 'keys', index: 2 },
+  ]);
+  // Names of fields only: nothing that was typed leaves the page this way.
+  expect(JSON.stringify(calls.events)).not.toContain('a1b2c3d4');
+  expect(JSON.stringify(calls.events)).not.toContain('s3cr3t0abc');
+});
+
 test('the guide can be left for the one-page form, and back', async ({ page }) => {
   await setup(page);
   await page.goto('/connectors/setup/etsy');

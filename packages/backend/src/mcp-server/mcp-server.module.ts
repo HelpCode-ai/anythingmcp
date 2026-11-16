@@ -22,6 +22,8 @@ import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth
 import { WebhookEventsService } from '../connectors/webhook-events.service';
 import { BearerTokenRenewalService } from '../connectors/engines/bearer-token-renewal.service';
 import { ShopeeTokenService } from '../connectors/engines/shopee-token.service';
+import { IopTokenService } from '../connectors/engines/iop-token.service';
+import { SheinTokenService } from '../connectors/engines/shein-token.service';
 import { TikTokShopTokenService } from '../connectors/engines/tiktok-shop-token.service';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { SettingsModule } from '../settings/settings.module';
@@ -29,6 +31,7 @@ import { GraphqlSchemaService } from '../connectors/engines/graphql-schema.servi
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { LicenseModule } from '../license/license.module';
 import { SharedSetupRegistry } from './shared-setup';
+import { McpClientSeenRegistry } from './mcp-client-seen';
 import { FileSearchCoreModule } from '../file-search/file-search-core.module';
 
 const ENGINES = [
@@ -44,7 +47,7 @@ const ENGINES = [
 @Module({
   imports: [McpServersModule, LicenseModule, SettingsModule, FileSearchCoreModule],
   controllers: [McpEndpointController, WellKnownOAuthController, RegistryCatchUpController],
-  providers: [ToolRateLimitService, SharedSetupRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, UserCredentialsService, GraphqlSchemaService, WebhookEventsService, ...ENGINES],
-  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, DynamicMcpTools, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, UserCredentialsService, WebhookEventsService],
+  providers: [ToolRateLimitService, SharedSetupRegistry, McpClientSeenRegistry, McpServerService, ToolRegistry, DynamicMcpTools, CodeExecutorService, McpCombinedAuthGuard, McpPrincipalRateLimitGuard, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, IopTokenService, SheinTokenService, UserCredentialsService, GraphqlSchemaService, WebhookEventsService, ...ENGINES],
+  exports: [McpServerService, ToolRegistry, SharedSetupRegistry, McpClientSeenRegistry, DynamicMcpTools, CodeExecutorService, OAuth2TokenService, LoginTokenService, ConnectorAuthStatusService, BearerTokenRenewalService, ShopeeTokenService, TikTokShopTokenService, IopTokenService, SheinTokenService, UserCredentialsService, WebhookEventsService],
 })
 export class McpServerModule {}

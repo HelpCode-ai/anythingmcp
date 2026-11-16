@@ -1,0 +1,1340 @@
+{
+  "slug": "back-market",
+  "name": "Back Market",
+  "description": "Back Market seller API for refurbishers: orders with accept and ship with tracking, listings with price and stock, Backbox and competitor prices, categories, customer care folders and messages, BackShip deliveries and BuyBack orders. API token, per platform (Europe, United States, Asia-Pacific).",
+  "instructions": "## Back Market\nThis connector works with the **Back Market seller API** (the `/ws/` web services), for refurbishers selling on Back Market: orders with accept and ship, listings with price and stock, Backbox data and competitors, the category tree, customer care folders (after-sales), BackShip deliveries and returns, and BuyBack (trade-in) orders.\n\n**Setup (about 3 minutes)**\n1. Sign in to the Back Market back office of your platform: `https://www.backmarket.fr/bo-seller` (Europe), `https://www.backmarket.com/bo-seller` (United States) or `https://www.backmarket.co.jp/bo-seller` (Japan and Australia). API access comes with a seller account Back Market has validated.\n2. Open the **Integrations** page under Options and create an API token.\n3. Paste the token as shown into `BACK_MARKET_TOKEN`, without the word Basic in front: the connector sends it as `Authorization: Basic` followed by the token.\n4. Choose your platform in `BACK_MARKET_HOST` and your main market in `BACK_MARKET_MARKET` (for example fr-fr on Europe, en-us on the United States, ja-jp on Asia-Pacific). The market must belong to the platform.\n\nEvery call carries the market in `Accept-Language` and the User-Agent `BM-AnythingMCP-Connector`, which Back Market requires. Tools with a `market` argument can look at another market of the same platform for one call.\n\n**Where to start**: `back_market_list_orders` with state 1 shows paid orders whose lines you must accept, state 3 the orders to ship. `back_market_list_listings` shows your offers; `back_market_list_backbox` tells which of them hold the Backbox.\n\n**Order workflow**: an order arrives in state 1 once payment is validated (never ship states 0, 8 or 10). Accept each line with `back_market_accept_order_line` (line state 1 to 2); the order then moves to state 3. Ship with `back_market_ship_order` and a tracking number (all lines go in one parcel, order state 9). `back_market_get_order` shows the line states. `back_market_set_order_line_identifiers` stores the IMEI or serial number of the device; it cannot be corrected afterwards. `back_market_cancel_order_line` and `back_market_refund_order_line` are installed switched off: both refund the customer and cannot be undone, and cancellations weigh on the Backbox.\n\n**Listings**: one listing covers all markets of the platform. Quantity is shared; price, comment and warranty are per market. `back_market_get_listing` finds a listing by SKU; `back_market_update_listing` changes price or stock in real time (quantity 0 takes it offline). `back_market_import_listings` (switched off) sends a CSV for many listings at once and answers a task id for `back_market_get_task`. `back_market_get_competitors` shows the price needed to win the Backbox per market. `back_market_get_category_tree` and `back_market_get_category_branch` give the categories and the attributes a new product needs.\n\n**Customer care**: `back_market_list_care_folders` and `back_market_get_care_folder` read after-sales cases with their messages; `back_market_send_care_message` answers the customer. `back_market_create_care_refund` is installed switched off.\n\n**BackShip and BuyBack**: `back_market_list_deliveries` and `back_market_list_returns` only return data for sellers who use Back Market's BackShip labels. `back_market_list_buyback_orders` and `back_market_get_buyback_order` read trade-in orders; validating or countering one decides what the customer is paid and is not included.\n\n**Formats**: prices are decimal strings with tax, in the currency of the market (`160.99`). Order ids and order line ids are integers; listing ids are UUIDs (the numeric listing_id is deprecated). Dates are RFC 3339; the care folder filters use `YYYY-MM-DD-hh-mm`. Lists answer `count`, `next`, `previous` and `results`; `next` is null on the last page.\n\n**Limits**: more than 200 calls in 10 seconds are blocked for 10 seconds (catalogue calls: 20 in 10 seconds), with a 429. Listing updates are limited to about 2,000 SKU lines per hour. Care calls have daily limits (folder list 4,000 a day, refunds 500 a day).\n\n**403 answers**: Back Market sits behind Cloudflare. A 403 with an HTML page or the code `bot-need-challenge` means the firewall blocked the caller, not that the token is wrong: send the `cf-ray` value of the answer to your Back Market contact. A wrong or missing token also answers 403 or 401, with a JSON error.",
+  "aliases": [
+    "BackMarket",
+    "Back Market Seller",
+    "Back Market Back Office"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "back-market",
+  "docsUrl": "https://api.backmarket.dev/",
+  "requiredEnvVars": [
+    "BACK_MARKET_HOST",
+    "BACK_MARKET_TOKEN",
+    "BACK_MARKET_MARKET"
+  ],
+  "envVarMeta": {
+    "BACK_MARKET_HOST": {
+      "label": "Platform",
+      "kind": "address",
+      "help": "The Back Market platform your seller account is on: Europe (backmarket.fr, also for Germany, Spain, Italy, the UK and the other European markets), United States (backmarket.com) or Asia-Pacific (backmarket.co.jp, Japan and Australia).",
+      "link": "https://api.backmarket.dev/",
+      "example": "https://www.backmarket.fr",
+      "pattern": "^https://www\\.backmarket\\.(fr|com|co\\.jp)$",
+      "patternMessage": "Choose https://www.backmarket.fr, https://www.backmarket.com or https://www.backmarket.co.jp.",
+      "options": [
+        {
+          "value": "https://www.backmarket.fr",
+          "label": "Europe (backmarket.fr)"
+        },
+        {
+          "value": "https://www.backmarket.com",
+          "label": "United States (backmarket.com)"
+        },
+        {
+          "value": "https://www.backmarket.co.jp",
+          "label": "Asia-Pacific: Japan and Australia (backmarket.co.jp)"
+        }
+      ]
+    },
+    "BACK_MARKET_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Back office of your platform, Options, Integrations: create a token and paste it as shown, without the word Basic.",
+      "link": "https://api.backmarket.dev/",
+      "pattern": "^\\S{16,400}$",
+      "patternMessage": "Paste the token only: no spaces and without the word Basic in front."
+    },
+    "BACK_MARKET_MARKET": {
+      "label": "Default market",
+      "kind": "setting",
+      "help": "The market whose prices, comments and language the connector uses by default (sent as Accept-Language). It must belong to your platform: en-us on the United States, ja-jp or en-au on Asia-Pacific, any other on Europe.",
+      "link": "https://api.backmarket.dev/",
+      "example": "fr-fr",
+      "pattern": "^(fr-fr|fr-be|es-es|de-de|de-at|it-it|en-gb|nl-nl|pt-pt|en-ie|el-gr|sk-sk|sv-se|en-us|ja-jp|en-au)$",
+      "patternMessage": "Choose a Back Market country code such as fr-fr, de-de, en-gb, en-us or ja-jp.",
+      "options": [
+        {
+          "value": "fr-fr",
+          "label": "France (fr-fr)"
+        },
+        {
+          "value": "fr-be",
+          "label": "Belgium (fr-be)"
+        },
+        {
+          "value": "es-es",
+          "label": "Spain (es-es)"
+        },
+        {
+          "value": "de-de",
+          "label": "Germany (de-de)"
+        },
+        {
+          "value": "de-at",
+          "label": "Austria (de-at)"
+        },
+        {
+          "value": "it-it",
+          "label": "Italy (it-it)"
+        },
+        {
+          "value": "en-gb",
+          "label": "United Kingdom (en-gb)"
+        },
+        {
+          "value": "nl-nl",
+          "label": "Netherlands (nl-nl)"
+        },
+        {
+          "value": "pt-pt",
+          "label": "Portugal (pt-pt)"
+        },
+        {
+          "value": "en-ie",
+          "label": "Ireland (en-ie)"
+        },
+        {
+          "value": "el-gr",
+          "label": "Greece (el-gr)"
+        },
+        {
+          "value": "sk-sk",
+          "label": "Slovakia (sk-sk)"
+        },
+        {
+          "value": "sv-se",
+          "label": "Sweden (sv-se)"
+        },
+        {
+          "value": "en-us",
+          "label": "United States (en-us)"
+        },
+        {
+          "value": "ja-jp",
+          "label": "Japan (ja-jp)"
+        },
+        {
+          "value": "en-au",
+          "label": "Australia (en-au)"
+        }
+      ]
+    }
+  },
+  "verifyHints": {
+    "400": "Back Market refused the request; the error message names the field (an unknown state, a missing tracking number).",
+    "401": "Back Market did not accept this token. Create a new one in the back office under Options, Integrations, and paste it without the word Basic. A token only works on its own platform (Europe, United States or Asia-Pacific).",
+    "403": "Back Market refused the call. Either the token is wrong or belongs to another platform, or Cloudflare blocked the request (an HTML page or the code bot-need-challenge): then send the cf-ray value to your Back Market contact.",
+    "404": "Back Market found no order, listing, task or care folder with that id on this platform.",
+    "rate_limited": "Back Market blocks callers above 200 calls in 10 seconds (20 for catalogue calls) for 10 seconds, and care calls have daily limits. Wait and try again."
+  },
+  "probe": {
+    "tool": "back_market_list_orders",
+    "params": {
+      "page_size": 1
+    }
+  },
+  "prerequisites": "A seller account validated by Back Market, with access to the back office to create an API token under Options, Integrations. About 3 minutes.",
+  "connector": {
+    "name": "Back Market seller API",
+    "type": "REST",
+    "baseUrl": "{{BACK_MARKET_HOST}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Basic {{BACK_MARKET_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Accept-Language": "{{BACK_MARKET_MARKET}}",
+      "User-Agent": "BM-AnythingMCP-Connector;support@anythingmcp.com"
+    }
+  },
+  "tools": [
+    {
+      "name": "back_market_list_orders",
+      "description": "List orders, without the unpaid ones (order states 0 and 8 are left out by default). The answer has count, next, previous and results[] with order_id, state, date_creation, date_modification, date_payment, date_shipping, expected_dispatch_date, price and shipping_price (decimal strings, tax included), currency, country_code, payment_method, delivery_mode, shipping_address and billing_address (name, street, postal code, city, country, phone), tracking_number, shipper_display, is_backship, delivery_note, and orderlines[] with id, state, listing (your SKU), listing_id, product, quantity, price, shipping_price, orderline_fee (Back Market commission), condition, imei and serial_number. Order states: 1 = paid, lines to accept; 3 = accepted, to ship; 9 = shipped; 10 = waiting for payment. 10 rows per page (max 50). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              3,
+              8,
+              9,
+              10
+            ],
+            "description": "Order state: 1 (paid: accept or cancel the lines), 3 (to ship), 9 (shipped), 10 (waiting for payment, do not ship), 0 (payment being verified, do not ship) or 8 (not paid, ignore)."
+          },
+          "date_creation": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Filter on the creation date: orders created from this moment on, RFC 3339 (e.g. `2026-11-01T00:00:00Z`)."
+          },
+          "date_modification": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Filter on the last change: orders changed from this moment on, RFC 3339. Use it to poll for changes."
+          },
+          "country_code": {
+            "type": "string",
+            "enum": [
+              "fr-fr",
+              "fr-be",
+              "es-es",
+              "de-de",
+              "de-at",
+              "it-it",
+              "en-gb",
+              "nl-nl",
+              "pt-pt",
+              "en-ie",
+              "el-gr",
+              "sk-sk",
+              "sv-se",
+              "en-us",
+              "ja-jp",
+              "en-au"
+            ],
+            "description": "Only orders from this market, e.g. fr-fr or de-de."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1). `next` in the answer is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Rows per page, 1 to 50 (default 10)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/orders",
+        "queryParams": {
+          "state": "$state",
+          "date_creation": "$date_creation",
+          "date_modification": "$date_modification",
+          "country_code": "$country_code",
+          "page": "$page",
+          "page-size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_get_order",
+      "description": "Read one order: order_id, state, date_creation, date_modification, date_payment, date_shipping, expected_dispatch_date, price and shipping_price (decimal strings, tax included), currency, country_code, payment_method, delivery_mode, shipping_address and billing_address (name, street, postal code, city, country, phone), tracking_number, shipper_display, is_backship, delivery_note, and orderlines[] with id, state, listing (your SKU), listing_id, product, quantity, price, shipping_price, orderline_fee (Back Market commission), condition, imei and serial_number. Order line states: 1 paid (accept or cancel), 2 accepted (prepare the parcel), 3 shipped, 4 cancelled, 5 refunded before shipping, 6 refunded after shipping, 7 not paid, 8 waiting for payment, 9 on hold. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Back Market order id (order_id of back_market_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_accept_order_line",
+      "description": "Accept one paid order line (state 1 to state 2), which confirms you have the item and will ship it. Accept every line of the order, one call per SKU; the order then moves to state 3 (to ship). With BackShip a shipping label is created at this moment. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Back Market order id (order_id of back_market_list_orders)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU of the listing on that order line (orderlines[].listing of the order)."
+          }
+        },
+        "required": [
+          "order_id",
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/orders/{order_id}",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "new_state": 2,
+          "sku": "$sku"
+        }
+      }
+    },
+    {
+      "name": "back_market_ship_order",
+      "description": "Mark an accepted order as shipped with its tracking number (state 3). All lines of the order go into one parcel and are set to shipped together, so no SKU is needed. IMEI or serial number can be registered in the same call when the order has a single line with quantity 1; once stored they cannot be corrected. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Back Market order id (order_id of back_market_list_orders)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Tracking number of the parcel (required by Back Market for shipping)."
+          },
+          "tracking_url": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Tracking page of the carrier for this parcel."
+          },
+          "shipper": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Carrier name, to replace the one set on the order (e.g. `DHL Express`, `Colissimo`, `UPS`)."
+          },
+          "date_shipping": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the parcel left, RFC 3339 (e.g. `2026-11-14T09:35:24Z`). Default now."
+          },
+          "imei": {
+            "type": "string",
+            "maxLength": 15,
+            "description": "IMEI of the device sold, 15 digits. Only for an order with one line and quantity 1; cannot be changed afterwards."
+          },
+          "serial_number": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "Serial number of the device sold. Only for an order with one line and quantity 1; cannot be changed afterwards."
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/orders/{order_id}",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "new_state": 3,
+          "tracking_number": "$tracking_number",
+          "tracking_url": "$tracking_url",
+          "shipper": "$shipper",
+          "date_shipping": "$date_shipping",
+          "imei": "$imei",
+          "serial_number": "$serial_number"
+        }
+      }
+    },
+    {
+      "name": "back_market_cancel_order_line",
+      "description": "Cancel one paid order line you cannot deliver (state 1 to state 4). Back Market refunds the customer for that line, the cancellation cannot be undone, and a high cancellation rate costs the Backbox. Installed switched off. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Back Market order id (order_id of back_market_list_orders)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU of the listing on that order line (orderlines[].listing of the order)."
+          }
+        },
+        "required": [
+          "order_id",
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/orders/{order_id}",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "new_state": 4,
+          "sku": "$sku"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "back_market_refund_order_line",
+      "description": "Refund one order line through the order workflow: state 5 for an accepted line not yet shipped, state 6 for a shipped line. The customer gets the money back and it cannot be undone. Installed switched off. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Back Market order id (order_id of back_market_list_orders)."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU of the listing on that order line (orderlines[].listing of the order)."
+          },
+          "new_state": {
+            "type": "integer",
+            "enum": [
+              5,
+              6
+            ],
+            "description": "5 = refund before shipping (line in state 2), 6 = refund after shipping (line in state 3)."
+          },
+          "return_reason": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              11,
+              12,
+              13,
+              21,
+              22,
+              23,
+              24,
+              25
+            ],
+            "description": "Reason code: 0 stock mistake, 1 withdrawal within the legal 14 days, 11 does not live at the address, 12 parcel did not arrive, 13 parcel lost, 21 faulty on opening, 22 failure at first use, 23 failure during warranty, 24 non-compliant product, 25 other."
+          },
+          "return_message": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Message to the customer about the refund (used with state 6)."
+          }
+        },
+        "required": [
+          "order_id",
+          "sku",
+          "new_state"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/orders/{order_id}",
+        "bodyMapping": {
+          "order_id": "$order_id",
+          "new_state": "$new_state",
+          "sku": "$sku",
+          "return_reason": "$return_reason",
+          "return_message": "$return_message"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "back_market_set_order_line_identifiers",
+      "description": "Register the IMEI and/or serial number of the device sold on one order line. Give at least one of the two. Careful: once registered, a value cannot be corrected. Returns the identifiers stored on the line.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderline_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order line id (orderlines[].id of the order)."
+          },
+          "imei": {
+            "type": "string",
+            "maxLength": 15,
+            "description": "IMEI of the device, 15 digits."
+          },
+          "serial_number": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "Serial number of the device."
+          }
+        },
+        "required": [
+          "orderline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/ws/orderlines/{orderline_id}",
+        "bodyMapping": {
+          "imei": "$imei",
+          "serial_number": "$serial_number"
+        }
+      }
+    },
+    {
+      "name": "back_market_list_listings",
+      "description": "List your listings (offers): id (UUID), listing_id (old numeric id), sku, title, product_id, grade (PREMIUM, EXCELLENT, VERY_GOOD, GOOD, FAIR, STALLONE), quantity, price, min_price and max_price (decimal strings), currency, publication_state, warranty_delay in months, comment and shippings[]. Prices and comments are those of the selected market. 10 rows per page (max 50). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publication_state": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "Filter on the publication state, 0 to 4, as shown in publication_state of a listing (Back Market's API reference lists the values without explaining them)."
+          },
+          "min_quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only listings with at least this stock."
+          },
+          "max_quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only listings with at most this stock (0 finds listings that are offline for lack of stock)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1). `next` in the answer is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Rows per page, 1 to 50 (default 10)."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "fr-fr",
+              "fr-be",
+              "es-es",
+              "de-de",
+              "de-at",
+              "it-it",
+              "en-gb",
+              "nl-nl",
+              "pt-pt",
+              "en-ie",
+              "el-gr",
+              "sk-sk",
+              "sv-se",
+              "en-us",
+              "ja-jp",
+              "en-au"
+            ],
+            "description": "Market to apply instead of the connector's default market, as a country code (fr-fr, de-de, en-gb, en-us, ja-jp and so on). Prices, comments and filters are per market."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/listings",
+        "queryParams": {
+          "publication_state": "$publication_state",
+          "min_quantity": "$min_quantity",
+          "max_quantity": "$max_quantity",
+          "page": "$page",
+          "page-size": "$page_size"
+        },
+        "headers": {
+          "Accept-Language": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_get_listing",
+      "description": "Read one listing by your SKU or by its Back Market id: id, listing_id, sku, title, product_id, grade, quantity, price, min_price, max_price, currency, publication_state, warranty_delay, comment, new_battery, outlet and shippings[]. Give exactly one of sku, id or listing_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Your SKU of the listing."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Listing id in UUID form (id of back_market_list_listings)."
+          },
+          "listing_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Old numeric listing id (deprecated by Back Market; prefer id)."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "fr-fr",
+              "fr-be",
+              "es-es",
+              "de-de",
+              "de-at",
+              "it-it",
+              "en-gb",
+              "nl-nl",
+              "pt-pt",
+              "en-ie",
+              "el-gr",
+              "sk-sk",
+              "sv-se",
+              "en-us",
+              "ja-jp",
+              "en-au"
+            ],
+            "description": "Market to apply instead of the connector's default market, as a country code (fr-fr, de-de, en-gb, en-us, ja-jp and so on). Prices, comments and filters are per market."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/listings/detail",
+        "queryParams": {
+          "sku": "$sku",
+          "id": "$id",
+          "listing_id": "$listing_id"
+        },
+        "headers": {
+          "Accept-Language": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_update_listing",
+      "description": "Change one listing in real time: price, stock quantity, comment, warranty or the minimum price for the BackPricer. Only the fields given change. Quantity is shared by all markets; price and comment belong to the selected market. Setting quantity to 0 takes the listing offline. Do not lower stock after a Back Market sale: Back Market does that itself. Returns the listing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "string",
+            "description": "Listing id: the UUID (id of back_market_list_listings, preferred) or the old numeric listing_id."
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,2})?$",
+            "description": "New price as a decimal string in the market's currency, e.g. `160.99`."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO 4217 currency of the price. Needed when the market does not use the platform default (EUR on backmarket.fr, USD on backmarket.com), e.g. `GBP`, `SEK`, `JPY`, `AUD`."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "New stock, shared by all markets. 0 takes the listing offline."
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Comment shown with the listing in this market, at most 500 characters."
+          },
+          "warranty_delay": {
+            "type": "integer",
+            "minimum": 12,
+            "description": "Warranty in months, at least 12."
+          },
+          "min_price": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,2})?$",
+            "description": "Lowest price the BackPricer may go to, as a decimal string. Must be at most the price and at least the price divided by 1.08, or Back Market sets it to the current price. Needs the BackPricer enabled on the account."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "fr-fr",
+              "fr-be",
+              "es-es",
+              "de-de",
+              "de-at",
+              "it-it",
+              "en-gb",
+              "nl-nl",
+              "pt-pt",
+              "en-ie",
+              "el-gr",
+              "sk-sk",
+              "sv-se",
+              "en-us",
+              "ja-jp",
+              "en-au"
+            ],
+            "description": "Market to apply instead of the connector's default market, as a country code (fr-fr, de-de, en-gb, en-us, ja-jp and so on). Prices, comments and filters are per market."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/listings/{listing_id}",
+        "bodyMapping": {
+          "price": "$price",
+          "currency": "$currency",
+          "quantity": "$quantity",
+          "comment": "$comment",
+          "warranty_delay": "$warranty_delay",
+          "min_price": "$min_price"
+        },
+        "headers": {
+          "Accept-Language": "$market"
+        }
+      }
+    },
+    {
+      "name": "back_market_import_listings",
+      "description": "Create or update many listings (and propose new products) from CSV text, up to 15,000 lines. Each row needs your sku; a new listing also needs product_id or ean. The column list per category is in the back office under Options, Batch Listing Creation. Not real time: the answer carries a task id in `bodymessage`; read the result with back_market_get_task after about 5 minutes. Back Market accepts about 2,000 SKU lines per hour. Installed switched off (bulk change).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The CSV content as text, header row first, lines separated by a line feed, e.g. `sku,quantity,price` then `MY_SKU,50,123.45`."
+          },
+          "delimiter": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1,
+            "description": "Column separator of the CSV, one character: `,` or `;`."
+          },
+          "quotechar": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1,
+            "default": "\"",
+            "description": "Quote character of the CSV, one character."
+          },
+          "encoding": {
+            "type": "string",
+            "default": "utf-8",
+            "description": "Text encoding of the CSV."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "fr-fr",
+              "fr-be",
+              "es-es",
+              "de-de",
+              "de-at",
+              "it-it",
+              "en-gb",
+              "nl-nl",
+              "pt-pt",
+              "en-ie",
+              "el-gr",
+              "sk-sk",
+              "sv-se",
+              "en-us",
+              "ja-jp",
+              "en-au"
+            ],
+            "description": "Market to apply instead of the connector's default market, as a country code (fr-fr, de-de, en-gb, en-us, ja-jp and so on). Prices, comments and filters are per market."
+          }
+        },
+        "required": [
+          "catalog",
+          "delimiter"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/listings",
+        "bodyMapping": {
+          "catalog": "$catalog",
+          "quotechar": "$quotechar",
+          "delimiter": "$delimiter",
+          "encoding": "$encoding"
+        },
+        "headers": {
+          "Accept-Language": "$market"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "back_market_get_task",
+      "description": "Read the result of a batch task started by back_market_import_listings: task_id, action_status (0 or 2 = waiting or running, 8 = failed, 9 = done), last_action_error and result with the outcome per SKU or EAN, including the errors of rows that failed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Task id (`bodymessage` of the import answer)."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/tasks/{task_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_list_backbox",
+      "description": "List Backbox data per listing: sku, product, price, quantity, buybox (true when your listing holds the Backbox), price_for_buybox (the price you would need to win it), same_merchant_winner, condition and currency. 10 rows per page (max 50). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1). `next` in the answer is null on the last page."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Rows per page, 1 to 50 (default 10)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/listings_bi",
+        "queryParams": {
+          "page": "$page",
+          "page-size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_get_competitors",
+      "description": "Read the Backbox competition of one listing, one row per market: is_winning, price, min_price, price_to_win and winner_price (each with amount as a decimal string and currency), market (FR, DE, GB, US and so on) and product_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Listing id in UUID form (id of back_market_list_listings)."
+          }
+        },
+        "required": [
+          "listing_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/backbox/v1/competitors/{listing_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_get_category_tree",
+      "description": "Read the whole category tree: category_id, category_name, marketplace_category_id (the value a product's category must match), is_leaf and, on leaf categories, attributes[] (field, field_name, type, allowed_values, required) needed to create a product. A large answer; for one branch use back_market_get_category_branch. Read-only; catalogue calls are limited to about 20 per 10 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "type": "string",
+            "enum": [
+              "fr-fr",
+              "fr-be",
+              "es-es",
+              "de-de",
+              "de-at",
+              "it-it",
+              "en-gb",
+              "nl-nl",
+              "pt-pt",
+              "en-ie",
+              "el-gr",
+              "sk-sk",
+              "sv-se",
+              "en-us",
+              "ja-jp",
+              "en-au"
+            ],
+            "description": "Market to apply instead of the connector's default market, as a country code (fr-fr, de-de, en-gb, en-us, ja-jp and so on). Prices, comments and filters are per market."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/category/tree",
+        "headers": {
+          "Accept-Language": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_get_category_branch",
+      "description": "Read one category with the same fields as the tree: category_id, category_name, marketplace_category_id, is_leaf and attributes[] with field, field_name, type (0 decimal, 1 integer, 2 text, 3 multiple choice), allowed_values and required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Category id (category_id of back_market_get_category_tree)."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "fr-fr",
+              "fr-be",
+              "es-es",
+              "de-de",
+              "de-at",
+              "it-it",
+              "en-gb",
+              "nl-nl",
+              "pt-pt",
+              "en-ie",
+              "el-gr",
+              "sk-sk",
+              "sv-se",
+              "en-us",
+              "ja-jp",
+              "en-au"
+            ],
+            "description": "Market to apply instead of the connector's default market, as a country code (fr-fr, de-de, en-gb, en-us, ja-jp and so on). Prices, comments and filters are per market."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/category/tree/{category_id}",
+        "headers": {
+          "Accept-Language": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_list_care_folders",
+      "description": "List customer care folders (after-sales cases, SAV), 10 per page: id, orderline, state (0 open, 9 closed), date_creation, date_modification, date_last_message, date_closed, country_code and the claim ids. Read-only; 520 calls per minute and 4,000 per day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "integer",
+            "enum": [
+              0,
+              9
+            ],
+            "description": "0 = open folders, 9 = closed folders."
+          },
+          "orderline": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only the folders of this order line id."
+          },
+          "last_modification_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}$",
+            "description": "Only folders changed after this moment, written `YYYY-MM-DD-hh-mm` (e.g. `2026-11-01-00-00`)."
+          },
+          "last_message_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}$",
+            "description": "Only folders with a message after this moment, written `YYYY-MM-DD-hh-mm`."
+          },
+          "last_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only folders with an id higher than this one (to continue a sync)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1; pages hold 10 folders."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/sav",
+        "queryParams": {
+          "state": "$state",
+          "orderline": "$orderline",
+          "last_modification_date": "$last_modification_date",
+          "last_message_date": "$last_message_date",
+          "last_id": "$last_id",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_get_care_folder",
+      "description": "Read one customer care folder: state, dates, the customer (first name, last name, email), the order line with its order and addresses, the claims in lines[] with issues, resolution choice and return labels, and messages[] in order with message text, initiator, kind, date_creation and attachments. Read-only; 600 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "care_folder_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Care folder id (id of back_market_list_care_folders)."
+          }
+        },
+        "required": [
+          "care_folder_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/sav/{care_folder_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_send_care_message",
+      "description": "Post a message to the customer in a care folder (text only, no attachment). The customer sees it on Back Market's after-sales platform; posting to a closed folder reopens it. Returns the created message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "care_folder_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Care folder id (id of back_market_list_care_folders)."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Message text for the customer, in the customer's language."
+          }
+        },
+        "required": [
+          "care_folder_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/sav/{care_folder_id}/msg",
+        "bodyMapping": {
+          "message": "$message"
+        },
+        "bodyEncoding": "form-data"
+      }
+    },
+    {
+      "name": "back_market_create_care_refund",
+      "description": "Refund an order line from customer care: full refund of a paid line (type 4), full refund of an accepted line (type 5), or a partial or full refund of a shipped line (type 6, with amount). The customer gets the money back and it cannot be undone. Installed switched off. Limited to 500 calls per day; answers a text summary of the refund.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "orderline_pk": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order line id to refund (orderlines[].id of the order)."
+          },
+          "refund_type": {
+            "type": "integer",
+            "enum": [
+              4,
+              5,
+              6
+            ],
+            "description": "4 = full refund, line in state 1; 5 = full refund, line in state 2; 6 = partial or full refund, line in state 3."
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Amount to refund in the order currency, as a decimal number (e.g. 89.99). Only with refund_type 6."
+          }
+        },
+        "required": [
+          "orderline_pk",
+          "refund_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ws/sav/refund",
+        "bodyMapping": {
+          "orderline_pk": "$orderline_pk",
+          "refund_type": "$refund_type",
+          "amount": "$amount"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "back_market_list_deliveries",
+      "description": "List BackShip deliveries (only for sellers subscribed to Back Market's BackShip shipping service): order, shipmentId, orderlines, carrierName, trackingNumber, trackingUrl, labelUrl (the shipping label created when the line was accepted), hubScanned, dateCreation, datePickup, dateDelivery and pickupInfo. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Back Market order id (order_id of back_market_list_orders)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Deliveries created at or after this moment, RFC 3339."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Deliveries created at or before this moment, RFC 3339."
+          },
+          "pickup_start_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Deliveries picked up at or after this moment, RFC 3339."
+          },
+          "pickup_end_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Deliveries picked up at or before this moment, RFC 3339."
+          },
+          "order_state": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              3,
+              8,
+              9
+            ],
+            "description": "Only deliveries whose order is in this state (1 paid, 3 to ship, 9 shipped)."
+          },
+          "hub_scanned": {
+            "type": "boolean",
+            "description": "true: only parcels already scanned by the carrier; false: only those not scanned yet."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1). `next` in the answer is null on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/shipping/v1/deliveries",
+        "queryParams": {
+          "order_id": "$order_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "pickup_start_date": "$pickup_start_date",
+          "pickup_end_date": "$pickup_end_date",
+          "order_state": "$order_state",
+          "hub_scanned": "$hub_scanned",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_list_returns",
+      "description": "List BackShip product returns (only for sellers subscribed to BackShip): orderId, orderlineId, shipmentId, carrierName, trackingNumber, trackingUrl, label (the return label), hubScanned, dateCreation, datePickup and dateDelivery. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Back Market order id (order_id of back_market_list_orders)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Returns created at or after this moment, RFC 3339."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Returns created at or before this moment, RFC 3339."
+          },
+          "pickup_start_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Returns picked up at or after this moment, RFC 3339."
+          },
+          "pickup_end_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Returns picked up at or before this moment, RFC 3339."
+          },
+          "order_state": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              3,
+              8,
+              9
+            ],
+            "description": "Only returns whose order is in this state (1 paid, 3 to ship, 9 shipped)."
+          },
+          "hub_scanned": {
+            "type": "boolean",
+            "description": "true: only parcels already scanned by the carrier; false: only those not scanned yet."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1 (default 1). `next` in the answer is null on the last page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/shipping/v1/returns",
+        "queryParams": {
+          "order_id": "$order_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "pickup_start_date": "$pickup_start_date",
+          "pickup_end_date": "$pickup_end_date",
+          "order_state": "$order_state",
+          "hub_scanned": "$hub_scanned",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_list_buyback_orders",
+      "description": "List BuyBack (trade-in) orders, the devices customers sell to you: orderPublicId, status, market, creationDate, shippingDate, receivalDate, paymentDate, listing, originalPrice, counterOfferPrice, trackingNumber, shipper and suspend reasons. Read-only. Validating, suspending and counter-offers are not part of this connector, because they decide what the customer is paid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "PENDING",
+              "TO_SEND",
+              "SENT",
+              "RECEIVED",
+              "COUNTER_PROPOSAL",
+              "VALIDATED",
+              "PAID",
+              "MONEY_TRANSFERED",
+              "SUSPENDED"
+            ],
+            "description": "BuyBack order status."
+          },
+          "creation_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Orders created from this moment on, ISO 8601."
+          },
+          "modification_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Orders changed from this moment on, ISO 8601."
+          },
+          "received_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Orders received from this moment on, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/buyback/v1/orders",
+        "queryParams": {
+          "status": "$status",
+          "creationDate": "$creation_date",
+          "modificationDate": "$modification_date",
+          "receivedDate": "$received_date",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "back_market_get_buyback_order",
+      "description": "Read one BuyBack (trade-in) order: status, market, dates (creation, shipping, receival, payment, counter proposal), the listing, the customer, the return address, originalPrice, counterOfferPrice, trackingNumber, shipper, transferCertificateLink, suspendReasons and counterOfferReasons. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "buyback_order_id": {
+            "type": "string",
+            "description": "BuyBack order id (orderPublicId of back_market_list_buyback_orders)."
+          }
+        },
+        "required": [
+          "buyback_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ws/buyback/v1/orders/{buyback_order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

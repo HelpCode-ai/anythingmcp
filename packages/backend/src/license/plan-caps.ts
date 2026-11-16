@@ -20,7 +20,13 @@ export function planCapsMode(env: NodeJS.ProcessEnv = process.env): PlanCapsMode
   return v === 'on' || v === 'off' ? v : 'dry-run';
 }
 
-export type PlanCapAxis = 'connectors' | 'mcpServers' | 'users' | 'fileSearchConnectors' | 'webhooks';
+export type PlanCapAxis =
+  | 'connectors'
+  | 'mcpServers'
+  | 'users'
+  | 'fileSearchConnectors'
+  | 'webhooks'
+  | 'learningProjects';
 
 /**
  * How many connectors of a Cloud workspace may receive inbound webhooks

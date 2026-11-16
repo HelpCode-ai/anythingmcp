@@ -27,6 +27,7 @@ function make(opts: {
     knowledgeFolder: { update: jest.fn(), delete: jest.fn() },
     kgSkillSuggestion: { updateMany: jest.fn() },
     memoryItem: { updateMany: jest.fn() },
+    learningProject: { updateMany: jest.fn() },
   };
   const prisma: any = {
     knowledgeFolder: {
@@ -55,6 +56,7 @@ function make(opts: {
       groupBy: jest.fn(async () => []),
       findMany: jest.fn(async () => []),
     },
+    learningProject: { count: jest.fn(async () => 0) },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
   const edition: any = {
@@ -140,7 +142,17 @@ describe('KnowledgeFoldersService.accessFor', () => {
     ]) {
       const access = await make({ member: member as any, roles: ['r-sales'] }).svc.accessFor(ORG, userId);
       expect([...access.ids]).toEqual(['hr']);
+      // Nobody's audience: a skill drafted for one member is not served.
+      expect(access.userId ?? null).toBeNull();
     }
+  });
+
+  it('carries the caller, so a skill drafted for one member reaches that member only', async () => {
+    expect((await make({ roles: ['r-sales'] }).svc.accessFor(ORG, 'u1')).userId).toBe('u1');
+    expect((await make({ member: { role: 'ADMIN', deactivatedAt: null } }).svc.accessFor(ORG, 'u-admin')).userId).toBe('u-admin');
+    const open = make({ rows: [{ id: 'a', parentId: null, name: 'A', description: null, roleIds: [] }] });
+    expect((await open.svc.accessFor(ORG, 'u1')).userId).toBe('u1');
+    expect((await open.svc.accessFor(ORG, undefined)).userId).toBeNull();
   });
 });
 
@@ -185,6 +197,11 @@ describe('KnowledgeFoldersService changes', () => {
       data: { folderId: 'sales' },
     });
     expect(tx.memoryItem.updateMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, folderId: 'quotes' },
+      data: { folderId: 'sales' },
+    });
+    // A learning project keeps filing its skills where the folder went.
+    expect(tx.learningProject.updateMany).toHaveBeenCalledWith({
       where: { organizationId: ORG, folderId: 'quotes' },
       data: { folderId: 'sales' },
     });
@@ -271,6 +288,15 @@ describe('KnowledgeFoldersService never widens access by accident', () => {
     prisma.kgSkillSuggestion.count = jest.fn(async () => 2);
     prisma.memoryItem.count = jest.fn(async () => 0);
     await expect(svc.remove(ORG, 'sales')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('refuses deleting a limited folder that a learning project files into', async () => {
+    const { svc, prisma } = make();
+    prisma.kgSkillSuggestion.count = jest.fn(async () => 0);
+    prisma.memoryItem.count = jest.fn(async () => 0);
+    prisma.learningProject.count = jest.fn(async () => 1);
+    await expect(svc.remove(ORG, 'sales')).rejects.toThrow(/still holds 1 item/);
+    expect(prisma.learningProject.count).toHaveBeenCalledWith({ where: { organizationId: ORG, folderId: 'sales' } });
   });
 
   it('hands a deleted limited folder\'s limit down to its subfolders', async () => {

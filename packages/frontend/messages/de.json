@@ -32,7 +32,8 @@
       "knowledgeGraph": "Knowledge Graph",
       "aiSkills": "KI-Skills",
       "memory": "Gedächtnis",
-      "setup": "Einrichtung & Onboarding"
+      "setup": "Einrichtung & Onboarding",
+      "learning": "Lernprojekte"
     },
     "settings": "Einstellungen",
     "switchWorkspace": "Workspace wechseln",
@@ -355,30 +356,34 @@
       "paysToday": "Halten Sie Ihren Workspace am Laufen",
       "trial": "Ihre kostenlose Testphase"
     },
-    "ending": "Ihre kostenlose Testphase endet am <strong>{date}</strong>, zu früh, um mit einer Testphase mit Karte weiterzumachen. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "endingSoon": "Ihre kostenlose Testphase endet bald, zu früh, um mit einer Testphase mit Karte weiterzumachen. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "returning": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Karte nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind, und Ihre aktuelle Testphase läuft bis zum <strong>{date}</strong> weiter, falls Sie sich später entscheiden.",
-    "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Karte nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
-    "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Karte, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Die Testphase ohne Karte hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Karte hinzufügen, um Ihren vollen Tarif freizuschalten.",
-    "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Karte, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Die Testphase ohne Karte hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Karte hinzufügen, um Ihren vollen Tarif freizuschalten.",
+    "ending": "Ihre kostenlose Testphase endet am <strong>{date}</strong>, zu früh, um eine Zahlungsmethode zu hinterlegen und kostenlos weiterzutesten. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "endingSoon": "Ihre kostenlose Testphase endet bald, zu früh, um eine Zahlungsmethode zu hinterlegen und kostenlos weiterzutesten. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "returning": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Zahlungsmethode nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind, und Ihre aktuelle Testphase läuft bis zum <strong>{date}</strong> weiter, falls Sie sich später entscheiden.",
+    "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Zahlungsmethode nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
+    "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
+    "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
     "authorizationReturn": "So oder so geht es danach direkt zurück, um die Verbindung Ihres KI-Clients abzuschließen.",
     "chargesToday": "Diese Adresse hatte bereits ein Abonnement, daher berechnet der Checkout heute {amount}.",
     "start": {
       "opening": "Checkout wird geöffnet…",
       "tryAgain": "Erneut versuchen",
       "checkout": "Weiter zum Checkout",
-      "withCard": "Kostenlos testen mit Karte"
+      "trial": "Kostenlos testen"
     },
     "promo": "Der Code {code} wird beim Checkout angewendet.",
     "price": "{amount}/{period, select, yearly {Jahr} other {Monat}}",
     "priceLocal": "≈ {local}/{period, select, yearly {Jahr} other {Monat}} ({exact})",
     "finePrintPaysToday": "{plan}, {price}, heute abgerechnet und danach {period, select, yearly {jährlich} other {monatlich}}. Sicherer Checkout über Stripe. Jederzeit im Abrechnungsportal kündbar.",
-    "finePrintTrial": "Heute 0 €. {plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab dem {date}. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
-    "finePrintTrialNoDate": "Heute 0 €. {plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab Ende Ihrer Testphase. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
+    "finePrintTrial": "{plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab dem {date}. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
+    "finePrintTrialNoDate": "{plan}, {period, select, yearly {jährlich} other {monatlich}} abgerechnet ab Ende Ihrer Testphase. Sicherer Checkout über Stripe. Kündigen Sie vorher, zahlen Sie nichts.",
     "notReady": "Noch nicht so weit?",
-    "notReadyCard": "Noch keine Karte hinterlegen?",
+    "notReadyCard": "Noch keine Zahlungsmethode hinterlegen?",
     "keepFree": "Kostenlose Testphase weiter nutzen",
-    "tryFree": "Kostenlos ohne Zahlungsdaten testen"
+    "tryFree": "Kostenlos ohne Zahlungsdaten testen",
+    "methods": {
+      "trial": "Heute 0 € · Karte, PayPal und weitere Methoden",
+      "pay": "Karte, PayPal und weitere Methoden"
+    }
   },
   "appShell": {
     "toggleTheme": "Design wechseln",
@@ -949,14 +954,17 @@
     "pill": {
       "signInExpired": "Anmeldung abgelaufen",
       "tokenRefused": "Token abgelehnt",
+      "credentialsRefused": "Schlüssel abgelehnt",
       "expiresSoon": "Token läuft bald ab"
     },
     "banner": {
       "signInRefused": "Der Anbieter hat die Anmeldung abgelehnt. Tool-Aufrufe schlagen fehl, bis Sie erneut autorisieren.",
       "tokenRefused": "Der Anbieter hat das Zugriffstoken abgelehnt. Tool-Aufrufe schlagen fehl, bis Sie ein neues speichern.",
+      "credentialsRefused": "Jeder Tool-Aufruf dieses Connectors schlägt fehl, bis Sie gültige Zugangsdaten speichern.",
       "expiresOn": "Das Zugriffstoken läuft am {date} ab.",
       "expiresSoon": "Das Zugriffstoken läuft bald ab.",
-      "since": "Seit {date}"
+      "since": "Seit {date}",
+      "updateCredentials": "Zugangsdaten aktualisieren"
     }
   },
   "authTypes": {
@@ -1011,6 +1019,8 @@
       "required": "Pflichtfeld",
       "looksWrongExample": "Sieht falsch aus. Beispiel: {example}",
       "looksWrong": "Sieht falsch aus",
+      "choose": "Bitte wählen…",
+      "chooseOne": "Bitte eine der Optionen wählen",
       "optional": "(optional)",
       "stored": "Gespeichert. Leer lassen, um den Wert zu behalten",
       "hide": "Verbergen",
@@ -1536,11 +1546,21 @@
       "keysMissing": "Speichere zuerst die Client-ID und das Secret deiner App und autorisiere danach. Der Anbieter braucht sie, um seine Anmeldeseite zu öffnen (bei Etsy: Keystring und Shared Secret).",
       "keysStillEmpty": "Noch leer: {names}",
       "enterKeys": "Schlüssel eingeben",
-      "clientId": "Client-ID"
+      "clientId": "Client-ID",
+      "signInStarting": "Die Anmeldung für {name} wird geöffnet…",
+      "signInManual": "Die Anmeldung konnte nicht automatisch starten. Starten Sie sie mit dieser Schaltfläche:"
     },
     "shopee": {
       "title": "Shopee-Shop-Autorisierung",
       "body": "Melden Sie sich mit dem Shop-Konto an und genehmigen Sie diese App. Die Tokens werden verschlüsselt gespeichert und automatisch erneuert. Autorisieren Sie erneut, wenn die Autorisierung abläuft oder der Connector danach fragt."
+    },
+    "sheinShop": {
+      "title": "SHEIN-Shop-Autorisierung",
+      "body": "Melden Sie sich bei SHEIN mit dem Hauptkonto des Shops an und genehmigen Sie die App. SHEIN übergibt diesem Connector dann den Schlüssel des Shops, der verschlüsselt gespeichert wird. SHEIN dokumentiert weder eine feste Laufzeit noch eine Erneuerung: Autorisieren Sie erneut, wenn SHEIN die Autorisierung beendet (der Verkäufer trennt die App, setzt den Schlüssel zurück oder sie läuft ab) und der Connector danach fragt."
+    },
+    "iopSeller": {
+      "title": "Verkäufer-Autorisierung",
+      "body": "Melden Sie sich mit dem Verkäuferkonto an und genehmigen Sie die App (Lazada, Miravia, AliExpress). Die Callback-URL der App muss Ihre AnythingMCP-Adresse gefolgt von /api/iop-auth/callback sein. Die Tokens werden verschlüsselt gespeichert und automatisch erneuert; autorisieren Sie erneut, wenn die Autorisierung abläuft oder der Connector danach fragt."
     },
     "tiktokShop": {
       "title": "TikTok-Shop-Autorisierung",
@@ -2199,8 +2219,8 @@
         "description": "Lassen Sie die KI regelmäßig (etwa täglich) den Graph erweitern und aus den erfassten Absichten der Benutzer Skills erstellen, damit sich Ihr Netz und Ihre Skills von selbst verbessern. Kostenbewusst: Sie läuft nur ab und zu, wird übersprungen, wenn sich nichts geändert hat, und bleibt aus, bis Sie sie aktivieren. Erfordert KI-Anreicherung + Absicht der Benutzer erfassen."
       },
       "skillAutoApply": {
-        "label": "Sichere Skills automatisch übernehmen",
-        "description": "Wenn die KI einen Skill mit hoher Sicherheit (≥ 0,90) erstellt, wird er automatisch übernommen, statt als Vorschlag zur Prüfung zu warten. Weniger sichere Skills warten weiterhin auf manuelle Freigabe."
+        "label": "Aus behobenen Fehlern gelernte Skills automatisch übernehmen",
+        "description": "Wenn derselbe fehlgeschlagene Aufruf mindestens dreimal auf dieselbe Weise behoben wurde, wird der daraus gelernte Skill automatisch übernommen. Von der KI erstellte Skills warten immer auf Ihre Prüfung."
       }
     },
     "security": {
@@ -3097,7 +3117,8 @@
       "hideHistory": "Verlauf ausblenden",
       "history": "Verlauf ({count, plural, one {# frühere Version} other {# frühere Versionen}})",
       "replaced": "ersetzt am {date}",
-      "historyProcedure": "Ablauf: {count, plural, one {# Zeichen} other {# Zeichen}}"
+      "historyProcedure": "Ablauf: {count, plural, one {# Zeichen} other {# Zeichen}}",
+      "draftOnly": "Entwurf: nur für das Mitglied"
     },
     "sources": {
       "llm": "von KI erstellt",
@@ -3105,7 +3126,8 @@
       "mergedByAi": "von KI zusammengeführt",
       "errors": "aus behobenen Fehlern gelernt",
       "finder": "aus dem Skills Finder",
-      "manual": "von Hand geschrieben"
+      "manual": "von Hand geschrieben",
+      "learning": "aus einem Lernprojekt"
     },
     "form": {
       "titlePlaceholder": "Titel",
@@ -3731,7 +3753,55 @@
     "workspaces": "{count} Workspaces auf AnythingMCP Cloud",
     "directory": "Gelistet im Claude Directory",
     "directoryChatgpt": "Gelistet im ChatGPT-Plugin-Verzeichnis",
-    "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT"
+    "directoryBoth": "Gelistet in den Verzeichnissen von Claude und ChatGPT",
+    "workspaceLabel": "Workspace:",
+    "reasons": {
+      "paymentFailed": {
+        "title": "Ihre Zahlung ist fehlgeschlagen",
+        "bodyAdmin": "Ihre letzte Zahlung ist fehlgeschlagen, daher ruht Ihr Abo. Aktualisieren Sie Ihre Zahlungsmethode, und es läuft sofort weiter: Die offene Zahlung wird eingezogen, sobald die neue gespeichert ist. Ihre Connectors und Einstellungen bleiben erhalten.",
+        "bodyMember": "Die letzte Zahlung für das Abo dieses Workspace ist fehlgeschlagen, daher ruht das Abo. Bitten Sie einen Workspace-Admin, die Zahlungsmethode zu aktualisieren. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "noLicense": {
+        "title": "Lizenz erforderlich",
+        "body": "Dieser Workspace hat keine aktive Lizenz. Starten Sie eine Testphase oder kaufen Sie einen Tarif, um fortzufahren."
+      },
+      "trialEnded": {
+        "title": "Ihre Testphase ist abgelaufen",
+        "body": "Ihre 7-tägige Testphase ist beendet. Kaufen Sie eine Lizenz, um AnythingMCP Cloud weiter zu nutzen. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "lapsed": {
+        "title": "Ihr Abo ist nicht aktiv",
+        "body": "Ihr Abo ist nicht aktiv, meist wegen einer fehlgeschlagenen Verlängerungszahlung. Aktualisieren Sie Ihre Zahlungsmethode im Abrechnungsportal, und es läuft weiter; ein neuer Tarif würde ein zweites Abo neben diesem starten. Ihre Connectors und Einstellungen bleiben erhalten."
+      },
+      "expired": {
+        "title": "Ihre Lizenz ist abgelaufen",
+        "body": "Ihre Lizenz ist nicht mehr aktiv. Kaufen oder verlängern Sie eine Lizenz, um AnythingMCP weiter zu nutzen. Ihre Connectors und Einstellungen bleiben erhalten."
+      }
+    },
+    "startTrial": {
+      "start": "7 Tage kostenlos testen",
+      "starting": "Wird gestartet…",
+      "failed": "Die Testphase konnte nicht gestartet werden. Bitte versuchen Sie es erneut oder wenden Sie sich an den Support."
+    },
+    "viewPlans": "Tarife ansehen und Lizenz kaufen",
+    "openingCheckout": "Checkout wird geöffnet…",
+    "subscribeTo": "{plan} abonnieren",
+    "comparePlans": "Tarife vergleichen",
+    "opening": "Wird geöffnet…",
+    "payment": {
+      "update": "Zahlungsmethode aktualisieren",
+      "updated": "Ich habe meine Zahlungsmethode aktualisiert",
+      "checking": "Wird geprüft…",
+      "openFailed": "Die Zahlungsseite konnte nicht geöffnet werden. Bitte versuchen Sie es erneut oder wenden Sie sich an den Support.",
+      "notYet": "Die Zahlung ist noch nicht eingegangen. Wenn Sie Ihre Zahlungsmethode gerade aktualisiert haben, versuchen Sie es in einer Minute erneut.",
+      "checkFailed": "Die Prüfung ist gerade nicht möglich. Bitte versuchen Sie es in einer Minute erneut."
+    },
+    "updateBilling": "Zahlungsdaten aktualisieren",
+    "switchWorkspace": "Zu einem anderen Workspace wechseln",
+    "alreadyPurchased": "Bereits gekauft?",
+    "enterKey": "Lizenzschlüssel eingeben",
+    "notContinuing": "Sie möchten nicht weitermachen?",
+    "deleteAccount": "Konto löschen"
   },
   "planFit": {
     "title": "Was sich mit {plan} ändert",
@@ -3809,5 +3879,224 @@
     "starterTitle": "Mit Starter",
     "seeStarter": "Was sich mit Starter ändert",
     "hideStarter": "Ausblenden"
+  },
+  "activeSubscription": {
+    "title": "Zuerst das Abonnement kündigen",
+    "body": "Dieser Workspace hat noch ein Abonnement, und das Löschen des Workspace kündigt es nicht: Es würde weiter abgerechnet. Kündige es zuerst und lösche danach.",
+    "cancelButton": "Abonnement kündigen",
+    "opening": "Wird geöffnet…",
+    "after": "Nach der Kündigung kommst du hierher zurück.",
+    "openFailed": "Die Kündigungsseite konnte nicht geöffnet werden.",
+    "licensePage": "Einstellungen → Lizenz öffnen"
+  },
+  "planPicker": {
+    "periodLabel": "Abrechnungszeitraum",
+    "planLabel": "Tarif",
+    "monthly": "Monatlich",
+    "yearly": "Jährlich",
+    "twoMonthsFree": "2 Monate gratis",
+    "mostPopular": "Am beliebtesten",
+    "summary": "{connectors} Connectors · {mcpServers} MCP-Server · {users, plural, one {# Nutzer} other {bis zu # Nutzer}}",
+    "price": "{amount}/{period, select, yearly {Jahr} other {Monat}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {Jahr} other {Monat}}",
+    "exactly": "genau {price}",
+    "yearlyPerMonth": "≈ {amount}/Monat",
+    "outgrown": "Dieser Workspace hat {items}",
+    "usage": {
+      "connectors": "{count, plural, one {# Connector} other {# Connectors}}",
+      "mcpServers": "{count, plural, one {# MCP-Server} other {# MCP-Server}}",
+      "users": "{count, plural, one {# Nutzer} other {# Nutzer}}"
+    },
+    "footer": {
+      "vat": "Preise in EUR, inkl. MwSt.",
+      "noVat": "Preise in EUR.",
+      "local": "Preise in EUR, Zahlung im Checkout in {currency}.",
+      "localVat": "Preise in EUR, Zahlung im Checkout in {currency}, inkl. MwSt."
+    },
+    "enterpriseQuestion": "Mehr Nutzer, Single Sign-on oder SCIM?",
+    "pastTeam": "Dieser Workspace geht über Team hinaus.",
+    "enterpriseLink": "Enterprise anfragen",
+    "listSeparator": ", "
+  },
+  "cardCheckout": {
+    "failed": "Der Checkout konnte gerade nicht geöffnet werden. Bitte versuchen Sie es gleich noch einmal."
+  },
+  "trialBanner": {
+    "today": "Ihre Testphase endet heute.",
+    "tomorrow": "Ihre Testphase endet morgen.",
+    "daysLeft": "Testphase: noch {days} Tage.",
+    "includesTeam": "Sie enthält alles aus Team.",
+    "aboveStarter": {
+      "link": "Über Starter: Was sich ändert",
+      "title": "Ihr Workspace liegt über Starter",
+      "body": "Ihre Testphase enthält alles aus Team. Wenn Sie Starter wählen, ändert sich das mit dem Ende der Testphase. Mit Team bleibt alles, wie es ist.",
+      "close": "Schließen"
+    },
+    "choosePlan": "Tarif wählen",
+    "openingCheckout": "Checkout wird geöffnet…",
+    "addPaymentBefore": "Zahlungsmethode hinterlegen: keine Abbuchung vor dem {date}",
+    "addPayment": "Zahlungsmethode hinterlegen",
+    "upgrade": "Jetzt upgraden"
+  },
+  "learning": {
+    "title": "Lernprojekte",
+    "intro": "Ein Lernprojekt bewahrt, was eine Kollegin oder ein Kollege der KI auf einem MCP-Server beibringt: Korrekturen und Erklärungen werden zu Skills für alle. Nichts wird gespeichert, bevor die Person zustimmt, und sie kann jederzeit aufhören.",
+    "loading": "Wird geladen…",
+    "loadFailed": "Die Lernprojekte konnten nicht geladen werden",
+    "allowance": {
+      "unlimited": "Ihr Tarif enthält Lernprojekte ohne Begrenzung.",
+      "some": "{used} von {max} Lernprojekten in Verwendung."
+    },
+    "upsell": {
+      "cloudTitle": "Lernprojekte gehören zu den Tarifen Team und Enterprise",
+      "cloudBody": "Bewahren Sie, was erfahrene Mitarbeitende der KI beibringen, bevor sie gehen: Ihre Korrekturen werden zu Skills, die die KI-Assistenten des ganzen Teams nutzen. Team enthält ein Projekt, Enterprise ist unbegrenzt.",
+      "cloudCta": "Tarife ansehen",
+      "selfTitle": "Lernprojekte gehören zu AnythingMCP Enterprise",
+      "selfBody": "Bewahren Sie, was erfahrene Mitarbeitende der KI beibringen, bevor sie gehen: Ihre Korrekturen werden zu Skills, die die KI-Assistenten des ganzen Teams nutzen. Die 30-tägige Evaluierung enthält ein Projekt.",
+      "contact": "Kontakt zu Enterprise",
+      "key": "Lizenzschlüssel eingeben"
+    },
+    "new": {
+      "button": "Neues Lernprojekt",
+      "title": "Neues Lernprojekt",
+      "name": "Name",
+      "namePlaceholder": "z. B. Beschläge für alte Fenster",
+      "member": "Lernen von",
+      "memberPlaceholder": "Mitglied wählen",
+      "server": "Auf dem MCP-Server",
+      "serverPlaceholder": "MCP-Server wählen",
+      "folder": "Skills ablegen in",
+      "noFolder": "Kein Ordner",
+      "endsAt": "Endet am (optional)",
+      "tags": "Labels (optional)",
+      "tagsHint": "Durch Kommas getrennt, z. B. Fenster, Beschläge",
+      "publishMode": "Veröffentlichung",
+      "publishManual": "Eine Person veröffentlicht jedes Thema",
+      "publishConfirmed": "Vom Mitglied bestätigte Lektionen werden veröffentlicht",
+      "showName": "Namen des Mitglieds allen zeigen, nicht nur Admins",
+      "create": "Starten und Mitglied fragen",
+      "creating": "Wird gestartet…",
+      "cancel": "Abbrechen",
+      "created": "Gestartet. Das Mitglied stimmt unter Einstellungen → Profil zu; vorher wird nichts gespeichert.",
+      "limitReached": "Alle Lernprojekte Ihres Tarifs sind in Verwendung. Beenden oder pausieren Sie eines, um ein weiteres zu starten."
+    },
+    "status": {
+      "draft": "Wartet auf das Mitglied",
+      "active": "Aktiv",
+      "paused": "Pausiert",
+      "ended": "Beendet",
+      "overPlan": "Nicht im Tarif"
+    },
+    "card": {
+      "expert": "Lernt von {name}",
+      "expertHidden": "Mitglied nur für Admins sichtbar",
+      "server": "auf {name}",
+      "noServer": "der MCP-Server wurde gelöscht",
+      "lessons": "{confirmed} bestätigt · {draft} zu bestätigen",
+      "topics": "{count} Thema/Themen",
+      "open": "Öffnen",
+      "ends": "endet am {date}"
+    },
+    "empty": "Noch kein Lernprojekt.",
+    "detail": {
+      "back": "Alle Lernprojekte",
+      "notFound": "Lernprojekt nicht gefunden",
+      "tabs": {
+        "topics": "Themen",
+        "lessons": "Lektionen",
+        "settings": "Einstellungen"
+      },
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "end": "Beenden",
+      "delete": "Löschen",
+      "confirmEnd": "Dieses Lernprojekt beenden? Lektionen und veröffentlichte Skills bleiben erhalten; es kann nicht erneut gestartet werden.",
+      "confirmDelete": "Dieses Lernprojekt mit allen Lektionen löschen? Veröffentlichte Skills bleiben erhalten.",
+      "waiting": "Wartet darauf, dass {name} unter Einstellungen → Profil zustimmt. Vorher wird nichts gespeichert.",
+      "waitingHidden": "Wartet darauf, dass das Mitglied unter Einstellungen → Profil zustimmt. Vorher wird nichts gespeichert.",
+      "overPlan": "Dieses Projekt liegt über der Anzahl, die Ihr Tarif enthält, daher wird nichts erfasst. Beenden Sie ein anderes Projekt oder wechseln Sie den Tarif."
+    },
+    "topics": {
+      "empty": "Noch keine Lektionen. Sie erscheinen, wenn das Mitglied die KI auf diesem Server korrigiert oder ihr etwas erklärt.",
+      "when": "Wann:",
+      "published": "Veröffentlicht am {date}",
+      "notPublished": "Nicht veröffentlicht",
+      "changes": "Bestätigte Änderungen zu veröffentlichen",
+      "counts": "{confirmed} bestätigt · {draft} zu bestätigen",
+      "preview": "Vorschau",
+      "hidePreview": "Vorschau ausblenden",
+      "publish": "Veröffentlichen",
+      "publishing": "Wird veröffentlicht…",
+      "publishedMsg": "Veröffentlicht: {count} Lektion(en) sind jetzt ein Skill für alle auf diesem Server.",
+      "nothing": "Noch nichts Bestätigtes zu veröffentlichen.",
+      "dropped": "{count} ältere Lektion(en) passten nicht in den Text und wurden weggelassen.",
+      "viewSkill": "AI Skills öffnen"
+    },
+    "lessons": {
+      "filter": {
+        "all": "Alle",
+        "draft": "Zu bestätigen",
+        "confirmed": "Bestätigt",
+        "rejected": "Abgelehnt"
+      },
+      "empty": "Keine Lektionen hier.",
+      "kind": {
+        "rule": "Regel",
+        "fact": "Fakt",
+        "correction": "Korrektur",
+        "example": "Beispiel"
+      },
+      "source": {
+        "model": "von der KI gemeldet",
+        "diff": "in der Arbeit beobachtet",
+        "interview": "aus einem Interview",
+        "manual": "von einer Kuratorin oder einem Kurator bearbeitet"
+      },
+      "status": {
+        "draft": "Zu bestätigen",
+        "confirmed": "Bestätigt",
+        "rejected": "Abgelehnt",
+        "superseded": "Ersetzt"
+      },
+      "before": "Statt:",
+      "after": "Verwenden:",
+      "reason": "Warum:",
+      "askWhy": "Noch kein Grund angegeben",
+      "seen": "{count}× gesagt",
+      "confirm": "Bestätigen",
+      "reject": "Ablehnen",
+      "reopen": "Wieder öffnen",
+      "edit": "Umformulieren",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "more": "Mehr anzeigen"
+    },
+    "settings": {
+      "name": "Name",
+      "folder": "Skills ablegen in",
+      "folderHint": "Gilt für Themen, die ab jetzt begonnen werden.",
+      "endsAt": "Endet am",
+      "tags": "Labels",
+      "publishMode": "Veröffentlichung",
+      "showName": "Namen des Mitglieds allen zeigen, nicht nur Admins",
+      "save": "Speichern",
+      "saved": "Gespeichert."
+    },
+    "profile": {
+      "title": "Lernprojekte",
+      "ask": "Ihr Admin möchte bewahren, was Sie der KI auf dem MCP-Server „{server}“ beibringen, für das Lernprojekt „{name}“.",
+      "notice": "Wenn Sie auf dem MCP-Server „{server}“ die KI korrigieren oder erklären, wie die Arbeit gemacht wird, speichert die KI das als Lektion für das Lernprojekt „{name}“. Aus Lektionen werden Skills, die die KI-Assistenten Ihrer Kolleginnen und Kollegen nutzen können. Gespeichert werden: die Lektionen. Nicht gespeichert werden: das Gespräch selbst, Ihre Arbeit auf anderen Servern und Kennzahlen zu Ihrer Arbeit. Sie bestätigen jede Lektion, bevor sie geteilt wird. Admins und Editoren des Workspace können die Lektionen lesen. Sie können auf dieser Seite jederzeit aufhören und alles löschen, was nicht veröffentlicht wurde.",
+      "nameHidden": "Ihr Name ist nur für Admins sichtbar.",
+      "nameShown": "Ihr Name wird bei den von Ihnen gelernten Skills angezeigt.",
+      "accept": "Zustimmen",
+      "decline": "Ablehnen",
+      "accepted": "Zugestimmt. Aktualisieren Sie die Tool-Liste dieses Konnektors in Ihrem KI-Client, um die Lern-Tools zu erhalten.",
+      "active": "„{name}“ ist auf „{server}“ seit {date} aktiv.",
+      "paused": "„{name}“ wurde von Ihrem Admin pausiert.",
+      "stop": "Aufhören",
+      "erase": "Auch meine nicht veröffentlichten Lektionen löschen",
+      "stopped": "Beendet.",
+      "failed": "Ihre Antwort konnte nicht gespeichert werden"
+    }
   }
 }

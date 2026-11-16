@@ -1,0 +1,1647 @@
+{
+  "slug": "pazarama",
+  "name": "Pazarama",
+  "description": "Pazarama seller API for the Turkish marketplace: orders and item statuses, shipping with tracking, invoice links, packages, products, prices, stock and sale status, catalog, brands and categories, returns, cancellation requests, customer questions and settlements. API key and secret from the seller panel.",
+  "instructions": "## Pazarama\nThis connector works with the **Pazarama seller integration API** (İş Ortağım) on `https://isortagimapi.pazarama.com`, for sellers on Pazarama, the Turkish marketplace: orders and their item statuses, shipping with tracking, invoice links, packages, products with prices, stock and sale status, the catalog, brands and categories, returns and cancellation requests, customer questions and settlements.\n\n**Setup (about 3 minutes)**\n1. Sign in to the seller panel at isortagim.pazarama.com and open **Hesabım > Hesap Bilgileri > Entegrasyon Bilgileri**. It shows your Satıcı Id, API Key and API Secret.\n2. Copy the **API Key** into `PAZARAMA_API_KEY` and the **API Secret** into `PAZARAMA_API_SECRET`. If you have no secret, click **Yeni API Key Üret**: the new secret is shown once and the old one stops working at once, so update every other integration.\n3. Install and run `pazarama_list_brands`.\n\nThe connector exchanges the key and secret (HTTP Basic, client credentials, scope `merchantgatewayapi.fullaccess`) at `isortagimgiris.pazarama.com` for a bearer token that lasts one hour, and renews it before it expires.\n\n**Where to start**: `pazarama_list_orders` with a date range (at most one month) shows new orders; `pazarama_list_approved_products` your products; `pazarama_get_seller_delivery` your carriers and their ids.\n\n**Order item statuses**: 3 received, 12 preparing, 5 shipped, 16 in store, 19 at delivery point, 11 delivered, 14 not delivered, 13 not supplied, 6 cancelled, 18 cancellation started, 7 return started, 8 return approved, 9 return rejected, 10 returned. The flow is 3, then 12, then 5, then 11 or 14. A buyer can cancel in 3; in 12 only request a cancellation (shown as 18). An item in 12 that is never shipped starts an automatic return and lowers the seller score.\n\n**Orders and shipping**: `pazarama_list_orders` (`pazarama_list_orders_split` lists every unit as its own item), `pazarama_update_order_status` (whole order, usually 3 to 12) and `pazarama_update_item_status` (one item: 12, 11 or 14). Sellers with Pazarama's contracted shipping stop at 12; the shipment then moves on by itself (see `shipmentCode`). Others report the shipment with `pazarama_ship_item` (status 5, carrier id, tracking number and link) or `pazarama_bulk_update_item_status` for several items of one order. Digital items go from 12 straight to 11 or 14. Invoice: `pazarama_send_invoice_link`. Packages: `pazarama_list_packages`, `pazarama_create_packages`, `pazarama_update_packages`. `pazarama_report_not_supplied` (status 13, refunds the buyer) is installed switched off.\n\n**Products**: `pazarama_list_approved_products` (cursor paging with `nextCursor`), `pazarama_list_unapproved_products`, `pazarama_get_product`. To create products take a leaf category from `pazarama_list_categories`, its attributes from `pazarama_get_category_attributes` and a brand from `pazarama_list_brands`, then `pazarama_create_products` and follow `pazarama_get_product_batch_result` (results kept 4 hours). Products already in the Pazarama catalog are faster: `pazarama_search_catalog`, then `pazarama_add_catalog_product`. Open or close a catalog product for sale with `pazarama_set_product_sale_status`; `pazarama_bulk_set_product_sale_status` is installed switched off.\n\n**Prices and stock**: `pazarama_update_prices` and `pazarama_update_stock` take up to 3,000 codes per call and are queued: they answer a data id, and `pazarama_get_listing_result` shows each code's outcome (a result can stay processing for up to 4 hours). Discounts of 70 percent or more wait for Pazarama's approval.\n\n**Returns and cancellations**: `pazarama_list_returns` and `pazarama_list_cancellation_requests`. Answering them is installed switched off: `pazarama_update_return` (approving refunds the buyer; most reject reasons need photos, sent from the seller panel) and `pazarama_answer_cancellation_request`.\n\n**Customer questions**: `pazarama_list_unanswered_questions`, `pazarama_search_questions` (filters from `pazarama_list_question_statuses` and `pazarama_list_question_topics`), `pazarama_get_question` and `pazarama_answer_question` after the user approved the text.\n\n**Settlements**: `pazarama_get_payment_agreement` (read-only). `pazarama_list_cities` needs no token.\n\n**Dates**: order queries take `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` in Turkey time (UTC+3); `endDate` is exclusive and the range at most one month; an order number reaches back 6 months. Answers carry Turkey time without offset (`2026-02-17 17:23`); return lists use Turkish text dates. Amounts are TL, as objects with `value` and `valueString` in orders.\n\n**Limits**: wait 10 seconds between two price or stock updates and between two product creates (at most 500 products per create). Some ids are GUIDs (orderId, orderItemId, carrier and category ids), others numbers (orderNumber, refundNumber): do not mix the order id and the order number.\n\n**Errors**: answers are wrapped as `success`, `messageCode`, `message`, `data`; a refusal can arrive with HTTP 200 and `success` false, which the connector reports as a failed call with Pazarama's message. Pazarama sits behind Cloudflare, which can block some data-centre addresses with a 403 page before the API answers.\n\n**Writes: confirm first.** Statuses, shipping, prices, stock, sale status, packages, invoices and answers act on the live store. Before each call show the user what changes and wait for a yes.",
+  "aliases": [
+    "Pazarama İş Ortağım",
+    "Pazarama Satıcı API",
+    "isortagim"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "pazarama",
+  "docsUrl": "https://isortagim.pazarama.com/auth/integration/token-alma",
+  "requiredEnvVars": [
+    "PAZARAMA_API_KEY",
+    "PAZARAMA_API_SECRET"
+  ],
+  "envVarMeta": {
+    "PAZARAMA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "help": "Seller panel (isortagim.pazarama.com) > Hesabım > Hesap Bilgileri > Entegrasyon Bilgileri: the API Key (client id).",
+      "link": "https://isortagim.pazarama.com",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the API key alone, without spaces."
+    },
+    "PAZARAMA_API_SECRET": {
+      "label": "API secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: the API Secret. Yeni API Key Üret creates a new one, shows it once and revokes the old one.",
+      "link": "https://isortagim.pazarama.com",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the API secret alone, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Pazarama did not issue a token for this API key and secret. Copy both again from Hesap Bilgileri > Entegrasyon Bilgileri; if the secret was regenerated with Yeni API Key Üret, the old one no longer works.",
+    "403": "Pazarama refused the call. A Cloudflare page instead of JSON means Pazarama's firewall blocked the server's address; otherwise the token has no access to this resource.",
+    "404": "Pazarama found no order, product, batch or question with that id.",
+    "rate_limited": "Pazarama allows one price or stock update and one product create every 10 seconds per seller. Wait and try again."
+  },
+  "probe": {
+    "tool": "pazarama_list_brands",
+    "params": {
+      "size": 1
+    }
+  },
+  "prerequisites": "An approved Pazarama seller account (İş Ortağım) and the API key and secret from Hesap Bilgileri > Entegrasyon Bilgileri. About 3 minutes.",
+  "connector": {
+    "name": "Pazarama Seller API",
+    "type": "REST",
+    "baseUrl": "https://isortagimapi.pazarama.com",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://isortagimgiris.pazarama.com/connect/token",
+      "loginMethod": "POST",
+      "loginBasicAuth": true,
+      "username": "{{PAZARAMA_API_KEY}}",
+      "password": "{{PAZARAMA_API_SECRET}}",
+      "loginBody": "grant_type=client_credentials&scope=merchantgatewayapi.fullaccess",
+      "loginHeaders": {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+      },
+      "tokenJsonPath": [
+        "data.accessToken",
+        "access_token"
+      ],
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "pazarama_list_orders",
+      "description": "List orders in a date range (or one order by number): orderId, orderNumber, orderDate (Turkey time), orderAmount, orderStatus, paymentType, customer name and email, shipment and billing address (identity or tax number, invoice type), and items with orderItemId, orderItemStatus and its history, quantity, listPrice, salePrice, totalPrice, cargo (companyId, trackingNumber, trackingUrl), shipmentCode, estimatedShippingDate and product (code, stockCode, name). Range at most one month.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the order date range, `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`, Turkey time. At most one month before end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the range, `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`, Turkey time; exclusive (orders before this moment)."
+          },
+          "order_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only this order (looks back up to 6 months; still send a date range)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Orders per page (the documentation's example uses 500)."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page, starting at 1."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/getOrdersForApi",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_list_orders_split",
+      "description": "Same as pazarama_list_orders, but an item ordered several times comes back as separate order items of quantity 1, each with its own orderItemId and split prices and discounts. Range at most one month.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the order date range, `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`, Turkey time. At most one month before end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the range, `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`, Turkey time; exclusive (orders before this moment)."
+          },
+          "order_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only this order (looks back up to 6 months; still send a date range)."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Orders per page (the documentation's example uses 500)."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page, starting at 1."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/getOrdersForApiV2",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_update_item_status",
+      "description": "Move one order item to a new status: 12 preparing (required first after 3 received, before any shipping step), 11 delivered or 14 not delivered (digital items go straight from 12 to 11 or 14). To ship with tracking use pazarama_ship_item. Answers success true or false with a message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order number shown to the buyer, e.g. 735071747 (orderNumber of pazarama_list_orders)."
+          },
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Order item id, a GUID (items[].orderItemId of pazarama_list_orders)."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              12,
+              11,
+              14
+            ],
+            "description": "New status: 12 preparing, 11 delivered, 14 not delivered."
+          }
+        },
+        "required": [
+          "order_number",
+          "order_item_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/updateOrderStatus",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "item": {
+            "orderItemId": "$order_item_id",
+            "status": "$status"
+          }
+        }
+      }
+    },
+    {
+      "name": "pazarama_ship_item",
+      "description": "Report that an order item was shipped with your own carrier (status 5) with carrier, tracking number and tracking link. Only for sellers without Pazarama's contracted shipping, and only after the item is in status 12. Pazarama sends the tracking to the buyer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order number shown to the buyer, e.g. 735071747 (orderNumber of pazarama_list_orders)."
+          },
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Order item id, a GUID (items[].orderItemId of pazarama_list_orders)."
+          },
+          "cargo_company_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Carrier id, a GUID: cargoCompanies[].cargoCompanyId of pazarama_get_seller_delivery, or cargo.companyId of an order item."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Carrier tracking number."
+          },
+          "tracking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Tracking link of the parcel."
+          },
+          "delivery_type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "default": 1,
+            "description": "Delivery type: 1 cargo (default), 2 courier."
+          }
+        },
+        "required": [
+          "order_number",
+          "order_item_id",
+          "cargo_company_id",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/updateOrderStatus",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "item": {
+            "orderItemId": "$order_item_id",
+            "status": 5,
+            "deliveryType": "$delivery_type",
+            "shippingTrackingNumber": "$tracking_number",
+            "trackingUrl": "$tracking_url",
+            "cargoCompanyId": "$cargo_company_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "pazarama_bulk_update_item_status",
+      "description": "Update several items of one order in one call with the same shipping data: status 5 with carrier, shipment number, tracking number and link, or status 11 delivered (send only the status then). Answers success with a message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order number shown to the buyer, e.g. 735071747 (orderNumber of pazarama_list_orders)."
+          },
+          "order_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+              "description": "Order item id."
+            },
+            "minItems": 1,
+            "description": "Order item ids (GUIDs) of the same order."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              5,
+              11,
+              14
+            ],
+            "description": "New status: 5 shipped, 11 delivered, 14 not delivered."
+          },
+          "cargo_company_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Carrier id, a GUID: cargoCompanies[].cargoCompanyId of pazarama_get_seller_delivery, or cargo.companyId of an order item."
+          },
+          "shipment_number": {
+            "type": "string",
+            "description": "Shipment number, when you have one."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Carrier tracking number."
+          },
+          "tracking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Tracking link."
+          },
+          "delivery_type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 cargo, 2 courier; leave out for delivered."
+          },
+          "sub_status": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Sub status; the documentation sends 0."
+          }
+        },
+        "required": [
+          "order_number",
+          "order_item_ids",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/api/bulk-status-update",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "orderItemIds": "$order_item_ids",
+          "updateShipmentDto": {
+            "cargoCompanyId": "$cargo_company_id",
+            "deliveryType": "$delivery_type",
+            "shipmentNumber": "$shipment_number",
+            "shippingTrackingNumber": "$tracking_number",
+            "status": "$status",
+            "subStatus": "$sub_status",
+            "trackingUrl": "$tracking_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "pazarama_update_order_status",
+      "description": "Set the status of every item of an order at once, mainly to move a new order from 3 (received) to 12 (preparing). An order in 12 must then be shipped, or Pazarama starts an automatic return and the seller score drops.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order number shown to the buyer, e.g. 735071747 (orderNumber of pazarama_list_orders)."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              12,
+              11
+            ],
+            "description": "New status for all items: 12 preparing, 11 delivered."
+          }
+        },
+        "required": [
+          "order_number",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/updateOrderStatusList",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "pazarama_send_invoice_link",
+      "description": "Attach the invoice (a PDF link) to an order. Without carrier and tracking number it applies to every item of the order; with them only to the items of that package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Order id, a GUID (orderId of pazarama_list_orders), not the order number."
+          },
+          "invoice_link": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public link to the invoice PDF."
+          },
+          "delivery_company_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Carrier id of the package (only for a package invoice)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the package (only for a package invoice)."
+          }
+        },
+        "required": [
+          "order_id",
+          "invoice_link"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/invoice-link",
+        "bodyMapping": {
+          "invoiceLink": "$invoice_link",
+          "orderid": "$order_id",
+          "deliveryCompanyId": "$delivery_company_id",
+          "trackingNumber": "$tracking_number"
+        }
+      }
+    },
+    {
+      "name": "pazarama_list_packages",
+      "description": "List the shipment packages of an order: customerAddress and per package packageNumber, shipmentNumber, packageStatus (0 none, 10 packed, 20 unpacked, 30 item not supplied, 40 item cancelled), seller address, carrier and the order items with quantity and product code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Order id, a GUID (orderId of pazarama_list_orders), not the order number."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/api/shipment-packages/orderId={order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_create_packages",
+      "description": "Split an order into packages: each package lists order item ids, a seller address and a carrier (empty address or carrier uses your defaults). Sending again replaces the earlier package numbers of those items. Answers the packages as pazarama_list_packages does.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Order id, a GUID (orderId of pazarama_list_orders), not the order number."
+          },
+          "seller_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Your seller id, a GUID (Satıcı Id on the Entegrasyon Bilgileri page)."
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderItemIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Order item ids in this package."
+                },
+                "sellerAddressId": {
+                  "type": "string",
+                  "description": "Warehouse address id; empty for the default."
+                },
+                "cargoCompanyId": {
+                  "type": "string",
+                  "description": "Carrier id; empty for the default."
+                }
+              },
+              "required": [
+                "orderItemIds"
+              ]
+            },
+            "minItems": 1,
+            "description": "Packages: `[{\"orderItemIds\": [\"…\"], \"sellerAddressId\": \"…\", \"cargoCompanyId\": \"…\"}]`."
+          }
+        },
+        "required": [
+          "order_id",
+          "seller_id",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/api/packages-split",
+        "bodyMapping": {
+          "orderId": "$order_id",
+          "sellerId": "$seller_id",
+          "apiOrderItemPackages": "$packages"
+        }
+      }
+    },
+    {
+      "name": "pazarama_update_packages",
+      "description": "Change the seller address or the carrier of existing packages (empty values fall back to your defaults). Check the result with pazarama_list_packages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "packageNumber": {
+                  "type": "integer",
+                  "description": "Package number."
+                },
+                "cargoCompanyId": {
+                  "type": "string",
+                  "description": "New carrier id."
+                },
+                "sellerAddressId": {
+                  "type": "string",
+                  "description": "New warehouse address id."
+                }
+              },
+              "required": [
+                "packageNumber"
+              ]
+            },
+            "minItems": 1,
+            "description": "Packages: `[{\"packageNumber\": 1249788788, \"cargoCompanyId\": \"…\", \"sellerAddressId\": \"…\"}]`."
+          }
+        },
+        "required": [
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/update-packages",
+        "bodyMapping": {
+          "packages": "$packages"
+        }
+      }
+    },
+    {
+      "name": "pazarama_list_approved_products",
+      "description": "List your approved products, up to 100 per call: name, displayName, brandName, code (barcode), groupCode, stockCount, stockCode, listPrice, salePrice, vatRate, categoryName, state and productStatus. Cursor paging: pass data.nextCursor as cursor until it is null.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Products per call, at most 100."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "nextCursor of the previous answer."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only this barcode."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Products changed from this date, e.g. 2026-01-01T."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Products changed until this date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/products/approved",
+        "queryParams": {
+          "Size": "$size",
+          "Cursor": "$cursor",
+          "code": "$code",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_list_unapproved_products",
+      "description": "List products waiting for approval or rejected, with the same fields as the approved list plus waitingApproveExp (why it waits). Page paging with pageIndex, pageSize and hasNextPage in the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Products per page."
+          },
+          "page_index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page, starting at 1."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only this barcode."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "From this date, e.g. 2026-01-01T."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Until this date."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/products/unapproved",
+        "queryParams": {
+          "Size": "$size",
+          "PageIndex": "$page_index",
+          "code": "$code",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_get_product",
+      "description": "Read one product by code: name, displayName, description, brand, stockCount, stockCode, vatRate, listPrice, salePrice, categoryId, state (3 approved) and stateDescription, attributes, images, groupCode and whether it is a catalog product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Product code (barcode) as sent when the product was created."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/getProductDetail",
+        "bodyMapping": {
+          "Code": "$code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_create_products",
+      "description": "Create up to 500 products in one call (wait 10 seconds between calls). Each product needs Name, DisplayName, Description, BrandId, Desi, Code (barcode), GroupCode (groups variants), StockCount, StockCode, VatRate, ListPrice, SalePrice, CategoryId (a leaf), attributes and images. Asynchronous: check the returned batch id with pazarama_get_product_batch_result; products then go through Pazarama's approval.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1,
+            "maxItems": 500,
+            "description": "Products: `[{\"Name\": \"…\", \"DisplayName\": \"…\", \"Description\": \"…\", \"BrandId\": \"guid\", \"Desi\": 1, \"Code\": \"BC1\", \"GroupCode\": \"G1\", \"StockCount\": 5, \"StockCode\": \"S1\", \"VatRate\": 20, \"ListPrice\": 100, \"SalePrice\": 90, \"currencyType\": \"TRY\", \"CategoryId\": \"guid\", \"images\": [{\"imageurl\": \"https://…\"}], \"attributes\": [{\"attributeId\": \"guid\", \"attributeValueId\": \"guid\"}]}]`."
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/create",
+        "bodyMapping": {
+          "products": "$products"
+        }
+      }
+    },
+    {
+      "name": "pazarama_get_product_batch_result",
+      "description": "Read the result of a product create: status (1 in progress, 2 done, 3 error), totalCount, successfulCount, failedCount and failedProducts with productCode and errorReason. Available for 4 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_request_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Batch request id returned by pazarama_create_products."
+          }
+        },
+        "required": [
+          "batch_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/getProductBatchResult",
+        "queryParams": {
+          "BatchRequestId": "$batch_request_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_search_catalog",
+      "description": "Search the Pazarama catalog by barcode or name to sell an existing product: productId, name, code, categoryName, brandName, vatRate, imageUrl, with page info. Answers success false (CAT_133) when the barcode is already among your products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Your seller id, a GUID (Satıcı Id on the Entegrasyon Bilgileri page)."
+          },
+          "code": {
+            "type": "string",
+            "description": "Barcode to look up."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name to look up."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page (default 10)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page, starting at 1."
+          }
+        },
+        "required": [
+          "seller_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/getProductTitleCodeSearch",
+        "bodyMapping": {
+          "code": "$code",
+          "name": "$name",
+          "size": "$size",
+          "page": "$page",
+          "sellerId": "$seller_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_add_catalog_product",
+      "description": "Start selling a product that is already in the Pazarama catalog (found with pazarama_search_catalog) with your code, stock code, prices and stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Catalog productId from pazarama_search_catalog."
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Product code (barcode) as sent when the product was created."
+          },
+          "stock_code": {
+            "type": "string",
+            "description": "Your stock code."
+          },
+          "list_price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "List price in TL."
+          },
+          "sale_price": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Sale price in TL, at most the list price."
+          },
+          "stock_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units in stock."
+          },
+          "installment_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of instalments offered (0 for none)."
+          },
+          "brand_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Brand id (pazarama_list_brands)."
+          }
+        },
+        "required": [
+          "product_id",
+          "code",
+          "list_price",
+          "sale_price",
+          "stock_count"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/addProductsWithBarcodes",
+        "bodyMapping": {
+          "product": {
+            "productId": "$product_id",
+            "code": "$code",
+            "stockCode": "$stock_code",
+            "listPrice": "$list_price",
+            "stockCount": "$stock_count",
+            "salePrice": "$sale_price",
+            "installmentCount": "$installment_count",
+            "brandId": "$brand_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "pazarama_set_product_sale_status",
+      "description": "Open (1) or close (10) one catalog product for sale. Answers a result per code with success and message; the storefront can take a moment to follow.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Product code (barcode) as sent when the product was created."
+          },
+          "product_status": {
+            "type": "integer",
+            "enum": [
+              1,
+              10
+            ],
+            "description": "1 open for sale, 10 closed for sale."
+          }
+        },
+        "required": [
+          "code",
+          "product_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/external-status",
+        "bodyMapping": {
+          "productItem": {
+            "code": "$code",
+            "productStatus": "$product_status"
+          }
+        }
+      }
+    },
+    {
+      "name": "pazarama_bulk_set_product_sale_status",
+      "description": "Open (1) or close (10) many catalog products in one call. Answers a batch id; check it with pazarama_get_listing_result and lake_type 1. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Product code."
+                },
+                "productStatus": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    10
+                  ],
+                  "description": "1 open, 10 closed."
+                }
+              },
+              "required": [
+                "code",
+                "productStatus"
+              ]
+            },
+            "minItems": 1,
+            "description": "Products: `[{\"code\": \"1534\", \"productStatus\": 1}, {\"code\": \"stest1\", \"productStatus\": 10}]`."
+          }
+        },
+        "required": [
+          "product_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/bulkUpdateProductStatusFromApi",
+        "bodyMapping": {
+          "productItems": "$product_items"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "pazarama_update_prices",
+      "description": "Update list and sale prices of up to 3,000 products by code (prices in TL; wait 10 seconds between calls). Discounts of 70 percent or more go to Pazarama's manual approval. Answers a data id: check it with pazarama_get_listing_result; a result can stay processing for up to 4 hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Product code."
+                },
+                "listPrice": {
+                  "type": "number",
+                  "description": "List price in TL."
+                },
+                "salePrice": {
+                  "type": "number",
+                  "description": "Sale price in TL."
+                }
+              },
+              "required": [
+                "code",
+                "listPrice",
+                "salePrice"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3000,
+            "description": "Prices: `[{\"code\": \"8683670274616\", \"listPrice\": 1037.61, \"salePrice\": 999.9}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/updatePrice-v2",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "pazarama_update_stock",
+      "description": "Update the stock of up to 3,000 products by code (wait 10 seconds between calls). Answers a data id: check it with pazarama_get_listing_result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "description": "Product code."
+                },
+                "stockCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units in stock."
+                }
+              },
+              "required": [
+                "code",
+                "stockCount"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 3000,
+            "description": "Stock: `[{\"code\": \"5707055046711\", \"stockCount\": 1}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/updateStock-v2",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "pazarama_get_listing_result",
+      "description": "Read the per-product result of a price, stock or sale status update: code, price or stock (or status) with operationDetail, and operationStatusText (succeeded, not completed, failed, processing, sent to approval), with totalCount and paging.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Data id returned by pazarama_update_prices, pazarama_update_stock or the bulk sale status call."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3000,
+            "default": 100,
+            "description": "Rows per page, up to 3000."
+          },
+          "lake_type": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "1 for the result of a sale status (open or close) update; leave out for prices and stock."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listing-state/batch-id/{batch_id}/lake-projections",
+        "queryParams": {
+          "page": "$page",
+          "pageSize": "$page_size",
+          "lakeType": "$lake_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_list_brands",
+      "description": "List or search brands: id, name, logoUrl, website and status. The id goes into BrandId when creating products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Brand name to search."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Brands per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brand/getBrands",
+        "queryParams": {
+          "Page": "$page",
+          "Size": "$size",
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_list_categories",
+      "description": "Read the whole category tree as a flat list: id, parentId, parentCategories, name, displayName and leaf. Products go into leaf categories only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/getCategoryTree"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_get_category_attributes",
+      "description": "Read the attributes of a category: id, name, isRequired, isVariantable and attributeValues (id and value). Send required ones as attributeId and attributeValueId when creating products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Category id, a GUID (pazarama_list_categories, leaf)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/getCategoryWithAttributes",
+        "queryParams": {
+          "Id": "$category_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_get_seller_delivery",
+      "description": "Read your delivery settings: shipping price, campaign, delivery duration and days, whether shipping is contracted with Pazarama, and the carriers you can use (cargoCompanyId, cargoCompanyName, cargoCardType). The carrier ids go into shipping and package calls.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellerRegister/getSellerDelivery"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_list_cities",
+      "description": "List Turkish cities with id, plate code and name. Needs no token; a quick check that Pazarama answers at all.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/parameter/cities"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_list_returns",
+      "description": "List return requests: page info, counts (total, waiting, approved, rejected) and refundList with refundId, orderNumber, refundNumber, refundType (reason), refundStatus and name, refundAmount, product code, customer, return carrier and shipmentCode. Dates in the answer are Turkish text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_start_date": {
+            "type": "string",
+            "description": "Start of the request date range, `YYYY-MM-DD`."
+          },
+          "request_end_date": {
+            "type": "string",
+            "description": "End of the request date range, `YYYY-MM-DD`."
+          },
+          "refund_status": {
+            "type": "integer",
+            "description": "Only this status: 1 awaiting your approval, 2 approved by you, 3 rejected by you, 4 or 5 approved or rejected by Pazarama, 6 auto approved, 7 request withdrawn, 8 direct approval, 10 returned. Leave out for all."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (default 10)."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page, starting at 1."
+          },
+          "split_items": {
+            "type": "boolean",
+            "description": "true: one row per unit (quantity 1, own refundId), as in pazarama_list_orders_split."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/getRefund",
+        "bodyMapping": {
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number",
+          "refundStatus": "$refund_status",
+          "requestStartDate": "$request_start_date",
+          "requestEndDate": "$request_end_date",
+          "SplitItems": "$split_items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_update_return",
+      "description": "Approve (2) or reject (3) a return request. Approving makes Pazarama refund the buyer; rejecting needs a reason (refund_reject_type) and for most reasons photos sent from the seller panel. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "refundId from pazarama_list_returns."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "2 approve, 3 reject."
+          },
+          "refund_reject_type": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Reason when rejecting: 1 not my product, 2 defective or damaged, 3 quantity short, 4 wrong item, 5 used, 6 counterfeit, 7 part missing, 8 not defective, 9 not wrong, 10 empty package, 11 package not received, 12 other."
+          }
+        },
+        "required": [
+          "refund_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/updateRefund",
+        "bodyMapping": {
+          "refundId": "$refund_id",
+          "status": "$status",
+          "RefundRejectType": "$refund_reject_type"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "pazarama_list_cancellation_requests",
+      "description": "List cancellation requests buyers sent for orders in preparation (item status 18): refundId, orderNumber, refundType (reason), refundStatus and name, amounts and dates, with page info and counts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_start_date": {
+            "type": "string",
+            "description": "Start of the request date range, `YYYY-MM-DD`."
+          },
+          "request_end_date": {
+            "type": "string",
+            "description": "End of the request date range, `YYYY-MM-DD`."
+          },
+          "refund_status": {
+            "type": "integer",
+            "description": "Only this status: 1 awaiting your answer, 2 approved, 3 rejected, 4 or 5 by Pazarama, 6 auto approved, 7 withdrawn, 8 direct approval. Leave out for all."
+          },
+          "order_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only this order number."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (default 10)."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page, starting at 1."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/api/cancel/items",
+        "bodyMapping": {
+          "pageSize": "$page_size",
+          "pageNumber": "$page_number",
+          "refundStatus": "$refund_status",
+          "requestStartDate": "$request_start_date",
+          "requestEndDate": "$request_end_date",
+          "orderNumber": "$order_number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_answer_cancellation_request",
+      "description": "Approve (2) or reject (3) a buyer's cancellation request. Approving cancels the item and the buyer is refunded. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "refundId from pazarama_list_cancellation_requests."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ],
+            "description": "2 approve, 3 reject."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Quantity the answer applies to."
+          }
+        },
+        "required": [
+          "refund_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/api/cancel",
+        "bodyMapping": {
+          "refundId": "$refund_id",
+          "status": "$status",
+          "quantity": "$quantity"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "pazarama_report_not_supplied",
+      "description": "Mark an order item as not supplied (status 13: out of stock, price error); Pazarama cancels it and refunds the buyer, and the seller score suffers. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order number shown to the buyer, e.g. 735071747 (orderNumber of pazarama_list_orders)."
+          },
+          "order_item_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Order item id, a GUID (items[].orderItemId of pazarama_list_orders)."
+          }
+        },
+        "required": [
+          "order_number",
+          "order_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order/updateOrderStatus",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "item": {
+            "orderItemId": "$order_item_id",
+            "status": 13
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "pazarama_list_question_statuses",
+      "description": "List the question statuses: 0 awaiting answer, 1 answered, 2 awaiting approval, 3 rejected.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/QuestionAnswer/getQuestionStatus"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_list_question_topics",
+      "description": "List the question topics (id and topic, e.g. colour and size, delivery and shipping, cancellation and return, warranty, product features) to filter pazarama_search_questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/QuestionAnswer/questionTopics"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_search_questions",
+      "description": "Search customer questions with their answers: questionId, productName, barcode, brand, maskedUserName, question, questionDate, answer, answerDate, questionStatus and topicId, with page info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "Only questions about this barcode."
+          },
+          "topic_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "Only this topic (pazarama_list_question_topics)."
+          },
+          "question_start_date": {
+            "type": "string",
+            "description": "Questions from this date, ISO 8601."
+          },
+          "question_end_date": {
+            "type": "string",
+            "description": "Questions until this date, ISO 8601."
+          },
+          "question_status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "0 awaiting answer, 1 answered, 2 awaiting approval, 3 rejected."
+          },
+          "page_index": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/QuestionAnswer/getApprovalAnswersByMerchantSearch",
+        "bodyMapping": {
+          "barcode": "$barcode",
+          "topicId": "$topic_id",
+          "questionStartDate": "$question_start_date",
+          "questionEndDate": "$question_end_date",
+          "questionStatus": "$question_status",
+          "pageIndex": "$page_index",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_list_unanswered_questions",
+      "description": "List the questions waiting for your answer: productName, questionId, questionDate, questionStatus, plus unAnsweredCount and page info.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/QuestionAnswer/getApprovalAnswersByMerchant"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_get_question",
+      "description": "Read one question: product name, image, barcode and brand, the question text, date, status, topic, whether it is private, the order number when it is about an order, and the user's other questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "questionId from the question lists."
+          }
+        },
+        "required": [
+          "question_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/QuestionAnswer/getApprovalAnswerById",
+        "queryParams": {
+          "questionId": "$question_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pazarama_answer_question",
+      "description": "Answer a customer question. The answer may go through Pazarama's approval (status 2) before it is shown.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{8}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{4}-?[0-9A-Fa-f]{12}$",
+            "description": "questionId from the question lists."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Answer text."
+          }
+        },
+        "required": [
+          "question_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/QuestionAnswer/sellerAnswer",
+        "bodyMapping": {
+          "questionId": "$question_id",
+          "text": "$text"
+        }
+      }
+    },
+    {
+      "name": "pazarama_get_payment_agreement",
+      "description": "Read settlement data for a period: transactionList (order, amount, commissionAmount, couponDiscount, allowanceAmount paid to you, status, transaction and transfer dates, shipping debt, withholding) and commissionInvoiceDetails. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Transactions from, e.g. 2026-04-01T00:00:00.000."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Transactions until, e.g. 2026-04-21T23:59:59.999."
+          },
+          "allowance_start_date": {
+            "type": "string",
+            "description": "Payout (allowance) date from."
+          },
+          "allowance_end_date": {
+            "type": "string",
+            "description": "Payout date until."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Only this order."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/paymentAgreement",
+        "bodyMapping": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "allowanceStartDate": "$allowance_start_date",
+          "allowanceEndDate": "$allowance_end_date",
+          "orderId": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

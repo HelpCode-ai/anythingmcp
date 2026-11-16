@@ -1,11 +1,13 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { StatusPill } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { ConnectorSetupStatus } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { productEvents, type ConnectorSetupStatus } from '@/lib/api';
 
 /** Where a connector that is not set up gets finished. */
 export function finishSetupHref(connector: { id: string; config?: { adapterSlug?: string } | null }): string {
@@ -39,10 +41,21 @@ export function SetupStatusBanner({
   connector: { id: string; setupStatus?: ConnectorSetupStatus | null; missingVariables?: string[]; config?: { adapterSlug?: string } | null };
 }) {
   const t = useTranslations('setupStatus');
+  const { token } = useAuth();
   const status = connector.setupStatus;
+  const adapterSlug = connector.config?.adapterSlug;
+  // An AI client links here for a connector that was added without its
+  // credentials; the setup itself is one more click away. Reported once per
+  // page load, so the visits that never take that click can be counted.
+  const reported = useRef(false);
+  useEffect(() => {
+    if (reported.current || !token || !adapterSlug || !status || status === 'ready') return;
+    reported.current = true;
+    productEvents.track('setup_finish_prompt_viewed', token, { adapterSlug, connectorId: connector.id, kind: status });
+  }, [token, adapterSlug, status, connector.id]);
   if (!status || status === 'ready') return null;
   const missing = connector.missingVariables ?? [];
-  const catalog = !!connector.config?.adapterSlug;
+  const catalog = !!adapterSlug;
   return (
     <div role="status" className="flex flex-wrap items-center gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--t-warn-bg)] p-3 text-sm text-[var(--t-warn-fg)]">
       <div className="min-w-0 flex-1">

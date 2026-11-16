@@ -1,0 +1,1612 @@
+{
+  "slug": "aliexpress-seller",
+  "name": "AliExpress Seller",
+  "aliases": [
+    "AliExpress Seller Center",
+    "AliExpress Seller API",
+    "AliExpress shop"
+  ],
+  "description": "Let your AI run your AliExpress shop: orders and delivery addresses, shipment declarations with your own carrier, products with prices and stock, categories, disputes and settlement statements. Uses your own seller app on the AliExpress Open Platform.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "aliexpress",
+  "docsUrl": "https://openservice.aliexpress.com/doc/api.htm#/api?cid=20905&path=aliexpress.trade.seller.orderlist.get&methodType=GET/POST",
+  "instructions": "## AliExpress Seller\nThis connector calls the seller APIs of the **AliExpress Open Platform** (`api-sg.aliexpress.com`) for your own AliExpress shop: orders and delivery addresses, declaring shipments with your own carrier, packages, products with prices and stock, categories, freight templates, disputes and settlement statements. It uses an app that you register yourself. Platform logistics shipments, taking products offline and accepting a dispute proposal are installed switched off. AliExpress lists no buyer-message API on its current API list, so messages to buyers are not covered.\n\n**What you need**: an AliExpress seller account, a developer account on the AliExpress Open Platform and an app of your own in the category **Seller-inhouse Developer**. AliExpress reviews the developer profile and has to approve that app category before the app can be created: nobody but AliExpress can speed this up, and it can refuse. Its Chinese FAQ names 2 to 5 working days for the developer review; no time is given for the category.\n\n**Setup**\n1. At https://openservice.aliexpress.com click **Create Account** (or sign in). Then complete your profile under your user ID, **Profile**: choose the developer type, fill in the fields and upload the documents AliExpress asks for. AliExpress reviews the profile.\n2. Open the **App Console** and click **Create**. In the list of app categories click **Apply** on **Seller-inhouse Developer** (for an AliExpress seller who builds an app for their own use), write why you need it in the **Reason** field and click **OK**. The category shows **Pending** until AliExpress approves it, then **Active**. Only one app can be created per category.\n3. On the approved category click **Create App**. Enter an app name and, as callback URL, the address of this server followed by `/api/iop-auth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/iop-auth/callback`), then click **Submit**.\n4. Click **APP Overview**, then **Manage** on your app. Copy the **App Key** into `ALIEXPRESS_SELLER_APP_KEY`. Under **Basic Information** click **View** and copy the **App Secret** into `ALIEXPRESS_SELLER_APP_SECRET`.\n5. On the same page look at **API Permission Group**: a group marked **Inactive** has to be requested with **Apply** and a reason before its APIs answer.\n6. Under **App Console, App Management, Auth Management** enter the seller account of your shop in the seller authorization whitelist and submit. A self-developed app can bind up to 50 shops, and only shops that are legally related to the developer: the same company, parent and subsidiary, the same parent company, or the same legal representative or majority shareholder.\n7. On the connector page click **Authorize**. AliExpress shows its sign-in page: select the country, enter the seller account and password of the shop and click **Sign in And Authorize**. You come back to AnythingMCP on your own.\n\n**Token lifetime**: AnythingMCP keeps the access token and the refresh token encrypted, reads how long they last from the answer of AliExpress (`expires_in` and `refresh_expires_in`, in seconds) and renews the access token by itself. A renewal brings a new refresh token but does not move the end date of the refresh token. When that date is reached (or AliExpress answers `refresh_expires_in` 0), click **Authorize** again. The **Auth Management** page shows the durations of your app; the Chinese guide of AliExpress names 365 days for the access token and 730 days for the refresh token of a self-developed seller app.\n\n**How it signs**: every call goes to `/sync` with the API name in `method`, plus `app_key`, `access_token`, a millisecond `timestamp`, `sign_method=sha256` and `sign`, the upper-case HMAC-SHA256 of all parameters sorted by name, keyed with the App Secret. The secret never leaves AnythingMCP.\n\n**Where to start**\n- The shop: `aliexpress_seller_get_seller_profile` (seller id, country, quotation currency, product counts) and `aliexpress_seller_get_shop_info` (shop id, name and URL).\n- Orders: `aliexpress_seller_list_orders` with `order_status` WAIT_SELLER_SEND_GOODS lists what has to be shipped; `aliexpress_seller_get_order` gives amounts, sub-orders and tracking; `aliexpress_seller_get_order_receipt_info` the delivery address.\n- Shipping with your own carrier: `aliexpress_seller_list_order_shipping_services` says per sub-order whether it ships with your own carrier (DBS) or with platform logistics; `aliexpress_seller_list_shipment_providers` gives the provider codes; `aliexpress_seller_declare_shipment` sends carrier and tracking number to AliExpress and costs nothing; `aliexpress_seller_modify_shipment` corrects it (twice at most, within ten days). `aliexpress_seller_list_packages` shows the packages and their status.\n- Platform logistics (switched off at install, because they order a logistics service for the shop): `aliexpress_seller_list_seller_addresses` for the pickup address, `aliexpress_seller_pack_order` to create the package, `aliexpress_seller_ship_platform_package` to hand it over, `aliexpress_seller_cancel_package` to undo a package. Printing the waybill is not included: AliExpress returns it as a file inside the answer, print it from the seller centre.\n- Products: `aliexpress_seller_list_products` by status, `aliexpress_seller_get_product` with every SKU, `aliexpress_seller_update_prices` and `aliexpress_seller_update_stock` by `sku_code`, `aliexpress_seller_set_products_online`, and `aliexpress_seller_set_products_offline` (switched off). Posting, editing and deleting products are not included.\n- Catalogue settings: `aliexpress_seller_list_categories`, `aliexpress_seller_list_publishable_categories` and `aliexpress_seller_list_freight_templates`.\n- Disputes: `aliexpress_seller_list_disputes` and `aliexpress_seller_get_dispute` are reads. `aliexpress_seller_accept_dispute_solution` is switched off: accepting a proposal is binding and can refund the buyer.\n- Money: `aliexpress_seller_list_settlement_bills` lists the settlement statements. The connector never pays, refunds or withdraws by itself.\n\n**Ids and formats**\n- Order, sub-order, product and dispute ids are long numbers: pass them as text, digits only. The sub-order id (`child_id` in the order list, `id` in `child_order_list` of an order) is what the shipping tools call `tradeOrderItemId`.\n- Order times are **US Pacific Time**, written `yyyy-MM-dd HH:mm:ss`. Package and dispute filters take Unix time in milliseconds. Settlement periods are written `YYYY/MM/dd`, their release dates are Unix milliseconds.\n- Amounts are objects with `amount` (a decimal string) and `currency_code`; prices you send are decimal strings in the currency of the product.\n- Lists page from 1: orders and disputes up to 50 per page, packages up to 50, products fewer than 100. Price and stock updates take at most 20 products with 200 SKUs each.\n- `order_status` FINISH covers completed and closed orders alike, and is only returned when asked for. `endReason` in the `extend_map` of its sub-orders tells them apart.\n\n**Answers and errors**: results sit under `aliexpress_..._response` (the API name with underscores). Many calls answer 200 and carry their own verdict inside: `result.success` with `errorCode` and `errorMessage` (or `error_code` and `error_message`), `update_success` with `update_failed_list` for price and stock updates. Always read it before telling the user a write worked. Refusals of the gateway come as `error_response` with a `code`: `IllegalAccessToken` when the authorization ended (AnythingMCP renews the token once and retries), `InvalidAppkey` or `IncompleteSignature` when key and secret do not match, `InsufficientPermission` when the app lacks the API permission group, and a call limit code when the quota of the app category is used up.",
+  "prerequisites": "An AliExpress seller account and an app of your own in the category Seller-inhouse Developer on the AliExpress Open Platform (App Key and App Secret). AliExpress reviews the developer profile and must approve that app category before the app can be created (its FAQ names 2 to 5 working days for the developer review, and it can refuse). The setup itself takes about 20 minutes.",
+  "appRegistrationUrl": "https://openservice.aliexpress.com/app/index.htm",
+  "requiredEnvVars": [
+    "ALIEXPRESS_SELLER_APP_KEY",
+    "ALIEXPRESS_SELLER_APP_SECRET"
+  ],
+  "envVarMeta": {
+    "ALIEXPRESS_SELLER_APP_KEY": {
+      "label": "App Key",
+      "kind": "setting",
+      "help": "AliExpress Open Platform, App Console, APP Overview, Manage on your Seller-inhouse Developer app: the App Key (a number).",
+      "example": "512345",
+      "link": "https://openservice.aliexpress.com/app/index.htm",
+      "pattern": "^[0-9]{4,12}$",
+      "patternMessage": "The App Key is a number."
+    },
+    "ALIEXPRESS_SELLER_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page as the App Key, under Basic Information: click View to see the App Secret. It signs every request and is never sent.",
+      "link": "https://openservice.aliexpress.com/app/index.htm",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste the App Secret alone, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "AliExpress refused the app key, the signature or the authorization of the shop. Check that ALIEXPRESS_SELLER_APP_KEY and ALIEXPRESS_SELLER_APP_SECRET belong to the same Seller-inhouse Developer app, then click Authorize again on the connector page: the authorization ends when the refresh token expires.",
+    "403": "The app works but may not make this call. In the App Console check that the API Permission Group of this API is Active for your app, and that the seller account of the shop is on the seller authorization whitelist under Auth Management.",
+    "404": "AliExpress found nothing under that id for the authorized shop. Check the order, product or dispute id and that it belongs to this shop.",
+    "rate_limited": "The call quota of the app is used up. It comes from the traffic control policy of the app category: wait and try again."
+  },
+  "probe": {
+    "tool": "aliexpress_seller_get_seller_profile",
+    "params": {}
+  },
+  "connector": {
+    "name": "AliExpress Seller API",
+    "type": "REST",
+    "baseUrl": "https://api-sg.aliexpress.com",
+    "authType": "HMAC",
+    "authConfig": {
+      "tokenProvider": "iop",
+      "iop": {
+        "appKey": "{{ALIEXPRESS_SELLER_APP_KEY}}",
+        "authorizeUrl": "https://api-sg.aliexpress.com/oauth/authorize",
+        "tokenBaseUrl": "https://api-sg.aliexpress.com/rest",
+        "tokenPath": "/auth/token/create",
+        "refreshPath": "/auth/token/refresh",
+        "authorizeParams": {
+          "force_auth": "true"
+        }
+      },
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex-upper",
+        "secret": "{{ALIEXPRESS_SELLER_APP_SECRET}}",
+        "placement": "query",
+        "paramName": "sign",
+        "timestampParam": "timestamp",
+        "timestampFormat": "ms",
+        "queryParams": {
+          "app_key": "{{ALIEXPRESS_SELLER_APP_KEY}}",
+          "sign_method": "sha256"
+        },
+        "template": "${sortedParams}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error_response.code",
+          "matches": "AppKey|Signature|Token|Session|Auth",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 401
+        },
+        {
+          "path": "error_response.code",
+          "matches": "Permission|Forbidden|Denied|WhiteIp|IpLimit",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 403
+        },
+        {
+          "path": "error_response.code",
+          "matches": "Limit|Throttl|Frequen|Flow",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 429
+        },
+        {
+          "path": "error_response.code",
+          "matches": ".+",
+          "messagePath": [
+            "error_response.code",
+            "error_response.msg"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 20,
+    "examples": [
+      "Which AliExpress orders still have to be shipped?",
+      "Add tracking number 1Z999AA10123456784 to order 8198352049851315",
+      "Set the stock of SKU MUG-01 to 25",
+      "Show my open disputes and what the buyers ask for"
+    ],
+    "needs": [
+      "Your AliExpress seller account",
+      "A developer account on the AliExpress Open Platform, with the documents AliExpress asks for in the profile",
+      "AliExpress's approval of the app category **Seller-inhouse Developer**: not instant, and AliExpress can refuse",
+      "About 20 minutes of your own time. You can stop at any point: this page reopens where you left off."
+    ],
+    "why": "AliExpress lets other tools reach a shop only through an app registered on its Open Platform. A seller registers one for their own shops in the category **Seller-inhouse Developer**. AliExpress reviews the developer profile and approves the category before the app exists, which is why this setup has a wait in it.\n\nYou approve the access on the sign-in page of AliExpress. AnythingMCP never sees your AliExpress password, and deleting the connector removes the keys and the access it holds.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Create your seller app at AliExpress",
+        "body": "Sign in to the **AliExpress Open Platform** (click **Create Account** if you have none) and complete your profile under your user ID, **Profile**: AliExpress reviews it.\n\nThen open the **App Console**, click **Create** and click **Apply** on the category below. The category stays **Pending** until AliExpress approves it. Once it is **Active**, click **Create App** on it, enter the name and the callback URL below and click **Submit**.\n\nYou cannot create the app before the category is approved. Come back to this page when it is: your place is kept.",
+        "action": {
+          "label": "Open the App Console",
+          "url": "https://openservice.aliexpress.com/app/index.htm"
+        },
+        "values": [
+          {
+            "label": "App category",
+            "value": "Seller-inhouse Developer",
+            "pick": true,
+            "note": "For an AliExpress seller who builds an app for their own use."
+          },
+          {
+            "label": "Reason",
+            "value": "I am an AliExpress seller. I connect my own shop to my AI assistant through AnythingMCP to manage my orders, shipments, products and stock. Only my own shops use this app.",
+            "note": "AliExpress reads it when it reviews the request. Describe what you will really do."
+          },
+          {
+            "label": "App name",
+            "value": "AnythingMCP",
+            "note": "Any name works."
+          },
+          {
+            "label": "Callback URL",
+            "value": "{{redirectUri}}",
+            "note": "Paste it exactly: AliExpress sends you back to this address after you sign in."
+          }
+        ],
+        "confirm": "My app is created, with this callback URL",
+        "problems": [
+          {
+            "q": "I cannot find Create App",
+            "a": "The button appears on the category page once the status of **Seller-inhouse Developer** is **Active**. While it says **Pending**, AliExpress has not approved the request yet."
+          },
+          {
+            "q": "I already have an app in this category",
+            "a": "AliExpress allows one app per category: use that one. Open it with **Manage** and set its callback URL to the address above."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Copy the App Key and the App Secret",
+        "body": "In the App Console click **APP Overview**, then **Manage** on your app. The **App Key** is shown on the overview page. Under **Basic Information** click **View** to see the **App Secret**. Copy both into the fields below.",
+        "action": {
+          "label": "Open the App Console",
+          "url": "https://openservice.aliexpress.com/app/index.htm"
+        },
+        "fields": [
+          "ALIEXPRESS_SELLER_APP_KEY",
+          "ALIEXPRESS_SELLER_APP_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "I clicked Reset on the App Secret",
+            "a": "Then the old secret stops working after the time you chose under **Old Secret Expires In**. Copy the new one here."
+          }
+        ]
+      },
+      {
+        "id": "review",
+        "title": "Check the approvals and the whitelist",
+        "body": "AliExpress has to do two things before your shop can be connected, and neither is instant:\n\n- It reviews your **developer profile**. Its Chinese FAQ names 2 to 5 working days.\n- It approves the app category **Seller-inhouse Developer**. AliExpress gives no time for this, and it can refuse.\n\nWhen both are through, open your app in the App Console and check two more things. Under **API Permission Group**, groups marked **Inactive** need **Apply** with a reason before their APIs answer. Under **App Console, App Management, Auth Management**, enter the seller account of your shop in the seller authorization whitelist and submit: only whitelisted shops can authorize a self-developed app.",
+        "action": {
+          "label": "Open the App Console",
+          "url": "https://openservice.aliexpress.com/app/index.htm"
+        },
+        "confirm": "My app category is Active and my shop is on the whitelist",
+        "problems": [
+          {
+            "q": "Which shops can I connect with one app?",
+            "a": "Up to 50, and only shops legally related to the developer: the same company, parent and subsidiary, the same parent company, or the same legal representative or majority shareholder. AliExpress checks this against the business registration."
+          },
+          {
+            "q": "AliExpress refused my developer account or the category",
+            "a": "AliExpress decides on its own and does not have to give a reason. For companies registered in mainland China its published entry rules ask, among other things, for a company at least one year old and a software copyright certificate; missing or incomplete documents are a common reason for a refusal."
+          },
+          {
+            "q": "A permission group stays Inactive",
+            "a": "Click **Apply** on the group, describe your use in the **Reason** field and click **OK**. AliExpress reviews the request; until then the calls of that group are refused."
+          }
+        ]
+      },
+      {
+        "id": "authorize",
+        "title": "Authorize your shop",
+        "body": "Continue saves your keys and opens the sign-in page of AliExpress. Select the country of your shop, enter the **seller** account and its password and click **Sign in And Authorize**. You come back here on your own.",
+        "problems": [
+          {
+            "q": "AliExpress shows an error about the redirect or callback address",
+            "a": "The callback URL of your app differs from the one in step 1. Open the app in the App Console, paste the address again exactly, save, and try again."
+          },
+          {
+            "q": "AliExpress refuses my account",
+            "a": "Sign in with the seller account of the shop, not a buyer account, and check that this account is on the seller authorization whitelist under **Auth Management** (step 3)."
+          },
+          {
+            "q": "I signed in but the connector is not authorized",
+            "a": "The code AliExpress sends back is valid for 30 minutes. Start again from this step and finish the sign-in in one go."
+          }
+        ]
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "aliexpress_seller_get_seller_profile",
+      "description": "The merchant profile of the authorized seller account: seller_id, country, quotation_currency (the currency the shop quotes prices in), supply_price_tax_type, and how many products are online (online_store_product_number), under review (auth_store_product_number) and allowed (limit_store_product_number). No parameters; the lightest call, so it also checks that the authorization works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.merchant.profile.get"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_get_shop_info",
+      "description": "The shop behind the authorization: shop_id, shop_name, shop_type, shop_url, merchant_login_id, the country_code chosen at registration and product_posting_forbidden (true when the shop may not post products). No parameters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.solution.merchant.profile.get"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_list_orders",
+      "description": "List the orders of the shop, one page at a time. Per order: order_id, order_status, gmt_create, gmt_pay_time, gmt_update, pay_amount (amount and currency_code), buyer_login_id, logistics_status, issue_status, the time left to ship (left_send_good_day, left_send_good_hour, left_send_good_min) and product_list with child_id (the sub-order id the shipping tools need), product_id, sku_code, product_name, product_count and product_unit_price; plus total_count and total_page. Give a creation or modification window: AliExpress answers code 40106 without a date range, and a modification window needs a creation window with it. The window may span 180 days, 30 days for FINISH. Without a status, every status except FINISH is returned. Times are US Pacific Time. Up to 50 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "create_date_start": {
+            "type": "string",
+            "description": "Orders created at or after this time, as yyyy-MM-dd HH:mm:ss in US Pacific Time, for example 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          },
+          "create_date_end": {
+            "type": "string",
+            "description": "Orders created before this time, as yyyy-MM-dd HH:mm:ss in US Pacific Time, for example 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          },
+          "modified_date_start": {
+            "type": "string",
+            "description": "Orders changed at or after this time (give a creation window too), as yyyy-MM-dd HH:mm:ss in US Pacific Time, for example 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          },
+          "modified_date_end": {
+            "type": "string",
+            "description": "Orders changed before this time, as yyyy-MM-dd HH:mm:ss in US Pacific Time, for example 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          },
+          "order_status": {
+            "type": "string",
+            "enum": [
+              "PLACE_ORDER_SUCCESS",
+              "IN_CANCEL",
+              "WAIT_SELLER_SEND_GOODS",
+              "SELLER_PART_SEND_GOODS",
+              "WAIT_BUYER_ACCEPT_GOODS",
+              "FUND_PROCESSING",
+              "IN_ISSUE",
+              "IN_FROZEN",
+              "WAIT_SELLER_EXAMINE_MONEY",
+              "RISK_CONTROL",
+              "FINISH"
+            ],
+            "description": "One status: PLACE_ORDER_SUCCESS (waiting for payment), IN_CANCEL (buyer asked to cancel), WAIT_SELLER_SEND_GOODS (to ship), SELLER_PART_SEND_GOODS (partly shipped), WAIT_BUYER_ACCEPT_GOODS (shipped), FUND_PROCESSING (funds being processed), IN_ISSUE (in dispute), IN_FROZEN (frozen), WAIT_SELLER_EXAMINE_MONEY (waiting for you to confirm the amount), RISK_CONTROL (24 hours of risk control after payment), FINISH (completed or closed, only returned when asked for)."
+          },
+          "order_status_list": {
+            "type": "array",
+            "description": "Several statuses at once (same values as order_status), at most 20.",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "enum": [
+                "PLACE_ORDER_SUCCESS",
+                "IN_CANCEL",
+                "WAIT_SELLER_SEND_GOODS",
+                "SELLER_PART_SEND_GOODS",
+                "WAIT_BUYER_ACCEPT_GOODS",
+                "FUND_PROCESSING",
+                "IN_ISSUE",
+                "IN_FROZEN",
+                "WAIT_SELLER_EXAMINE_MONEY",
+                "RISK_CONTROL",
+                "FINISH"
+              ]
+            }
+          },
+          "buyer_login_id": {
+            "type": "string",
+            "description": "Only orders of this buyer login id."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page, up to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.trade.seller.orderlist.get"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "param_aeop_order_query": {
+            "__json": {
+              "current_page": "$page",
+              "page_size": "$page_size",
+              "create_date_start": "$create_date_start",
+              "create_date_end": "$create_date_end",
+              "modified_date_start": "$modified_date_start",
+              "modified_date_end": "$modified_date_end",
+              "order_status": "$order_status",
+              "order_status_list": "$order_status_list",
+              "buyer_login_id": "$buyer_login_id"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "aliexpress_seller_get_order",
+      "description": "Everything about one order: order_status, logistics_status, fund_status, issue_status, the amounts (init_oder_amount for the products, logistics_amount, promotion_fee, new_seller_order_amount as the seller centre shows it, payment_amount paid by the buyer), gmt_create, gmt_pay_success, over_time_left, the buyer (buyer_info, memo), receipt_address, child_order_list (id, product_id, sku_code, product_name, product_count, order_status, refund_info), logistic_info_list (logistics_no, logistics_service_name, gmt_send) and refund_info. extend_map is JSON text: on the order it carries the seller remark, and on the sub-orders of a FINISH order the endReason that tells a completed order from a closed one. Times are US Pacific Time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.trade.new.redefining.findorderbyid",
+          "param1": "{\"order_id\":${order_id}}"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_get_order_receipt_info",
+      "description": "The delivery address of one order, for shipping it: contact_person, address, address2, detail_address, city, province, zip, country (two letters) and country_name, phone_country, phone_area, phone_number, mobile_no and, for buyers in Russia, localized_address. Personal data of the buyer: use it only to ship the order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.solution.order.receiptinfo.get",
+          "param1": "{\"order_id\":${order_id}}"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_list_order_shipping_services",
+      "description": "The logistics service on each sub-order of an order: tradeOrderItemId, shipmentServiceCode, shipmentServiceName and shipmentServiceDeliveryMode, which says whether the sub-order ships with your own carrier (DBS) or with AliExpress platform logistics. Call it before shipping to pick the right path: aliexpress_seller_declare_shipment for DBS, the platform logistics tools otherwise. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "order_item_ids": {
+            "type": "string",
+            "description": "The sub-order ids to look at, digits, comma-separated without spaces, for example `8659858689569,8659858689570`. They are child_id in product_list of aliexpress_seller_list_orders, or id in child_order_list of aliexpress_seller_get_order.",
+            "pattern": "^[0-9]{1,24}(,[0-9]{1,24})*$"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          }
+        },
+        "required": [
+          "order_id",
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.order.shipping.service.get",
+          "tradeOrderId": "$order_id",
+          "tradeOrderItemIdList": "[${order_item_ids}]",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_list_shipment_providers",
+      "description": "The carriers a package with these sub-orders may ship with. shipmentProviderList gives per provider shipmentProviderCode (the code aliexpress_seller_declare_shipment needs), shipmentProviderName, deliveryMode (DBS for your own carrier), shippingTypes (code and name, for example DOOR_PICKUP) and carrierInfoDTOList (carrierCode and carrierName); unusableShipmentProviderList names the providers that cannot be used, each with its unusableReason. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "order_item_ids": {
+            "type": "string",
+            "description": "The sub-order ids to look at, digits, comma-separated without spaces, for example `8659858689569,8659858689570`. They are child_id in product_list of aliexpress_seller_list_orders, or id in child_order_list of aliexpress_seller_get_order.",
+            "pattern": "^[0-9]{1,24}(,[0-9]{1,24})*$"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1. Leave out for the first page.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Providers per page. Leave out for the default.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id",
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.package.shipping.service.get",
+          "tradeOrderId": "$order_id",
+          "tradeOrderItemIdList": "[${order_item_ids}]",
+          "locale": "$locale",
+          "pageNo": "$page",
+          "pageSize": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_list_seller_addresses",
+      "description": "The pickup and return addresses saved for the shop: pickupSellerAddressList and refundSellerAddressList, each entry with addressId, name, phone, email, country, province, city, street, streetAddress, postCode, warehouseCode and defaultAddress. The addressId of a pickup address is what aliexpress_seller_pack_order needs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address_type": {
+            "type": "string",
+            "enum": [
+              "pickup",
+              "refund",
+              "pickup,refund"
+            ],
+            "default": "pickup,refund",
+            "description": "pickup (where parcels are collected), refund (where returns go) or both."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.seller.address.get",
+          "addressType": "$address_type",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_list_packages",
+      "description": "The fulfilment packages of the shop, by order, by package or by creation time, reaching back 90 days. dataSource gives per package packageId, tradeOrderId, trackingNumber, status and subStatus, shippingProviderCode and shippingProviderName, pickupServiceProvider, deliveryServiceProvider, createTime (Unix milliseconds) and waybillAssignFailedReason when no tracking number could be assigned; pageInfo gives current, pageSize and total. Give created_from and created_to together. Up to 50 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders). Leave out to list by time.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "package_id": {
+            "type": "string",
+            "description": "One package id, for example FP1112612851119001."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Packages created at or after this moment, Unix time in milliseconds (13 digits).",
+            "pattern": "^[0-9]{13}$"
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Packages created before this moment, Unix time in milliseconds (13 digits).",
+            "pattern": "^[0-9]{13}$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Packages per page, up to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.fulfillment.package.query",
+          "tradeOrderId": "$order_id",
+          "packageId": "$package_id",
+          "createStartTime": "$created_from",
+          "createEndTime": "$created_to",
+          "current": "$page",
+          "pageSize": "$page_size",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_declare_shipment",
+      "description": "Declare that sub-orders were shipped with your own carrier (DBS, not platform logistics): AliExpress records the carrier and the tracking number and treats the sub-orders as shipped. It costs nothing and books no transport. Take shipment_provider_code from aliexpress_seller_list_shipment_providers. Returns tradeOrderId and trackingNumber under result.data, with success, errorCode and errorMessage. A wrong declaration can be corrected with aliexpress_seller_modify_shipment, twice at most. Confirm the carrier and the tracking number with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "order_items": {
+            "type": "array",
+            "description": "The sub-orders in this parcel, one object each with tradeOrderItemId (the sub-order id as a string of digits): `[{\"tradeOrderItemId\":\"8659858689569\"}]`. Sub-order ids are child_id in product_list of aliexpress_seller_list_orders.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "tradeOrderItemId": {
+                  "type": "string",
+                  "description": "Sub-order id, digits only.",
+                  "pattern": "^[0-9]{1,24}$"
+                }
+              },
+              "required": [
+                "tradeOrderItemId"
+              ]
+            }
+          },
+          "shipment_provider_code": {
+            "type": "string",
+            "description": "shipmentProviderCode of a provider with deliveryMode DBS from aliexpress_seller_list_shipment_providers, for example SPAIN_LOCAL_CORREOORDINARIO."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "The carrier's tracking number of the parcel."
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "carrierCode from carrierInfoDTOList of the chosen provider. Needed for a seller shipping line, where AliExpress asks for the real carrier."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          }
+        },
+        "required": [
+          "order_id",
+          "order_items",
+          "shipment_provider_code",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.dbs.declareship"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "tradeOrderId": "$order_id",
+          "tradeOrderItemIdList": {
+            "__json": "$order_items"
+          },
+          "shipmentProviderCode": "$shipment_provider_code",
+          "trackingNumber": "$tracking_number",
+          "carrierCode": "$carrier_code",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "aliexpress_seller_modify_shipment",
+      "description": "Correct a shipment declared with aliexpress_seller_declare_shipment: replace the tracking number and the carrier of one parcel. AliExpress allows this twice at most, within ten days of the first declaration, and not for platform logistics parcels. Returns tradeOrderId and the new trackingNumber under result.data. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "old_tracking_number": {
+            "type": "string",
+            "description": "The tracking number declared before."
+          },
+          "new_tracking_number": {
+            "type": "string",
+            "description": "The correct tracking number."
+          },
+          "new_shipment_provider_code": {
+            "type": "string",
+            "description": "shipmentProviderCode of the correct provider (from aliexpress_seller_list_shipment_providers); repeat the old one when only the tracking number changes."
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "carrierCode of the real carrier, when the provider lists carriers."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          }
+        },
+        "required": [
+          "order_id",
+          "old_tracking_number",
+          "new_tracking_number",
+          "new_shipment_provider_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.dbs.declare.ship.modify"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "tradeOrderId": "$order_id",
+          "oldTrackingNumber": "$old_tracking_number",
+          "newTrackingNumber": "$new_tracking_number",
+          "newShipmentProviderCode": "$new_shipment_provider_code",
+          "carrierCode": "$carrier_code",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "aliexpress_seller_pack_order",
+      "description": "Create a platform logistics package for sub-orders of an order (online packaging): AliExpress books the shipment with its logistics partner and answers packageId and trackingNumber under result.data. This orders a logistics service for the shop, so it is installed switched off; use it only for sub-orders whose delivery mode is platform logistics, and confirm with the user first. Follow with aliexpress_seller_ship_platform_package; aliexpress_seller_cancel_package undoes a package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "order_items": {
+            "type": "array",
+            "description": "The sub-orders to pack together, one object each with tradeOrderItemId (the sub-order id as a string of digits): `[{\"tradeOrderItemId\":\"8659858689569\"}]`. Sub-order ids are child_id in product_list of aliexpress_seller_list_orders.",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "tradeOrderItemId": {
+                  "type": "string",
+                  "description": "Sub-order id, digits only.",
+                  "pattern": "^[0-9]{1,24}$"
+                }
+              },
+              "required": [
+                "tradeOrderItemId"
+              ]
+            }
+          },
+          "address_id": {
+            "type": "string",
+            "description": "addressId of a pickup address from aliexpress_seller_list_seller_addresses (address type pickup)."
+          },
+          "send_option": {
+            "type": "string",
+            "description": "How the parcel reaches the carrier, a shippingTypes code of the provider: DOOR_PICKUP (the carrier collects it) or SELF_SEND (you drop it off)."
+          },
+          "solution_code": {
+            "type": "string",
+            "description": "Line code of the logistics service, required for South Korea, for example AE_KR_DBS_Hanjin."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          }
+        },
+        "required": [
+          "order_id",
+          "order_items",
+          "address_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.shipment.pack"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "tradeOrderId": "$order_id",
+          "tradeOrderItemIdList": {
+            "__json": "$order_items"
+          },
+          "addressId": "$address_id",
+          "sendOption": "$send_option",
+          "solutionCode": "$solution_code",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "aliexpress_seller_ship_platform_package",
+      "description": "Mark a packed platform logistics package as ready to ship: after this the logistics partner comes to collect the parcel. Not for parcels shipped with your own carrier. Give the package id or the tracking number from aliexpress_seller_pack_order. Returns tradeOrderId and trackingNumber under result.data. It commits the shop to a platform logistics shipment, so it is installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "package_id": {
+            "type": "string",
+            "description": "packageId from aliexpress_seller_pack_order or aliexpress_seller_list_packages (preferred)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the package, when the package id is not at hand."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.platform.logistics.rts"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "tradeOrderId": "$order_id",
+          "packageId": "$package_id",
+          "trackingNumber": "$tracking_number",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "aliexpress_seller_cancel_package",
+      "description": "Cancel a platform logistics package created with aliexpress_seller_pack_order, so the order can be packed again. The logistics guide of AliExpress says a package can no longer be cancelled once a waybill number is assigned to it. Not for parcels shipped with your own carrier. Give the package id or the tracking number. Returns tradeOrderId and trackingNumber under result.data. Installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders).",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "package_id": {
+            "type": "string",
+            "description": "packageId from aliexpress_seller_pack_order or aliexpress_seller_list_packages."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the package, when the package id is not at hand."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of names and messages, written as language_COUNTRY, for example en_US or es_ES.",
+            "default": "en_US",
+            "pattern": "^[a-z]{2}_[A-Z]{2}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.asf.platform.logistics.repack"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "tradeOrderId": "$order_id",
+          "packageId": "$package_id",
+          "trackingNumber": "$tracking_number",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "aliexpress_seller_list_products",
+      "description": "List the products of the shop in one status, one page at a time: product_id, subject (title), product_min_price and product_max_price over the SKUs, currency_code, image_u_r_ls, group_id, freight_template_id, gmt_create, gmt_modified, ws_offline_date and ws_display (why a product is offline); plus product_count, current_page and total_page. Fewer than 100 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_status_type": {
+            "type": "string",
+            "enum": [
+              "onSelling",
+              "offline",
+              "auditing",
+              "editingRequired"
+            ],
+            "default": "onSelling",
+            "description": "onSelling (on sale), offline, auditing (under review) or editingRequired (rejected, needs editing)."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Words from the product title (fuzzy search, up to 128 characters).",
+            "maxLength": 128
+          },
+          "sku_code": {
+            "type": "string",
+            "description": "Only products with this seller SKU code."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only this product id.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only products of this product group id.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "ws_display": {
+            "type": "string",
+            "enum": [
+              "expire_offline",
+              "user_offline",
+              "violate_offline",
+              "punish_offline",
+              "degrade_offline"
+            ],
+            "description": "For offline products, the reason: expired, taken offline by the seller, violation, penalty or downgrade."
+          },
+          "off_line_time": {
+            "type": "integer",
+            "description": "Only products that go offline within this many days.",
+            "minimum": 1
+          },
+          "gmt_create_start": {
+            "type": "string",
+            "description": "Created at or after this time, as yyyy-MM-dd HH:mm:ss."
+          },
+          "gmt_create_end": {
+            "type": "string",
+            "description": "Created before this time, as yyyy-MM-dd HH:mm:ss."
+          },
+          "gmt_modified_start": {
+            "type": "string",
+            "description": "Changed at or after this time, as yyyy-MM-dd HH:mm:ss."
+          },
+          "gmt_modified_end": {
+            "type": "string",
+            "description": "Changed before this time, as yyyy-MM-dd HH:mm:ss."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 99.",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.solution.product.list.get"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "aeop_a_e_product_list_query": {
+            "__json": {
+              "product_status_type": "$product_status_type",
+              "current_page": "$page",
+              "page_size": "$page_size",
+              "subject": "$subject",
+              "sku_code": "$sku_code",
+              "product_id": "$product_id",
+              "group_id": "$group_id",
+              "ws_display": "$ws_display",
+              "off_line_time": "$off_line_time",
+              "gmt_create_start": "$gmt_create_start",
+              "gmt_create_end": "$gmt_create_end",
+              "gmt_modified_start": "$gmt_modified_start",
+              "gmt_modified_end": "$gmt_modified_end"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "aliexpress_seller_get_product",
+      "description": "One product in full: product_status_type, category_id, currency_code, product_price, the titles and descriptions per language (multi_language_subject_list, multi_language_description_list), image_u_r_ls, package size and gross_weight, delivery_time (days to prepare an order), freight_template_id, group_id, the properties, and aeop_ae_product_s_k_us with per SKU id, sku_code (what aliexpress_seller_update_prices and aliexpress_seller_update_stock address), sku_price, sku_discount_price, ipm_sku_stock (units in stock), currency_code and ean_code. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "The product id, digits only (product_id of aliexpress_seller_list_products).",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.solution.product.info.get",
+          "product_id": "$product_id"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_update_prices",
+      "description": "Set the price of SKUs, for up to 20 products and 200 SKUs per product in one call. Prices are decimal strings in the currency of the product. Leaving discount_price out of a SKU erases its discount price, so send it again when the discount should stay. Returns update_success (true only when every product was updated), update_successful_list and update_failed_list with product_id, error_code and error_message. Confirm the new prices with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "description": "The products to reprice: `[{\"product_id\":\"1000005237852\",\"multiple_sku_update_list\":[{\"sku_code\":\"123abc\",\"price\":\"19.99\",\"discount_price\":\"14.99\"}]}]`.",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "string",
+                  "description": "Product id, digits only.",
+                  "pattern": "^[0-9]{1,24}$"
+                },
+                "multiple_sku_update_list": {
+                  "type": "array",
+                  "description": "The SKUs of this product to reprice, at most 200.",
+                  "minItems": 1,
+                  "maxItems": 200,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sku_code": {
+                        "type": "string",
+                        "description": "Seller SKU code (sku_code of aliexpress_seller_get_product)."
+                      },
+                      "price": {
+                        "type": "string",
+                        "description": "New price, a decimal string such as 19.99."
+                      },
+                      "discount_price": {
+                        "type": "string",
+                        "description": "Discount (sale) price. Left out, the existing discount price is erased."
+                      }
+                    },
+                    "required": [
+                      "sku_code",
+                      "price"
+                    ]
+                  }
+                },
+                "multi_country_price_configuration": {
+                  "type": "object",
+                  "description": "Optional prices per destination country: price_type `absolute` and country_price_list, each entry with ship_to_country (two letters) and sku_price_by_country_list (sku_code, price, discount_price)."
+                }
+              },
+              "required": [
+                "product_id",
+                "multiple_sku_update_list"
+              ]
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.solution.batch.product.price.update"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "mutiple_product_update_list": {
+            "__json": "$products"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "aliexpress_seller_update_stock",
+      "description": "Set the stock of SKUs to absolute numbers, for up to 20 products and 200 SKUs per product in one call. Returns update_success (true only when every product was updated), update_successful_list and update_failed_list with product_id, error_code and error_message. Confirm the new quantities with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "description": "The products to restock: `[{\"product_id\":\"1000005237852\",\"multiple_sku_update_list\":[{\"sku_code\":\"123abc\",\"inventory\":99}]}]`.",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "string",
+                  "description": "Product id, digits only.",
+                  "pattern": "^[0-9]{1,24}$"
+                },
+                "multiple_sku_update_list": {
+                  "type": "array",
+                  "description": "The SKUs of this product to restock, at most 200.",
+                  "minItems": 1,
+                  "maxItems": 200,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "sku_code": {
+                        "type": "string",
+                        "description": "Seller SKU code (sku_code of aliexpress_seller_get_product)."
+                      },
+                      "inventory": {
+                        "type": "integer",
+                        "description": "Units in stock after the call.",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "sku_code",
+                      "inventory"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "product_id",
+                "multiple_sku_update_list"
+              ]
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.solution.batch.product.inventory.update"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "mutiple_product_update_list": {
+            "__json": "$products"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "aliexpress_seller_set_products_online",
+      "description": "Put offline products back on sale, up to 50 per call. Returns result.success, modify_count (how many went online) and error_details with error_code, error_message and the product_ids concerned. Confirm with the user before calling.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "string",
+            "description": "Product ids separated by semicolons, at most 50, for example `109827;109828`.",
+            "pattern": "^[0-9]{1,24}(;[0-9]{1,24}){0,49}$"
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.postproduct.redefining.onlineaeproduct"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "product_ids": "$product_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "aliexpress_seller_set_products_offline",
+      "description": "Take products off sale: buyers can no longer order them until aliexpress_seller_set_products_online puts them back. Returns result.success, modify_count and error_details (a product in a promotion cannot be taken offline). Installed switched off; confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "string",
+            "description": "Product ids separated by semicolons, at most 50 per call here, for example `109827;109828`.",
+            "pattern": "^[0-9]{1,24}(;[0-9]{1,24}){0,49}$"
+          }
+        },
+        "required": [
+          "product_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.postproduct.redefining.offlineaeproduct"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "product_ids": "$product_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "aliexpress_seller_list_categories",
+      "description": "The categories below one AliExpress category: per entry id, level, isleaf (products can only be posted in a leaf category), names in several languages (en, es, fr, pt, ru, zh and more) and features. category_id 0 gives the first level. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Parent category id; 0 for the first level.",
+            "pattern": "^[0-9]{1,24}$",
+            "default": "0"
+          },
+          "only_with_permission": {
+            "type": "boolean",
+            "description": "true: only categories this seller may post in."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.category.tree.list",
+          "category_id": "$category_id",
+          "only_with_permission": "$only_with_permission"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_list_publishable_categories",
+      "description": "The seller's own category tree, one level at a time: per child children_category_id, level (1 for a root category), is_leaf_category and multi_language_names (JSON text with the name per language). By default only the categories this seller may publish products in. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Parent category id; 0 for the root categories.",
+            "pattern": "^[0-9]{1,24}$",
+            "default": "0"
+          },
+          "filter_no_permission": {
+            "type": "boolean",
+            "description": "true (default): leave out the categories the seller has no permission for. false: show all.",
+            "default": true
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.solution.seller.category.tree.query",
+          "category_id": "$category_id",
+          "filter_no_permission": "$filter_no_permission"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_list_freight_templates",
+      "description": "The freight (shipping) templates of the shop: template_id, template_name and is_default. A product points to its template with freight_template_id. No parameters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.freight.redefining.listfreighttemplate"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_list_disputes",
+      "description": "List the disputes buyers opened against the shop, one page at a time: issue_id, order_id, parent_order_id, buyer_login_id, issue_status, reason_english, gmt_create and gmt_modified; plus total_item, current_page and page_size. aliexpress_seller_get_dispute needs the issue_id and the buyer_login_id from here. Up to 50 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "canceled_issue",
+              "finish"
+            ],
+            "description": "processing (open), canceled_issue (cancelled) or finish (closed). Leave out for all."
+          },
+          "order_id": {
+            "type": "string",
+            "description": "The AliExpress order id, digits only (order_id of aliexpress_seller_list_orders). Only disputes of this order.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "buyer_login_id": {
+            "type": "string",
+            "description": "Only disputes of this buyer login id."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Disputes opened at or after this moment, Unix time in milliseconds (13 digits).",
+            "pattern": "^[0-9]{13}$"
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Disputes opened before this moment, Unix time in milliseconds (13 digits).",
+            "pattern": "^[0-9]{13}$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Disputes per page, up to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.issue.issuelist.get"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "query_dto": {
+            "__json": {
+              "current_page": "$page",
+              "page_size": "$page_size",
+              "issue_status": "$issue_status",
+              "order_no": "$order_id",
+              "buyer_login_id": "$buyer_login_id",
+              "create_time_start": "$created_from",
+              "create_time_end": "$created_to"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "aliexpress_seller_get_dispute",
+      "description": "One dispute in full: issue_status and reverse_detail_status (for example wait_for_seller_response), issue_reason, order_id, product_id, product_name, product_price, issue_quantity, refund_money_max with its currency, timeout_type and timeout_trigger_time (what the seller must do, and by when), the proposals of the buyer, the seller and the platform (buyer_solution_list, seller_solution_list, platform_solution_list: id, solution_type, refund_money, status, logistics_fee_bear_role), process_dto_list (the history with attachments) and the buyer return shipment. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "string",
+            "description": "The dispute id, digits only (issue_id of aliexpress_seller_list_disputes).",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "buyer_login_id": {
+            "type": "string",
+            "description": "The buyer login id of that dispute (buyer_login_id of aliexpress_seller_list_disputes)."
+          }
+        },
+        "required": [
+          "issue_id",
+          "buyer_login_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.issue.detail.get",
+          "issue_id": "$issue_id",
+          "buyer_login_id": "$buyer_login_id"
+        }
+      }
+    },
+    {
+      "name": "aliexpress_seller_accept_dispute_solution",
+      "description": "Accept one proposal of a dispute in the name of the seller. This is a binding decision: AliExpress then carries out the proposal, which can refund the buyer in part or in full or start a return. It cannot be taken back. Read the proposal with aliexpress_seller_get_dispute first (refund_money, solution_type) and let the user decide. Returns result_object true on success. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "string",
+            "description": "The dispute id, digits only.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "buyer_login_id": {
+            "type": "string",
+            "description": "The buyer login id of that dispute."
+          },
+          "solution_id": {
+            "type": "string",
+            "description": "id of the proposal to accept, an entry of the solution lists of aliexpress_seller_get_dispute.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "return_address_id": {
+            "type": "string",
+            "description": "Id of the return address, required when the proposal involves a return.",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        },
+        "required": [
+          "issue_id",
+          "buyer_login_id",
+          "solution_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.issue.solution.agree"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "issue_id": "$issue_id",
+          "buyer_login_id": "$buyer_login_id",
+          "solution_id": "$solution_id",
+          "return_address_id": "$return_address_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "aliexpress_seller_list_settlement_bills",
+      "description": "The settlement statements of a shop that AliExpress pays per period: per statement statement_id, statement_status, start_time and end_time of the period, amount (amount, format_amount, currency), estimate_release_date and released_date (Unix milliseconds), received_account (masked) and fund_id; plus total. Ask for the statements still to be paid out (TO_RELEASE) or already paid out (RELEASED). Read-only: nothing here pays or withdraws money.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statement_status": {
+            "type": "string",
+            "enum": [
+              "TO_RELEASE",
+              "RELEASED"
+            ],
+            "description": "TO_RELEASE (not yet paid out) or RELEASED (paid out)."
+          },
+          "statement_id": {
+            "type": "string",
+            "description": "Only this statement id."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of the texts: en_US, zh_CN or ko_KR.",
+            "default": "en_US"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, from 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Statements per page.",
+            "minimum": 1,
+            "default": 20
+          }
+        },
+        "required": [
+          "statement_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sync",
+        "queryParams": {
+          "method": "aliexpress.fund.merchant.period.settlebilldetail.query",
+          "statement_status": "$statement_status",
+          "statement_id": "$statement_id",
+          "lang": "$lang",
+          "current": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    }
+  ]
+}

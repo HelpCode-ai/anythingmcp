@@ -17,8 +17,9 @@ import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine, WsdlReadError } from './engines/soap.engine';
 import { wsdlUrlForLog } from './parsers/wsdl.parser';
 import { connectorSecretValues } from './connector-secrets.util';
+import { moveUrlCredentials, urlUserinfo } from './database-url-credentials.util';
 import { GraphqlEngine } from './engines/graphql.engine';
-import { DatabaseEngine } from './engines/database.engine';
+import { DatabaseEngine, assertSafeSqlIdentifierVars } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { UserCredentialError, UserCredentialsService } from './user-credentials.service';
 import { withoutUserTokens } from './user-credential.util';
@@ -39,8 +40,8 @@ import { assertAbsoluteBaseUrl } from '../common/base-url-variable.util';
 import { extractSsrfBlockedHostname } from '../common/ssrf.util';
 import { connectorPageUrl, normalizeConnectorBaseUrl } from '../common/url.util';
 import { resolveAdapterIcon } from './connector-icon.util';
-import { envVarsForMcpTool, mcpPathOf } from './mcp-connector-config.util';
-import { applySchemaDefaults } from '../common/schema-defaults.util';
+import { envVarsForMcpTool, mcpPathOf, resolveMcpFixedArguments } from './mcp-connector-config.util';
+import { applyEnvDefaults, applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
 import { EmailEngine } from './engines/email.engine';
@@ -48,7 +49,7 @@ import { EmailConnectorError } from './email/email-settings';
 import { OAuth2TokenService } from './engines/oauth2-token.service';
 import { ConnectorAuthStatusService, authCredentialRef } from './engines/connector-auth-status.service';
 import { BearerTokenRenewalService, withTokenRenewal } from './engines/bearer-token-renewal.service';
-import { connectorErrorWhen } from './error-when.util';
+import { connectorErrorWhen, connectorLargeIntegers } from './error-when.util';
 import { ResponseBodyError } from './engines/response-error.util';
 import { metaLoginFlavourOfSlug } from './engines/meta-login.util';
 
@@ -181,6 +182,11 @@ export class ConnectorsService {
     },
   ): Promise<Connector> {
     assertValidHeaderNames(data.headers, data.authConfig);
+    // A password typed into a connection string goes to the encrypted
+    // authConfig; the engine splices it back in at call time.
+    const moved =
+      data.type === 'DATABASE' ? moveUrlCredentials(data.baseUrl, data.authConfig) : null;
+    if (moved) data = { ...data, baseUrl: moved.baseUrl, authConfig: moved.authConfig };
     const encryptedAuth = data.authConfig
       ? encrypt(JSON.stringify(data.authConfig), this.encryptionKey)
       : null;
@@ -237,17 +243,37 @@ export class ConnectorsService {
       webhookSecret: string;
     }>,
   ): Promise<Connector> {
-    // Only the type (base URL normalisation) and the stored credential (auth
-    // status below) are needed: loading every tool, resource and prompt here
-    // made each save as heavy as the connector was large.
+    // Only the type (base URL normalisation), the stored credential (auth
+    // status below) and the stored base URL (DATABASE credentials) are
+    // needed: loading every tool, resource and prompt here made each save as
+    // heavy as the connector was large.
     const existing = await this.prisma.connector.findUnique({
       where: { id },
-      select: { type: true, authConfig: true },
+      select: { type: true, authConfig: true, baseUrl: true },
     });
     if (!existing) {
       throw new NotFoundException(`Connector ${id} not found`);
     }
     assertValidHeaderNames(data.headers, data.authConfig);
+
+    if (existing.type === 'DATABASE' && data.baseUrl !== undefined) {
+      let authConfig = data.authConfig ?? this.readAuthConfig(existing.authConfig);
+      // Credentials retyped into the URL replace the ones in authConfig, as
+      // the URL is where the database form asks for them (the Basic Auth
+      // fields send authConfig themselves). An unchanged userinfo keeps the
+      // rule that credentials already in authConfig are left alone.
+      const typed = urlUserinfo(data.baseUrl);
+      const retyped = !data.authConfig && typed !== urlUserinfo(existing.baseUrl);
+      if (retyped) {
+        const { username: _username, password: _password, ...rest } = authConfig;
+        authConfig = rest;
+      }
+      const moved = moveUrlCredentials(data.baseUrl, authConfig);
+      if (moved) data = { ...data, baseUrl: moved.baseUrl, authConfig: moved.authConfig };
+      // Not movable (no password, or {{VAR}} references) but typed with a
+      // username: the URL's credentials are the ones to use from now on.
+      else if (retyped && typed !== '' && !typed.startsWith(':')) data = { ...data, authConfig };
+    }
 
     const updateData: any = { ...data };
     if (data.authConfig) {
@@ -552,6 +578,7 @@ export class ConnectorsService {
               // spent one, and its next refresh was refused as revoked.
               connectorId: credentialKey,
               errorWhen: connectorErrorWhen(connector.config),
+              largeIntegers: connectorLargeIntegers(connector.config),
               logSecrets,
             },
             { method: 'GET', path },
@@ -942,7 +969,8 @@ export class ConnectorsService {
           Object.entries(injected).filter(([k]) => params[k] === undefined),
         ) }
       : params;
-    const mergedParams = applySchemaDefaults(parameters, withEnv);
+    // A parameter left out takes the variable the tool names for it (envDefaults).
+    const mergedParams = applySchemaDefaults(parameters, applyEnvDefaults(endpointMapping, withEnv, envVars));
 
     // Static response tools — return text immediately without engine dispatch.
     //
@@ -986,6 +1014,15 @@ export class ConnectorsService {
       authConfig = resolved.authConfig;
       credentialKey = resolved.credentialKey;
     }
+    // Table-name variables of a DATABASE connector (config.sqlIdentifierVars)
+    // are checked before they become SQL text, exactly as DynamicMcpTools does.
+    if ((connector.type as string) === 'DATABASE') {
+      assertSafeSqlIdentifierVars(
+        (connector.config as { sqlIdentifierVars?: unknown } | null)?.sqlIdentifierVars,
+        endpointMapping.path,
+        envVars ?? {},
+      );
+    }
     const { config: resolved, endpointMapping: resolvedMapping } =
       interpolateConnectorConfig(
         {
@@ -1012,6 +1049,17 @@ export class ConnectorsService {
       toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
       connectorPageUrl(connector.id),
     );
+    // Arguments an MCP bridge sends with every call (mcpFixedArguments), as
+    // on a real call (DynamicMcpTools).
+    const mcpFixedArguments =
+      connector.type === 'MCP' ? resolveMcpFixedArguments(connector.config, envVars) : undefined;
+    if (mcpFixedArguments) {
+      assertNoUnresolvedPlaceholders(
+        { body: mcpFixedArguments },
+        toolName ? `the connector behind ${toolName}` : `the "${connector.name}" connector`,
+        connectorPageUrl(connector.id),
+      );
+    }
     assertAbsoluteBaseUrl(
       {
         baseUrl: resolved.baseUrl,
@@ -1031,10 +1079,14 @@ export class ConnectorsService {
       specUrl: connector.specUrl ?? undefined,
       connectorId: credentialKey ?? connector.id,
       errorWhen: connectorErrorWhen(connector.config),
+      largeIntegers: connectorLargeIntegers(connector.config),
       logSecrets: connectorSecretValues(connector),
+      // Lets the test run take an uploaded file (amcp-file:) of this workspace.
+      organizationId: connector.organizationId,
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
         ? { proxyUrl: process.env.CONNECTOR_PROXY_URL }
         : {}),
+      ...(mcpFixedArguments ? { fixedArguments: mcpFixedArguments } : {}),
     };
 
     if (

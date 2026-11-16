@@ -15,7 +15,7 @@ import { RestEngine } from '../connectors/engines/rest.engine';
 import { GraphqlEngine } from '../connectors/engines/graphql.engine';
 import { SoapEngine } from '../connectors/engines/soap.engine';
 import { McpClientEngine } from '../connectors/engines/mcp-client.engine';
-import { DatabaseEngine } from '../connectors/engines/database.engine';
+import { DatabaseEngine, assertSafeSqlIdentifierVars } from '../connectors/engines/database.engine';
 import { AuditService } from '../audit/audit.service';
 import { RedisService } from '../common/redis.service';
 import { LicenseGuardService, TrialEndedException } from '../license/license-guard.service';
@@ -49,12 +49,20 @@ import { KgService } from '../knowledge-graph/kg.service';
 import { WebhookEventsService } from '../connectors/webhook-events.service';
 import type { ResponseMapping } from '../connectors/engines/engine-types';
 import type { RegisteredTool } from './tool-registry';
-import { deriveErrorHint, hostFromAxiosConfig, hostFromUrl } from './error-hints';
+import {
+  bodyText,
+  deriveErrorHint,
+  hostFromAxiosConfig,
+  hostFromUrl,
+  isMissingScopeHint,
+  isRefusedKeyHint,
+  ODOO_FIELD_HINT,
+} from './error-hints';
 import { egressIps } from '../connectors/egress';
-import { envVarsForMcpTool } from '../connectors/mcp-connector-config.util';
+import { envVarsForMcpTool, resolveMcpFixedArguments } from '../connectors/mcp-connector-config.util';
 import { processGauges } from '../common/process-vitals';
 import { recordToolCall } from '../common/metrics';
-import { applySchemaDefaults } from '../common/schema-defaults.util';
+import { applyEnvDefaults, applySchemaDefaults } from '../common/schema-defaults.util';
 import { renderStaticResponse } from '../connectors/static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from '../connectors/engines/odata.engine';
 import { EmailEngine } from '../connectors/engines/email.engine';
@@ -62,10 +70,11 @@ import { FileSearchEngine } from '../file-search/file-search.engine';
 import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
 import { getAdapter } from '../adapters/catalog';
+import { ArgumentPatternError, catalogPatternViolations } from './catalog-patterns';
 import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { ToolRateLimitService } from './tool-rate-limit.service';
-import { connectorErrorWhen } from '../connectors/error-when.util';
+import { connectorErrorWhen, connectorLargeIntegers } from '../connectors/error-when.util';
 import {
   isBinaryBody,
   readBinaryConfig,
@@ -114,11 +123,22 @@ import {
   toolMaxResponseBytes,
 } from '../common/response-size-limit';
 import { ConnectorAuthStatusService } from '../connectors/engines/connector-auth-status.service';
+import { deriveResultHint } from './result-hints';
+import {
+  isOdooModelName,
+  odooFieldAdvice,
+  odooFieldsFromFieldsGet,
+  parseOdooInvalidField,
+  type OdooField,
+} from '../adapters/odoo-field-suggestions';
 import {
   CREDENTIAL_REFUSED_CODE,
   CredentialRefusalTracker,
+  REFUSALS_BEFORE_MARK,
   STATIC_CREDENTIAL_AUTH_TYPES,
+  UNDECLARED_CREDENTIAL_AUTH_TYPES,
   credentialRefusedMessage,
+  marksAt,
 } from '../connectors/engines/credential-refusal-tracker';
 
 /**
@@ -134,9 +154,26 @@ import {
  */
 export const COMPACT_RENDER_CHARS = 1_000_000;
 
+/** How long a model's field list is reused for the Odoo "did you mean" hint. */
+const ODOO_FIELDS_TTL_MS = 10 * 60 * 1000;
+/** The field list must not hold up the error it explains. */
+const ODOO_FIELDS_TIMEOUT_MS = 8_000;
+/** Field lists kept at most; beyond that the cache starts over (memory bound). */
+const ODOO_FIELDS_CACHE_MAX = 500;
+
+/** Redis: refusals in a row of a connector's stored credential (credential-refusal-tracker.ts). */
+const REFUSAL_COUNT_KEY = 'cred_refused:';
+/** Refusals further apart than this are not "in a row". */
+const REFUSAL_COUNT_TTL_S = 14 * 24 * 60 * 60;
+/** Redis: an email about a connector's refused credential was sent. */
+const REFUSAL_EMAIL_KEY = 'cred_refused_mail:';
+const REFUSAL_EMAIL_PAUSE_S = 7 * 24 * 60 * 60;
+
 @Injectable()
 export class DynamicMcpTools {
   private readonly logger = new Logger(DynamicMcpTools.name);
+  /** Odoo field lists by connector (or user sign-in) and model, for odooModelFields. */
+  private readonly odooFieldLists = new Map<string, { at: number; fields: OdooField[] }>();
   /** Repeated 401s on read tools, recorded as the connector's credential status. */
   private readonly credentialRefusals = new CredentialRefusalTracker();
 
@@ -540,6 +577,13 @@ export class DynamicMcpTools {
     // An error message or an echoing API can quote them back (a URL with the
     // bot token in its path); they never reach the client or the log.
     const secretValues = this.connectorSecretValues(tool);
+    // The catalog adapter the connector was installed from: adapter-specific
+    // advice (result-hints.ts, error-hints.ts) is keyed on it.
+    const rawAdapterSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
+    const adapterSlug = typeof rawAdapterSlug === 'string' && rawAdapterSlug ? rawAdapterSlug : undefined;
+    // Set once the request is built: reads a model's fields with this very
+    // connector and caller, for the "did you mean" of an unknown Odoo field.
+    let lookupOdooFields: ((model: string) => Promise<OdooField[] | undefined>) | undefined;
 
     try {
       const envVars = tool.connectorConfig.envVars || {};
@@ -551,6 +595,17 @@ export class DynamicMcpTools {
         ...envVars,
         ...buildCallerContextVars(context),
       };
+
+      // A DATABASE connector that declares table-name variables
+      // (config.sqlIdentifierVars) has them checked before they become SQL
+      // text below. Without the field this does nothing.
+      if (tool.connectorType === 'DATABASE') {
+        assertSafeSqlIdentifierVars(
+          tool.connectorConfig.config?.sqlIdentifierVars,
+          tool.endpointMapping?.path,
+          interpolationVars,
+        );
+      }
 
       // Interpolate {{VAR}} patterns in config and endpoint mapping
       const {
@@ -565,6 +620,17 @@ export class DynamicMcpTools {
         interpolationVars,
         { reservedPrefix: CALLER_CONTEXT_PREFIX },
       );
+
+      // A catalog tool's argument that does not match the pattern the tool
+      // declares for it is refused here, with the rule in words, instead of
+      // going to the vendor for a refusal of its own (catalog-patterns.ts).
+      const patternViolations = catalogPatternViolations(
+        (tool.connectorConfig.config as { adapterSlug?: string } | undefined)?.adapterSlug,
+        tool.name,
+        tool.parameters,
+        params,
+      );
+      if (patternViolations.length > 0) throw new ArgumentPatternError(patternViolations);
 
       // Decide proxy routing (env present + tool opted in + cloud rate-limit).
       // Throws on over-quota (choice B). Returns null → direct request.
@@ -614,6 +680,11 @@ export class DynamicMcpTools {
         envVars,
       );
 
+      const mcpFixedArguments =
+        tool.connectorType === 'MCP'
+          ? resolveMcpFixedArguments(tool.connectorConfig.config, envVars)
+          : undefined;
+
       const engineConfig = {
         baseUrl: interpolatedConfig.baseUrl,
         authType: tool.connectorConfig.authType,
@@ -631,9 +702,15 @@ export class DynamicMcpTools {
         connectorId: credentialKey ??
           (usesCallerContext(tool.connectorConfig.authConfig) ? undefined : tool.connectorId),
         errorWhen: connectorErrorWhen(tool.connectorConfig.config),
+        largeIntegers: connectorLargeIntegers(tool.connectorConfig.config),
         // Masked in the engines' log lines (a bot token in the URL path).
         logSecrets: secretValues,
+        // The connector's own workspace: an uploaded file (amcp-file:) only
+        // resolves for tools of the workspace that uploaded it.
+        organizationId: tool.organizationId,
         ...(proxyUrl ? { proxyUrl } : {}),
+        // Arguments an MCP bridge sends with every call (mcpFixedArguments).
+        ...(mcpFixedArguments ? { fixedArguments: mcpFixedArguments } : {}),
       };
 
       // An OAuth connector nobody has authorized carries a placeholder where
@@ -665,6 +742,13 @@ export class DynamicMcpTools {
         `the connector behind ${tool.name}`,
         connectorPageUrl(tool.connectorId),
       );
+      if (mcpFixedArguments) {
+        assertNoUnresolvedPlaceholders(
+          { body: mcpFixedArguments },
+          `the connector behind ${tool.name}`,
+          connectorPageUrl(tool.connectorId),
+        );
+      }
       // A base URL without https:// (a variable typed as `shop.example.com`
       // on an older install) would otherwise fail in the SSRF guard as
       // "invalid URL", naming neither the variable nor the fix.
@@ -689,7 +773,17 @@ export class DynamicMcpTools {
       );
 
       // Apply JSON Schema defaults for missing params
-      const mergedParams = this.applyDefaults(tool.parameters, paramsWithEnv);
+      // A parameter left out takes the variable the tool names for it
+      // (endpointMapping.envDefaults), before the schema's own defaults.
+      const mergedParams = this.applyDefaults(
+        tool.parameters,
+        applyEnvDefaults(tool.endpointMapping, paramsWithEnv, envVars),
+      );
+
+      if (adapterSlug === 'odoo' || adapterSlug === 'odoo-jsonrpc') {
+        lookupOdooFields = (model) =>
+          this.odooModelFields(tool, model, engineConfig, interpolationVars, credentialKey);
+      }
 
       processGauges.inc('toolCallsInFlight');
       let engineOut: Awaited<ReturnType<DynamicMcpTools['executeWithEngine']>>;
@@ -818,6 +912,8 @@ export class DynamicMcpTools {
         toolName,
         meta,
         tool.endpointMapping?.queryParams,
+        // A success that needs explaining (an empty Telegram read).
+        deriveResultHint({ adapterSlug, toolName: tool.name, args: params, result }),
       );
 
       await this.auditService.logInvocation({
@@ -903,8 +999,6 @@ export class DynamicMcpTools {
       // for a refused credential, and the link to its page where the user
       // fixes it: a connector saved without a passing setup check otherwise
       // repeats the vendor's bare "API key not valid" on every call.
-      const rawSlug = (tool.connectorConfig?.config as { adapterSlug?: unknown } | undefined)?.adapterSlug;
-      const adapterSlug = typeof rawSlug === 'string' && rawSlug ? rawSlug : undefined;
       const message = typeof error?.message === 'string' ? error.message : undefined;
       let hint = engineHint ?? deriveErrorHint({
         host:
@@ -932,11 +1026,30 @@ export class DynamicMcpTools {
         ).catch(() => undefined);
         if (advice) hint = `${advice} ${hint}`;
       }
+      // Odoo "Invalid field": name the fields of that model that are close
+      // to the one asked for, instead of sending the assistant to list them
+      // all first. One extra read of the model's field list, cached; the
+      // general hint stays when it fails or says nothing.
+      if (hint === ODOO_FIELD_HINT && lookupOdooFields) {
+        const refused = parseOdooInvalidField(`${message ?? ''}\n${bodyText(errorDetail.responseBody)}`);
+        const model = refused?.model ?? params.model;
+        if (refused && isOdooModelName(model)) {
+          const fields = await lookupOdooFields(model).catch(() => undefined);
+          const advice = fields ? odooFieldAdvice(refused.field, model, fields) : undefined;
+          if (advice) hint = advice;
+        }
+      }
       if (hint) errorDetail.hint = hint;
 
       // A stored key refused again and again: the dashboard and
-      // setup_get_status show it (credential-refusal-tracker.ts).
-      if (errorDetail.status === 401) this.noteCredentialRefused(tool, hint);
+      // setup_get_status show it, and the owner of a connector that used to
+      // work is emailed (credential-refusal-tracker.ts).
+      this.noteCredentialRefused(
+        tool,
+        typeof errorDetail.status === 'number' ? errorDetail.status : undefined,
+        hint,
+        adapterSlug,
+      );
 
       await this.auditService.logInvocation({
         toolId: tool.id,
@@ -974,15 +1087,21 @@ export class DynamicMcpTools {
   }
 
   /**
-   * Whether a 401 on this tool says something about the connector's own
-   * stored credential: a read tool, a key stored on the connector (not a
+   * Whether a refused call on this tool says something about the connector's
+   * own stored credential: a read tool, a key stored on the connector (not a
    * user's own sign-in, not one built from the caller, not an OAuth2 or
-   * login flow, which record their refusals themselves).
+   * login flow, which record their refusals themselves). A connector without
+   * a declared auth type keeps its key in the URL or the body (a Telegram bot
+   * token, an Odoo JSON-RPC key): it counts only for an answer the error
+   * hints know as a refused key (`knownKeyRefusal`).
    */
-  private tracksStoredCredential(tool: RegisteredTool): boolean {
+  private tracksStoredCredential(tool: RegisteredTool, knownKeyRefusal = false): boolean {
     const cfg = tool.connectorConfig;
     if (!this.authStatus || !cfg || cfg.credentialScope === 'USER') return false;
-    if (!STATIC_CREDENTIAL_AUTH_TYPES.has(String(cfg.authType))) return false;
+    const authType = String(cfg.authType);
+    if (!STATIC_CREDENTIAL_AUTH_TYPES.has(authType)) {
+      if (!(knownKeyRefusal && UNDECLARED_CREDENTIAL_AUTH_TYPES.has(authType))) return false;
+    }
     if (usesCallerContext(cfg.authConfig)) return false;
     return (
       deriveToolAnnotations({
@@ -995,32 +1114,160 @@ export class DynamicMcpTools {
     );
   }
 
-  /** A refused read call; at the threshold the connector's credential status is recorded (no email). */
-  private noteCredentialRefused(tool: RegisteredTool, hint: string | undefined): void {
-    if (!this.tracksStoredCredential(tool)) return;
-    const count = this.credentialRefusals.refused(tool.connectorId);
-    if (count === undefined) return;
+  /**
+   * A failed call. When it is a refused credential on a read tool, it is
+   * counted; at the threshold the connector's credential status is recorded,
+   * and the owner is emailed when the connector worked before.
+   */
+  private noteCredentialRefused(
+    tool: RegisteredTool,
+    status: number | undefined,
+    hint: string | undefined,
+    adapterSlug: string | undefined,
+  ): void {
+    const knownKeyRefusal = isRefusedKeyHint(hint);
+    if (status !== 401 && !knownKeyRefusal) return;
+    // The credential works but lacks a scope: a new key would not help.
+    if (isMissingScopeHint(hint)) return;
+    if (!this.tracksStoredCredential(tool, knownKeyRefusal)) return;
+    const seenHere = this.credentialRefusals.refused(tool.connectorId);
     const authStatus = this.authStatus!;
     void (async () => {
+      const count = Math.max(seenHere, await this.sharedRefusalCount(tool.connectorId));
+      if (count < REFUSALS_BEFORE_MARK) return;
       // Never over a status another service recorded (a revoked sign-in, a logged-out session).
       const current = await authStatus.get(tool.connectorId);
       if (current && current.code !== CREDENTIAL_REFUSED_CODE) return;
+      // Already recorded: only its count is brought up to date now and then.
+      // Not recorded although past the threshold: an edit cleared it without
+      // fixing the key, so the very next refusal says so again.
+      if (current && !marksAt(count)) return;
+      // What the owner reads: the adapter's own advice from its setup check
+      // when it has one, else the hint of this call.
+      const own = adapterSlug ? getAdapter(adapterSlug)?.verifyHints : undefined;
+      const ownAdvice = (status !== undefined ? own?.[String(status)] : undefined) ?? own?.auth_failed;
+      const advice = (typeof ownAdvice === 'string' ? ownAdvice : ownAdvice?.hint) ?? hint;
       await authStatus.mark(
         tool.connectorId,
-        { status: 'needs_reauth', code: CREDENTIAL_REFUSED_CODE, message: credentialRefusedMessage(count, hint) },
-        { notify: false },
+        {
+          status: 'needs_reauth',
+          code: CREDENTIAL_REFUSED_CODE,
+          message: credentialRefusedMessage(count, advice, status === 401 ? status : undefined),
+        },
+        { notify: current ? false : await this.emailsRefusedCredential(tool.connectorId) },
       );
     })().catch((err) =>
       this.logger.warn(`Could not record refused credentials for connector ${tool.connectorId}: ${err?.message ?? err}`),
     );
   }
 
-  /** A call that worked: clear a status recorded for repeated 401s (once per connector and process otherwise). */
+  /**
+   * The refusals in a row counted across restarts and processes (Redis), this
+   * one included. 0 without Redis: the caller then uses its own count.
+   */
+  private async sharedRefusalCount(connectorId: string): Promise<number> {
+    try {
+      const key = `${REFUSAL_COUNT_KEY}${connectorId}`;
+      const count = await this.redisService.incr(key);
+      if (!Number.isFinite(count) || count <= 0) return 0;
+      if (count === 1) await this.redisService.expire(key, REFUSAL_COUNT_TTL_S);
+      return count;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Whether the owner gets the email for this incident. Only for a connector
+   * that has worked: its owner is not looking at it. One that never worked is
+   * still being set up, and the chat and the dashboard already say why. At
+   * most one email per connector in REFUSAL_EMAIL_PAUSE_S, for a key that
+   * works on and off.
+   */
+  private async emailsRefusedCredential(connectorId: string): Promise<boolean> {
+    try {
+      const worked = await this.prisma.toolInvocation.findFirst({
+        where: { connectorId, status: 'SUCCESS' },
+        select: { id: true },
+      });
+      if (!worked) return false;
+      const key = `${REFUSAL_EMAIL_KEY}${connectorId}`;
+      if (await this.redisService.get(key)) return false;
+      await this.redisService.set(key, '1', REFUSAL_EMAIL_PAUSE_S);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** A call that worked: clear a status recorded for repeated refusals (once per connector and process otherwise). */
   private noteCredentialAccepted(tool: RegisteredTool): void {
     if (!this.authStatus || !tool.connectorConfig || tool.connectorConfig.credentialScope === 'USER') return;
-    if (!STATIC_CREDENTIAL_AUTH_TYPES.has(String(tool.connectorConfig.authType))) return;
+    const authType = String(tool.connectorConfig.authType);
+    if (!STATIC_CREDENTIAL_AUTH_TYPES.has(authType) && !UNDECLARED_CREDENTIAL_AUTH_TYPES.has(authType)) return;
     if (!this.credentialRefusals.succeeded(tool.connectorId)) return;
+    void this.redisService.del(`${REFUSAL_COUNT_KEY}${tool.connectorId}`).catch(() => undefined);
     void this.authStatus.clear(tool.connectorId, { onlyCodes: [CREDENTIAL_REFUSED_CODE] });
+  }
+
+  /**
+   * The fields of an Odoo model, read with the connector's own
+   * `odoo_fields_get` tool and the credentials of the failed call (so a
+   * user's own sign-in sees what that user may see). Asked only after Odoo
+   * refused a field name, kept for ten minutes, and never logged as a call
+   * of the customer. `undefined` when the connector has no such tool, the
+   * read fails or takes too long: the caller then keeps its general hint.
+   */
+  private async odooModelFields(
+    tool: RegisteredTool,
+    model: string,
+    engineConfig: Record<string, unknown>,
+    interpolationVars: Record<string, string>,
+    credentialKey: string | undefined,
+  ): Promise<OdooField[] | undefined> {
+    const key = `${credentialKey ?? tool.connectorId}:${model}`;
+    const known = this.odooFieldLists.get(key);
+    if (known && Date.now() - known.at < ODOO_FIELDS_TTL_MS) return known.fields;
+
+    const fieldsTool = this.toolRegistry
+      .getToolsForConnectors?.([tool.connectorId])
+      .find((t) => t.name === 'odoo_fields_get');
+    if (!fieldsTool) return undefined;
+
+    const { endpointMapping } = interpolateConnectorConfig(
+      { baseUrl: tool.connectorConfig.baseUrl, headers: tool.connectorConfig.headers },
+      fieldsTool.endpointMapping,
+      interpolationVars,
+      { reservedPrefix: CALLER_CONTEXT_PREFIX },
+    );
+    const call = this.executeWithEngine(
+      fieldsTool.connectorType,
+      engineConfig,
+      endpointMapping,
+      this.applyDefaults(fieldsTool.parameters, { model, attributes: ['string', 'type'] }),
+      {
+        connectorConfig: tool.connectorConfig.config,
+        connectorId: tool.connectorId,
+        organizationId: tool.organizationId,
+      },
+    );
+    // Abandoned after the timeout: its late failure is nobody's error.
+    call.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tooSlow = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Odoo field list timed out')), ODOO_FIELDS_TIMEOUT_MS);
+      timer.unref?.();
+    });
+    try {
+      const { body } = await Promise.race([call, tooSlow]);
+      const fields = odooFieldsFromFieldsGet(body);
+      if (fields.length === 0) return undefined;
+      if (this.odooFieldLists.size >= ODOO_FIELDS_CACHE_MAX) this.odooFieldLists.clear();
+      this.odooFieldLists.set(key, { at: Date.now(), fields });
+      return fields;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   /**
@@ -1055,6 +1302,8 @@ export class DynamicMcpTools {
     toolName: string,
     meta?: ResponseMeta,
     queryParams?: Record<string, unknown>,
+    /** Advice for this very answer (result-hints.ts), after the tool's own followUp. */
+    resultHint?: string,
   ): {
     result: {
       content: ToolResultContent;
@@ -1105,8 +1354,11 @@ export class DynamicMcpTools {
       ? attachResponseMeta(outcome.value, meta, queryParams)
       : outcome.value;
 
-    const hint = responseMapping?.followUp
-      ? `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${responseMapping.followUp}`
+    const guidance = [responseMapping?.followUp, resultHint].filter(
+      (part): part is string => typeof part === 'string' && part.length > 0,
+    );
+    const hint = guidance.length
+      ? `\n\n---\nWORKFLOW HINT (guidance for the assistant, not part of the API response): ${guidance.join(' ')}`
       : '';
     // A large result is rendered compactly from the start: indenting a
     // multi-megabyte object (a page of 100 full WooCommerce orders) more than

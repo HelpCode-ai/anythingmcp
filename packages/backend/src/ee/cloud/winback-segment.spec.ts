@@ -14,6 +14,23 @@ describe('winbackSegment', () => {
 
   it('is unused without a successful call, whatever else', () => {
     expect(seg(['boss@acme.io'], ['etsy'], 0)).toBe('unused');
+    expect(
+      winbackSegment({ adminEmails: ['boss@acme.io'], connectorConfigs: [], successfulCalls: 0, succeededBefore: false }),
+    ).toBe('unused');
+  });
+
+  it('is not unused with 0 calls left when a first-success marker says it succeeded before', () => {
+    const marked = (adminEmails: string[], slugs: string[]) =>
+      winbackSegment({
+        adminEmails,
+        connectorConfigs: slugs.map((s) => ({ adapterSlug: s })),
+        successfulCalls: 0,
+        succeededBefore: true,
+      });
+    // The same segments as with calls on record.
+    expect(marked(['boss@acme.io'], [])).toBe('business');
+    expect(marked(['ada@gmail.com'], ['telegram-bot'])).toBe('telegram');
+    expect(marked(['ada@gmail.com'], ['todoist'])).toBe('consumer');
   });
 
   it('is business with a company address among the admins, or a business connector', () => {

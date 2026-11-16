@@ -1,0 +1,1402 @@
+{
+  "slug": "bling",
+  "name": "Bling",
+  "description": "Bling ERP API v3 (Brazil): products and categories, stock balances and movements, warehouses, sales orders and statuses, contacts, NF-e reads and drafts, accounts receivable and payable (read). Issuing NF-e is switched off. OAuth 2 sign-in with your own Bling app.",
+  "instructions": "## Bling\nThis connector works with the **Bling ERP API v3** (`https://api.bling.com.br/Api/v3`), the Brazilian ERP for small businesses and online sellers: products and categories, stock balances and movements, warehouses, sales orders and their statuses, contacts, NF-e (read, draft from an order), accounts receivable and payable (read) and payment methods.\n\n**Setup (about 10 minutes)**\n1. In Bling open **Central de Extensoes, Area do Integrador** and click **Criar aplicativo**. Choose visibility **Privado** (it then works only with your own Bling account, without Bling's review).\n2. Fill in the name and contact data. As **Link de redirecionamento** enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself.\n3. Select the **scopes** this connector needs: products, stock, warehouses, sales orders, contacts, NF-e, accounts receivable and payable, payment methods, statuses and company data. Save. Changing scopes later signs every user out.\n4. On the tab **Informacoes do app** copy the **Client ID** and **Client Secret** into `BLING_CLIENT_ID` and `BLING_CLIENT_SECRET`, save the connector and click **Authorize with Provider**, then sign in to Bling and allow access.\n\nAccess tokens last 6 hours and are renewed with the refresh token, which lasts 30 days: a connector unused for longer than that needs **Authorize with Provider** again. Bling blocks an address for an hour after 20 token requests in a minute, so do not retry the sign-in in a loop.\n\n**Where to start**: `bling_get_company` checks the connection. Then `bling_list_orders` (filter by date or status) and `bling_get_order`, or `bling_list_products` and `bling_get_product`.\n\n**Products and stock**: `bling_list_products`, `bling_get_product`, `bling_create_product`, `bling_update_product`, `bling_list_product_categories`, `bling_get_stock_balances`, `bling_get_warehouse_stock_balances`, `bling_create_stock_movement`, `bling_list_warehouses`. `bling_delete_product` is installed switched off. saldoVirtual is the physical stock minus what open orders reserve.\n\n**Sales orders**: `bling_list_orders`, `bling_get_order`, `bling_create_order`, `bling_update_order_status`. Status ids differ per account: read them with `bling_list_status_modules` (module Vendas) and `bling_list_statuses`. `bling_delete_order` is installed switched off. No tool posts receivables or settles payments.\n\n**Contacts**: `bling_list_contacts`, `bling_get_contact`, `bling_create_contact`, `bling_update_contact` (replaces the whole contact: read it first).\n\n**NF-e**: `bling_list_invoices`, `bling_get_invoice` (with DANFE and XML links), `bling_generate_invoice_from_order` (creates a pending draft only). `bling_send_invoice`, which transmits the NF-e to SEFAZ, is installed switched off: an authorized NF-e is a tax document. Turn it on only deliberately.\n\n**Finance (read-only)**: `bling_list_receivables`, `bling_get_receivable`, `bling_list_payables`, `bling_list_payment_methods`. The connector never moves money: no settlement (baixa), boleto or Pix action is included.\n\n**Field notes**: ids are numbers. Amounts are in BRL with a decimal point. Dates are `YYYY-MM-DD`; a date range may span at most one year. CPF and CNPJ go as digits. Answers are wrapped in `data`; errors carry `error.type`, `error.message`, `error.description` and `error.fields` naming the invalid field.\n\n**Paging and limits**: lists take `pagina` from 1 and `limite` up to 100; an empty `data` list is the end. Bling allows 3 requests per second and 120,000 per day per account (429 above); 300 errors or 600 requests within 10 seconds block the address for 10 minutes, so do not loop over failing calls.",
+  "aliases": [
+    "Bling ERP",
+    "Bling API v3"
+  ],
+  "region": "br",
+  "category": "erp",
+  "icon": "bling",
+  "docsUrl": "https://developer.bling.com.br/referencia",
+  "requiredEnvVars": [
+    "BLING_CLIENT_ID",
+    "BLING_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "BLING_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Central de Extensoes, Area do Integrador, your app, tab Informacoes do app: Client ID.",
+      "link": "https://developer.bling.com.br/aplicativos",
+      "pattern": "^[A-Za-z0-9]{16,80}$",
+      "patternMessage": "Paste the Client ID alone: letters and digits, without spaces."
+    },
+    "BLING_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same tab: the Client Secret of the app.",
+      "link": "https://developer.bling.com.br/aplicativos",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the Client Secret alone, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Bling refused the token (invalid_token). Click Authorize with Provider and sign in again; a refresh token unused for 30 days expires.",
+    "403": "The token works, but the Bling app lacks the scope for this call (insufficient_scope). Add the scope to the app in the Area do Integrador and authorize again.",
+    "400": "Bling refused the request: error.fields names the invalid field. At sign-in, invalid_client means the Client ID or Secret is wrong, and a redirect error means the Link de redirecionamento does not match exactly.",
+    "404": "Bling found no record with that id (RESOURCE_NOT_FOUND).",
+    "rate_limited": "Bling allows 3 requests per second and 120,000 per day. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "bling_get_company",
+    "params": {}
+  },
+  "prerequisites": "A Bling account and a private app created in Central de Extensoes, Area do Integrador, with the redirect link `https://cloud.anythingmcp.com/api/mcp-oauth/callback` (or `<your AnythingMCP server URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself) and the scopes listed in the setup steps.",
+  "connector": {
+    "name": "Bling API v3",
+    "type": "REST",
+    "baseUrl": "https://api.bling.com.br/Api/v3",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{BLING_CLIENT_ID}}",
+      "clientSecret": "{{BLING_CLIENT_SECRET}}",
+      "authorizationUrl": "https://www.bling.com.br/Api/v3/oauth/authorize",
+      "tokenUrl": "https://api.bling.com.br/Api/v3/oauth/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "pkce": false
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "bling_get_company",
+      "description": "Get the basic data of the Bling account the connector is signed in to: id, nome (company name), cnpj, email and dataContrato. A cheap call to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/empresas/me/dados-basicos"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_list_products",
+      "description": "List products: id, idProdutoPai, nome, codigo (SKU), preco, precoCusto, estoque (virtual balance), tipo, situacao, formato, descricaoCurta and imagemURL. By default the latest products; filter by name, SKUs, GTINs, ids, category or change date. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string",
+            "description": "Part of the product name."
+          },
+          "codigos": {
+            "type": "array",
+            "description": "SKUs (codigo) to fetch.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gtins": {
+            "type": "array",
+            "description": "GTIN or EAN codes to fetch.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ids_produtos": {
+            "type": "array",
+            "description": "Product ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "criterio": {
+            "type": "integer",
+            "description": "1 latest (default), 2 active, 3 inactive, 4 deleted, 5 all.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "tipo": {
+            "type": "string",
+            "description": "T all, P products, S services, E compositions, PS simple products, C with composition, V with variations.",
+            "enum": [
+              "T",
+              "P",
+              "S",
+              "E",
+              "PS",
+              "C",
+              "V"
+            ]
+          },
+          "id_categoria": {
+            "type": "integer",
+            "description": "Product category id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "data_alteracao_inicial": {
+            "type": "string",
+            "description": "Changed on or after, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "data_alteracao_final": {
+            "type": "string",
+            "description": "Changed on or before, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/produtos",
+        "queryParams": {
+          "nome": "$nome",
+          "codigos[]": "$codigos",
+          "gtins[]": "$gtins",
+          "idsProdutos[]": "$ids_produtos",
+          "criterio": "$criterio",
+          "tipo": "$tipo",
+          "idCategoria": "$id_categoria",
+          "dataAlteracaoInicial": "$data_alteracao_inicial",
+          "dataAlteracaoFinal": "$data_alteracao_final",
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_get_product",
+      "description": "Get one product with all details: nome, codigo, preco, tipo, situacao, formato, unidade, gtin, marca, pesos, dimensoes, categoria, estoque settings, fornecedor, tributacao (NCM, CEST, origem), variacoes, midia (images) and descriptions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_produto": {
+            "type": "integer",
+            "description": "Product id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_produto"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/produtos/{id_produto}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_create_product",
+      "description": "Create a product or service. nome, tipo, situacao and formato are required. Returns data.id of the new product (and of its variations). Tax data (NCM, origem) can be added later in Bling or with bling_update_product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "codigo": {
+            "type": "string",
+            "description": "SKU (codigo)."
+          },
+          "preco": {
+            "type": "number",
+            "description": "Sale price in BRL."
+          },
+          "tipo": {
+            "type": "string",
+            "description": "P product, S service, N service for NFS-e.",
+            "enum": [
+              "P",
+              "S",
+              "N"
+            ],
+            "default": "P"
+          },
+          "situacao": {
+            "type": "string",
+            "description": "A active, I inactive.",
+            "enum": [
+              "A",
+              "I"
+            ],
+            "default": "A"
+          },
+          "formato": {
+            "type": "string",
+            "description": "S simple, V with variations, E with composition.",
+            "enum": [
+              "S",
+              "V",
+              "E"
+            ],
+            "default": "S"
+          },
+          "unidade": {
+            "type": "string",
+            "description": "Unit, for example UN or KG."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "GTIN/EAN barcode."
+          },
+          "marca": {
+            "type": "string",
+            "description": "Brand."
+          },
+          "descricao_curta": {
+            "type": "string",
+            "description": "Short description (descricaoCurta)."
+          },
+          "peso_liquido": {
+            "type": "number",
+            "description": "Net weight in kg."
+          },
+          "peso_bruto": {
+            "type": "number",
+            "description": "Gross weight in kg."
+          },
+          "categoria": {
+            "type": "object",
+            "description": "Category as `{\"id\":123}` (ids from bling_list_product_categories)."
+          }
+        },
+        "required": [
+          "nome",
+          "tipo",
+          "situacao",
+          "formato"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/produtos",
+        "bodyMapping": {
+          "nome": "$nome",
+          "codigo": "$codigo",
+          "preco": "$preco",
+          "tipo": "$tipo",
+          "situacao": "$situacao",
+          "formato": "$formato",
+          "unidade": "$unidade",
+          "gtin": "$gtin",
+          "marca": "$marca",
+          "descricaoCurta": "$descricao_curta",
+          "pesoLiquido": "$peso_liquido",
+          "pesoBruto": "$peso_bruto",
+          "categoria": "$categoria"
+        }
+      }
+    },
+    {
+      "name": "bling_update_product",
+      "description": "Change a product (PATCH: only the fields sent change): name, SKU, price, status, unit, GTIN, brand, short description, weights or category. Answers with the product id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_produto": {
+            "type": "integer",
+            "description": "Product id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "nome": {
+            "type": "string",
+            "description": "New name."
+          },
+          "codigo": {
+            "type": "string",
+            "description": "SKU (codigo)."
+          },
+          "preco": {
+            "type": "number",
+            "description": "Sale price in BRL."
+          },
+          "situacao": {
+            "type": "string",
+            "description": "A active, I inactive.",
+            "enum": [
+              "A",
+              "I"
+            ]
+          },
+          "unidade": {
+            "type": "string",
+            "description": "Unit."
+          },
+          "gtin": {
+            "type": "string",
+            "description": "GTIN/EAN barcode."
+          },
+          "marca": {
+            "type": "string",
+            "description": "Brand."
+          },
+          "descricao_curta": {
+            "type": "string",
+            "description": "Short description."
+          },
+          "peso_liquido": {
+            "type": "number",
+            "description": "Net weight in kg."
+          },
+          "peso_bruto": {
+            "type": "number",
+            "description": "Gross weight in kg."
+          },
+          "categoria": {
+            "type": "object",
+            "description": "Category as `{\"id\":123}` (ids from bling_list_product_categories)."
+          }
+        },
+        "required": [
+          "id_produto"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/produtos/{id_produto}",
+        "bodyMapping": {
+          "nome": "$nome",
+          "codigo": "$codigo",
+          "preco": "$preco",
+          "situacao": "$situacao",
+          "unidade": "$unidade",
+          "gtin": "$gtin",
+          "marca": "$marca",
+          "descricaoCurta": "$descricao_curta",
+          "pesoLiquido": "$peso_liquido",
+          "pesoBruto": "$peso_bruto",
+          "categoria": "$categoria"
+        }
+      }
+    },
+    {
+      "name": "bling_delete_product",
+      "description": "Delete a product permanently. Products used in orders or invoices may be refused; prefer setting situacao I. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_produto": {
+            "type": "integer",
+            "description": "Product to delete id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_produto"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/produtos/{id_produto}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "bling_list_product_categories",
+      "description": "List product categories: id, descricao and categoriaPai (parent). Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categorias/produtos",
+        "queryParams": {
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_get_stock_balances",
+      "description": "Get stock balances of products across all warehouses: per product saldoFisicoTotal (physical), saldoVirtualTotal (physical minus reserved by orders) and per deposito the balances.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids_produtos": {
+            "type": "array",
+            "description": "Product (required, up to about 100) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "codigos": {
+            "type": "array",
+            "description": "SKUs to restrict to.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ids_produtos"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estoques/saldos",
+        "queryParams": {
+          "idsProdutos[]": "$ids_produtos",
+          "codigos[]": "$codigos"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_get_warehouse_stock_balances",
+      "description": "Get stock balances of products in one warehouse (deposito): saldoFisico and saldoVirtual per product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_deposito": {
+            "type": "integer",
+            "description": "Warehouse (deposito) id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "ids_produtos": {
+            "type": "array",
+            "description": "Product ids.",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "id_deposito",
+          "ids_produtos"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estoques/saldos/{id_deposito}",
+        "queryParams": {
+          "idsProdutos[]": "$ids_produtos"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_create_stock_movement",
+      "description": "Record a stock movement for a product in a warehouse: E entrada (in), S saida (out) or B balanco (set the balance to the quantity). Returns data.id of the movement. Stock only; no money moves.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_produto": {
+            "type": "integer",
+            "description": "Product id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "id_deposito": {
+            "type": "integer",
+            "description": "Warehouse (deposito) id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "operacao": {
+            "type": "string",
+            "description": "E in, S out, B set balance.",
+            "enum": [
+              "E",
+              "S",
+              "B"
+            ]
+          },
+          "quantidade": {
+            "type": "number",
+            "description": "Quantity."
+          },
+          "custo": {
+            "type": "number",
+            "description": "Unit cost (optional)."
+          },
+          "observacoes": {
+            "type": "string",
+            "description": "Note shown in the stock history."
+          }
+        },
+        "required": [
+          "id_produto",
+          "id_deposito",
+          "operacao",
+          "quantidade"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/estoques",
+        "bodyMapping": {
+          "produto": {
+            "id": "$id_produto"
+          },
+          "deposito": {
+            "id": "$id_deposito"
+          },
+          "operacao": "$operacao",
+          "quantidade": "$quantidade",
+          "custo": "$custo",
+          "observacoes": "$observacoes"
+        }
+      }
+    },
+    {
+      "name": "bling_list_warehouses",
+      "description": "List warehouses (depositos): id, descricao, situacao, padrao (default) and desconsiderarSaldo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "descricao": {
+            "type": "string",
+            "description": "Part of the warehouse name."
+          },
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/depositos",
+        "queryParams": {
+          "descricao": "$descricao",
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_list_orders",
+      "description": "List sales orders (pedidos de venda): id, numero, numeroLoja (marketplace order number), data, dataSaida, dataPrevista, totalProdutos, total, contato (id, nome), situacao (id, valor) and loja. Filter by date, status, contact, number or store. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "data_inicial": {
+            "type": "string",
+            "description": "Order date from, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "data_final": {
+            "type": "string",
+            "description": "Order date to, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "data_alteracao_inicial": {
+            "type": "string",
+            "description": "Changed on or after, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "data_alteracao_final": {
+            "type": "string",
+            "description": "Changed on or before, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "ids_situacoes": {
+            "type": "array",
+            "description": "Status (from bling_list_statuses) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "id_contato": {
+            "type": "integer",
+            "description": "Customer contact id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "numero": {
+            "type": "integer",
+            "description": "Order number in Bling."
+          },
+          "numeros_lojas": {
+            "type": "array",
+            "description": "Store or marketplace order numbers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id_loja": {
+            "type": "integer",
+            "description": "Store (sales channel) id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pedidos/vendas",
+        "queryParams": {
+          "dataInicial": "$data_inicial",
+          "dataFinal": "$data_final",
+          "dataAlteracaoInicial": "$data_alteracao_inicial",
+          "dataAlteracaoFinal": "$data_alteracao_final",
+          "idsSituacoes[]": "$ids_situacoes",
+          "idContato": "$id_contato",
+          "numero": "$numero",
+          "numerosLojas[]": "$numeros_lojas",
+          "idLoja": "$id_loja",
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_get_order",
+      "description": "Get one sales order: numero, numeroLoja, dates, contato, situacao, loja, itens (produto, codigo, descricao, quantidade, valor, desconto), parcelas (due dates, values, payment method), transporte (carrier, freight, volumes, tracking), totals, notaFiscal id when invoiced, vendedor and observacoes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_pedido_venda": {
+            "type": "integer",
+            "description": "Sales order id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_pedido_venda"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pedidos/vendas/{id_pedido_venda}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_create_order",
+      "description": "Create a sales order. Required: contato (id), data, dataSaida, dataPrevista, itens and parcelas. Returns data.id. Creating the order does not post stock or receivables, and issues no invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "object",
+            "description": "Order as Bling expects it, for example `{\"contato\":{\"id\":123},\"data\":\"2026-11-15\",\"dataSaida\":\"2026-11-15\",\"dataPrevista\":\"2026-11-20\",\"itens\":[{\"produto\":{\"id\":456},\"codigo\":\"SKU-1\",\"quantidade\":2,\"valor\":49.9,\"unidade\":\"UN\",\"descricao\":\"Caneca\"}],\"parcelas\":[{\"dataVencimento\":\"2026-12-15\",\"valor\":99.8,\"formaPagamento\":{\"id\":789}}]}`."
+          }
+        },
+        "required": [
+          "order"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pedidos/vendas",
+        "bodyMapping": {
+          "__raw": "$order"
+        }
+      }
+    },
+    {
+      "name": "bling_update_order_status",
+      "description": "Change the status (situacao) of a sales order, for example to Em andamento or Atendido. Valid status ids come from bling_list_statuses for the sales module. Bling automations tied to a status (stock posting, e-mails) run as in the app. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_pedido_venda": {
+            "type": "integer",
+            "description": "Sales order id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "id_situacao": {
+            "type": "integer",
+            "description": "New status id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_pedido_venda",
+          "id_situacao"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/pedidos/vendas/{id_pedido_venda}/situacoes/{id_situacao}"
+      }
+    },
+    {
+      "name": "bling_delete_order",
+      "description": "Delete a sales order permanently. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_pedido_venda": {
+            "type": "integer",
+            "description": "Sales order to delete id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_pedido_venda"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/pedidos/vendas/{id_pedido_venda}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "bling_list_status_modules",
+      "description": "List the Bling modules that have statuses (situacoes): id, nome and descricao, for example Vendas (sales orders). Use the id with bling_list_statuses.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/situacoes/modulos"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_list_statuses",
+      "description": "List the statuses of one module: id, nome, cor and idHerdado (the standard status it derives from). The ids are what bling_list_orders and bling_update_order_status take.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_modulo_sistema": {
+            "type": "integer",
+            "description": "Module (from bling_list_status_modules) id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_modulo_sistema"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/situacoes/modulos/{id_modulo_sistema}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_list_contacts",
+      "description": "List contacts (customers, suppliers and others): id, nome, codigo, situacao, numeroDocumento (CPF or CNPJ), telefone and celular. Search by name, document or phone. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pesquisa": {
+            "type": "string",
+            "description": "Search text: name, fantasy name, document or e-mail."
+          },
+          "numero_documento": {
+            "type": "string",
+            "description": "CPF or CNPJ, digits only."
+          },
+          "telefone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "tipo_pessoa": {
+            "type": "integer",
+            "description": "1 individual (fisica), 2 company (juridica), 3 foreign.",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "criterio": {
+            "type": "integer",
+            "description": "1 all, 2 deleted, 3 latest (default), 4 without movement.",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contatos",
+        "queryParams": {
+          "pesquisa": "$pesquisa",
+          "numeroDocumento": "$numero_documento",
+          "telefone": "$telefone",
+          "tipoPessoa": "$tipo_pessoa",
+          "criterio": "$criterio",
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_get_contact",
+      "description": "Get one contact: nome, fantasia, tipo (F, J, E), numeroDocumento, ie, email, emailNotaFiscal, telefone, celular, endereco (geral and cobranca), vendedor, financeiro (credit limit, payment terms), tiposContato and pessoasContato.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_contato": {
+            "type": "integer",
+            "description": "Contact id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_contato"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contatos/{id_contato}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_create_contact",
+      "description": "Create a contact (customer or supplier). nome, tipo and situacao are required. Returns data.id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "nome": {
+            "type": "string",
+            "description": "Name or company name."
+          },
+          "tipo": {
+            "type": "string",
+            "description": "F individual (CPF), J company (CNPJ), E foreign.",
+            "enum": [
+              "F",
+              "J",
+              "E"
+            ]
+          },
+          "situacao": {
+            "type": "string",
+            "description": "A active, I inactive.",
+            "enum": [
+              "A",
+              "I"
+            ],
+            "default": "A"
+          },
+          "numero_documento": {
+            "type": "string",
+            "description": "CPF or CNPJ."
+          },
+          "fantasia": {
+            "type": "string",
+            "description": "Trade name."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail."
+          },
+          "telefone": {
+            "type": "string",
+            "description": "Phone."
+          },
+          "celular": {
+            "type": "string",
+            "description": "Mobile phone."
+          },
+          "codigo": {
+            "type": "string",
+            "description": "Your own contact code."
+          },
+          "endereco": {
+            "type": "object",
+            "description": "Address, for example `{\"geral\":{\"endereco\":\"Rua A\",\"numero\":\"10\",\"bairro\":\"Centro\",\"cep\":\"01001-000\",\"municipio\":\"Sao Paulo\",\"uf\":\"SP\"}}`."
+          }
+        },
+        "required": [
+          "nome",
+          "tipo",
+          "situacao"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contatos",
+        "bodyMapping": {
+          "nome": "$nome",
+          "tipo": "$tipo",
+          "situacao": "$situacao",
+          "numeroDocumento": "$numero_documento",
+          "fantasia": "$fantasia",
+          "email": "$email",
+          "telefone": "$telefone",
+          "celular": "$celular",
+          "codigo": "$codigo",
+          "endereco": "$endereco"
+        }
+      }
+    },
+    {
+      "name": "bling_update_contact",
+      "description": "Replace a contact (PUT: the whole contact is rewritten, fields left out may be emptied). Read it first with bling_get_contact, change what is needed and send it back complete. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_contato": {
+            "type": "integer",
+            "description": "Contact id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "contact": {
+            "type": "object",
+            "description": "The complete contact as returned by bling_get_contact, with your changes (nome, tipo and situacao at least)."
+          }
+        },
+        "required": [
+          "id_contato",
+          "contact"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contatos/{id_contato}",
+        "bodyMapping": {
+          "__raw": "$contact"
+        }
+      }
+    },
+    {
+      "name": "bling_list_invoices",
+      "description": "List NF-e (electronic invoices): id, tipo (0 entrada, 1 saida), situacao, numero, serie, dataEmissao, dataOperacao, chaveAcesso, contato and valorNota. Cancelled notes appear only with situacao 2. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "situacao": {
+            "type": "integer",
+            "description": "1 pendente, 2 cancelada, 3 aguardando recibo, 4 rejeitada, 5 autorizada, 6 emitida DANFE, 7 registrada, 8 aguardando protocolo, 9 denegada, 10 consulta, 11 bloqueada.",
+            "minimum": 1,
+            "maximum": 11
+          },
+          "tipo": {
+            "type": "integer",
+            "description": "0 entrada (incoming), 1 saida (outgoing, default).",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "data_emissao_inicial": {
+            "type": "string",
+            "description": "Issued on or after, YYYY-MM-DD HH:MM:SS or YYYY-MM-DD."
+          },
+          "data_emissao_final": {
+            "type": "string",
+            "description": "Issued on or before, YYYY-MM-DD HH:MM:SS or YYYY-MM-DD."
+          },
+          "numero": {
+            "type": "integer",
+            "description": "NF-e number."
+          },
+          "serie": {
+            "type": "integer",
+            "description": "Series."
+          },
+          "chave_acesso": {
+            "type": "string",
+            "description": "The 44-digit access key."
+          },
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nfe",
+        "queryParams": {
+          "situacao": "$situacao",
+          "tipo": "$tipo",
+          "dataEmissaoInicial": "$data_emissao_inicial",
+          "dataEmissaoFinal": "$data_emissao_final",
+          "numero": "$numero",
+          "serie": "$serie",
+          "chaveAcesso": "$chave_acesso",
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_get_invoice",
+      "description": "Get one NF-e: numero, serie, situacao, chaveAcesso, dataEmissao, contato, itens with taxes, transporte, parcelas, valorNota, xml (link), linkDanfe and linkPDF.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_nota_fiscal": {
+            "type": "integer",
+            "description": "NF-e id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_nota_fiscal"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nfe/{id_nota_fiscal}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_generate_invoice_from_order",
+      "description": "Create a pending NF-e draft from a sales order (situacao pendente). It is not sent to SEFAZ: issuing is a separate step done in Bling or with bling_send_invoice. Returns the new idNotaFiscal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_pedido_venda": {
+            "type": "integer",
+            "description": "Sales order id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_pedido_venda"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pedidos/vendas/{id_pedido_venda}/gerar-nfe"
+      }
+    },
+    {
+      "name": "bling_send_invoice",
+      "description": "Issue an NF-e: transmit it to SEFAZ for authorization. An authorized NF-e is a legal tax document that can only be cancelled within the legal deadline or corrected by a correction letter. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_nota_fiscal": {
+            "type": "integer",
+            "description": "NF-e to issue id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "enviar_email": {
+            "type": "boolean",
+            "description": "true also e-mails the DANFE and XML to the customer."
+          }
+        },
+        "required": [
+          "id_nota_fiscal"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/nfe/{id_nota_fiscal}/enviar",
+        "queryParams": {
+          "enviarEmail": "$enviar_email"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "bling_list_receivables",
+      "description": "List accounts receivable (contas a receber): id, situacao, vencimento, valor, saldo, contato, formaPagamento, origem (the order or invoice), linkBoleto and linkQRCodePix. Read-only. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "situacoes": {
+            "type": "array",
+            "description": "Statuses: 1 open, 2 received, 3 partial, 4 returned, 5 cancelled.",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          },
+          "tipo_filtro_data": {
+            "type": "string",
+            "description": "Which date the range uses: E issue, V due date, R receipt.",
+            "enum": [
+              "E",
+              "V",
+              "R"
+            ]
+          },
+          "data_inicial": {
+            "type": "string",
+            "description": "From, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "data_final": {
+            "type": "string",
+            "description": "To, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "id_contato": {
+            "type": "integer",
+            "description": "Customer contact id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contas/receber",
+        "queryParams": {
+          "situacoes[]": "$situacoes",
+          "tipoFiltroData": "$tipo_filtro_data",
+          "dataInicial": "$data_inicial",
+          "dataFinal": "$data_final",
+          "idContato": "$id_contato",
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_get_receivable",
+      "description": "Get one account receivable: situacao, vencimento, valor, saldo, dataEmissao, contato, formaPagamento, categoria, origem, boleto and Pix links, and the receipts (baixas) already recorded. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_conta_receber": {
+            "type": "integer",
+            "description": "Account receivable id (numeric, from the matching list tool).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id_conta_receber"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contas/receber/{id_conta_receber}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_list_payables",
+      "description": "List accounts payable (contas a pagar): id, situacao, vencimento, valor, contato and origem. Read-only. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "situacao": {
+            "type": "integer",
+            "description": "1 open, 2 paid, 3 partial, 4 returned, 5 cancelled.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "data_vencimento_inicial": {
+            "type": "string",
+            "description": "Due on or after, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "data_vencimento_final": {
+            "type": "string",
+            "description": "Due on or before, YYYY-MM-DD. A range may span at most one year.",
+            "format": "date"
+          },
+          "id_contato": {
+            "type": "integer",
+            "description": "Supplier contact id (numeric, from the matching list tool).",
+            "minimum": 1
+          },
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contas/pagar",
+        "queryParams": {
+          "situacao": "$situacao",
+          "dataVencimentoInicial": "$data_vencimento_inicial",
+          "dataVencimentoFinal": "$data_vencimento_final",
+          "idContato": "$id_contato",
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "bling_list_payment_methods",
+      "description": "List payment methods (formas de pagamento): id, descricao, tipoPagamento and situacao. The id goes into the parcelas of an order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "descricao": {
+            "type": "string",
+            "description": "Part of the name."
+          },
+          "pagina": {
+            "type": "integer",
+            "description": "Page number from 1. An empty data list means there are no more pages.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limite": {
+            "type": "integer",
+            "description": "Rows per page, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/formas-pagamentos",
+        "queryParams": {
+          "descricao": "$descricao",
+          "pagina": "$pagina",
+          "limite": "$limite"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

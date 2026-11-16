@@ -21,6 +21,7 @@ import { MemberVisibilityModule } from './settings/member-visibility.module';
 import { RolesModule } from './roles/roles.module';
 import { KgModule } from './knowledge-graph/kg.module';
 import { MemoryModule } from './memory/memory.module';
+import { FileUploadsModule } from './file-uploads/file-uploads.module';
 import { KnowledgeFoldersModule } from './knowledge-folders/knowledge-folders.module';
 import { McpServersModule } from './mcp-servers/mcp-servers.module';
 import { FileSearchModule } from './file-search/file-search.module';
@@ -49,6 +50,7 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { PublicStatsModule } from './public-stats/public-stats.module';
 import { CloudModule } from './ee/cloud/cloud.module';
 import { LicensingModule } from './ee/licensing/licensing.module';
+import { LearningModule } from './ee/learning/learning.module';
 import { SupportModule } from './ee/support/support.module';
 import { supportModuleEnabled } from './ee/support/support-config';
 import { getRequiredSecret } from './common/secrets.util';
@@ -181,12 +183,14 @@ if (useOAuth) {
     RolesModule,
     KgModule,
     MemoryModule,
+    FileUploadsModule,
     KnowledgeFoldersModule,
     McpServersModule,
     FileSearchModule,
     LicenseModule,
     PlanCapsModule,
     LicensingModule,
+    LearningModule,
 
     // Cloud-specific modules (conditionally loaded)
     ...cloudImports,

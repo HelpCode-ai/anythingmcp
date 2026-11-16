@@ -2,12 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.HelpCode-ai/anythingmcp",
   "title": "AnythingMCP",
-  "description": "MCP gateway and company brain: 732 connectors (SAP, ERP, SQL), file search, memory and skills.",
+  "description": "MCP gateway and company brain: 845 connectors (SAP, ERP, SQL), file search, memory and skills.",
   "repository": {
     "url": "https://github.com/HelpCode-ai/anythingmcp",
     "source": "github"
   },
-  "version": "0.54.0",
+  "version": "0.55.0",
   "websiteUrl": "https://anythingmcp.com",
   "icons": [
     {

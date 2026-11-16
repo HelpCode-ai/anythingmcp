@@ -47,6 +47,10 @@ function CompleteContent() {
   const shopeeShopId = initial.provider === 'shopee' ? initial.shopId : null;
   // A TikTok Shop authorization too, completed by its own endpoint.
   const isTikTokShop = initial.provider === 'tiktok-shop';
+  // A seller authorization at an IOP gateway (Lazada, Miravia, AliExpress seller).
+  const isIop = initial.provider === 'iop';
+  // A SHEIN store authorization: the tempToken arrives as `code`.
+  const isShein = initial.provider === 'shein';
   // A TikTok Shop App Store install: no code in the address, the server keeps it.
   const isTikTokShopInstall = initial.provider === 'tiktok-shop-install';
   // A Meta sign-in of an Instagram connector: every outcome goes back to the
@@ -111,7 +115,11 @@ function CompleteContent() {
       ? connectors.shopeeComplete(state, code, shopeeShopId, token)
       : isTikTokShop
         ? connectors.tiktokShopComplete(state, code, token)
-        : connectors.oauthComplete(state, code, token))
+        : isIop
+          ? connectors.iopComplete(state, code, token)
+          : isShein
+            ? connectors.sheinComplete(state, code, token)
+            : connectors.oauthComplete(state, code, token))
       .then((out: { connectorId: string; toolsImported: number; returnTo?: string; accounts?: MetaInstagramAccount[] }) => {
         if (out.accounts && out.accounts.length > 0) {
           setChoice({ connectorId: out.connectorId, accounts: out.accounts, returnTo: out.returnTo });
@@ -126,7 +134,7 @@ function CompleteContent() {
         }
         setError(err.message || 'The authorization could not be completed.');
       });
-  }, [error, state, code, shopeeShopId, isTikTokShop, isTikTokShopInstall, isMeta, token, isLoading, router]);
+  }, [error, state, code, shopeeShopId, isTikTokShop, isIop, isShein, isTikTokShopInstall, isMeta, token, isLoading, router]);
 
   const choose = (account: MetaInstagramAccount) => {
     if (!choice || !token) return;

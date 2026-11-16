@@ -1,0 +1,181 @@
+{
+  "licenseWall": {
+    "title": "让你的 AI 与你的应用保持连接",
+    "body": "你的 7 天试用已结束。订阅后，{client} 可继续使用你的连接器。你已配置的一切都会保留。",
+    "yourAi": "你的 AI",
+    "loading": "正在加载套餐…",
+    "trust": {
+      "cancel": "随时可取消",
+      "stripe": "通过 Stripe 安全支付",
+      "hosted": "托管于法兰克福",
+      "gdpr": "GDPR · DPA"
+    },
+    "workspaces": "AnythingMCP Cloud 上有 {count} 个工作区",
+    "directory": "已收录于 Claude Directory",
+    "directoryChatgpt": "已收录于 ChatGPT 插件目录",
+    "directoryBoth": "已收录于 Claude 和 ChatGPT 目录",
+    "workspaceLabel": "工作区：",
+    "reasons": {
+      "paymentFailed": {
+        "title": "付款未成功",
+        "bodyAdmin": "你最近一次付款未成功，订阅已暂停。更新付款方式后订阅会立即恢复：保存新的付款方式后，未结款项会随即扣取。你的连接器和设置都会保留。",
+        "bodyMember": "此工作区订阅的最近一次付款未成功，订阅已暂停。请联系工作区管理员更新付款方式。你的连接器和设置都会保留。"
+      },
+      "noLicense": {
+        "title": "需要许可证",
+        "body": "此工作区没有有效的许可证。请开始试用或购买套餐以继续。"
+      },
+      "trialEnded": {
+        "title": "你的试用已结束",
+        "body": "你的 7 天试用已结束。购买许可证即可继续使用 AnythingMCP Cloud。你的连接器和设置都会保留。"
+      },
+      "lapsed": {
+        "title": "你的订阅未生效",
+        "body": "你的订阅未生效，通常是因为续费付款未成功。在账单门户中更新付款方式后即可恢复；购买新套餐会在现有订阅之外再开启一个订阅。你的连接器和设置都会保留。"
+      },
+      "expired": {
+        "title": "你的许可证已过期",
+        "body": "你的许可证已失效。购买或续订许可证即可继续使用 AnythingMCP。你的连接器和设置都会保留。"
+      }
+    },
+    "startTrial": {
+      "start": "开始 7 天免费试用",
+      "starting": "正在开始…",
+      "failed": "无法开始试用。请重试或联系支持团队。"
+    },
+    "viewPlans": "查看套餐并购买许可证",
+    "openingCheckout": "正在打开结账页面…",
+    "subscribeTo": "订阅 {plan}",
+    "comparePlans": "比较套餐",
+    "opening": "正在打开…",
+    "payment": {
+      "update": "更新付款方式",
+      "updated": "我已更新付款方式",
+      "checking": "正在检查…",
+      "openFailed": "无法打开付款页面。请重试或联系支持团队。",
+      "notYet": "付款尚未到账。如果你刚刚更新了付款方式，请一分钟后再试。",
+      "checkFailed": "暂时无法检查。请一分钟后再试。"
+    },
+    "updateBilling": "更新账单信息",
+    "switchWorkspace": "切换到其他工作区",
+    "alreadyPurchased": "已经购买？",
+    "enterKey": "输入许可证密钥",
+    "notContinuing": "不再继续使用？",
+    "deleteAccount": "删除你的账户"
+  },
+  "planPicker": {
+    "periodLabel": "计费周期",
+    "planLabel": "套餐",
+    "monthly": "按月",
+    "yearly": "按年",
+    "twoMonthsFree": "免费 2 个月",
+    "mostPopular": "最受欢迎",
+    "summary": "{connectors} 个连接器 · {mcpServers} 个 MCP 服务器 · {users, plural, =1 {# 位用户} other {最多 # 位用户}}",
+    "price": "{amount}/{period, select, yearly {年} other {月}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {年} other {月}}",
+    "exactly": "实际 {price}",
+    "yearlyPerMonth": "≈ {amount}/月",
+    "outgrown": "此工作区已有 {items}",
+    "usage": {
+      "connectors": "{count} 个连接器",
+      "mcpServers": "{count} 个 MCP 服务器",
+      "users": "{count} 位用户"
+    },
+    "footer": {
+      "vat": "价格以欧元计，含增值税。",
+      "noVat": "价格以欧元计。",
+      "local": "价格以欧元计，结账时以 {currency} 支付。",
+      "localVat": "价格以欧元计，含增值税，结账时以 {currency} 支付。"
+    },
+    "enterpriseQuestion": "需要更多用户、单点登录或 SCIM？",
+    "pastTeam": "此工作区已超出 Team。",
+    "enterpriseLink": "咨询企业版",
+    "listSeparator": "、"
+  },
+  "cardCheckout": {
+    "failed": "暂时无法打开结账页面，请稍后再试。"
+  },
+  "trialBanner": {
+    "today": "你的试用今天到期。",
+    "tomorrow": "你的试用明天到期。",
+    "daysLeft": "试用：还剩 {days} 天。",
+    "includesTeam": "试用包含 Team 的全部功能。",
+    "aboveStarter": {
+      "link": "已超出 Starter：查看变化",
+      "title": "你的工作区已超出 Starter",
+      "body": "试用包含 Team 的全部功能。如果选择 Starter，试用结束后会有以下变化。选择 Team 则一切保持不变。",
+      "close": "关闭"
+    },
+    "choosePlan": "选择套餐",
+    "openingCheckout": "正在打开结账页面…",
+    "addPaymentBefore": "添加付款方式：{date} 前不会扣款",
+    "addPayment": "添加付款方式",
+    "upgrade": "立即升级"
+  },
+  "planFit": {
+    "title": "{plan} 方案的变化",
+    "fits": "你目前的使用量完全符合 {plan}。",
+    "chooseTeam": "改选 Team",
+    "showDetails": "查看是哪些",
+    "hideDetails": "收起",
+    "keep": "保持启用",
+    "pause": "暂停",
+    "groups": {
+      "connectors": "连接器",
+      "mcpServers": "MCP 服务器",
+      "fileSearch": "File Search 文件夹"
+    },
+    "unnamed": "未命名",
+    "lines": {
+      "connectors": "{total} 个连接器中有 {paused} 个暂停（使用最少的）。由你选择暂停哪些。",
+      "mcpServers": "{total} 个 MCP 服务器中有 {paused} 个暂停（使用最少的）。",
+      "mcpServersChoose": "{total} 个 MCP 服务器中有 {paused} 个暂停（使用最少的）。由你选择暂停哪些。",
+      "users": "包含 {max} 个用户，你有 {current} 个。没有人会失去访问权限。",
+      "fileSearch": "File Search：最多 {maxFolders} 个文件夹和 {maxFiles, number} 个文件。",
+      "fileSearchStorage": "File Search：最多 {maxSize} 存储空间。",
+      "codeTools": "{max} 个已保存的代码工具（你有 {current} 个）。",
+      "inline": "不含内联代码（code_execute）。"
+    }
+  },
+  "startTrial": {
+    "loading": "加载中…",
+    "skipCorner": "不填写付款信息，继续",
+    "eyebrow": {
+      "choosePlan": "选择你的套餐",
+      "freeUntil": "免费至 {date}",
+      "freeTrial": "免费试用"
+    },
+    "title": {
+      "paysToday": "让你的工作区持续运行",
+      "trial": "你的免费试用"
+    },
+    "ending": "你的免费试用将于 <strong>{date}</strong> 结束，时间太近，无法通过添加付款方式继续免费试用。<strong>你的套餐今天开始，并于今天扣款。</strong>你的工作区、连接器和设置都保持不变。",
+    "endingSoon": "你的免费试用即将结束，时间太近，无法通过添加付款方式继续免费试用。<strong>你的套餐今天开始，并于今天扣款。</strong>你的工作区、连接器和设置都保持不变。",
+    "returning": "此邮箱地址曾订阅过 AnythingMCP，因此无法通过添加付款方式获得新的免费试用。<strong>你的套餐今天开始，并于今天扣款。</strong>你的工作区、连接器和设置都保持不变；如果你想稍后再决定，当前试用会持续到 <strong>{date}</strong>。",
+    "returningNoDate": "此邮箱地址曾订阅过 AnythingMCP，因此无法通过添加付款方式获得新的免费试用。<strong>你的套餐今天开始，并于今天扣款。</strong>你的工作区、连接器和设置都保持不变。",
+    "trial": "全部功能，免费使用至 <strong>{date}</strong>。现在添加付款方式，试用结束后你的套餐会自动延续，在此之前不会扣款。你也可以不填写付款信息继续试用：这种试用的<strong>连接器数量上限较低</strong>，你可以随时添加付款方式来解锁完整套餐。",
+    "trialNoDate": "全部功能，免费使用至试用结束。现在添加付款方式，试用结束后你的套餐会自动延续，在此之前不会扣款。你也可以不填写付款信息继续试用：这种试用的<strong>连接器数量上限较低</strong>，你可以随时添加付款方式来解锁完整套餐。",
+    "authorizationReturn": "无论选择哪种方式，你都会直接返回并完成 AI 客户端的连接。",
+    "chargesToday": "此地址曾有过订阅，因此结账时今天将扣取 {amount}。",
+    "start": {
+      "opening": "正在打开结账页面…",
+      "tryAgain": "重试",
+      "checkout": "继续结账",
+      "trial": "开始免费试用"
+    },
+    "promo": "结账时将使用优惠码 {code}。",
+    "price": "{amount}/{period, select, yearly {年} other {月}}",
+    "priceLocal": "≈ {local}/{period, select, yearly {年} other {月}}（{exact}）",
+    "finePrintPaysToday": "{plan}，{price}，今天扣款，之后{period, select, yearly {每年} other {每月}}扣款。通过 Stripe 安全结账。可随时在账单门户中取消。",
+    "finePrintTrial": "{plan}，自 {date} 起{period, select, yearly {按年} other {按月}}计费。通过 Stripe 安全结账。在此之前取消则无需付款。",
+    "finePrintTrialNoDate": "{plan}，自试用结束起{period, select, yearly {按年} other {按月}}计费。通过 Stripe 安全结账。在此之前取消则无需付款。",
+    "notReady": "还没准备好？",
+    "notReadyCard": "暂时不想添加付款方式？",
+    "keepFree": "继续使用免费试用",
+    "tryFree": "不填写付款信息，免费试用",
+    "methods": {
+      "trial": "今日 0 € · 银行卡、PayPal 等方式",
+      "pay": "银行卡、PayPal 等方式"
+    }
+  }
+}

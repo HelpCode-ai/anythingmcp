@@ -101,6 +101,51 @@ describe('DynamicMcpTools: arguments of a bridged MCP tool call', () => {
     await executor.executeTool('github_list_issues', { repo: 'web' });
     expect(engine.execute.mock.calls[0][2]).toMatchObject({ repo: 'web', GITHUB_ORG: 'acme' });
   });
+
+  describe('fixed arguments (config.mcpFixedArguments)', () => {
+    const withConfig = (connectorType: 'MCP' | 'REST', config: Record<string, unknown> | undefined): RegisteredTool => {
+      const t = tool(connectorType);
+      (t.connectorConfig as unknown as { config?: unknown }).config = config;
+      return t;
+    };
+
+    it('hands the engine nothing extra for a connector without the setting', async () => {
+      for (const config of [undefined, {}, { mcpToolPrefix: 'github_' }, { mcpFixedArguments: {} }]) {
+        const { executor, engine } = build(withConfig('MCP', config));
+        await executor.executeTool('github_list_issues', { repo: 'web' });
+        expect(engine.execute.mock.calls[0][0]).not.toHaveProperty('fixedArguments');
+        expect(engine.execute.mock.calls[0][2]).toEqual({ repo: 'web', owner: 'acme-from-a-variable' });
+      }
+    });
+
+    it('hands the engine the fixed arguments with the connector variables filled in', async () => {
+      const { executor, engine } = build(
+        withConfig('MCP', {
+          mcpFixedArguments: { meta: { agent: { profile: 'https://agent.example.test/{{GITHUB_ORG}}.json' } } },
+        }),
+      );
+      await executor.executeTool('github_list_issues', { repo: 'web' });
+      expect(engine.execute.mock.calls[0][0].fixedArguments).toEqual({
+        meta: { agent: { profile: 'https://agent.example.test/acme.json' } },
+      });
+      // The caller's arguments are still passed as they were; the engine merges.
+      expect(engine.execute.mock.calls[0][2]).toEqual({ repo: 'web', owner: 'acme-from-a-variable' });
+    });
+
+    it('refuses the call, with nothing sent, when a fixed argument names a variable nobody set', async () => {
+      const { executor, engine } = build(withConfig('MCP', { mcpFixedArguments: { meta: { profile: '{{AGENT_PROFILE_URL}}' } } }));
+      const out = await executor.executeTool('github_list_issues', { repo: 'web' });
+      expect(engine.execute).not.toHaveBeenCalled();
+      expect(JSON.stringify(out)).toContain('AGENT_PROFILE_URL');
+    });
+
+    it('ignores the setting on a connector that is not an MCP bridge', async () => {
+      const { executor, engine } = build(withConfig('REST', { mcpFixedArguments: { meta: { profile: '{{AGENT_PROFILE_URL}}' } } }));
+      await executor.executeTool('github_list_issues', { repo: 'web' });
+      expect(engine.execute).toHaveBeenCalledTimes(1);
+      expect(engine.execute.mock.calls[0][0]).not.toHaveProperty('fixedArguments');
+    });
+  });
 });
 
 describe('ConnectorsService.executeConnectorCall: a bridged MCP tool (Run Test, setup check)', () => {
@@ -136,5 +181,49 @@ describe('ConnectorsService.executeConnectorCall: a bridged MCP tool (Run Test, 
     );
     const [, , args] = mcpClientEngine.execute.mock.calls[0];
     expect(args).toEqual({ repo: 'web', owner: 'acme-from-a-variable' });
+    expect(mcpClientEngine.execute.mock.calls[0][0]).not.toHaveProperty('fixedArguments');
+  });
+
+  const connector = (config: unknown) =>
+    ({
+      id: 'c1',
+      name: 'Acme Shop',
+      type: 'MCP',
+      baseUrl: 'https://shop.example.test/api/ucp/mcp',
+      authType: 'NONE',
+      authConfig: null,
+      headers: null,
+      specUrl: null,
+      envVars: { AGENT_HOST: 'agent.example.test' },
+      config,
+    }) as any;
+
+  it("sends the connector's fixed arguments with the variables filled in, as a real call does", async () => {
+    mcpClientEngine.execute.mockClear();
+    await service.executeConnectorCall(
+      connector({ mcpFixedArguments: { meta: { 'ucp-agent': { profile: 'https://{{AGENT_HOST}}/ucp-agent.json' } } } }),
+      { method: 'search_catalog', path: '/mcp' },
+      { catalog: { query: 'tent' } },
+      'acme_shop_search_catalog',
+      { type: 'object', properties: { catalog: { type: 'object' } } },
+    );
+    const [config, , args] = mcpClientEngine.execute.mock.calls[0];
+    expect(config.fixedArguments).toEqual({ meta: { 'ucp-agent': { profile: 'https://agent.example.test/ucp-agent.json' } } });
+    expect(config.authConfig).toBeUndefined();
+    expect(args).toEqual({ catalog: { query: 'tent' } });
+  });
+
+  it('refuses a fixed argument whose variable has no value before anything is sent', async () => {
+    mcpClientEngine.execute.mockClear();
+    await expect(
+      service.executeConnectorCall(
+        connector({ mcpFixedArguments: { meta: { profile: '{{AGENT_PROFILE_URL}}' } } }),
+        { method: 'search_catalog', path: '/mcp' },
+        {},
+        'acme_shop_search_catalog',
+        { type: 'object', properties: {} },
+      ),
+    ).rejects.toThrow(/AGENT_PROFILE_URL/);
+    expect(mcpClientEngine.execute).not.toHaveBeenCalled();
   });
 });

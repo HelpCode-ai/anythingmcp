@@ -16,6 +16,7 @@ import {
 } from '../knowledge-folders/knowledge-folders.service';
 import { KgObservationalService } from './kg-observational.service';
 import { KgLlmService } from './kg-llm.service';
+import { audienceVisibility } from './kg-skill.service';
 
 @Injectable()
 export class KgService {
@@ -77,10 +78,15 @@ export class KgService {
       enabled,
       llmEnabled,
       llmAvailable: this.llmSvc.globallyAvailable(),
+      // Whether the scheduled job that reads `autoExtend` runs on this
+      // instance (KG_LLM_CRON_ENABLED). Without it the switch does nothing,
+      // so the dashboard does not offer it.
+      scheduledAvailable: this.llmSvc.scheduledAvailable(),
       captureIntent,
       // Scheduled AI extension of graph + skills from captured intents.
       autoExtend,
-      // Auto-apply generated skills at/above the confidence threshold.
+      // Auto-apply skills learned from fixed errors once seen often enough.
+      // Skills a model generates always wait for review.
       skillAutoApply,
       // Auto-apply high-confidence AI-suggested graph connections (no extra AI cost —
       // it only changes the status of edges the enrichment pass already produced).
@@ -720,8 +726,9 @@ export class KgService {
         organizationId,
         status: 'applied',
         ...(or.length ? { OR: or } : {}),
-        // Skills in folders limited to roles the caller lacks stay out.
-        AND: [folderVisibility(opts?.folders)],
+        // Skills in folders limited to roles the caller lacks stay out, and
+        // a member's draft is served to that member only.
+        AND: [folderVisibility(opts?.folders), audienceVisibility(opts?.folders)],
       },
       select: { id: true, title: true, whenToUse: true },
       take: 25,

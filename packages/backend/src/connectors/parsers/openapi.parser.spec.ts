@@ -91,6 +91,27 @@ describe('OpenApiParser', () => {
     expect(tools).toHaveLength(0);
   });
 
+  it('reads an unquoted YAML version (openapi: 3.0 / 3.1) as the version string', async () => {
+    const yaml = (version: string) =>
+      [
+        `openapi: ${version}`,
+        'info:',
+        '  title: Shop',
+        "  version: '1.0.0'",
+        'paths:',
+        '  /orders:',
+        '    get:',
+        '      operationId: listOrders',
+        '      responses:',
+        "        '200':",
+        '          description: ok',
+      ].join('\n');
+    for (const version of ['3.0', '3', '3.1']) {
+      const tools = await parser.parse(yaml(version));
+      expect(tools).toHaveLength(1);
+    }
+  });
+
   it('should parse from JSON string', async () => {
     const tools = await parser.parse(JSON.stringify(minimalSpec));
     expect(tools).toHaveLength(0);

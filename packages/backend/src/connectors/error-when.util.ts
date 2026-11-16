@@ -20,3 +20,18 @@ export function connectorErrorWhen(config: unknown): unknown {
     | undefined;
   return catalogConfig?.errorWhen;
 }
+
+/**
+ * The connector's `config.largeIntegers` (see engines/json-integers.util.ts),
+ * read the same way as the errorWhen rules: the connector's own value wins,
+ * else a catalog connector follows its adapter, because the setting describes
+ * the vendor's API. Undefined for every connector that does not set it.
+ */
+export function connectorLargeIntegers(config: unknown): unknown {
+  if (!config || typeof config !== 'object') return undefined;
+  const cfg = config as { largeIntegers?: unknown; adapterSlug?: unknown };
+  if (cfg.largeIntegers !== undefined) return cfg.largeIntegers;
+  if (typeof cfg.adapterSlug !== 'string' || !cfg.adapterSlug) return undefined;
+  const catalogConfig = getAdapter(cfg.adapterSlug)?.connector.config as { largeIntegers?: unknown } | undefined;
+  return catalogConfig?.largeIntegers;
+}

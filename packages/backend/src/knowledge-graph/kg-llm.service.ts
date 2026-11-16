@@ -7,7 +7,7 @@ import { chatJson, resolveLlmConfig } from './llm-client';
 const MAX_ENTITIES = 120; // cost cap: never send more than this to the model
 
 // Minimum confidence for an AI-suggested edge to be auto-applied (status 'active')
-// when the workspace opts in. Mirrors the skill auto-apply bar (0.9). The LLM
+// when the workspace opts in. The LLM
 // confidence is itself capped at 0.9, so only edges the model rates top-confidence
 // qualify; everything else stays a suggestion for manual review.
 export const EDGE_AUTO_APPLY_MIN = 0.9;
@@ -46,6 +46,15 @@ export class KgLlmService {
   /** Globally available (env flag + a resolvable LLM config). */
   globallyAvailable(): boolean {
     return process.env.KG_LLM_ENABLED === 'true' && !!resolveLlmConfig();
+  }
+
+  /**
+   * Whether the scheduled extension can run here: the AI features are
+   * available and the instance turned the scheduled job on. The job itself
+   * lives in the Cloud module; a workspace still opts in with `kg_llm_auto`.
+   */
+  scheduledAvailable(): boolean {
+    return this.globallyAvailable() && process.env.KG_LLM_CRON_ENABLED === 'true';
   }
 
   /** Enabled for this workspace (global + per-org switch + KG itself on). */

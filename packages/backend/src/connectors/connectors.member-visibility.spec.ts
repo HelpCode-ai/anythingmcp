@@ -645,3 +645,23 @@ describe('fail closed', () => {
     await expect(c.connectors.list(req('ADMIN'), {} as any)).resolves.toHaveLength(ALL_IN_ORG.length);
   });
 });
+
+describe('restricted member: a DATABASE password stays masked (#1245)', () => {
+  const STORED = 'postgresql://app:s3cret@db.example.invalid:5432/shop';
+  const restrictedDb = () => {
+    const c = build({ mode: 'restricted', allowed: ['s1'] });
+    Object.assign(c.w.connectors.find((x) => x.id === 'mine')!, { type: 'DATABASE', baseUrl: STORED });
+    return c;
+  };
+
+  it.each([
+    ['GET /api/connectors', (c: Ctx) => c.connectors.list(req('EDITOR'), {} as any)],
+    ['GET /api/connectors/:id', (c: Ctx) => c.connectors.findOne(req('EDITOR'), 'mine')],
+    ['GET /api/connectors/export-all', (c: Ctx) => c.connectors.exportAll(req('EDITOR'))],
+    ['GET /api/connectors/:id/export', (c: Ctx) => c.connectors.exportOne(req('EDITOR'), 'mine', 'json', res())],
+  ])('%s', async (_route, call) => {
+    const body = JSON.stringify(await call(restrictedDb()));
+    expect(body).toContain('app:********@db.example.invalid');
+    expect(body).not.toContain('s3cret');
+  });
+});

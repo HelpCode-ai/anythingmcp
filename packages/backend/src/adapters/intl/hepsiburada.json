@@ -1,0 +1,2405 @@
+{
+  "slug": "hepsiburada",
+  "name": "Hepsiburada",
+  "description": "Hepsiburada merchant APIs for Turkish sellers: paid orders and packages with carrier changes, shipping status and invoice links, listings with bulk price and stock uploads, buybox and commissions, catalog categories and import status, claims and customer questions. Merchant id, service key and integrator username.",
+  "instructions": "## Hepsiburada\nThis connector works with the **Hepsiburada merchant APIs** (Turkey) on their production hosts: orders and packages on `oms-external.hepsiburada.com`, listings (price, stock, buybox, commissions) on `listing-external.hepsiburada.com`, the catalog on `mpop.hepsiburada.com/product`, customer questions on `api-asktoseller-merchant.hepsiburada.com`, shipping profiles on `shipping-external.hepsiburada.com`, and claims (returns) on the order host. The test hosts with `-sit` in the name use separate test credentials and are not used here.\n\n**Setup (two parts)**\n1. **Integrator (developer) account.** Hepsiburada only answers requests whose `User-Agent` is the username of an authorised integrator. If you build the integration yourself, open a ticket in the merchant panel: **Yardım Merkezi > Talepler > Yeni talep**, topic **API ENTEGRASYON - API Entegratör Yetkilendirme İşlemleri**. Hepsiburada sends test credentials first; after the test scenarios a second ticket gives the production account. Its username (often ending in `_dev`) goes into `HEPSIBURADA_INTEGRATOR_USERNAME`. If an integration partner gave you its username, use that.\n2. **Authorise the integrator and copy the key.** In the merchant panel open **Hesabım > Bilgilerim > Entegrasyon**, tab **Entegratör Bilgileri**, click **Entegratör ekle** and enter that username (it can take about 2 hours to take effect). Then find it under **Entegratörlerim**, click **Servis Anahtarı** and copy the key into `HEPSIBURADA_SERVICE_KEY`. Copy the **Mağaza ID** from the same page into `HEPSIBURADA_MERCHANT_ID`.\n3. Install and run `hepsiburada_list_listings`.\n\n**How requests are signed**: HTTP Basic with the merchant id as user and the service key as password, plus the integrator username as `User-Agent`. 401 means a wrong id or key; 403 means the merchant has not authorised that integrator. Creating a new service key in the panel invalidates the old one at once.\n\n**Where to start**: `hepsiburada_list_orders` (paid lines waiting to be packed), `hepsiburada_get_order`, then `hepsiburada_list_listings` for prices and stock.\n\n**Order flow**: paid lines (`hepsiburada_list_orders`; still unpaid ones in `hepsiburada_list_payment_awaiting_orders`) > check which lines fit together with `hepsiburada_list_packageable_lines` > `hepsiburada_create_package` (answers packageNumber and barcode) > `hepsiburada_list_packages` (ready to ship) > the carrier picks it up > `hepsiburada_list_shipped_packages` > `hepsiburada_list_delivered_packages` or `hepsiburada_list_undelivered_packages`. Track one package with `hepsiburada_get_package`. Fix a package with `hepsiburada_unpack_package` (unpacked ones are listed by `hepsiburada_list_unpacked_packages`), `hepsiburada_split_package` or `hepsiburada_update_parcel_info`. Change the carrier before packing with `hepsiburada_list_line_cargo_companies` and `hepsiburada_change_line_cargo_company`, after packing with `hepsiburada_list_package_cargo_companies` and `hepsiburada_change_package_cargo_company`. Sellers who ship with their own carrier or sell digital goods report the steps with `hepsiburada_mark_package_in_transit`, `hepsiburada_mark_package_delivered` and `hepsiburada_mark_package_undelivered`; with Hepsiburada's contracted carriers this happens by itself. Invoices: `hepsiburada_list_missing_invoice_packages`, then `hepsiburada_send_invoice_link` (a PDF or HTML link). Cancelled lines: `hepsiburada_list_cancelled_orders`. `hepsiburada_cancel_order_line` is installed switched off: it can cost a penalty, is limited to 100 a day and only works on lines not packed yet.\n\n**Listings**: `hepsiburada_list_listings` (lock and freeze reasons included). Bulk updates are jobs: `hepsiburada_upload_prices` and `hepsiburada_upload_stock` answer an upload id; read the outcome with `hepsiburada_get_price_upload` and `hepsiburada_get_stock_upload` until status is Done (price locks show up as MinLock or MaxLock with the allowed range). At most 5 jobs may be pending and 4,000 rows per job. `hepsiburada_update_listing` changes one listing right away. `hepsiburada_activate_listing` puts a listing back on sale; `hepsiburada_deactivate_listing` and `hepsiburada_delete_listing` are switched off. `hepsiburada_get_buybox_ranking` (10 SKUs) and `hepsiburada_get_commissions` (50 SKUs) give market insight.\n\n**Catalog**: `hepsiburada_list_categories`, `hepsiburada_get_category_attributes` and `hepsiburada_list_attribute_values` describe what a product needs. `hepsiburada_fast_list_product` lists a product that already exists in the Hepsiburada catalog under your store; creating new products and updating product content work only by uploading a JSON file (multipart), which this connector does not do, so use the seller panel or the file import for those. Follow imports with `hepsiburada_list_tracking_ids` and `hepsiburada_get_product_import_status`, and check products with `hepsiburada_list_products_by_status`, `hepsiburada_list_merchant_products` and `hepsiburada_check_product_status`.\n\n**Claims (returns)**: `hepsiburada_list_claims` and `hepsiburada_list_claims_by_status`. `hepsiburada_preapprove_claim` asks for the product to inspect an exchange first. `hepsiburada_accept_claim` (accepting refunds the buyer) and `hepsiburada_reject_claim` are installed switched off.\n\n**Customer questions**: `hepsiburada_count_questions`, `hepsiburada_list_questions` (status 1 = waiting), `hepsiburada_get_question`, and `hepsiburada_answer_question` within one working day after the user approved the text. `hepsiburada_report_question` is switched off.\n\n**Shipping profiles**: `hepsiburada_list_cargo_firms` and `hepsiburada_list_shipping_profiles`.\n\n**Paging and dates**: order, package and claim lists need offset and limit together (the connector fills offset 0 and the maximum): paid orders up to 100, ready packages and unpacked up to 10, shipped, delivered, undelivered, cancelled and missing-invoice up to 50, listings up to 2,000. Catalog lists use page from 0 and size; questions use page from 1. Order and claim windows take `yyyy-MM-dd HH:mm` in Turkey time and span at most 24 hours (a longer window is cut); shipped packages reach back one month. Listings and questions take ISO 8601.\n\n**Limits**: order services allow about 1,000 requests a second (429 with X-RateLimit headers), the catalog 180 a minute per IP, commissions about 240 a minute. 406 means a business limit (daily cancellations, orders before 2020); 409 a conflict such as an invoice already attached.\n\n**Writes: confirm first.** Packages, carrier changes, shipping status, invoices, prices, stock and answers act on the live store. Before each call show the user what changes and wait for a yes. No tool buys labels or moves money.",
+  "aliases": [
+    "Hepsiburada Merchant API",
+    "Hepsiburada Satıcı",
+    "HB Merchant"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "hepsiburada",
+  "docsUrl": "https://developers.hepsiburada.com",
+  "requiredEnvVars": [
+    "HEPSIBURADA_MERCHANT_ID",
+    "HEPSIBURADA_SERVICE_KEY",
+    "HEPSIBURADA_INTEGRATOR_USERNAME"
+  ],
+  "envVarMeta": {
+    "HEPSIBURADA_MERCHANT_ID": {
+      "label": "Merchant ID (Mağaza ID)",
+      "kind": "setting",
+      "help": "Merchant panel > Hesabım > Bilgilerim > Entegrasyon: the Mağaza ID, a GUID.",
+      "link": "https://merchant.hepsiburada.com/v2/integration/information",
+      "example": "1a514334-5b66-45f9-9f47-7223ed8ca1db",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$",
+      "patternMessage": "The merchant id is a GUID such as 1a514334-5b66-45f9-9f47-7223ed8ca1db."
+    },
+    "HEPSIBURADA_SERVICE_KEY": {
+      "label": "Service key (Servis Anahtarı)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page, tab Entegratör Bilgileri > Entegratörlerim > Servis Anahtarı of the integrator you authorised. The key belongs to that integrator; a new key invalidates the old one.",
+      "link": "https://merchant.hepsiburada.com/v2/integration/information",
+      "pattern": "^\\S{8,64}$",
+      "patternMessage": "Paste the service key alone, without spaces."
+    },
+    "HEPSIBURADA_INTEGRATOR_USERNAME": {
+      "label": "Integrator username (User-Agent)",
+      "kind": "setting",
+      "help": "The developer username of the integrator you added with Entegratör ekle (often ending in _dev). It is issued after the ticket API ENTEGRASYON - API Entegratör Yetkilendirme İşlemleri in the merchant panel help centre and is sent as the User-Agent.",
+      "link": "https://developers.hepsiburada.com",
+      "example": "mystore_dev",
+      "pattern": "^\\S{2,100}$",
+      "patternMessage": "The integrator username, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Hepsiburada refused the credentials. Check HEPSIBURADA_MERCHANT_ID (Mağaza ID) and HEPSIBURADA_SERVICE_KEY (Entegrasyon > Entegratör Bilgileri > Servis Anahtarı). A newly created service key replaces the old one at once.",
+    "403": "The merchant has not authorised this integrator, or the User-Agent is wrong. Add the username in HEPSIBURADA_INTEGRATOR_USERNAME under Entegrasyon > Entegratör Bilgileri > Entegratör ekle (allow about 2 hours) and use the service key shown for that integrator.",
+    "404": "Hepsiburada found no order, package, listing or claim with that id.",
+    "406": "Hepsiburada refused the action by a business rule: the daily limit of 100 cancellations, or orders dated before 2020.",
+    "rate_limited": "Too many requests: order services allow about 1,000 a second, the catalog 180 a minute per IP, commissions about 240 a minute. Wait for X-RateLimit-Reset and try again."
+  },
+  "probe": {
+    "tool": "hepsiburada_list_listings",
+    "params": {
+      "limit": 1
+    }
+  },
+  "prerequisites": "A Hepsiburada merchant account and an authorised integrator: the integrator's developer username (from the ticket API ENTEGRASYON - API Entegratör Yetkilendirme İşlemleri, or from your integration partner), added under Entegrasyon > Entegratör ekle, and its service key. Getting your own developer account takes a test round with Hepsiburada.",
+  "connector": {
+    "name": "Hepsiburada Merchant API",
+    "type": "REST",
+    "baseUrl": "https://oms-external.hepsiburada.com",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{HEPSIBURADA_MERCHANT_ID}}",
+      "password": "{{HEPSIBURADA_SERVICE_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "{{HEPSIBURADA_INTEGRATOR_USERNAME}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "hepsiburada_list_orders",
+      "description": "List paid order lines waiting to be packed: per line id (the line id), orderNumber, merchantSku, hbSku, quantity, prices, dueDate (expected dispatch), dispatchTime, canCreatePackage, cargoCompany, isCancellable, hasInvoice, customer name and delivery details; plus totalCount and pageCount. Up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Window start, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00. The window may be at most 24 hours; a longer one is cut to begin plus 24 hours."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Window end, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/merchantid/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "begindate": "$begin_date",
+          "enddate": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_get_order",
+      "description": "Read one order by order number: createdDate, customer, deliveryAddress, invoice details and every line with id, sku, merchantSku, quantity, price, commission, cargoCompany, dueDate, status, barcode and package number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,40}$",
+            "description": "Hepsiburada order number (orderNumber), e.g. 2152988946."
+          }
+        },
+        "required": [
+          "order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/ordernumber/{order_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_payment_awaiting_orders",
+      "description": "List order lines whose payment is still awaited (bank transfer and similar): Id, OrderNumber, OrderDate, Sku, MerchantSku, Name, Quantity and variant properties. They cannot be packed yet. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Window start, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00. The window may be at most 24 hours; a longer one is cut to begin plus 24 hours."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Window end, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Rows per page, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/paymentawaiting",
+        "queryParams": {
+          "begindate": "$begin_date",
+          "enddate": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_cancelled_orders",
+      "description": "List cancelled order lines: lineItemId, orderNumber, sku, merchantSku, quantity, cancelDate, cancelReasonCode and cancelledBy. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Window start, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00. The window may be at most 24 hours; a longer one is cut to begin plus 24 hours."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Window end, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Rows per page, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/cancelled",
+        "queryParams": {
+          "begindate": "$begin_date",
+          "enddate": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_packageable_lines",
+      "description": "List the order lines that can go into the same package as a given line: lineItemId, orderNumber, quantity, deci per line and totalDeci. Use it before hepsiburada_create_package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "line_item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Order line id (the `id` of a line in hepsiburada_list_orders, a GUID)."
+          }
+        },
+        "required": [
+          "line_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lineitems/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packageablewith/lineitemid/{line_item_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_create_package",
+      "description": "Pack one or more paid order lines into a package. Answers packageNumber and barcode (the shipping label code). Carrier is required when you ship yourself or use an alternative carrier; warehouse is required for Hepsiburada retail lines. Fails while the buyer has a pending address change; try again later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "line_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Order line id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Quantity to pack."
+                },
+                "serialNumbers": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Serial numbers of the units."
+                }
+              },
+              "required": [
+                "id",
+                "quantity"
+              ]
+            },
+            "minItems": 1,
+            "description": "Lines to pack: `[{\"id\": \"<line id>\", \"quantity\": 1}]`, optionally with serialNumbers."
+          },
+          "parcel_quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of parcels (koli)."
+          },
+          "deci": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Volumetric weight (desi) of the package."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Your own barcode, only when you print your own labels."
+          },
+          "cargo_company": {
+            "type": "string",
+            "description": "Carrier name, when you choose one."
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier short name; required when you ship yourself (MP) or use an alternative carrier."
+          },
+          "warehouse": {
+            "type": "object",
+            "properties": {
+              "shippingAddressLabel": {
+                "type": "string",
+                "description": "Warehouse code."
+              },
+              "shippingModel": {
+                "type": "string",
+                "description": "Delivery model of that warehouse."
+              }
+            },
+            "description": "Warehouse the package leaves from (required for Hepsiburada retail lines): `{\"shippingAddressLabel\": \"...\", \"shippingModel\": \"...\"}`."
+          }
+        },
+        "required": [
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}",
+        "bodyMapping": {
+          "lineItemRequests": "$line_items",
+          "parcelQuantity": "$parcel_quantity",
+          "deci": "$deci",
+          "barcode": "$barcode",
+          "cargoCompany": "$cargo_company",
+          "carrier": "$carrier",
+          "warehouse": "$warehouse"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_list_packages",
+      "description": "List packages ready to ship: package number, barcode, cargoCompany, dueDate, billing and shipping address and items (lineItemId, orderNumber, hbSku, merchantSku, quantity). Filter by a date window or by timespan (last N hours). Up to 10 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Window start, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00. The window may be at most 24 hours; a longer one is cut to begin plus 24 hours."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Window end, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "timespan": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24,
+            "description": "Only packages of the last N hours (alone at most 24)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 10,
+            "description": "Rows per page, at most 10."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "begindate": "$begin_date",
+          "enddate": "$end_date",
+          "timespan": "$timespan",
+          "limit": "$limit",
+          "Offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_shipped_packages",
+      "description": "List packages handed to the carrier: PackageNumber, OrderNumbers, Barcode, Deci, ShippedDate. Reaches back one month. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Window start, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00. The window may be at most 24 hours; a longer one is cut to begin plus 24 hours."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Window end, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Rows per page, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/shipped",
+        "queryParams": {
+          "begindate": "$begin_date",
+          "enddate": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_delivered_packages",
+      "description": "List delivered packages: PackageNumber, OrderNumbers, Barcode, DeliveredDate and HasInvoice (whether an invoice is attached). Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Window start, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00. The window may be at most 24 hours; a longer one is cut to begin plus 24 hours."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Window end, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Rows per page, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/delivered",
+        "queryParams": {
+          "begindate": "$begin_date",
+          "enddate": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_undelivered_packages",
+      "description": "List packages that could not be delivered: PackageNumber, OrderNumbers, Barcode, UndeliveredDate and UndeliveredReason. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Window start, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00. The window may be at most 24 hours; a longer one is cut to begin plus 24 hours."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Window end, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Rows per page, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/undelivered",
+        "queryParams": {
+          "begindate": "$begin_date",
+          "enddate": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_missing_invoice_packages",
+      "description": "List packages that still have no invoice attached: packageNumber, orderNumbers and status. Attach one with hepsiburada_send_invoice_link. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Rows per page, at most 50."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/missing-invoice",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_unpacked_packages",
+      "description": "List packages that were unpacked (their lines went back to the paid order list), by date window or timespan. Up to 10 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Window start, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00. The window may be at most 24 hours; a longer one is cut to begin plus 24 hours."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Window end, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "timespan": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24,
+            "description": "Only the last N hours (alone at most 24)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 10,
+            "description": "Rows per page, at most 10."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/status/unpacked",
+        "queryParams": {
+          "begindate": "$begin_date",
+          "enddate": "$end_date",
+          "timespan": "$timespan",
+          "limit": "$limit",
+          "Offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_get_package",
+      "description": "Read the shipping state of a package: status (e.g. Intransit, Delivered), cargoCompany, barcode, trackingInfoCode, trackingInfoUrl, deci, totalDeci, estimatedArrivalDate and warehouse.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          }
+        },
+        "required": [
+          "package_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_unpack_package",
+      "description": "Unpack a package that has not been shipped: its lines go back to the paid order list and can be packed again. No body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          }
+        },
+        "required": [
+          "package_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/unpack"
+      }
+    },
+    {
+      "name": "hepsiburada_split_package",
+      "description": "Split a package into several packages by line and quantity. Each entry of packages lists its lines; every line of the original package must be placed. Cancelling lines is a separate tool, hepsiburada_cancel_order_line.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "Lines in this package."
+                },
+                "parcelQuantity": {
+                  "type": "integer",
+                  "description": "Parcels."
+                },
+                "deci": {
+                  "type": "number",
+                  "description": "Desi."
+                }
+              },
+              "required": [
+                "lines"
+              ]
+            },
+            "minItems": 1,
+            "description": "New packages: `[{\"lines\": [{\"orderLineId\": \"<line id>\", \"quantity\": 1}], \"parcelQuantity\": 1, \"deci\": 2}]`. Optional per package: barcode, cargoCompany, carrier."
+          }
+        },
+        "required": [
+          "package_number",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/split",
+        "bodyMapping": {
+          "packageDetails": "$packages"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_list_line_cargo_companies",
+      "description": "List the carriers an order line that is not packed yet can be switched to: Id, Name, ShortName, IsActive, MinDeci and MaxDeci.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_line_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Order line id (the `id` of a line in hepsiburada_list_orders, a GUID)."
+          }
+        },
+        "required": [
+          "order_line_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/delivery/changeablecargocompanies/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/orderlineid/{order_line_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_change_line_cargo_company",
+      "description": "Switch the carrier of an order line before it is packed, to a ShortName from hepsiburada_list_line_cargo_companies. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_line_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Order line id (the `id` of a line in hepsiburada_list_orders, a GUID)."
+          },
+          "cargo_company_short_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Short name of the new carrier (ShortName from the list of changeable carriers)."
+          }
+        },
+        "required": [
+          "order_line_id",
+          "cargo_company_short_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/lineitems/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/orderlineid/{order_line_id}/cargocompany",
+        "bodyMapping": {
+          "CargoCompanyShortName": "$cargo_company_short_name"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_list_package_cargo_companies",
+      "description": "List the carriers a packed package can be switched to: Id, Name, ShortName, IsActive, MinDeci and MaxDeci.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          }
+        },
+        "required": [
+          "package_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/changablecargocompanies"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_change_package_cargo_company",
+      "description": "Switch the carrier of a packed package to a ShortName from hepsiburada_list_package_cargo_companies. The barcode stays the same. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          },
+          "cargo_company_short_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Short name of the new carrier (ShortName from the list of changeable carriers)."
+          }
+        },
+        "required": [
+          "package_number",
+          "cargo_company_short_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/changecargocompany",
+        "bodyMapping": {
+          "CargoCompanyShortName": "$cargo_company_short_name"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_mark_package_in_transit",
+      "description": "Report a package as shipped, with tracking. Only for sellers who ship with their own carrier or sell digital goods; with Hepsiburada's contracted carriers the status advances by itself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          },
+          "shipped_date": {
+            "type": "string",
+            "description": "When it was handed to the carrier, ISO 8601, e.g. 2026-11-15T14:00:00Z."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number."
+          },
+          "tracking_url": {
+            "type": "string",
+            "description": "Tracking page URL."
+          },
+          "tracking_phone_number": {
+            "type": "string",
+            "description": "Carrier phone number for tracking."
+          },
+          "estimated_arrival_date": {
+            "type": "string",
+            "description": "Expected delivery, ISO 8601."
+          },
+          "deci": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Volumetric weight (desi)."
+          }
+        },
+        "required": [
+          "package_number",
+          "shipped_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/intransit",
+        "bodyMapping": {
+          "shippedDate": "$shipped_date",
+          "trackingNumber": "$tracking_number",
+          "trackingUrl": "$tracking_url",
+          "trackingPhoneNumber": "$tracking_phone_number",
+          "estimatedArrivalDate": "$estimated_arrival_date",
+          "deci": "$deci"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_mark_package_delivered",
+      "description": "Report a package as delivered. Only for sellers who deliver with their own carrier or sell digital goods (send the codes in digital_codes).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          },
+          "received_by": {
+            "type": "string",
+            "description": "Who received the package."
+          },
+          "received_date": {
+            "type": "string",
+            "description": "When it was delivered, ISO 8601."
+          },
+          "digital_codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Codes of digital products."
+          }
+        },
+        "required": [
+          "package_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/deliver",
+        "bodyMapping": {
+          "receivedBy": "$received_by",
+          "receivedDate": "$received_date",
+          "digitalCodes": "$digital_codes"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_mark_package_undelivered",
+      "description": "Report a package as not delivered, with the reason. Only for sellers who deliver with their own carrier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "CustomerDoesNotWantProduct",
+              "CustomerUnreachable"
+            ],
+            "description": "CustomerDoesNotWantProduct or CustomerUnreachable."
+          },
+          "undelivered_date": {
+            "type": "string",
+            "description": "When delivery failed, ISO 8601."
+          }
+        },
+        "required": [
+          "package_number",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/undeliver",
+        "bodyMapping": {
+          "undeliveredReason": "$reason",
+          "undeliveredDate": "$undelivered_date"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_send_invoice_link",
+      "description": "Attach the invoice of a package as a link to a PDF or HTML page. Send invoice_link for the whole package, or invoices with one link per order number. Answers 204; 409 means an invoice is already attached.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          },
+          "invoice_link": {
+            "type": "string",
+            "description": "URL of the invoice (served as application/pdf or text/html)."
+          },
+          "serial_number": {
+            "type": "string",
+            "description": "Invoice serial number."
+          },
+          "row_number": {
+            "type": "string",
+            "description": "Invoice sequence number."
+          },
+          "arrangement_date": {
+            "type": "string",
+            "description": "Invoice date, ISO 8601."
+          },
+          "invoices": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Or one invoice per order: `[{\"orderNumber\": \"2152988946\", \"invoiceLink\": \"https://...\"}]`, optionally serialNumber, rowNumber, arrangementDate."
+          }
+        },
+        "required": [
+          "package_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/invoice",
+        "bodyMapping": {
+          "invoiceLink": "$invoice_link",
+          "serialNumber": "$serial_number",
+          "rowNumber": "$row_number",
+          "arrangementDate": "$arrangement_date",
+          "invoices": "$invoices"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_update_parcel_info",
+      "description": "Correct the number of parcels and the total desi of a package. At least one of the two must be above 0.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Package number (packageNumber of hepsiburada_list_packages or hepsiburada_create_package)."
+          },
+          "total_parcel": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of parcels."
+          },
+          "total_desi": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Total volumetric weight (desi)."
+          }
+        },
+        "required": [
+          "package_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/packages/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/packagenumber/{package_number}/parcel-info",
+        "bodyMapping": {
+          "totalParcel": "$total_parcel",
+          "totalDesi": "$total_desi"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_cancel_order_line",
+      "description": "Cancel an order line that is not packed yet, with a reason code (default 83). Hepsiburada may charge a penalty, allows 100 cancellations a day (406 when exceeded) and it cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "line_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Order line id (the `id` of a line in hepsiburada_list_orders, a GUID)."
+          },
+          "reason_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Reason code, e.g. 12 OutOfStock, 21 LongSupplyDuration, 43 CanNotContactWithCustomer, 83 default."
+          }
+        },
+        "required": [
+          "line_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/lineitems/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/id/{line_id}/cancelbymerchant",
+        "bodyMapping": {
+          "reasonId": "$reason_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "hepsiburada_list_listings",
+      "description": "List your listings: listingId, hepsiburadaSku, merchantSku, price, availableStock, dispatchTime, cargo companies, shippingProfileName, isSalable, isSuspended, isLocked with lockReasons, isFrozen, deactivationReasons, priceIncreaseDisabled, priceDecreaseDisabled and productId. Up to 2,000 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 100,
+            "description": "Rows per page, at most 2000 (default 100)."
+          },
+          "hb_skus": {
+            "type": "string",
+            "description": "Only these Hepsiburada SKUs, comma-separated."
+          },
+          "merchant_skus": {
+            "type": "string",
+            "description": "Only these merchant SKUs, comma-separated."
+          },
+          "salable": {
+            "type": "boolean",
+            "description": "true: only listings on sale."
+          },
+          "not_salable": {
+            "type": "boolean",
+            "description": "true: only listings not on sale."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Only listings updated since, ISO 8601 date-time."
+          },
+          "updated_to": {
+            "type": "string",
+            "description": "Only listings updated until, ISO 8601 date-time."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only listings of this product id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "hbSkuList": "$hb_skus",
+          "merchantSkuList": "$merchant_skus",
+          "salable-listings": "$salable",
+          "notsalable-listings": "$not_salable",
+          "updateStartDate": "$updated_from",
+          "updateEndDate": "$updated_to",
+          "productId": "$product_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_upload_prices",
+      "description": "Update prices in bulk (asynchronous): answers an upload id; read the result with hepsiburada_get_price_upload. Up to 4,000 rows per upload and at most 5 uploads pending at once. Prices in TRY including VAT.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "merchantSku": {
+                  "type": "string",
+                  "description": "Merchant SKU."
+                },
+                "hepsiburadaSku": {
+                  "type": "string",
+                  "description": "Hepsiburada SKU."
+                },
+                "price": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "New price in TRY."
+                }
+              },
+              "required": [
+                "price"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 4000,
+            "description": "Rows: `[{\"merchantSku\": \"SKU-1\", \"price\": 129.9}]`; use hepsiburadaSku instead of merchantSku if you prefer."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/price-uploads",
+        "bodyMapping": {
+          "__raw": "$items"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_get_price_upload",
+      "description": "Read the result of a price upload: status (Done when finished), total, errors per row and priceValidations (MinLock or MaxLock with the allowed minPrice and maxPrice).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Upload id answered by hepsiburada_upload_prices."
+          }
+        },
+        "required": [
+          "upload_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/price-uploads/id/{upload_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_upload_stock",
+      "description": "Update stock in bulk (asynchronous): answers an upload id; read the result with hepsiburada_get_stock_upload. Up to 4,000 rows per upload and at most 5 uploads pending at once. Stock 0 takes a listing off sale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "merchantSku": {
+                  "type": "string",
+                  "description": "Merchant SKU."
+                },
+                "hepsiburadaSku": {
+                  "type": "string",
+                  "description": "Hepsiburada SKU."
+                },
+                "availableStock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New stock."
+                },
+                "maximumPurchasableQuantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Maximum units per order."
+                }
+              },
+              "required": [
+                "availableStock"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 4000,
+            "description": "Rows: `[{\"merchantSku\": \"SKU-1\", \"availableStock\": 5}]`, optionally maximumPurchasableQuantity; hepsiburadaSku instead of merchantSku works too."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/stock-uploads",
+        "bodyMapping": {
+          "__raw": "$items"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_get_stock_upload",
+      "description": "Read the result of a stock upload: status (Done when finished), total and errors per row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "upload_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Upload id answered by hepsiburada_upload_stock."
+          }
+        },
+        "required": [
+          "upload_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/stock-uploads/id/{upload_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_update_listing",
+      "description": "Change the price, stock or dispatch time of one listing right away (single update, no upload job). Give the Hepsiburada SKU and your merchant SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hb_sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Hepsiburada SKU (hepsiburadaSku), e.g. HBV0000106NM0."
+          },
+          "merchant_sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Your merchant SKU (merchantSku)."
+          },
+          "new_price": {
+            "type": "object",
+            "properties": {
+              "currency": {
+                "type": "string",
+                "description": "Currency, TRY."
+              },
+              "amount": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Price including VAT."
+              }
+            },
+            "required": [
+              "currency",
+              "amount"
+            ],
+            "description": "New price: `{\"currency\": \"TRY\", \"amount\": 99.9}`."
+          },
+          "new_stock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "New available stock."
+          },
+          "new_dispatch_time": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "New dispatch time in days."
+          }
+        },
+        "required": [
+          "hb_sku",
+          "merchant_sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/sku/{hb_sku}/merchantsku/{merchant_sku}",
+        "bodyMapping": {
+          "newPrice": "$new_price",
+          "newAvailableStock": "$new_stock",
+          "newDispatchTime": "$new_dispatch_time"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_activate_listing",
+      "description": "Put a listing back on sale by its Hepsiburada SKU. Price and stock must both be above 0, otherwise the call is refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hb_sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Hepsiburada SKU (hepsiburadaSku), e.g. HBV0000106NM0."
+          }
+        },
+        "required": [
+          "hb_sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/sku/{hb_sku}/activate"
+      }
+    },
+    {
+      "name": "hepsiburada_deactivate_listing",
+      "description": "Take a listing off sale (unlisting). Installed switched off; setting stock 0 pauses it as well.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hb_sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Hepsiburada SKU (hepsiburadaSku), e.g. HBV0000106NM0."
+          }
+        },
+        "required": [
+          "hb_sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/sku/{hb_sku}/deactivate"
+      },
+      "enabled": false
+    },
+    {
+      "name": "hepsiburada_delete_listing",
+      "description": "Delete a listing that is not on sale (deactivate it first). Cannot be undone; the listing has to be created again. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "hb_sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "Hepsiburada SKU (hepsiburadaSku), e.g. HBV0000106NM0."
+          },
+          "merchant_sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Your merchant SKU (merchantSku)."
+          }
+        },
+        "required": [
+          "hb_sku",
+          "merchant_sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "https://listing-external.hepsiburada.com/listings/merchantid/{{HEPSIBURADA_MERCHANT_ID}}/sku/{hb_sku}/merchantsku/{merchant_sku}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "hepsiburada_get_buybox_ranking",
+      "description": "Read the buybox ranking of up to 10 Hepsiburada SKUs: per SKU the merchants with their rank and price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Up to 10 Hepsiburada SKUs, comma-separated."
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://listing-external.hepsiburada.com/buybox-orders/merchantid/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "skuList": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_get_commissions",
+      "description": "Read the commission rates of up to 50 Hepsiburada SKUs. About 240 calls a minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "skus": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Up to 50 Hepsiburada SKUs, comma-separated."
+          }
+        },
+        "required": [
+          "skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://listing-external.hepsiburada.com/commissions/merchantid/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "skuList": "$skus"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_categories",
+      "description": "List Hepsiburada categories: categoryId, name, displayName, parentCategoryId, paths, leaf and status, with totalElements and totalPages. Products go into leaf categories only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "leaf": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): only leaf categories."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "ARCHIVED"
+            ],
+            "default": "ACTIVE",
+            "description": "ACTIVE (default), INACTIVE or ARCHIVED."
+          },
+          "available": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): only categories open for products."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "HB",
+              "HX",
+              "HC"
+            ],
+            "description": "Catalog type: HB, HX or HC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, from 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Rows per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://mpop.hepsiburada.com/product/api/categories/get-all-categories",
+        "queryParams": {
+          "leaf": "$leaf",
+          "status": "$status",
+          "available": "$available",
+          "type": "$type",
+          "version": 1,
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_get_category_attributes",
+      "description": "Read the attributes of a category: baseAttributes, attributes and variantAttributes, each with id, name, mandatory, type and multiValue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Category id (hepsiburada_list_categories)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://mpop.hepsiburada.com/product/api/categories/{category_id}/attributes",
+        "queryParams": {
+          "version": 2
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_attribute_values",
+      "description": "List the allowed values of one attribute in a category: value id and value text, paged with page and size (up to 1,000 per page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Category id."
+          },
+          "attribute_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Attribute id (hepsiburada_get_category_attributes)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, from 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 1000,
+            "description": "Rows per page (default 100, at most 1000)."
+          }
+        },
+        "required": [
+          "category_id",
+          "attribute_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://mpop.hepsiburada.com/product/api/categories/{category_id}/attribute/{attribute_id}/values",
+        "queryParams": {
+          "version": 5,
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_get_product_import_status",
+      "description": "Read the result of a product import by trackingId: per product merchantSku, hbSku, barcode, productStatus, importStatus (SUCCESS, FAILED, PROCESSING), importMessages, validationResults and rejectReasonsMessages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "trackingId of a product import or fast listing."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, from 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Rows per page (default 100, at most 1000)."
+          }
+        },
+        "required": [
+          "tracking_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://mpop.hepsiburada.com/product/api/products/status/{tracking_id}",
+        "queryParams": {
+          "version": 1,
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_tracking_ids",
+      "description": "List the trackingIds of your past product imports, newest first, to follow up with hepsiburada_get_product_import_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, from 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Rows per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://mpop.hepsiburada.com/product/api/products/trackingId-history",
+        "queryParams": {
+          "version": 2,
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_products_by_status",
+      "description": "List your catalog products in one status: merchantSku, barcode, hbSku, variantGroupId, productName, productStatus, taskDetails, validationResults, rejectReasonsMessages and qualityScore. MISSING_INFO and REJECTED products need action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_status": {
+            "type": "string",
+            "enum": [
+              "WAITING",
+              "IN_EXTERNAL_PROGRESS",
+              "PRE_MATCHED",
+              "MATCHED",
+              "REJECTED",
+              "MATCHED_WITH_STAGED",
+              "MISSING_INFO",
+              "CREATED",
+              "BLOCKED"
+            ],
+            "description": "Catalog status."
+          },
+          "task_status": {
+            "type": "boolean",
+            "description": "true: only products with an open task."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, from 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Rows per page (default 100, at most 1000)."
+          }
+        },
+        "required": [
+          "product_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://mpop.hepsiburada.com/product/api/products/products-by-merchant-and-status",
+        "queryParams": {
+          "merchantId": "{{HEPSIBURADA_MERCHANT_ID}}",
+          "productStatus": "$product_status",
+          "taskStatus": "$task_status",
+          "version": 1,
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_merchant_products",
+      "description": "List all catalog products of your store, optionally one barcode, merchant SKU or Hepsiburada SKU, paged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "barcode": {
+            "type": "string",
+            "description": "Only this barcode."
+          },
+          "merchant_sku": {
+            "type": "string",
+            "description": "Only this merchant SKU."
+          },
+          "hb_sku": {
+            "type": "string",
+            "description": "Only this Hepsiburada SKU."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, from 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Rows per page (default 100, at most 1000)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://mpop.hepsiburada.com/product/api/products/all-products-of-merchant/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "barcode": "$barcode",
+          "merchantSku": "$merchant_sku",
+          "hbSku": "$hb_sku",
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_check_product_status",
+      "description": "Read the catalog status of products by merchant SKU: per SKU its status in the catalog (skuStatusList). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_skus": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Merchant SKUs to check."
+          }
+        },
+        "required": [
+          "merchant_skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://mpop.hepsiburada.com/product/api/products/check-product-status",
+        "queryParams": {
+          "version": 1
+        },
+        "bodyMapping": [
+          {
+            "merchant": "{{HEPSIBURADA_MERCHANT_ID}}",
+            "merchantSkuList": "$merchant_skus"
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_fast_list_product",
+      "description": "List a product that already exists in the Hepsiburada catalog under your store (fast listing), with your merchant SKU, stock and price. Asynchronous: follow the answered trackingId with hepsiburada_get_product_import_status. New products need the file import of the seller panel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchant_sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Your merchant SKU (merchantSku)."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Barcode (EAN) of the catalog product."
+          },
+          "hb_sku": {
+            "type": "string",
+            "description": "Hepsiburada SKU of the catalog product, if known."
+          },
+          "stock": {
+            "type": "string",
+            "description": "Stock, as a number in text, e.g. 13."
+          },
+          "price": {
+            "type": "string",
+            "description": "Price in TRY, e.g. 130,50 or 130.50."
+          }
+        },
+        "required": [
+          "merchant_sku",
+          "product_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://mpop.hepsiburada.com/product/api/products/fastlisting",
+        "bodyMapping": [
+          {
+            "merchant": "{{HEPSIBURADA_MERCHANT_ID}}",
+            "merchantSku": "$merchant_sku",
+            "productName": "$product_name",
+            "barcode": "$barcode",
+            "hbSku": "$hb_sku",
+            "stock": "$stock",
+            "price": "$price"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hepsiburada_list_claims",
+      "description": "List claims (returns, missing items, exchanges): number, claimType, status, orderNumber, lineItemId, sku, merchantSku, quantity, explanation, reason, reports, claimDate and refund fields. Date window on the claim date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "begin_date": {
+            "type": "string",
+            "description": "Claims created from, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Claims created until, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/claims/merchantId/{{HEPSIBURADA_MERCHANT_ID}}",
+        "queryParams": {
+          "beginDate": "$begin_date",
+          "endDate": "$end_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_claims_by_status",
+      "description": "List claims in one status (NewRequest, AwaitingAction, AwaitingPreApproval, InDispute, Accepted, Rejected, Refunded, Cancelled), with the same fields as hepsiburada_list_claims.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "NewRequest",
+              "Accepted",
+              "AwaitingAction",
+              "InDispute",
+              "Rejected",
+              "Refunded",
+              "Cancelled",
+              "AwaitingPreApproval"
+            ],
+            "description": "Claim status."
+          },
+          "begin_date": {
+            "type": "string",
+            "description": "Claims created from, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Claims created until, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "status_begin_date": {
+            "type": "string",
+            "description": "Status reached from, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "status_end_date": {
+            "type": "string",
+            "description": "Status reached until, `yyyy-MM-dd HH:mm`, Turkey time, e.g. 2026-11-15 00:00."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Rows to skip (offset), from 0. Hepsiburada requires offset and limit together."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per page, at most 100."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/claims/merchantId/{{HEPSIBURADA_MERCHANT_ID}}/status/{status}",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "beginDate": "$begin_date",
+          "endDate": "$end_date",
+          "statusBeginDate": "$status_begin_date",
+          "statusEndDate": "$status_end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_accept_claim",
+      "description": "Accept a claim. Without finalized_with an exchange claim is accepted as a return, so the buyer is refunded. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claim_number": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Claim number."
+          },
+          "finalized_with": {
+            "type": "string",
+            "enum": [
+              "Refund",
+              "Change"
+            ],
+            "description": "Refund or Change (exchange claims)."
+          },
+          "invoice_link": {
+            "type": "string",
+            "description": "Invoice link, when needed."
+          },
+          "acception_reason": {
+            "type": "string",
+            "enum": [
+              "StockProblem",
+              "ProductNotDefective",
+              "Other"
+            ],
+            "description": "For new-product claims accepted as a return: StockProblem, ProductNotDefective or Other."
+          }
+        },
+        "required": [
+          "claim_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/claims/number/{claim_number}/accept",
+        "bodyMapping": {
+          "FinalizedWith": "$finalized_with",
+          "InvoiceLink": "$invoice_link",
+          "AcceptionReason": "$acception_reason"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "hepsiburada_reject_claim",
+      "description": "Reject a claim with a reason and your statement; Hepsiburada may review it as a dispute. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claim_number": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Claim number."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "ProductNotDefective",
+              "ProductNotWrong",
+              "PhotoNotClear",
+              "BoxIsEmptyWithReport",
+              "BoxIsEmptyWithoutReport",
+              "SomePartsOrSomeAccessoriesOrSomePapersAreMissing",
+              "ReturnedProductIsNotDelivered",
+              "NewProductWillBeSent",
+              "ExtraProductHasBeenReturned",
+              "StockProblem",
+              "ReturnedProductHasAccountOrPassword",
+              "MarkedAsServiceProcess",
+              "ProductSentComplete",
+              "MissingItemOrPartCannotBeSupplied",
+              "ClaimedComponentIsNotPartOfTheProduct",
+              "InvoiceReplacesWarranty",
+              "PartialShipmentMissingPackageWillBeDelivered",
+              "CustomerProblemSolved",
+              "Other"
+            ],
+            "description": "Rejection reason (ClaimRejectionReason)."
+          },
+          "statement": {
+            "type": "string",
+            "description": "Your explanation (MerchantStatement)."
+          },
+          "report_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Links to reports or photos that support the rejection."
+          }
+        },
+        "required": [
+          "claim_number",
+          "reason",
+          "statement"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/claims/number/{claim_number}/reject",
+        "bodyMapping": {
+          "ClaimRejectionReason": "$reason",
+          "MerchantStatement": "$statement",
+          "UploadedReportsUrls": "$report_urls"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "hepsiburada_preapprove_claim",
+      "description": "Pre-approve an exchange claim in AwaitingPreApproval: the product is sent to you for inspection before you decide (preApprovalReason ProductInvestigation). Fashion categories only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claim_number": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Claim number."
+          }
+        },
+        "required": [
+          "claim_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/claims/number/{claim_number}/preapprovalconfirm",
+        "bodyMapping": {
+          "preApprovalReason": "ProductInvestigation"
+        }
+      }
+    },
+    {
+      "name": "hepsiburada_list_questions",
+      "description": "List customer questions: issueNumber, createdAt, expireDate (answer deadline, one working day), status, subject, orderNumber and lineItemId when asked from an order, lastContent and the conversation. Status 1 = waiting for an answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "1 WaitingForAnswer, 2 Answered, 3 Rejected, 4 AutoClosed."
+          },
+          "source": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 not about an order, 2 about an order."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject filter."
+          },
+          "search": {
+            "type": "string",
+            "description": "Search text."
+          },
+          "issue_number": {
+            "type": "integer",
+            "description": "Only this question number."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Created since, ISO 8601."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Created until, ISO 8601."
+          },
+          "modified_from": {
+            "type": "string",
+            "description": "Changed since, ISO 8601."
+          },
+          "modified_to": {
+            "type": "string",
+            "description": "Changed until, ISO 8601."
+          },
+          "sort_by": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "0 by creation date (default), 1 by last change."
+          },
+          "desc": {
+            "type": "boolean",
+            "description": "Newest first (default true)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, from 1."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Questions per page (default 25)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api-asktoseller-merchant.hepsiburada.com/api/v1.0/issues",
+        "queryParams": {
+          "status": "$status",
+          "source": "$source",
+          "subject": "$subject",
+          "search": "$search",
+          "issueNumber": "$issue_number",
+          "minCreatedAt": "$created_from",
+          "maxCreatedAt": "$created_to",
+          "minModifiedAt": "$modified_from",
+          "maxModifiedAt": "$modified_to",
+          "sortBy": "$sort_by",
+          "desc": "$desc",
+          "page": "$page",
+          "size": "$size"
+        },
+        "headers": {
+          "merchantId": "{{HEPSIBURADA_MERCHANT_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_get_question",
+      "description": "Read one customer question with its whole conversation (who wrote what and when), subject, order reference, status and expireDate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Question number (issueNumber)."
+          }
+        },
+        "required": [
+          "issue_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api-asktoseller-merchant.hepsiburada.com/api/v1.0/issues/{issue_number}",
+        "headers": {
+          "merchantId": "{{HEPSIBURADA_MERCHANT_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_count_questions",
+      "description": "Count customer questions per status (waiting for an answer, answered, rejected, auto-closed). A cheap way to see open questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://api-asktoseller-merchant.hepsiburada.com/api/v1.0/issues/count",
+        "headers": {
+          "merchantId": "{{HEPSIBURADA_MERCHANT_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_answer_question",
+      "description": "Answer a customer question (at most 2,000 characters). Answer within one working day, or the question is closed automatically. Sent as a form field; attachments are not supported here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Question number."
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Answer text, at most 2000 characters."
+          }
+        },
+        "required": [
+          "issue_number",
+          "answer"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api-asktoseller-merchant.hepsiburada.com/api/v1.0/issues/{issue_number}/answer",
+        "bodyMapping": {
+          "Answer": "$answer"
+        },
+        "headers": {
+          "merchantId": "{{HEPSIBURADA_MERCHANT_ID}}"
+        },
+        "bodyEncoding": "form-data"
+      }
+    },
+    {
+      "name": "hepsiburada_report_question",
+      "description": "Report a question as a problem (inappropriate, not for you) instead of answering it. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Question number."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Why the question is reported, at most 2000 characters."
+          },
+          "conversation_id": {
+            "type": "string",
+            "description": "Id of the conversation entry it concerns, if any."
+          }
+        },
+        "required": [
+          "issue_number",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://api-asktoseller-merchant.hepsiburada.com/api/v1.0/issues/{issue_number}/reject",
+        "bodyMapping": {
+          "rejectReason": "$reason",
+          "rejectConversationId": "$conversation_id"
+        },
+        "headers": {
+          "merchantId": "{{HEPSIBURADA_MERCHANT_ID}}"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "hepsiburada_list_cargo_firms",
+      "description": "List the carriers available to your store, with their ids and names, as used in shipping profiles.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://shipping-external.hepsiburada.com/cargoFirms/{{HEPSIBURADA_MERCHANT_ID}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hepsiburada_list_shipping_profiles",
+      "description": "List your shipping profiles: name and the carriers with their priority. Listings refer to a profile by shippingProfileName.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://shipping-external.hepsiburada.com/profiles/{{HEPSIBURADA_MERCHANT_ID}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

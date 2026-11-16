@@ -32,7 +32,8 @@
       "knowledgeGraph": "Knowledge Graph",
       "aiSkills": "Skill IA",
       "memory": "Memoria",
-      "setup": "Setup e onboarding"
+      "setup": "Setup e onboarding",
+      "learning": "Progetti di apprendimento"
     },
     "settings": "Impostazioni",
     "switchWorkspace": "Cambia workspace",
@@ -355,30 +356,34 @@
       "paysToday": "Mantieni attivo il tuo workspace",
       "trial": "La tua prova gratuita"
     },
-    "ending": "La tua prova gratuita termina il <strong>{date}</strong>, troppo presto per continuare con una prova con carta. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
-    "endingSoon": "La tua prova gratuita termina a breve, troppo presto per continuare con una prova con carta. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
-    "returning": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con carta non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono, e la tua prova attuale continua fino al <strong>{date}</strong> se decidi più avanti.",
-    "returningNoDate": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con carta non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
-    "trial": "Tutte le funzioni, gratis fino al <strong>{date}</strong>. Aggiungi ora una carta e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: la prova senza carta ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere una carta in qualsiasi momento per sbloccare il piano completo.",
-    "trialNoDate": "Tutte le funzioni, gratis fino alla fine della prova. Aggiungi ora una carta e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: la prova senza carta ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere una carta in qualsiasi momento per sbloccare il piano completo.",
+    "ending": "La tua prova gratuita termina il <strong>{date}</strong>, troppo presto per aggiungere un metodo di pagamento e continuare a provare gratis. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "endingSoon": "La tua prova gratuita termina a breve, troppo presto per aggiungere un metodo di pagamento e continuare a provare gratis. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "returning": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con metodo di pagamento non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono, e la tua prova attuale continua fino al <strong>{date}</strong> se decidi più avanti.",
+    "returningNoDate": "Questo indirizzo email ha già avuto un abbonamento AnythingMCP, quindi una nuova prova gratuita con metodo di pagamento non è disponibile. <strong>Il tuo piano inizia oggi e viene addebitato oggi.</strong> Workspace, connettori e impostazioni restano esattamente come sono.",
+    "trial": "Tutte le funzioni, gratis fino al <strong>{date}</strong>. Aggiungi ora un metodo di pagamento e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: quella prova ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere un metodo di pagamento in qualsiasi momento per sbloccare il piano completo.",
+    "trialNoDate": "Tutte le funzioni, gratis fino alla fine della prova. Aggiungi ora un metodo di pagamento e il tuo piano prosegue semplicemente dopo la prova, senza alcun addebito prima di allora. Oppure continua a provare senza dati di pagamento: quella prova ha un <strong>limite di connettori più basso</strong>, e puoi aggiungere un metodo di pagamento in qualsiasi momento per sbloccare il piano completo.",
     "authorizationReturn": "In ogni caso, tornerai subito a completare il collegamento del tuo client AI.",
     "chargesToday": "Questo indirizzo ha già avuto un abbonamento, quindi il checkout addebiterà {amount} oggi.",
     "start": {
       "opening": "Apertura del checkout…",
       "tryAgain": "Riprova",
       "checkout": "Continua al checkout",
-      "withCard": "Inizia la prova gratuita con carta"
+      "trial": "Inizia la prova gratuita"
     },
     "promo": "Il codice {code} verrà applicato al checkout.",
     "price": "{amount}/{period, select, yearly {anno} other {mese}}",
     "priceLocal": "≈ {local}/{period, select, yearly {anno} other {mese}} ({exact})",
     "finePrintPaysToday": "{plan}, {price}, addebitato oggi e poi {period, select, yearly {ogni anno} other {ogni mese}}. Checkout sicuro con Stripe. Disdici quando vuoi dal portale di fatturazione.",
-    "finePrintTrial": "0 € oggi. {plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dal {date}. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
-    "finePrintTrialNoDate": "0 € oggi. {plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dalla fine della prova. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
+    "finePrintTrial": "{plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dal {date}. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
+    "finePrintTrialNoDate": "{plan}, addebitato {period, select, yearly {annualmente} other {mensilmente}} dalla fine della prova. Checkout sicuro con Stripe. Disdici prima di allora e non paghi nulla.",
     "notReady": "Non sei ancora pronto?",
-    "notReadyCard": "Non vuoi ancora aggiungere una carta?",
+    "notReadyCard": "Non vuoi ancora aggiungere un metodo di pagamento?",
     "keepFree": "Continua a usare la prova gratuita",
-    "tryFree": "Prova gratis senza dati di pagamento"
+    "tryFree": "Prova gratis senza dati di pagamento",
+    "methods": {
+      "trial": "0 € oggi · carta, PayPal e altri metodi",
+      "pay": "Carta, PayPal e altri metodi"
+    }
   },
   "appShell": {
     "toggleTheme": "Cambia tema",
@@ -949,14 +954,17 @@
     "pill": {
       "signInExpired": "Accesso scaduto",
       "tokenRefused": "Token rifiutato",
+      "credentialsRefused": "Chiave rifiutata",
       "expiresSoon": "Il token scade presto"
     },
     "banner": {
       "signInRefused": "Il provider ha rifiutato l'accesso, quindi le chiamate agli strumenti si fermano finché non autorizzi di nuovo.",
       "tokenRefused": "Il provider ha rifiutato il token di accesso, quindi le chiamate agli strumenti si fermano finché non ne salvi uno nuovo.",
+      "credentialsRefused": "Ogni chiamata agli strumenti di questo connettore fallisce finché non salvi credenziali valide.",
       "expiresOn": "Il token di accesso smette di funzionare il {date}.",
       "expiresSoon": "Il token di accesso smetterà presto di funzionare.",
-      "since": "Dal {date}"
+      "since": "Dal {date}",
+      "updateCredentials": "Aggiorna credenziali"
     }
   },
   "authTypes": {
@@ -1011,6 +1019,8 @@
       "required": "Obbligatorio",
       "looksWrongExample": "Sembra errato. Esempio: {example}",
       "looksWrong": "Sembra errato",
+      "choose": "Scegli…",
+      "chooseOne": "Scegli una delle opzioni",
       "optional": "(facoltativo)",
       "stored": "Salvato. Lascia vuoto per mantenerlo",
       "hide": "Nascondi",
@@ -1536,11 +1546,21 @@
       "keysMissing": "Salva prima il client ID e il secret della tua app, poi autorizza. Il provider ne ha bisogno per aprire la sua pagina di accesso (per Etsy: Keystring e Shared Secret).",
       "keysStillEmpty": "Ancora vuoti: {names}",
       "enterKeys": "Inserisci le chiavi",
-      "clientId": "client ID"
+      "clientId": "client ID",
+      "signInStarting": "Apertura dell'accesso per {name}…",
+      "signInManual": "L'accesso non è partito da solo. Avvialo con questo pulsante:"
     },
     "shopee": {
       "title": "Autorizzazione del negozio Shopee",
       "body": "Accedi con l'account del negozio e approva questa app. I token vengono salvati cifrati e rinnovati automaticamente. Autorizza di nuovo quando l'autorizzazione scade o il connettore lo chiede."
+    },
+    "sheinShop": {
+      "title": "Autorizzazione del negozio SHEIN",
+      "body": "Accedi a SHEIN con l'account principale del negozio e approva l'app. SHEIN consegna quindi a questo connettore la chiave del negozio, che viene salvata cifrata. SHEIN non documenta né una durata fissa né un rinnovo: autorizza di nuovo quando SHEIN termina l'autorizzazione (il venditore scollega l'app, reimposta la chiave o l'autorizzazione scade) e il connettore lo chiede."
+    },
+    "iopSeller": {
+      "title": "Autorizzazione del venditore",
+      "body": "Accedi con l'account venditore e approva l'app (Lazada, Miravia, AliExpress). La callback URL dell'app deve essere il tuo indirizzo AnythingMCP seguito da /api/iop-auth/callback. I token vengono salvati cifrati e rinnovati automaticamente; autorizza di nuovo quando l'autorizzazione scade o il connettore lo chiede."
     },
     "tiktokShop": {
       "title": "Autorizzazione del negozio TikTok Shop",
@@ -2199,8 +2219,8 @@
         "description": "A intervalli regolari (circa una volta al giorno), lascia che l'AI estenda il grafo e generi skill dagli intenti degli utenti acquisiti, così la tua rete e le tue skill continuano a migliorare da sole. Attenta ai costi: gira solo ogni tanto, si salta quando non è cambiato nulla e resta disattivata finché non la attivi. Richiede Arricchimento con AI + Acquisisci l'intento dell'utente."
       },
       "skillAutoApply": {
-        "label": "Applica in automatico le skill più sicure",
-        "description": "Quando l'AI genera una skill con alta confidenza (≥ 0,90), la applica in automatico invece di lasciarla come suggerimento da rivedere. Le skill con confidenza più bassa attendono comunque l'approvazione manuale."
+        "label": "Applica in automatico le skill apprese dagli errori corretti",
+        "description": "Quando la stessa chiamata fallita è stata corretta allo stesso modo almeno 3 volte, la skill che ne deriva viene applicata in automatico. Le skill generate dall'AI attendono sempre la tua revisione."
       }
     },
     "security": {
@@ -3097,7 +3117,8 @@
       "hideHistory": "Nascondi la cronologia",
       "history": "Cronologia ({count, plural, one {# versione precedente} other {# versioni precedenti}})",
       "replaced": "sostituita il {date}",
-      "historyProcedure": "Procedura: {count, plural, one {# carattere} other {# caratteri}}"
+      "historyProcedure": "Procedura: {count, plural, one {# carattere} other {# caratteri}}",
+      "draftOnly": "Bozza: servita solo al suo membro"
     },
     "sources": {
       "llm": "generata dall’AI",
@@ -3105,7 +3126,8 @@
       "mergedByAi": "unita dall’AI",
       "errors": "appresa dagli errori corretti",
       "finder": "da Skills Finder",
-      "manual": "scritta a mano"
+      "manual": "scritta a mano",
+      "learning": "da un progetto di apprendimento"
     },
     "form": {
       "titlePlaceholder": "Titolo",
@@ -3731,7 +3753,55 @@
     "workspaces": "{count} workspace su AnythingMCP Cloud",
     "directory": "Presente nella Claude Directory",
     "directoryChatgpt": "Presente nella directory dei plugin di ChatGPT",
-    "directoryBoth": "Presente nelle directory di Claude e ChatGPT"
+    "directoryBoth": "Presente nelle directory di Claude e ChatGPT",
+    "workspaceLabel": "Workspace:",
+    "reasons": {
+      "paymentFailed": {
+        "title": "Il pagamento non è andato a buon fine",
+        "bodyAdmin": "L’ultimo pagamento non è andato a buon fine, quindi il tuo abbonamento è sospeso. Aggiorna il metodo di pagamento e riparte subito: il pagamento in sospeso viene addebitato appena salvi quello nuovo. I tuoi connettori e le tue impostazioni restano.",
+        "bodyMember": "L’ultimo pagamento dell’abbonamento di questo workspace non è andato a buon fine, quindi l’abbonamento è sospeso. Chiedi a un admin del workspace di aggiornare il metodo di pagamento. I tuoi connettori e le tue impostazioni restano."
+      },
+      "noLicense": {
+        "title": "Licenza necessaria",
+        "body": "Questo workspace non ha una licenza attiva. Avvia una prova o acquista un piano per continuare."
+      },
+      "trialEnded": {
+        "title": "La tua prova è terminata",
+        "body": "La tua prova di 7 giorni è terminata. Acquista una licenza per continuare a usare AnythingMCP Cloud. I tuoi connettori e le tue impostazioni restano."
+      },
+      "lapsed": {
+        "title": "Il tuo abbonamento non è attivo",
+        "body": "Il tuo abbonamento non è attivo, di solito per un rinnovo non andato a buon fine. Aggiorna il metodo di pagamento nel portale di fatturazione e riparte; acquistando un nuovo piano avvieresti un secondo abbonamento accanto a questo. I tuoi connettori e le tue impostazioni restano."
+      },
+      "expired": {
+        "title": "La tua licenza è scaduta",
+        "body": "La tua licenza non è più attiva. Acquista o rinnova una licenza per continuare a usare AnythingMCP. I tuoi connettori e le tue impostazioni restano."
+      }
+    },
+    "startTrial": {
+      "start": "Inizia la prova gratuita di 7 giorni",
+      "starting": "Avvio…",
+      "failed": "Non è stato possibile avviare la prova. Riprova o contatta il supporto."
+    },
+    "viewPlans": "Vedi i piani e acquista una licenza",
+    "openingCheckout": "Apertura del checkout…",
+    "subscribeTo": "Abbonati a {plan}",
+    "comparePlans": "Confronta i piani",
+    "opening": "Apertura…",
+    "payment": {
+      "update": "Aggiorna il metodo di pagamento",
+      "updated": "Ho aggiornato il metodo di pagamento",
+      "checking": "Verifica…",
+      "openFailed": "Non è stato possibile aprire la pagina di pagamento. Riprova o contatta il supporto.",
+      "notYet": "Il pagamento non è ancora arrivato. Se hai appena aggiornato il metodo di pagamento, riprova tra un minuto.",
+      "checkFailed": "Impossibile verificare in questo momento. Riprova tra un minuto."
+    },
+    "updateBilling": "Aggiorna la fatturazione",
+    "switchWorkspace": "Passa a un altro workspace",
+    "alreadyPurchased": "Hai già acquistato?",
+    "enterKey": "Inserisci la chiave di licenza",
+    "notContinuing": "Non vuoi continuare?",
+    "deleteAccount": "Elimina il tuo account"
   },
   "planFit": {
     "title": "Cosa cambia con {plan}",
@@ -3809,5 +3879,224 @@
     "starterTitle": "Con Starter",
     "seeStarter": "Cosa cambia con Starter",
     "hideStarter": "Nascondi"
+  },
+  "activeSubscription": {
+    "title": "Prima disdici l'abbonamento",
+    "body": "Questo workspace ha ancora un abbonamento, e cancellare il workspace non lo disdice: continueresti a pagarlo. Disdicilo prima, poi torna qui e cancella.",
+    "cancelButton": "Disdici l'abbonamento",
+    "opening": "Apertura…",
+    "after": "Dopo la disdetta torni qui.",
+    "openFailed": "Impossibile aprire la pagina di disdetta.",
+    "licensePage": "Apri Impostazioni → Licenza"
+  },
+  "planPicker": {
+    "periodLabel": "Periodo di fatturazione",
+    "planLabel": "Piano",
+    "monthly": "Mensile",
+    "yearly": "Annuale",
+    "twoMonthsFree": "2 mesi gratis",
+    "mostPopular": "Il più scelto",
+    "summary": "{connectors} connettori · {mcpServers} server MCP · {users, plural, one {# utente} other {fino a # utenti}}",
+    "price": "{amount}/{period, select, yearly {anno} other {mese}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {anno} other {mese}}",
+    "exactly": "esattamente {price}",
+    "yearlyPerMonth": "≈ {amount}/mese",
+    "outgrown": "Questo workspace ha {items}",
+    "usage": {
+      "connectors": "{count, plural, one {# connettore} other {# connettori}}",
+      "mcpServers": "{count, plural, one {# server MCP} other {# server MCP}}",
+      "users": "{count, plural, one {# utente} other {# utenti}}"
+    },
+    "footer": {
+      "vat": "Prezzi in EUR, IVA inclusa.",
+      "noVat": "Prezzi in EUR.",
+      "local": "Prezzi in EUR, pagamento in {currency} al checkout.",
+      "localVat": "Prezzi in EUR, pagamento in {currency} al checkout, IVA inclusa."
+    },
+    "enterpriseQuestion": "Più utenti, single sign-on o SCIM?",
+    "pastTeam": "Questo workspace va oltre Team.",
+    "enterpriseLink": "Chiedi di Enterprise",
+    "listSeparator": ", "
+  },
+  "cardCheckout": {
+    "failed": "Non siamo riusciti ad aprire il checkout. Riprova tra un momento."
+  },
+  "trialBanner": {
+    "today": "La tua prova scade oggi.",
+    "tomorrow": "La tua prova scade domani.",
+    "daysLeft": "Prova: {days} giorni rimasti.",
+    "includesTeam": "Include tutto ciò che offre Team.",
+    "aboveStarter": {
+      "link": "Oltre Starter: vedi cosa cambia",
+      "title": "Il tuo workspace va oltre Starter",
+      "body": "La prova include tutto ciò che offre Team. Se scegli Starter, questo cambia quando la prova finisce. Con Team resta tutto com’è.",
+      "close": "Chiudi"
+    },
+    "choosePlan": "Scegli un piano",
+    "openingCheckout": "Apertura del checkout…",
+    "addPaymentBefore": "Aggiungi un metodo di pagamento: nessun addebito prima del {date}",
+    "addPayment": "Aggiungi un metodo di pagamento",
+    "upgrade": "Passa a un piano"
+  },
+  "learning": {
+    "title": "Progetti di apprendimento",
+    "intro": "Un progetto di apprendimento conserva ciò che un collega insegna all'AI su un server MCP: le sue correzioni e spiegazioni diventano skill per tutti. Nulla viene conservato prima che accetti, e può fermarsi in ogni momento.",
+    "loading": "Caricamento…",
+    "loadFailed": "Impossibile caricare i progetti di apprendimento",
+    "allowance": {
+      "unlimited": "Il tuo piano include progetti di apprendimento senza limite.",
+      "some": "{used} di {max} progetti di apprendimento in uso."
+    },
+    "upsell": {
+      "cloudTitle": "I progetti di apprendimento fanno parte dei piani Team ed Enterprise",
+      "cloudBody": "Conserva ciò che un collega esperto insegna all'AI prima che se ne vada: le sue correzioni diventano skill usate dagli assistenti AI di tutto il team. Team include un progetto, Enterprise non ha limiti.",
+      "cloudCta": "Vedi i piani",
+      "selfTitle": "I progetti di apprendimento fanno parte di AnythingMCP Enterprise",
+      "selfBody": "Conserva ciò che un collega esperto insegna all'AI prima che se ne vada: le sue correzioni diventano skill usate dagli assistenti AI di tutto il team. La prova di 30 giorni include un progetto.",
+      "contact": "Contattaci per Enterprise",
+      "key": "Inserisci una chiave di licenza"
+    },
+    "new": {
+      "button": "Nuovo progetto di apprendimento",
+      "title": "Nuovo progetto di apprendimento",
+      "name": "Nome",
+      "namePlaceholder": "es. Ferramenta per finestre vecchie",
+      "member": "Impara da",
+      "memberPlaceholder": "Scegli un membro",
+      "server": "Sul server MCP",
+      "serverPlaceholder": "Scegli un server MCP",
+      "folder": "Archivia le skill in",
+      "noFolder": "Nessuna cartella",
+      "endsAt": "Termina il (facoltativo)",
+      "tags": "Etichette (facoltative)",
+      "tagsHint": "Separate da virgole, es. finestre, ferramenta",
+      "publishMode": "Pubblicazione",
+      "publishManual": "Una persona pubblica ogni argomento",
+      "publishConfirmed": "Le lezioni confermate dal membro vengono pubblicate",
+      "showName": "Mostra il nome del membro a tutti, non solo agli admin",
+      "create": "Avvia e chiedi al membro",
+      "creating": "Avvio…",
+      "cancel": "Annulla",
+      "created": "Avviato. Il membro lo accetta in Impostazioni → Profilo; prima di allora non viene conservato nulla.",
+      "limitReached": "I progetti di apprendimento del tuo piano sono tutti in uso. Terminane o mettine in pausa uno per avviarne un altro."
+    },
+    "status": {
+      "draft": "In attesa del membro",
+      "active": "Attivo",
+      "paused": "In pausa",
+      "ended": "Terminato",
+      "overPlan": "Non incluso nel piano"
+    },
+    "card": {
+      "expert": "Impara da {name}",
+      "expertHidden": "Membro visibile solo agli admin",
+      "server": "su {name}",
+      "noServer": "il suo server MCP è stato eliminato",
+      "lessons": "{confirmed} confermate · {draft} da confermare",
+      "topics": "{count} argomento/i",
+      "open": "Apri",
+      "ends": "termina il {date}"
+    },
+    "empty": "Ancora nessun progetto di apprendimento.",
+    "detail": {
+      "back": "Tutti i progetti di apprendimento",
+      "notFound": "Progetto di apprendimento non trovato",
+      "tabs": {
+        "topics": "Argomenti",
+        "lessons": "Lezioni",
+        "settings": "Impostazioni"
+      },
+      "pause": "Metti in pausa",
+      "resume": "Riprendi",
+      "end": "Termina",
+      "delete": "Elimina",
+      "confirmEnd": "Terminare questo progetto di apprendimento? Le lezioni e le skill pubblicate restano; non potrà essere riavviato.",
+      "confirmDelete": "Eliminare questo progetto di apprendimento e tutte le sue lezioni? Le skill pubblicate restano.",
+      "waiting": "In attesa che {name} accetti in Impostazioni → Profilo. Prima di allora non viene conservato nulla.",
+      "waitingHidden": "In attesa che il membro accetti in Impostazioni → Profilo. Prima di allora non viene conservato nulla.",
+      "overPlan": "Questo progetto supera il numero incluso nel tuo piano, quindi non viene registrato nulla. Termina un altro progetto o passa a un piano superiore."
+    },
+    "topics": {
+      "empty": "Ancora nessuna lezione. Compaiono quando il membro corregge l'AI o le spiega qualcosa su questo server.",
+      "when": "Quando:",
+      "published": "Pubblicato il {date}",
+      "notPublished": "Non pubblicato",
+      "changes": "Modifiche confermate da pubblicare",
+      "counts": "{confirmed} confermate · {draft} da confermare",
+      "preview": "Anteprima",
+      "hidePreview": "Nascondi anteprima",
+      "publish": "Pubblica",
+      "publishing": "Pubblicazione…",
+      "publishedMsg": "Pubblicato: {count} lezione/i sono ora una skill per tutti su questo server.",
+      "nothing": "Ancora nulla di confermato da pubblicare.",
+      "dropped": "{count} lezione/i più vecchie non entravano nel testo e sono state lasciate fuori.",
+      "viewSkill": "Apri AI Skills"
+    },
+    "lessons": {
+      "filter": {
+        "all": "Tutte",
+        "draft": "Da confermare",
+        "confirmed": "Confermate",
+        "rejected": "Scartate"
+      },
+      "empty": "Nessuna lezione qui.",
+      "kind": {
+        "rule": "Regola",
+        "fact": "Fatto",
+        "correction": "Correzione",
+        "example": "Esempio"
+      },
+      "source": {
+        "model": "riportata dall'AI",
+        "diff": "vista nel lavoro",
+        "interview": "da un'intervista",
+        "manual": "modificata da un curatore"
+      },
+      "status": {
+        "draft": "Da confermare",
+        "confirmed": "Confermata",
+        "rejected": "Scartata",
+        "superseded": "Sostituita"
+      },
+      "before": "Invece di:",
+      "after": "Usa:",
+      "reason": "Perché:",
+      "askWhy": "Motivo non ancora indicato",
+      "seen": "detta {count}×",
+      "confirm": "Conferma",
+      "reject": "Scarta",
+      "reopen": "Riapri",
+      "edit": "Riformula",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "more": "Mostra altre"
+    },
+    "settings": {
+      "name": "Nome",
+      "folder": "Archivia le skill in",
+      "folderHint": "Vale per gli argomenti avviati da ora in poi.",
+      "endsAt": "Termina il",
+      "tags": "Etichette",
+      "publishMode": "Pubblicazione",
+      "showName": "Mostra il nome del membro a tutti, non solo agli admin",
+      "save": "Salva",
+      "saved": "Salvato."
+    },
+    "profile": {
+      "title": "Progetti di apprendimento",
+      "ask": "Il tuo admin chiede di conservare ciò che insegni all'AI sul server MCP “{server}”, per il progetto di apprendimento “{name}”.",
+      "notice": "Sul server MCP “{server}”, quando correggi l'AI o le spieghi come si fa il lavoro, l'AI lo salva come lezione per il progetto di apprendimento “{name}”. Le lezioni diventano skill che gli assistenti AI dei tuoi colleghi possono usare. Viene conservato: le lezioni. Non viene conservato: la conversazione, il tuo lavoro su altri server, alcun dato sul tuo rendimento. Confermi ogni lezione prima che venga condivisa. Admin ed editor del workspace possono leggere le lezioni. Puoi fermarti in ogni momento da questa pagina e cancellare tutto ciò che non è stato pubblicato.",
+      "nameHidden": "Il tuo nome è visibile solo agli admin.",
+      "nameShown": "Il tuo nome è mostrato con le skill apprese da te.",
+      "accept": "Accetta",
+      "decline": "Rifiuta",
+      "accepted": "Accettato. Aggiorna l'elenco dei tool di questo connettore nel tuo client AI per ricevere i tool di apprendimento.",
+      "active": "“{name}” è attivo su “{server}” dal {date}.",
+      "paused": "“{name}” è stato messo in pausa dal tuo admin.",
+      "stop": "Ferma",
+      "erase": "Cancella anche le mie lezioni non pubblicate",
+      "stopped": "Fermato.",
+      "failed": "Impossibile salvare la tua risposta"
+    }
   }
 }

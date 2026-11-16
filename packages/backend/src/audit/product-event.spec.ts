@@ -150,6 +150,80 @@ describe('POST /api/product-events — File Search wizard', () => {
   });
 });
 
+describe('POST /api/product-events — guided connector setup', () => {
+  // The setup page sent `step` and `index` from its first day, and the
+  // allow-list dropped both: every step event said only which adapter. These
+  // go through the real service, so a field outside the list fails here.
+  it('keeps which step was shown, left and opened at the provider', async () => {
+    const { controller, req, stored } = build();
+    for (const event of ['setup_step_viewed', 'setup_step_completed', 'setup_step_action_opened']) {
+      await controller.record(req, { event, metadata: { adapterSlug: 'etsy', step: 'create-app', index: 1 } });
+    }
+    expect(stored().map((e: any) => [e.event, e.metadata])).toEqual([
+      ['setup_step_viewed', { adapterSlug: 'etsy', step: 'create-app', index: 1 }],
+      ['setup_step_completed', { adapterSlug: 'etsy', step: 'create-app', index: 1 }],
+      ['setup_step_action_opened', { adapterSlug: 'etsy', step: 'create-app', index: 1 }],
+    ]);
+  });
+
+  it('drops a step that is not a step id and an index that is not a position', async () => {
+    const { controller, req, stored } = build();
+    const view = (metadata: Record<string, unknown>) => controller.record(req, { event: 'setup_step_viewed', metadata });
+    await view({ adapterSlug: 'etsy', step: 'Keys: abcdefghijklmnopqrstuvwx', index: 2 });
+    await view({ adapterSlug: 'etsy', step: 'keys', index: '2' });
+    await view({ adapterSlug: 'etsy', step: 'keys', index: 51 });
+    await view({ adapterSlug: 'etsy', step: 'keys', index: 1.5 });
+    expect(stored().map((e: any) => e.metadata)).toEqual([
+      { adapterSlug: 'etsy', index: 2 },
+      { adapterSlug: 'etsy', step: 'keys' },
+      { adapterSlug: 'etsy', step: 'keys' },
+      { adapterSlug: 'etsy', step: 'keys' },
+    ]);
+  });
+
+  it('keeps the names of the fields the page refused, never a value', async () => {
+    const { controller, req, stored } = build();
+    const refused = (metadata: Record<string, unknown>) => controller.record(req, { event: 'setup_fields_refused', metadata });
+    await refused({ adapterSlug: 'etsy', step: 'keys', index: 2, kind: 'format', field: 'ETSY_CLIENT_ID,ETSY_CLIENT_SECRET' });
+    await refused({ adapterSlug: 'etsy', kind: 'required', field: 'ETSY_CLIENT_SECRET' });
+    // What was typed into the field instead of its name.
+    await refused({ adapterSlug: 'etsy', kind: 'format', field: 'abcdefghijklmnopqrstuvwx:1a2b3c4d5e' });
+    await refused({ adapterSlug: 'etsy', kind: 'format', field: 'etsy_client_id' });
+    expect(stored().map((e: any) => e.metadata)).toEqual([
+      { adapterSlug: 'etsy', step: 'keys', index: 2, kind: 'format', field: 'ETSY_CLIENT_ID,ETSY_CLIENT_SECRET' },
+      { adapterSlug: 'etsy', kind: 'required', field: 'ETSY_CLIENT_SECRET' },
+      { adapterSlug: 'etsy', kind: 'format' },
+      { adapterSlug: 'etsy', kind: 'format' },
+    ]);
+  });
+
+  it('keeps a coarse device on the opening of a setup', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, { event: 'setup_started', metadata: { adapterSlug: 'etsy', kind: 'oauth_browser', device: 'mobile' } });
+    await controller.record(req, { event: 'setup_started', metadata: { adapterSlug: 'etsy', kind: 'oauth_browser', device: 'iPhone' } });
+    expect(stored().map((e: any) => e.metadata)).toEqual([
+      { adapterSlug: 'etsy', kind: 'oauth_browser', device: 'mobile' },
+      { adapterSlug: 'etsy', kind: 'oauth_browser' },
+    ]);
+  });
+
+  it('records the connector page asking to finish a setup', async () => {
+    const { controller, req, stored } = build();
+    await controller.record(req, {
+      event: 'setup_finish_prompt_viewed',
+      metadata: { adapterSlug: 'etsy', connectorId: 'c1', kind: 'needs_input' },
+    });
+    expect(stored()).toEqual([
+      expect.objectContaining({
+        event: 'setup_finish_prompt_viewed',
+        userId: 'u1',
+        organizationId: 'org-1',
+        metadata: { adapterSlug: 'etsy', connectorId: 'c1', kind: 'needs_input' },
+      }),
+    ]);
+  });
+});
+
 describe('scrubProviderMessage', () => {
   it('drops query strings, masks given secrets and token-like runs, caps the length', () => {
     expect(scrubProviderMessage('GET https://x.example/api?appid=abc failed', [])).toBe('GET https://x.example/api failed');
@@ -188,7 +262,70 @@ describe('scrubProviderMessage', () => {
   });
 });
 
+describe('ProductEventService.log — a refused setup check', () => {
+  const log = async (metadata: Record<string, unknown>) => {
+    const create = jest.fn().mockResolvedValue({});
+    await new ProductEventService({ productEvent: { create } } as any).log({
+      event: 'setup_verify_failed',
+      userId: 'u1',
+      organizationId: 'org-1',
+      metadata,
+    });
+    return create.mock.calls[0][0].data.metadata;
+  };
+
+  it("keeps the provider's error code next to the kind and status", async () => {
+    expect(await log({ adapterSlug: 'shopify', kind: 'bad_request', status: 400, code: 'app_not_installed' })).toEqual({
+      adapterSlug: 'shopify',
+      kind: 'bad_request',
+      status: 400,
+      code: 'app_not_installed',
+    });
+  });
+
+  it('drops a code that is not a short identifier: a sentence, a key, a number', async () => {
+    for (const code of ['Not Found', 'sk_live_51Hx2kQ8rT9vZpYwA3bC', 'x'.repeat(41), 'ab', 400, { a: 1 }]) {
+      expect(await log({ adapterSlug: 'shopify', kind: 'bad_request', code })).toEqual({
+        adapterSlug: 'shopify',
+        kind: 'bad_request',
+      });
+    }
+  });
+});
+
 describe('ProductEventService.log — server-written metadata', () => {
+  // The callers' own tests replace this service with a mock, so only a test
+  // through it shows what is really stored: 'phone', `attempt` and `reason`
+  // were all dropped here once.
+  it('keeps the device and the attempt of an authorization page view', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    const view = (metadata: Record<string, unknown>) => service.log({ event: 'authorize_page_viewed', metadata });
+    await view({ client: 'Claude', device: 'mobile', attempt: 'mh0zq3k1' });
+    await view({ client: 'Claude', device: 'desktop', attempt: 'mh0zq3k1' });
+    // Only the two coarse devices, and only a short base-36 value as the attempt.
+    await view({ client: 'Claude', device: 'phone', attempt: 'A session-id, or any text' });
+    await view({ client: 'Claude', attempt: 'x'.repeat(13) });
+    expect(create.mock.calls.map((c) => c[0].data.metadata)).toEqual([
+      { client: 'Claude', device: 'mobile', attempt: 'mh0zq3k1' },
+      { client: 'Claude', device: 'desktop', attempt: 'mh0zq3k1' },
+      { client: 'Claude' },
+      { client: 'Claude' },
+    ]);
+  });
+
+  it('keeps why an install from the chat added nothing', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    await service.log({
+      event: 'setup_install_failed',
+      userId: 'u1',
+      organizationId: 'org-1',
+      metadata: { adapterSlug: 'openplz', via: 'mcp', kind: 'plan_limit' },
+    });
+    expect(create.mock.calls[0][0].data.metadata).toEqual({ adapterSlug: 'openplz', via: 'mcp', kind: 'plan_limit' });
+  });
+
   it('keeps cardTrialOffered on the empty-workspace prompt (the #920 measurement)', async () => {
     const create = jest.fn().mockResolvedValue({});
     const service = new ProductEventService({ productEvent: { create } } as any);

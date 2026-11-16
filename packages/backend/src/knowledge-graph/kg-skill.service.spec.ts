@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { KgSkillService } from './kg-skill.service';
+import { KgSkillService, audienceVisibility, skillKey } from './kg-skill.service';
 
 function okJson(body: any) {
   return { ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body };
@@ -101,7 +101,7 @@ describe('KgSkillService custom skip', () => {
       },
       connector: { findMany: jest.fn().mockResolvedValue([{ id: 'c1', name: 'Billing' }]) },
       orgSettings: { findUnique: jest.fn().mockResolvedValue(null) },
-      kgSkillSuggestion: { deleteMany: jest.fn(), create: jest.fn() },
+      kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue([]), deleteMany: jest.fn(), create: jest.fn() },
     };
   }
 
@@ -203,7 +203,7 @@ describe('KgSkillService provenance', () => {
       kgNode: { findMany: jest.fn().mockResolvedValue([]) },
       toolInvocation: { findMany: jest.fn().mockResolvedValue([]) },
       orgSettings: { findUnique: jest.fn().mockResolvedValue(null) },
-      kgSkillSuggestion: { deleteMany: jest.fn(), create: jest.fn() },
+      kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue([]), deleteMany: jest.fn(), create: jest.fn() },
     };
     const svc = new KgSkillService(prisma as any, { isEnabled: async () => true } as any);
     await svc.generate(ORG, { mcpServerId: 'srv' });
@@ -225,7 +225,7 @@ describe('KgSkillService provenance', () => {
       },
       connector: { findMany: jest.fn().mockResolvedValue([]) },
       orgSettings: { findUnique: jest.fn().mockResolvedValue(null) },
-      kgSkillSuggestion: { deleteMany: jest.fn(), create: jest.fn() },
+      kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue([]), deleteMany: jest.fn(), create: jest.fn() },
     };
     const svc = new KgSkillService(prisma as any, { isEnabled: async () => true } as any);
     await svc.generate(ORG);
@@ -345,6 +345,8 @@ describe('KgSkillService.getForCaller', () => {
       status: 'applied',
       kind: { not: 'code' },
       OR: [{ mcpServerId: { in: ['srv-1'] } }, { connectorId: { in: ['c-1'] } }],
+      // No known caller: only skills meant for everyone.
+      AND: [{ audienceUserId: null }],
     });
     expect(where.AND[1]).toEqual({ OR: [{ id: 's1' }, { title: { equals: 's1', mode: 'insensitive' } }] });
     expect(update).toHaveBeenCalledWith({
@@ -456,6 +458,7 @@ describe('KgSkillService with folders', () => {
     const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
     await svc.activeSkillsText(ORG, 'srv', [], 'auto', access(['f-sales']) as any);
     expect(findMany.mock.calls[0][0].where.AND).toEqual([
+      { audienceUserId: null },
       { OR: [{ folderId: null }, { folderId: { in: ['f-sales'] } }] },
     ]);
   });
@@ -464,7 +467,7 @@ describe('KgSkillService with folders', () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
     await svc.activeSkillsText(ORG, 'srv', [], 'auto', access(['f-sales', 'f-quotes'], true) as any);
-    expect(findMany.mock.calls[0][0].where.AND).toBeUndefined();
+    expect(findMany.mock.calls[0][0].where.AND).toEqual([{ audienceUserId: null }]);
   });
 
   it('groups the index by folder', async () => {
@@ -516,10 +519,15 @@ describe('KgSkillService.proposeFromErrors', () => {
     createdAt: new Date(now.getTime() - 3_600_000 + min * 60_000),
   });
 
-  function make(known: Array<{ title: string }> = []) {
-    const failures = [row('u1', 'ERROR', '12.10.2026', 0), row('u1', 'ERROR', '13.10.2026', 20)];
-    const successes = [row('u1', 'SUCCESS', '2026-10-12', 1), row('u1', 'SUCCESS', '2026-10-13', 21)];
+  function make(known: Array<{ title: string }> = [], opts: { times?: number; autoApply?: boolean } = {}) {
+    const times = opts.times ?? 2;
+    const day = (i: number) => String(12 + i);
+    const failures = Array.from({ length: times }, (_, i) => row('u1', 'ERROR', `${day(i)}.10.2026`, i * 20));
+    const successes = Array.from({ length: times }, (_, i) => row('u1', 'SUCCESS', `2026-10-${day(i)}`, i * 20 + 1));
     const prisma: any = {
+      orgSettings: {
+        findUnique: jest.fn(async () => (opts.autoApply ? { value: 'true' } : null)),
+      },
       toolInvocation: {
         findMany: jest.fn(async ({ where }: any) => (where.status === 'SUCCESS' ? successes : failures)),
       },
@@ -556,6 +564,146 @@ describe('KgSkillService.proposeFromErrors', () => {
     const { svc, prisma } = make([{ title: 'erp_create_order: `date` as "9999-99-99"' }]);
     expect((await svc.proposeFromErrors(ORG, { now })).created).toBe(0);
     expect(prisma.kgSkillSuggestion.create).not.toHaveBeenCalled();
+  });
+
+  it('applies a pattern seen three times when the workspace turned auto-apply on', async () => {
+    const { svc, prisma } = make([], { times: 3, autoApply: true });
+    await svc.proposeFromErrors(ORG, { now });
+    expect(prisma.kgSkillSuggestion.create.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({ status: 'applied', source: 'errors', evidenceCount: 3 }),
+    );
+  });
+
+  it('keeps a pattern seen twice pending even with auto-apply on', async () => {
+    const { svc, prisma } = make([], { times: 2, autoApply: true });
+    await svc.proposeFromErrors(ORG, { now });
+    expect(prisma.kgSkillSuggestion.create.mock.calls[0][0].data.status).toBe('pending');
+  });
+
+  it('keeps a pattern seen three times pending while auto-apply is off', async () => {
+    const { svc, prisma } = make([], { times: 3 });
+    await svc.proposeFromErrors(ORG, { now });
+    expect(prisma.kgSkillSuggestion.create.mock.calls[0][0].data.status).toBe('pending');
+  });
+});
+
+describe('KgSkillService generation does not repeat itself', () => {
+  const ORG = 'org-A';
+  const realFetch = global.fetch;
+
+  function reply(skills: unknown[]) {
+    global.fetch = jest.fn().mockResolvedValue(
+      okJson({ choices: [{ message: { content: JSON.stringify({ skills }) } }] }),
+    );
+  }
+  function make(existing: Array<Record<string, unknown>>, autoApply = false) {
+    const prisma = {
+      toolInvocation: {
+        findMany: jest.fn().mockResolvedValue([
+          { intent: 'net price', status: 'SUCCESS', tool: { name: 'get_price', connector: { name: 'Billing' } } },
+        ]),
+      },
+      connector: { findMany: jest.fn().mockResolvedValue([{ id: 'c1', name: 'Billing' }]) },
+      mcpServerConfig: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'srv', name: 'S', organizationId: ORG }),
+      },
+      mcpServerConnector: {
+        findMany: jest.fn().mockResolvedValue([{ connectorId: 'c1', connector: { name: 'Billing' } }]),
+      },
+      kgNode: { findMany: jest.fn().mockResolvedValue([]) },
+      orgSettings: { findUnique: jest.fn().mockResolvedValue(autoApply ? { value: 'true' } : null) },
+      kgSkillSuggestion: {
+        findMany: jest.fn().mockResolvedValue(existing),
+        deleteMany: jest.fn(),
+        create: jest.fn(),
+      },
+    };
+    return { prisma, svc: new KgSkillService(prisma as any, { isEnabled: async () => true } as any) };
+  }
+  const created = (prisma: any) =>
+    prisma.kgSkillSuggestion.create.mock.calls
+      .map((c: any) => c[0].data)
+      .filter((d: any) => d.source === 'llm');
+
+  beforeEach(() => {
+    process.env.KG_LLM_BASE_URL = 'http://localhost:11434/v1';
+    process.env.KG_LLM_MODEL = 'qwen2.5';
+    delete process.env.KG_LLM_API_KEY;
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    delete process.env.KG_LLM_BASE_URL;
+    delete process.env.KG_LLM_MODEL;
+  });
+
+  it('reduces a title to letters and digits, whatever the case and punctuation', () => {
+    expect(skillKey('Use ISO dates!')).toBe(skillKey('  use iso   dates'));
+    expect(skillKey('Preise: netto')).not.toBe(skillKey('Preise: brutto'));
+    expect(skillKey(null)).toBe('');
+  });
+
+  it('drops a draft that repeats a dismissed or an applied skill', async () => {
+    reply([
+      { connector: 'Billing', title: 'Use ISO dates!', instruction: 'Send dates as YYYY-MM-DD.', confidence: 0.7 },
+      { connector: 'Billing', title: 'Another name', instruction: 'Quote NET prices.', confidence: 0.7 },
+      { connector: 'Billing', title: 'New rule', instruction: 'Ask for the delivery address.', confidence: 0.7 },
+    ]);
+    const { prisma, svc } = make([
+      { title: 'use iso dates', whenToUse: '', instruction: 'x', status: 'dismissed' },
+      { title: 'Net prices', whenToUse: '', instruction: 'Quote net prices', status: 'applied' },
+    ]);
+    const res = await svc.generate(ORG);
+    expect(created(prisma).map((d: any) => d.title)).toEqual(['New rule']);
+    expect(res.created).toBe(1);
+  });
+
+  it('files the same draft only once in a run', async () => {
+    reply([
+      { title: 'Rule', instruction: 'Do it.', confidence: 0.5 },
+      { title: 'RULE', instruction: 'Do it differently.', confidence: 0.5 },
+    ]);
+    const { prisma, svc } = make([]);
+    await svc.generate(ORG);
+    expect(created(prisma)).toHaveLength(1);
+  });
+
+  it('tells the model which skills exist and reads only applied and dismissed ones of the scope', async () => {
+    reply([]);
+    const { prisma, svc } = make([
+      { title: 'Net prices', whenToUse: 'When quoting', instruction: 'Quote net prices', status: 'applied' },
+    ]);
+    await svc.generate(ORG);
+    const where = prisma.kgSkillSuggestion.findMany.mock.calls[0][0].where;
+    expect(where).toEqual(
+      expect.objectContaining({
+        organizationId: ORG,
+        status: { in: ['applied', 'dismissed'] },
+        mcpServerId: null,
+      }),
+    );
+    const sent = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    const user = JSON.parse(sent.messages[sent.messages.length - 1].content);
+    expect(user.existing).toEqual([{ title: 'Net prices', whenToUse: 'When quoting', status: 'applied' }]);
+  });
+
+  it('for a server, compares with the server\'s skills and those of its connectors', async () => {
+    reply([{ title: 'Net prices', instruction: 'Anything.', confidence: 0.9 }]);
+    const { prisma, svc } = make([
+      { title: 'Net prices', whenToUse: '', instruction: 'Quote net prices', status: 'applied' },
+    ]);
+    const res = await svc.generate(ORG, { mcpServerId: 'srv' });
+    expect(prisma.kgSkillSuggestion.findMany.mock.calls[0][0].where.OR).toEqual([
+      { mcpServerId: 'srv' },
+      { connectorId: { in: ['c1'] } },
+    ]);
+    expect(res.created).toBe(0);
+  });
+
+  it('never applies a generated skill on its own, whatever its confidence', async () => {
+    reply([{ connector: 'Billing', title: 'Sure thing', instruction: 'Always do this.', confidence: 0.99 }]);
+    const { prisma, svc } = make([], true);
+    await svc.generate(ORG);
+    expect(created(prisma)).toEqual([expect.objectContaining({ status: 'pending', confidence: 0.99 })]);
   });
 });
 
@@ -748,5 +896,95 @@ describe('KgSkillService code proposals are not served', () => {
         where: expect.objectContaining({ status: 'applied', kind: { not: 'code' } }),
       }),
     );
+  });
+});
+
+/** A learning project's draft is served to the member it is drafted for, nobody else. */
+describe('KgSkillService audience', () => {
+  const ORG = 'org-A';
+  const access = (userId?: string | null) => ({ organizationId: ORG, all: true, ids: new Set<string>(), folders: [], userId });
+  const forEveryone = { audienceUserId: null };
+  const forMember = (userId: string) => ({
+    OR: [
+      { audienceUserId: userId },
+      {
+        audienceUserId: null,
+        NOT: { publishedOfTopics: { some: { draftSkill: { audienceUserId: userId } } } },
+      },
+    ],
+  });
+
+  it('serves only skills for everyone when the caller is unknown', () => {
+    expect(audienceVisibility(undefined)).toEqual(forEveryone);
+    expect(audienceVisibility(null)).toEqual(forEveryone);
+    expect(audienceVisibility(access(null) as any)).toEqual(forEveryone);
+    expect(audienceVisibility(access('') as any)).toEqual(forEveryone);
+  });
+
+  it('serves a member their own drafts, and the draft instead of its published copy', () => {
+    expect(audienceVisibility(access('u-expert') as any)).toEqual(forMember('u-expert'));
+  });
+
+  it('applies on every path that serves skills', async () => {
+    const calls: any[] = [];
+    const record = (result: any) => jest.fn(async (q: any) => (calls.push(q.where), result));
+    const prisma = {
+      kgSkillSuggestion: {
+        findMany: record([]),
+        findFirst: record(null),
+        count: record(0),
+      },
+    };
+    const svc = new KgSkillService(prisma as any, {} as any);
+    const who = access('u-expert') as any;
+    await svc.activeSkillsText(ORG, 'srv', ['c1'], 'inline', who);
+    await svc.hasVisible(ORG, 'srv', ['c1'], who);
+    await svc.toolHints(ORG, 'srv', ['c1'], who);
+    await svc.listForCaller(ORG, 'srv', ['c1'], 'x', who);
+    await svc.getForCaller(ORG, 'srv', ['c1'], 's1', who);
+    expect(calls).toHaveLength(5);
+    for (const where of calls) {
+      expect(JSON.stringify(where)).toContain(JSON.stringify(forMember('u-expert')));
+    }
+
+    calls.length = 0;
+    // An API key without a user, a client-credentials token, another member.
+    await svc.activeSkillsText(ORG, 'srv', ['c1'], 'inline', access(null) as any);
+    await svc.hasVisible(ORG, 'srv', ['c1']);
+    await svc.listForCaller(ORG, 'srv', ['c1'], undefined, access('u-other') as any);
+    expect(JSON.stringify(calls[0])).toContain(JSON.stringify(forEveryone));
+    expect(JSON.stringify(calls[1])).toContain(JSON.stringify(forEveryone));
+    expect(JSON.stringify(calls[2])).toContain(JSON.stringify(forMember('u-other')));
+    expect(JSON.stringify(calls[2])).not.toContain('u-expert');
+  });
+
+  it('keeps drafts out of what generation tells the model and out of merges', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const svc = new KgSkillService(
+      {
+        toolInvocation: {
+          findMany: jest.fn().mockResolvedValue([
+            { intent: 'x', status: 'SUCCESS', tool: { name: 't', connector: { name: 'C' } } },
+          ]),
+        },
+        kgSkillSuggestion: { findMany },
+      } as any,
+      { isEnabled: async () => true } as any,
+    );
+    await svc.buildConnectorRequest(ORG);
+    expect(findMany.mock.calls[0][0].where).toEqual(expect.objectContaining({ audienceUserId: null }));
+
+    process.env.KG_LLM_BASE_URL = 'http://localhost:11434/v1';
+    process.env.KG_LLM_MODEL = 'qwen2.5';
+    try {
+      findMany.mockClear();
+      await svc.consolidate(ORG);
+      expect(findMany.mock.calls[0][0].where).toEqual(
+        expect.objectContaining({ audienceUserId: null, source: { not: 'learning' } }),
+      );
+    } finally {
+      delete process.env.KG_LLM_BASE_URL;
+      delete process.env.KG_LLM_MODEL;
+    }
   });
 });

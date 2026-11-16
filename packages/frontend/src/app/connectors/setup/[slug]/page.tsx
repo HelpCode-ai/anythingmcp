@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { fileSearchSetupPath } from '@/lib/file-search-catalog';
 import { copyText } from '@/lib/clipboard';
 import { returnAssistant } from '@/lib/return-assistant';
+import { deviceKind } from '@/lib/paywall-tracking';
 import { addressFix, isPlainAddressField, switchSetupHref, withMissingScheme, type AddressFix } from '@/lib/address-fix';
 import { GuideIntro, GuideStepper, GuideStepView, GuideWaitPanel, StuckLink } from '@/components/connector-setup/setup-guide';
 import { SetupSuccess } from '@/components/connector-setup/setup-success';
@@ -247,7 +248,7 @@ function SetupContent() {
         } catch {}
         if (!started.current && !seen) {
           started.current = true;
-          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind, ...fromSource });
+          productEvents.track('setup_started', token, { adapterSlug: slug, kind: d.setupKind, device: deviceKind(), ...fromSource });
         }
       })
       .catch((e: Error) => setLoadError(e.message || t('notAvailable')));
@@ -355,10 +356,24 @@ function SetupContent() {
       .catch(() => setMetaPlatform({ facebook: false, instagram: false, redirectUrl: '' }));
   }, [token, metaFlavour]);
 
+  // A seller at an IOP gateway (Lazada, Miravia, AliExpress seller) registers
+  // this server's IOP callback on the app instead of the OAuth one.
+  const isIop = info?.connector.authType === 'HMAC' && info.connector.authConfig?.tokenProvider === 'iop';
+  // A SHEIN shop likewise, with SHEIN's store authorization.
+  const isShein = info?.connector.authType === 'HMAC' && info.connector.authConfig?.tokenProvider === 'shein';
   useEffect(() => {
-    if (!token || info?.setupKind !== 'oauth_browser') return;
+    if (!token) return;
+    if (isIop) {
+      connectors.iopRedirectUri(token).then((r) => setRedirectUri(r.redirectUri)).catch(() => {});
+      return;
+    }
+    if (isShein) {
+      connectors.sheinRedirectUri(token).then((r) => setRedirectUri(r.redirectUri)).catch(() => {});
+      return;
+    }
+    if (info?.setupKind !== 'oauth_browser') return;
     connectors.oauthRedirectUri(token).then((r) => setRedirectUri(r.redirectUri)).catch(() => {});
-  }, [token, info?.setupKind]);
+  }, [token, info?.setupKind, isIop, isShein]);
 
   // Back from the provider: the authorization is stored; show the outcome.
   useEffect(() => {
@@ -494,13 +509,23 @@ function SetupContent() {
   /** Client-side checks: required fields and patterns (of `only`, in a guide step). */
   const validate = (only?: string[]): boolean => {
     const errs: Record<string, string> = {};
+    // A value of the wrong shape, as opposed to a required field left empty.
+    let wrongShape = false;
     for (const f of only ? fields.filter((x) => only.includes(x.name)) : fields) {
       if (hiddenField(f.name)) continue;
       const v = withMissingScheme(f, (values[f.name] ?? '').trim());
       if (f.required && !f.advanced && !v && !storedSecrets.includes(f.name)) errs[f.name] = t('field.required');
-      else if (v && f.pattern) {
+      else if (f.options?.length) {
+        // A fixed list of choices: anything else (a value stored before the
+        // list existed, one handed over in a link) is not accepted.
+        if (v && !f.options.some((o) => o.value === v)) {
+          errs[f.name] = t('field.chooseOne');
+          wrongShape = true;
+        }
+      } else if (v && f.pattern) {
         try {
           if (!new RegExp(f.pattern).test(v)) {
+            wrongShape = true;
             // Say what to change when the pattern tells it; the adapter's own words otherwise.
             const fix = isPlainAddressField(f) ? addressFix(f.pattern, v) : undefined;
             errs[f.name] = fix
@@ -513,8 +538,22 @@ function SetupContent() {
       }
     }
     setFieldErrors(errs);
-    if (Object.keys(errs).length > 0) showStepOf(Object.keys(errs));
-    return Object.keys(errs).length === 0;
+    const refused = Object.keys(errs);
+    if (refused.length > 0) {
+      // Nothing reaches the server from here, so without this event a key
+      // the page itself keeps refusing would be invisible. Names only.
+      const step = mode === 'guide' && stepIndex >= 0 ? info?.setupGuide?.steps[stepIndex] : undefined;
+      if (token) {
+        productEvents.track('setup_fields_refused', token, {
+          adapterSlug: slug,
+          kind: wrongShape ? 'format' : 'required',
+          field: refused.slice(0, 8).join(','),
+          ...(step ? { step: step.id, index: stepIndex + 1 } : {}),
+        });
+      }
+      showStepOf(refused);
+    }
+    return refused.length === 0;
   };
 
   /**
@@ -726,6 +765,26 @@ function SetupContent() {
         const id = await save(fix);
         const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
         const auth = await connectors.tiktokShopAuthorize(id, token, returnTo);
+        if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
+        productEvents.track('oauth_started', token, { adapterSlug: slug });
+        window.location.href = auth.authorizationUrl;
+        return;
+      }
+      // A seller at an IOP gateway likewise, through the gateway's authorize page.
+      if (isIop) {
+        const id = await save(fix);
+        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
+        const auth = await connectors.iopAuthorize(id, token, returnTo);
+        if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
+        productEvents.track('oauth_started', token, { adapterSlug: slug });
+        window.location.href = auth.authorizationUrl;
+        return;
+      }
+      // A SHEIN shop likewise, through SHEIN's store authorization page.
+      if (isShein) {
+        const id = await save(fix);
+        const returnTo = `/connectors/setup/${slug}?connector=${id}&step=done${back ? `&from=${back.id}` : ''}`;
+        const auth = await connectors.sheinAuthorize(id, token, returnTo);
         if (!auth.authorizationUrl) throw new Error(auth.error || t('authStartFailed'));
         productEvents.track('oauth_started', token, { adapterSlug: slug });
         window.location.href = auth.authorizationUrl;
@@ -952,47 +1011,87 @@ function SetupContent() {
   const renderField = (f: EnvVarDescriptor) => {
     const id = `field-${f.name}`;
     const show = revealed[f.name] === true;
+    // A fixed list of choices (one API host per country) is a select.
+    const options = f.options?.length ? f.options : null;
+    const chosen = values[f.name] ?? '';
     return (
       <div key={f.name}>
         <label htmlFor={id} className="mb-1 block text-sm font-medium text-[var(--text)]">
           {f.label}
           {!f.required && <span className="ml-1 font-normal text-[var(--text-3)]">{t('field.optional')}</span>}
         </label>
-        <div className="relative">
-          <input
+        {options ? (
+          <select
             id={id}
-            // API credentials, never the person's own login: a non-login name
-            // and the password managers' opt-outs stop a browser from filling
-            // the signed-in user's e-mail and password in here.
             name={`amcp-connector-var-${f.name}`}
-            type={f.secret && !show ? 'password' : 'text'}
-            autoComplete={f.secret ? 'new-password' : 'off'}
-            data-1p-ignore
-            data-lpignore="true"
-            data-bwignore="true"
-            data-form-type="other"
-            spellCheck={false}
-            value={values[f.name] ?? ''}
-            placeholder={storedSecrets.includes(f.name) ? t('field.stored') : (f.example ?? '')}
-            onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
-            onBlur={() => completeAddress(f)}
+            autoComplete="off"
+            value={chosen}
+            onChange={(e) => {
+              const value = e.target.value;
+              setValues((v) => ({ ...v, [f.name]: value }));
+              setFieldErrors((errs) => {
+                if (!errs[f.name]) return errs;
+                const next = { ...errs };
+                delete next[f.name];
+                return next;
+              });
+            }}
             aria-invalid={!!fieldErrors[f.name]}
             className={cn(
-              'w-full rounded-[9px] border bg-[var(--surface)] px-3 py-2 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:outline-none sm:text-sm',
+              'w-full rounded-[9px] border bg-[var(--surface)] px-3 py-2 text-[16px] focus:outline-none sm:text-sm',
+              chosen ? 'text-[var(--text)]' : 'text-[var(--text-3)]',
               fieldErrors[f.name] ? 'border-[var(--danger)]' : 'border-[var(--border)] focus:border-[var(--border-strong)]',
-              f.secret && 'pr-16',
             )}
-          />
-          {f.secret && (
-            <button
-              type="button"
-              onClick={() => setRevealed((r) => ({ ...r, [f.name]: !show }))}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-3)] hover:text-[var(--text)]"
-            >
-              {show ? t('field.hide') : t('field.show')}
-            </button>
-          )}
-        </div>
+          >
+            {/* Nothing chosen yet; an optional choice can also be taken back. */}
+            {(!chosen || !f.required) && (
+              <option value="">{storedSecrets.includes(f.name) ? t('field.stored') : t('field.choose')}</option>
+            )}
+            {/* A value from before the list existed stays visible until one is chosen. */}
+            {chosen && !options.some((o) => o.value === chosen) && <option value={chosen}>{chosen}</option>}
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="relative">
+            <input
+              id={id}
+              // API credentials, never the person's own login: a non-login name
+              // and the password managers' opt-outs stop a browser from filling
+              // the signed-in user's e-mail and password in here.
+              name={`amcp-connector-var-${f.name}`}
+              type={f.secret && !show ? 'password' : 'text'}
+              autoComplete={f.secret ? 'new-password' : 'off'}
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              data-form-type="other"
+              spellCheck={false}
+              value={values[f.name] ?? ''}
+              placeholder={storedSecrets.includes(f.name) ? t('field.stored') : (f.example ?? '')}
+              onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+              onBlur={() => completeAddress(f)}
+              aria-invalid={!!fieldErrors[f.name]}
+              className={cn(
+                'w-full rounded-[9px] border bg-[var(--surface)] px-3 py-2 text-[16px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:outline-none sm:text-sm',
+                fieldErrors[f.name] ? 'border-[var(--danger)]' : 'border-[var(--border)] focus:border-[var(--border-strong)]',
+                f.secret && 'pr-16',
+              )}
+            />
+            {f.secret && (
+              <button
+                type="button"
+                onClick={() => setRevealed((r) => ({ ...r, [f.name]: !show }))}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-3)] hover:text-[var(--text)]"
+              >
+                {show ? t('field.hide') : t('field.show')}
+              </button>
+            )}
+          </div>
+        )}
         {fieldErrors[f.name] && <p className="mt-1 text-xs text-[var(--danger)]">{fieldErrors[f.name]}</p>}
         {(f.help || f.link) && (
           <p className="mt-1 text-xs text-[var(--text-3)]">
@@ -1096,6 +1195,9 @@ function SetupContent() {
           total={guide.steps.length}
           redirectUri={redirectUri}
           actionUrl={actionUrl && /^https:\/\/[^/\s]+/.test(actionUrl) ? actionUrl : null}
+          onActionOpened={() => {
+            if (token) productEvents.track('setup_step_action_opened', token, { adapterSlug: slug, step: step.id, index: at + 1 });
+          }}
           confirmed={!!confirmed[step.id]}
           onConfirm={(v) => setConfirmed((c) => ({ ...c, [step.id]: v }))}
         >

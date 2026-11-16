@@ -6,6 +6,7 @@ import { assertSafeOutboundUrl } from '../../common/ssrf.util';
 import { DEFAULT_MCP_PATH, resolveMcpEndpointUrl } from '../../common/url.util';
 import { ssrfGuardedFetch } from '../../common/outbound-http';
 import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
+import { withMcpFixedArguments } from '../mcp-connector-config.util';
 
 /** Pages of tools/list followed at most (MCP pagination). */
 const MAX_TOOL_LIST_PAGES = 50;
@@ -31,6 +32,9 @@ export class McpClientEngine {
       connectorId?: string;
       // Masked in log lines; see RestEngine.
       logSecrets?: readonly string[];
+      // The connector's `config.mcpFixedArguments`, variables resolved:
+      // merged into the arguments of the call, winning over the caller's.
+      fixedArguments?: Record<string, unknown>;
     },
     endpointMapping: {
       method: string; // MCP tool name on remote server
@@ -51,6 +55,9 @@ export class McpClientEngine {
     const headers: Record<string, string> = { ...config.headers };
     await this.injectAuth(headers, config.authType, config.authConfig, config.connectorId);
 
+    // Without fixed arguments this is `params` itself.
+    const args = withMcpFixedArguments(params, config.fixedArguments);
+
     const transport = new StreamableHTTPClientTransport(mcpUrl, {
       fetch: ssrfGuardedFetch,
       requestInit: { headers },
@@ -67,7 +74,7 @@ export class McpClientEngine {
 
       const result = await client.callTool({
         name: endpointMapping.method,
-        arguments: params,
+        arguments: args,
       });
 
       return result;
@@ -101,7 +108,7 @@ export class McpClientEngine {
             await retryClient.connect(retryTransport);
             return await retryClient.callTool({
               name: endpointMapping.method,
-              arguments: params,
+              arguments: args,
             });
           } finally {
             try { await retryClient.close(); } catch { /* ignore */ }

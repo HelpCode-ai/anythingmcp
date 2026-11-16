@@ -1,0 +1,2703 @@
+{
+  "slug": "magalu",
+  "name": "Magalu",
+  "description": "Magalu Marketplace (Magazine Luiza) seller API: orders and deliveries with NF-e, shipping and delivery confirmation, SKUs with prices and stock, processing traces, categories, customer questions, chat and SAC tickets. Sign-in with ID Magalu (OAuth2).",
+  "instructions": "## Magalu\nThis connector works with the **Magalu Marketplace seller API** (API Magalu) of Magazine Luiza, Brazil, at `https://api.magalu.com` (questions and chat at `https://services.magalu.com`): orders and their deliveries (packages) with NF-e, shipping and delivery confirmation, the SKU portfolio with prices and stock, processing traces, categories, customer questions, chat and customer service (SAC) tickets.\n\n**Setup (about 15 minutes)**\n1. Sign in at https://id.magalu.com with the ID Magalu account of a legal representative of the store (only they can grant consent for the store).\n2. Create an OAuth client, either in the console at https://developers.magalu.com/clients or with the `idm` CLI (github.com/luizalabs/id-magalu-cli): `./idm login`, then `./idm client create --name \"AnythingMCP\" --redirect-uris \"https://cloud.anythingmcp.com/api/mcp-oauth/callback\" --audience \"https://api.magalu.com https://services.magalu.com\" --scopes \"<scopes>\"`. On a self-hosted server use `<your server URL>/api/mcp-oauth/callback`. The audience must include `https://services.magalu.com`, or questions and chat answer 401. Add the scopes listed in the connector's OAuth settings; some (scores, for example) need approval by Magalu.\n3. Copy the **Client ID** into `MAGALU_CLIENT_ID` and the **Client Secret** into `MAGALU_CLIENT_SECRET`. The secret is shown only once.\n4. Install, click **Authorize with Provider**, sign in and choose the store (tenant) on the consent page. Access tokens last up to 2 hours and are renewed with the refresh token.\n\n**Where to start**: `magalu_get_seller` returns the channel id (needed by every price, stock, SKU and delivery write) and the tenant id. Then `magalu_list_orders` (status approved for paid orders) or `magalu_list_deliveries` (status approved: to invoice and ship) and `magalu_get_order` or `magalu_get_delivery`.\n\n**Orders and deliveries**: an order has one or more deliveries; invoicing and shipping happen per delivery. Flow for sellers shipping themselves: `magalu_add_delivery_invoice` (44-digit NF-e key plus the XML; SEFAZ validates it, see `magalu_list_delivery_invoices`; fix an invalid one with `magalu_replace_delivery_invoice`), `magalu_ship_delivery` (carrier, tracking code and URL), then `magalu_mark_delivery_delivered`, which **cannot be undone**. `magalu_list_delivery_history` shows the steps. In delivery writes the channel id is the order's `channel.id`. Check `handling_time.limit_date` (UTC; the Seller Portal shows Brasília time, so dates may look a day apart). `magalu_generate_shipping_labels` (Magalu Entregas labels) is installed switched off. There is no seller cancellation endpoint: cancellations arrive as status cancelled or as SAC tickets of type cancellation.\n\n**Portfolio (asynchronous)**: `magalu_list_skus`, `magalu_get_sku`, `magalu_create_sku`, `magalu_update_sku`; prices with `magalu_get_price`, `magalu_set_price` (first price) and `magalu_update_price`; stock with `magalu_get_stock`, `magalu_set_stock` (first stock) and `magalu_update_stock` (`magalu_list_warehouses` gives distribution-centre ids for multi-origin sellers). Every write answers 202 with a trace_id: read the outcome with `magalu_list_traces` (code = your SKU) or `magalu_get_trace`. `magalu_get_sku_validation_info` explains a blocked SKU. Categories: `magalu_find_categories`, `magalu_list_category_hierarchy`, `magalu_list_category_attributes`, `magalu_list_category_datasheet`.\n\n**Money**: amounts are integers with a `normalizer` (100 = cents) in BRL: price 9990 means R$ 99,90. The connector always sends currency BRL.\n\n**Questions and chat**: `magalu_list_questions` (WAITING_RESPONSE = open), `magalu_get_question`, `magalu_answer_question` (moderated before publication). Chat: `magalu_list_conversations`, `magalu_get_conversation`, `magalu_list_conversation_messages`, `magalu_send_conversation_message`, `magalu_mark_conversation_read`.\n\n**Customer service (SAC)**: `magalu_list_tickets`, `magalu_get_ticket`, `magalu_list_ticket_messages`, `magalu_list_ticket_events`, `magalu_list_ticket_returns`, `magalu_send_ticket_message`. SAC writes answer 202 with a transaction id: `magalu_list_transactions` and `magalu_get_transaction`. Installed switched off: `magalu_create_ticket` (cancellation or shipping tickets), `magalu_create_ticket_return` (reverse shipment) and `magalu_create_ticket_event` (return steps). The connector cannot authorise refunds.\n\n**Paging and limits**: lists take `offset` and `limit` (`_offset`, `_limit`; most at most 100, offset up to 5,000 rows) and answer `meta.page` plus `results`. Dates are ISO 8601 in UTC. Rate limits per seller and minute: orders and deliveries 850, SKU create 650 and read 550, prices 850, stock 650 writes, questions 200 reads and 50 writes, chat 200 reads and 50 writes, SAC tickets 100. A 429 means wait and retry.\n\n**Writes: confirm first.** Invoices, shipping, delivery confirmation, prices, stock, SKU changes and messages act on the live store. Before each call show the user what will change and wait for a yes.",
+  "aliases": [
+    "Magazine Luiza",
+    "Magalu Seller",
+    "API Magalu",
+    "Magalu Marketplace"
+  ],
+  "region": "br",
+  "category": "e-commerce",
+  "icon": "magalu",
+  "docsUrl": "https://developers.magalu.com/docs/",
+  "requiredEnvVars": [
+    "MAGALU_CLIENT_ID",
+    "MAGALU_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "MAGALU_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Create an OAuth client at developers.magalu.com/clients or with the idm CLI (idm client create), with the redirect URI of this server and the audience https://api.magalu.com https://services.magalu.com. Copy the Client ID.",
+      "link": "https://developers.magalu.com/docs/first-steps/create-an-application/create-application",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the Client ID only, without spaces."
+    },
+    "MAGALU_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the client is created. If it was lost, reset it in the console or create a new client.",
+      "link": "https://developers.magalu.com/docs/first-steps/create-an-application/authentication-authorization",
+      "pattern": "^\\S{8,500}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Magalu refused the token. Click Authorize with Provider again and choose the store on the consent page. For questions and chat the client's audience must include https://services.magalu.com.",
+    "403": "The token lacks the scope for this call. Add the scope to the client (idm client add-scope or the console), then authorize again so the consent page shows it; some scopes need Magalu's approval.",
+    "404": "Magalu found no order, delivery, SKU, question or ticket with that id.",
+    "rate_limited": "Magalu limits each seller per minute (orders 850, SKU reads 550, questions 50 writes). Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "magalu_get_seller",
+    "params": {}
+  },
+  "prerequisites": "A Magalu marketplace seller account and an ID Magalu account of a legal representative of the store, who creates an OAuth client (developers.magalu.com or the idm CLI) and grants consent for the store. Some scopes need Magalu's approval. About 15 minutes.",
+  "connector": {
+    "name": "Magalu Seller API",
+    "type": "REST",
+    "baseUrl": "https://api.magalu.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MAGALU_CLIENT_ID}}",
+      "clientSecret": "{{MAGALU_CLIENT_SECRET}}",
+      "authorizationUrl": "https://id.magalu.com/login?choose_tenants=true&prompt=consent",
+      "tokenUrl": "https://id.magalu.com/oauth/token",
+      "scopes": "open:order-order-seller:read open:order-delivery-seller:read open:order-delivery-seller:write open:order-invoice-seller:read open:order-logistics-seller:write open:portfolio-skus-seller:read open:portfolio-skus-seller:write open:portfolio-prices-seller:read open:portfolio-prices-seller:write open:portfolio-stocks-seller:read open:portfolio-stocks-seller:write open:portfolio-categories-seller:read open:trace:read services:questions-seller:read services:questions-seller:write services:conversations-seller:read services:conversations-seller:write open:tickets-seller:read open:tickets-seller:write open:ticket-messages-seller:read open:ticket-messages-seller:write open:ticket-events-seller:read open:ticket-events-seller:write open:ticket-returns-seller:read open:ticket-returns-seller:write open:sac-transaction-seller:read"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "magalu_get_seller",
+      "description": "Read the seller behind the token: tenant id (GENPUB.…, needed by magalu_get_sku_validation_info), channel id and name (needed by every price, stock, SKU and delivery write) and seller id and name. Costs one cheap read; use it first.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_warehouses",
+      "description": "List the distribution centres enabled for the seller (Magalu Entregas multi-origin): id, name, display_name and active. The id goes into branch of the stock tools.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/me/warehouses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_orders",
+      "description": "List orders, oldest first by default: id, code, status, purchased_at, approved_at, updated_at, channel, customer (name, document number, email, phones), amounts (total, freight, discount, commission, as integer plus normalizer), payments and deliveries. status approved also returns invoiced, shipped and delivered orders. Paged with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "approved",
+              "cancelled",
+              "finished"
+            ],
+            "description": "new (created), approved (paid; also invoiced, shipped, delivered), cancelled (all deliveries cancelled) or finished."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only the order with this code."
+          },
+          "purchased_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Purchased at or after, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "purchased_to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Purchased at or before, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Updated at or after, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "updated_to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Updated at or before, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "purchased_at:asc",
+              "purchased_at:desc"
+            ],
+            "description": "purchased_at:asc or purchased_at:desc."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 20, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/orders",
+        "queryParams": {
+          "status": "$status",
+          "code": "$code",
+          "purchased_at__gte": "$purchased_from",
+          "purchased_at__lte": "$purchased_to",
+          "updated_at__gte": "$updated_from",
+          "updated_at__lte": "$updated_to",
+          "_sort": "$sort",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_order",
+      "description": "Read one order by its code: status, dates, customer, amounts, payments and its deliveries (packages) with their ids. Ship, invoice and finish each delivery separately.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Order code on Magalu (`code` of magalu_list_orders)."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/orders/{code}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_deliveries",
+      "description": "List deliveries (packages; one order can have several): id, status (new, approved, invoiced, shipped, delivered, cancelled, frozen), items with SKU, quantity and unit price, shipping provider, recipient, handling_time limit_date (UTC), tracking_url, invoices and the order code and channel. Paged with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "approved",
+              "invoiced",
+              "shipped",
+              "delivered",
+              "cancelled",
+              "frozen"
+            ],
+            "description": "Delivery status."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only deliveries of this order code."
+          },
+          "id": {
+            "type": "string",
+            "description": "Only this delivery id."
+          },
+          "purchased_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Purchased at or after, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "purchased_to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Purchased at or before, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "purchased_at:asc",
+              "purchased_at:desc"
+            ],
+            "description": "purchased_at:asc or purchased_at:desc."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 20, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/deliveries",
+        "queryParams": {
+          "status": "$status",
+          "code": "$code",
+          "id": "$id",
+          "purchased_at__gte": "$purchased_from",
+          "purchased_at__lte": "$purchased_to",
+          "_sort": "$sort",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_delivery",
+      "description": "Read one delivery: items (sku, quantity, unit_price), shipping (provider, recipient and address, deadline, handling_time limit_date, tracking_url), invoices, returns, shipped_at, delivered_at and order code and channel id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Delivery (package) id: `deliveries[].id` of magalu_get_order or `id` of magalu_list_deliveries."
+          }
+        },
+        "required": [
+          "delivery_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/deliveries/{delivery_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_delivery_history",
+      "description": "Read the status history of a delivery: created_at and description of each step, oldest first by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Delivery (package) id: `deliveries[].id` of magalu_get_order or `id` of magalu_list_deliveries."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "created_at:asc",
+              "created_at:desc"
+            ],
+            "description": "created_at:asc or created_at:desc."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 20, at most 100)."
+          }
+        },
+        "required": [
+          "delivery_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/deliveries/{delivery_id}/histories",
+        "queryParams": {
+          "_sort": "$sort",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_delivery_invoices",
+      "description": "List the NF-e invoices attached to a delivery: key, issued_at, status (validating, approved, invalid) and xml.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Delivery (package) id: `deliveries[].id` of magalu_get_order or `id` of magalu_list_deliveries."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 20, at most 100)."
+          }
+        },
+        "required": [
+          "delivery_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/deliveries/{delivery_id}/invoices",
+        "queryParams": {
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_skus",
+      "description": "List your SKUs: sku, title, brand, status (PUBLISHED, UNPUBLISHED, BLOCKED, UNDER_REVIEW, DELETING, DELETED), active, group, channels, created_at and updated_at. Default 10 per page, at most 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "PUBLISHED",
+              "UNPUBLISHED",
+              "BLOCKED",
+              "UNDER_REVIEW",
+              "DELETING",
+              "DELETED"
+            ],
+            "description": "Only SKUs in this status."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only SKUs of this variation group."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "sku:asc",
+              "sku:desc",
+              "created_at:asc",
+              "created_at:desc",
+              "updated_at:asc",
+              "updated_at:desc"
+            ],
+            "description": "Sort order (default created_at:asc)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 10, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/skus",
+        "queryParams": {
+          "status": "$status",
+          "group_id": "$group_id",
+          "_sort": "$sort",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_sku",
+      "description": "Read one SKU: title, description, brand, status, active, category, channels, attributes, datasheet, dimensions, identifiers (EAN), images, group and url_marketplace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/skus/{sku}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_sku_validation_info",
+      "description": "Read why a SKU is blocked or flagged by Magalu's publication policies: the latest block or alert with errors (action, message, rules).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          },
+          "tenant_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Tenant id of the store (`tenant.id` of magalu_get_seller, e.g. GENPUB.…); sent as X-Tenant-Id."
+          }
+        },
+        "required": [
+          "sku",
+          "tenant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/skus/{sku}/validation-info",
+        "headers": {
+          "X-Tenant-Id": "$tenant_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_price",
+      "description": "Read the prices of a SKU per channel: price and list_price as integers with normalizer (100 = cents) and currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/prices/{sku}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_stock",
+      "description": "Read the stock of a SKU per channel and distribution centre: quantity and type (AVAILABLE, RESERVED).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/stocks/{sku}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_traces",
+      "description": "List the processing results of asynchronous writes (SKU, price and stock), newest data per SKU: code, severity, origin context and resource, message and created_at. Filter by your SKU in code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Your SKU code."
+          },
+          "origin_context": {
+            "type": "string",
+            "description": "Context, e.g. portfolios."
+          },
+          "origin_resource": {
+            "type": "string",
+            "description": "Resource, e.g. skus, prices or stocks."
+          },
+          "severity": {
+            "type": "string",
+            "description": "Severity, e.g. error."
+          },
+          "app_trace_id": {
+            "type": "string",
+            "description": "trace id returned by a write (trace_id)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0/traces",
+        "queryParams": {
+          "code": "$code",
+          "origin.context": "$origin_context",
+          "origin.resource": "$origin_resource",
+          "severity": "$severity",
+          "app_trace_id": "$app_trace_id",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_trace",
+      "description": "Read one processing result (trace) of an asynchronous SKU, price or stock write in detail by its id: severity, origin, message and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "trace_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Trace id (UUID)."
+          }
+        },
+        "required": [
+          "trace_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v0/traces/{trace_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_find_categories",
+      "description": "Find a Magalu category by id or by name (at least 3 letters): id, name, parent and path.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Category id (UUID)."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 3,
+            "description": "Part of the category name, at least 3 characters."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/categories",
+        "queryParams": {
+          "id": "$id",
+          "name": "$name",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_category_hierarchy",
+      "description": "Browse the category tree: root categories (root_only), one category with its whole subtree (category_id), or the direct children of a category (parent_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "root_only": {
+            "type": "boolean",
+            "description": "true: only first-level categories."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "A category and all its descendants."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Only the direct children of this category."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/categories/hierarchy",
+        "queryParams": {
+          "root_only": "$root_only",
+          "category_id": "$category_id",
+          "parent_id": "$parent_id",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_category_attributes",
+      "description": "List the variation attributes of a category with their settings (required, recommended or optional, allowed values).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Category id (UUID)."
+          },
+          "required": {
+            "type": "string",
+            "enum": [
+              "required",
+              "recommended",
+              "optional"
+            ],
+            "description": "Only required, recommended or optional attributes."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/categories/{category_id}/attributes",
+        "queryParams": {
+          "required": "$required",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_category_datasheet",
+      "description": "List the technical-sheet (datasheet) fields of a category with their settings, to fill the datasheet of a SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Category id (UUID)."
+          },
+          "required": {
+            "type": "string",
+            "enum": [
+              "required",
+              "recommended",
+              "optional"
+            ],
+            "description": "Only required, recommended or optional fields."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v1/portfolios/categories/{category_id}/datasheet",
+        "queryParams": {
+          "required": "$required",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_questions",
+      "description": "List customer questions about your products: id, status, question (message, product sku, when_at), answer, product name and URL and moderation. Status WAITING_RESPONSE lists the open ones. Default 10 per page, at most 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "WAITING_RESPONSE",
+              "APPROVED",
+              "RESPONSE_REJECTED"
+            ],
+            "description": "WAITING_RESPONSE (open), APPROVED (answered) or RESPONSE_REJECTED (answer refused by moderation)."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Only questions of this channel (UUID)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 10, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://services.magalu.com/v0/questions",
+        "queryParams": {
+          "status": "$status",
+          "channel__id": "$channel_id",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_question",
+      "description": "Read one customer question by id: the question text, product SKU and date, the answer with its author, and the moderation state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Question id (`id` of magalu_list_questions)."
+          }
+        },
+        "required": [
+          "question_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://services.magalu.com/v0/questions/{question_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_conversations",
+      "description": "List chat conversations opened by customers (pre- and post-sale): id, status, last interaction and the order or product they are about. Default status OPENED, 10 per page, at most 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPENED",
+              "NEW",
+              "CLOSED"
+            ],
+            "description": "OPENED (default), NEW or CLOSED."
+          },
+          "last_interaction_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last message at or after, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "last_interaction_to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last message at or before, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "Only this channel (UUID)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 10, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://services.magalu.com/v0/conversations",
+        "queryParams": {
+          "status": "$status",
+          "last_interaction_at_start": "$last_interaction_from",
+          "last_interaction_at_end": "$last_interaction_to",
+          "channel__id": "$channel_id",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_conversation",
+      "description": "Read one chat conversation: status, participants, subject (order or product) and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Conversation id (24 hex characters, `id` of magalu_list_conversations)."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://services.magalu.com/v0/conversations/{conversation_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_conversation_messages",
+      "description": "Read the messages of a chat conversation: content, owner, created_at. Default 10 per page, at most 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Conversation id (24 hex characters, `id` of magalu_list_conversations)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 10, at most 100)."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://services.magalu.com/v0/conversations/{conversation_id}/messages",
+        "queryParams": {
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_tickets",
+      "description": "List customer service (SAC) tickets of the last 3 years: id, code, protocol, type (shipping or cancellation), status (e.g. waiting_seller, waiting_customer, closed), reason, order, due_date and dates. Default 50 per page, at most 100.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "shipping",
+              "cancellation"
+            ],
+            "description": "shipping or cancellation."
+          },
+          "status": {
+            "type": "string",
+            "description": "Ticket status, e.g. waiting_seller."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "price_discrepancy",
+              "incorrect_product",
+              "duplicated_order",
+              "payment_issue",
+              "unavailability",
+              "chargeback",
+              "shipping_delay",
+              "delivery_delay",
+              "damaged_parts",
+              "missing_parts",
+              "defective_product",
+              "shipped_but_lost",
+              "held_at_customs",
+              "better_price",
+              "freight_discrepancy",
+              "not_received",
+              "shipping_address_issues",
+              "quality_concern",
+              "change_of_mind",
+              "customer_error",
+              "unexpected_circumstances",
+              "missing_damaged_parts"
+            ],
+            "description": "Opening reason."
+          },
+          "order_code": {
+            "type": "string",
+            "description": "Only tickets of this order code."
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Only this protocol number."
+          },
+          "created_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Created at or after, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Created at or before, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "due_to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Due at or before, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v0/tickets",
+        "queryParams": {
+          "type": "$type",
+          "status": "$status",
+          "reason": "$reason",
+          "order__code": "$order_code",
+          "protocol": "$protocol",
+          "created_at_gte": "$created_from",
+          "created_at_lte": "$created_to",
+          "due_date_lte": "$due_to",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_ticket",
+      "description": "Read one SAC ticket: type, status, reason, order and delivery items, customer, due date and history.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SAC ticket id (UUID, `id` of magalu_list_tickets)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v0/tickets/{ticket_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_ticket_messages",
+      "description": "Read the messages of a SAC ticket: message, destination, owner, attachments and created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SAC ticket id (UUID, `id` of magalu_list_tickets)."
+          },
+          "has_attachment": {
+            "type": "boolean",
+            "description": "true: only messages with attachments."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v0/tickets/{ticket_id}/messages",
+        "queryParams": {
+          "has_attachment": "$has_attachment",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_ticket_events",
+      "description": "Read the events of a SAC ticket (product_sent, return_info_sent, product_received, authorize_refund, refunded and others) with their dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SAC ticket id (UUID, `id` of magalu_list_tickets)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Only events of this type, e.g. product_received."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v0/tickets/{ticket_id}/events",
+        "queryParams": {
+          "type": "$type",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_ticket_returns",
+      "description": "Read the reverse shipments (returns) of a SAC ticket: reverse code, validity and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SAC ticket id (UUID, `id` of magalu_list_tickets)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v0/tickets/{ticket_id}/returns",
+        "queryParams": {
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_list_transactions",
+      "description": "List the processing results of SAC writes (messages, events, tickets answer 202 with a transaction id): id, status (pending, processing, completed, failed, cancelled) and dates. Both dates are required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Created at or after, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Created at or before, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "description": "Only this status."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (_offset, default 0). Magalu pages up to an offset of 5,000 rows."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page (_limit, default 50, at most 100)."
+          }
+        },
+        "required": [
+          "created_from",
+          "created_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v0/transactions",
+        "queryParams": {
+          "created_at_gte": "$created_from",
+          "created_at_lte": "$created_to",
+          "status": "$status",
+          "_offset": "$offset",
+          "_limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_get_transaction",
+      "description": "Read one SAC transaction (the result of a ticket message or event) by id: status and error details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Transaction id (UUID) returned by a SAC write."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/v0/transactions/{transaction_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "magalu_add_delivery_invoice",
+      "description": "Attach the NF-e to a delivery (marks it invoiced). Answers 201 with status validating: SEFAZ validates the invoice asynchronously; check magalu_list_delivery_invoices. The full NF-e XML is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Delivery (package) id: `deliveries[].id` of magalu_get_order or `id` of magalu_list_deliveries."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9]{44}$",
+            "description": "NF-e access key, 44 digits."
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Issue date, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Invoice total, integer in cents (normalizer 100: 9990 = R$ 99,90)."
+          },
+          "xml": {
+            "type": "string",
+            "description": "Full NF-e XML (nfeProc) as text."
+          },
+          "issuer": {
+            "type": "string",
+            "pattern": "^[0-9]{14}$",
+            "description": "Issuer CNPJ, digits only (optional)."
+          }
+        },
+        "required": [
+          "delivery_id",
+          "channel_id",
+          "key",
+          "issued_at",
+          "amount",
+          "xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v1/deliveries/{delivery_id}/invoices",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "key": "$key",
+          "issued_at": "$issued_at",
+          "amount": "$amount",
+          "xml": "$xml",
+          "issuer": "$issuer"
+        }
+      }
+    },
+    {
+      "name": "magalu_replace_delivery_invoice",
+      "description": "Replace an NF-e that SEFAZ found invalid on a delivery, keeping the same key. Answers 204.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Delivery (package) id: `deliveries[].id` of magalu_get_order or `id` of magalu_list_deliveries."
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[0-9]{44}$",
+            "description": "Access key of the invalid NF-e, 44 digits."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Issue date, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Invoice total, integer in cents (normalizer 100: 9990 = R$ 99,90)."
+          },
+          "xml": {
+            "type": "string",
+            "description": "Corrected NF-e XML as text."
+          }
+        },
+        "required": [
+          "delivery_id",
+          "key",
+          "channel_id",
+          "issued_at",
+          "amount",
+          "xml"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/seller/v1/deliveries/{delivery_id}/invoices/{key}",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "issued_at": "$issued_at",
+          "amount": "$amount",
+          "xml": "$xml"
+        }
+      }
+    },
+    {
+      "name": "magalu_ship_delivery",
+      "description": "Mark a delivery as shipped with your own carrier: carrier name, tracking protocol and URL, shipped and estimated delivery dates. Answers 201. For sellers shipping outside Magalu Entregas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Delivery (package) id: `deliveries[].id` of magalu_get_order or `id` of magalu_list_deliveries."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "carrier_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Carrier name, e.g. Correios."
+          },
+          "protocol": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Tracking code (protocol)."
+          },
+          "tracking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public tracking URL."
+          },
+          "shipped_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Shipped at, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "estimated_delivery_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Estimated delivery, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Label id."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Label value."
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ]
+            },
+            "default": [],
+            "description": "Optional label references: `[{\"id\": \"1\", \"value\": \"label code\"}]`."
+          }
+        },
+        "required": [
+          "delivery_id",
+          "channel_id",
+          "carrier_name",
+          "protocol",
+          "tracking_url",
+          "shipped_at",
+          "estimated_delivery_at"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v1/deliveries/{delivery_id}/shippings",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "carrier": {
+            "name": "$carrier_name"
+          },
+          "protocol": "$protocol",
+          "tracking_url": "$tracking_url",
+          "labels": "$labels",
+          "dates": {
+            "shipped_at": "$shipped_at",
+            "estimated_delivery_at": "$estimated_delivery_at"
+          }
+        }
+      }
+    },
+    {
+      "name": "magalu_mark_delivery_delivered",
+      "description": "Mark a shipped delivery as delivered to the customer. Cannot be undone: only call it when the carrier confirmed the delivery. Answers 201.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Delivery (package) id: `deliveries[].id` of magalu_get_order or `id` of magalu_list_deliveries."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "delivered_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Delivered at, ISO 8601 date-time in UTC, e.g. 2026-11-01T00:00:00Z."
+          }
+        },
+        "required": [
+          "delivery_id",
+          "channel_id",
+          "delivered_at"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v1/deliveries/{delivery_id}/finishing",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "delivered_at": "$delivered_at"
+        }
+      }
+    },
+    {
+      "name": "magalu_create_sku",
+      "description": "Create a SKU in your Magalu portfolio. Asynchronous: answers 202 with a trace_id; check magalu_list_traces (code = your SKU) and magalu_get_sku. Set its price with magalu_set_price and its stock with magalu_set_stock afterwards.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 150,
+            "description": "Product title, up to 150 characters."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 7000,
+            "description": "Product description, up to 7,000 characters."
+          },
+          "brand": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Brand, up to 100 characters."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true: the SKU is meant to be on sale."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "group": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Group id, up to 50 characters."
+              },
+              "main_variation": {
+                "type": "boolean",
+                "description": "true for the main variation of the group."
+              }
+            },
+            "required": [
+              "id",
+              "main_variation"
+            ],
+            "description": "Variation group: `{\"id\": \"G1\", \"main_variation\": true}`. Variants of one product share the id; one of them is the main variation."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reference": {
+                  "type": "string",
+                  "description": "Public image URL."
+                }
+              },
+              "required": [
+                "reference"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 30,
+            "description": "Images (at most 30), JPEG URLs: `[{\"reference\": \"https://shop.example/1.jpg\"}]`."
+          },
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "Exactly two entries, `product` and `package`, in cm and grams: `[{\"name\": \"package\", \"height\": {\"unit\": \"cm\", \"value\": 24}, \"width\": {\"unit\": \"cm\", \"value\": 24}, \"length\": {\"unit\": \"cm\", \"value\": 35}, \"weight\": {\"unit\": \"g\", \"value\": 690}}, {\"name\": \"product\", ...}]`."
+          },
+          "category": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Category id (UUID)."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Magalu category: `{\"id\": \"6f0c3e3a-...\"}` with the UUID from magalu_find_categories or magalu_list_category_hierarchy."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "USED",
+              "REMANUFACTURED"
+            ],
+            "description": "NEW (default), USED or REMANUFACTURED."
+          },
+          "identifiers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "ean",
+                    "isbn"
+                  ],
+                  "description": "ean or isbn."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "The code."
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ]
+            },
+            "maxItems": 10,
+            "description": "Barcodes: `[{\"type\": \"ean\", \"value\": \"7890078279087\"}]` (type ean or isbn, at most 10).",
+            "default": []
+          },
+          "has_ean": {
+            "type": "boolean",
+            "description": "true when the product has an EAN."
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Attribute name."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value."
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ]
+            },
+            "maxItems": 3,
+            "description": "Variation attributes (at most 3): `[{\"name\": \"Cor\", \"value\": \"Azul\"}]`.",
+            "default": []
+          },
+          "datasheet": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Field name."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value."
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ]
+            },
+            "maxItems": 50,
+            "description": "Technical sheet (at most 50): `[{\"name\": \"Material\", \"value\": \"Algodao\"}]`; magalu_list_category_datasheet lists the expected names.",
+            "default": []
+          },
+          "ncm": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "Mercosur NCM code, 8 digits."
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "national",
+              "imported"
+            ],
+            "description": "national or imported."
+          }
+        },
+        "required": [
+          "sku",
+          "title",
+          "description",
+          "brand",
+          "active",
+          "channel_id",
+          "group",
+          "images",
+          "dimensions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v1/portfolios/skus",
+        "bodyMapping": {
+          "sku": "$sku",
+          "type": "product",
+          "title": "$title",
+          "description": "$description",
+          "brand": "$brand",
+          "active": "$active",
+          "channels": [
+            {
+              "id": "$channel_id"
+            }
+          ],
+          "group": "$group",
+          "images": "$images",
+          "dimensions": "$dimensions",
+          "category": "$category",
+          "condition": "$condition",
+          "identifiers": "$identifiers",
+          "has_ean": "$has_ean",
+          "attributes": "$attributes",
+          "datasheet": "$datasheet",
+          "ncm": "$ncm",
+          "origin": "$origin",
+          "videos": [],
+          "podcasts": [],
+          "extra_data": []
+        }
+      }
+    },
+    {
+      "name": "magalu_update_sku",
+      "description": "Change a SKU: send only the fields that change (title, description, images, active, category, datasheet and so on). Asynchronous: answers 202 with a trace_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 150,
+            "description": "Product title, up to 150 characters."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 7000,
+            "description": "Product description, up to 7,000 characters."
+          },
+          "brand": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Brand, up to 100 characters."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true: the SKU is meant to be on sale."
+          },
+          "group": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Group id, up to 50 characters."
+              },
+              "main_variation": {
+                "type": "boolean",
+                "description": "true for the main variation of the group."
+              }
+            },
+            "required": [
+              "id",
+              "main_variation"
+            ],
+            "description": "Variation group: `{\"id\": \"G1\", \"main_variation\": true}`. Variants of one product share the id; one of them is the main variation."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reference": {
+                  "type": "string",
+                  "description": "Public image URL."
+                }
+              },
+              "required": [
+                "reference"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 30,
+            "description": "Images (at most 30), JPEG URLs: `[{\"reference\": \"https://shop.example/1.jpg\"}]`."
+          },
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "Exactly two entries, `product` and `package`, in cm and grams: `[{\"name\": \"package\", \"height\": {\"unit\": \"cm\", \"value\": 24}, \"width\": {\"unit\": \"cm\", \"value\": 24}, \"length\": {\"unit\": \"cm\", \"value\": 35}, \"weight\": {\"unit\": \"g\", \"value\": 690}}, {\"name\": \"product\", ...}]`."
+          },
+          "category": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Category id (UUID)."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Magalu category: `{\"id\": \"6f0c3e3a-...\"}` with the UUID from magalu_find_categories or magalu_list_category_hierarchy."
+          },
+          "condition": {
+            "type": "string",
+            "enum": [
+              "NEW",
+              "USED",
+              "REMANUFACTURED"
+            ],
+            "description": "NEW (default), USED or REMANUFACTURED."
+          },
+          "identifiers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "ean",
+                    "isbn"
+                  ],
+                  "description": "ean or isbn."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "The code."
+                }
+              },
+              "required": [
+                "type",
+                "value"
+              ]
+            },
+            "maxItems": 10,
+            "description": "Barcodes: `[{\"type\": \"ean\", \"value\": \"7890078279087\"}]` (type ean or isbn, at most 10)."
+          },
+          "has_ean": {
+            "type": "boolean",
+            "description": "true when the product has an EAN."
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Attribute name."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value."
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ]
+            },
+            "maxItems": 3,
+            "description": "Variation attributes (at most 3): `[{\"name\": \"Cor\", \"value\": \"Azul\"}]`."
+          },
+          "datasheet": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Field name."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value."
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ]
+            },
+            "maxItems": 50,
+            "description": "Technical sheet (at most 50): `[{\"name\": \"Material\", \"value\": \"Algodao\"}]`; magalu_list_category_datasheet lists the expected names."
+          },
+          "ncm": {
+            "type": "string",
+            "pattern": "^[0-9]{8}$",
+            "description": "Mercosur NCM code, 8 digits."
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "national",
+              "imported"
+            ],
+            "description": "national or imported."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/seller/v1/portfolios/skus/{sku}",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "brand": "$brand",
+          "active": "$active",
+          "group": "$group",
+          "images": "$images",
+          "dimensions": "$dimensions",
+          "category": "$category",
+          "condition": "$condition",
+          "identifiers": "$identifiers",
+          "has_ean": "$has_ean",
+          "attributes": "$attributes",
+          "datasheet": "$datasheet",
+          "ncm": "$ncm",
+          "origin": "$origin"
+        }
+      }
+    },
+    {
+      "name": "magalu_set_price",
+      "description": "Set the first price of a new SKU in a channel. Prices are integers in cents (normalizer 100) in BRL. Asynchronous: answers 202 with a trace_id. Use magalu_update_price for later changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99999999,
+            "description": "Selling price, integer in cents (normalizer 100: 9990 = R$ 99,90)."
+          },
+          "list_price": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99999999,
+            "description": "List (from) price, integer in cents (normalizer 100: 9990 = R$ 99,90); at least the selling price."
+          }
+        },
+        "required": [
+          "sku",
+          "channel_id",
+          "price",
+          "list_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v1/portfolios/prices/{sku}",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "price": "$price",
+          "list_price": "$list_price",
+          "currency": "BRL",
+          "normalizer": 100
+        }
+      }
+    },
+    {
+      "name": "magalu_update_price",
+      "description": "Change the price and list price of a SKU in a channel, integers in cents (normalizer 100) in BRL. Asynchronous: answers 202 with a trace_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99999999,
+            "description": "Selling price, integer in cents (normalizer 100: 9990 = R$ 99,90)."
+          },
+          "list_price": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99999999,
+            "description": "List (from) price, integer in cents (normalizer 100: 9990 = R$ 99,90); at least the selling price."
+          }
+        },
+        "required": [
+          "sku",
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/seller/v1/portfolios/prices/{sku}",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "price": "$price",
+          "list_price": "$list_price",
+          "currency": "BRL",
+          "normalizer": 100
+        }
+      }
+    },
+    {
+      "name": "magalu_set_stock",
+      "description": "Set the first stock of a new SKU in a channel (optionally per distribution centre). Asynchronous: answers 202 with a trace_id. Use magalu_update_stock for later changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units available. 0 stops sales in the channel."
+          },
+          "branch": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Distribution centre id."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Distribution centre for multi-origin Magalu Entregas sellers: `{\"id\": \"...\"}` with an id from magalu_list_warehouses; leave out otherwise."
+          }
+        },
+        "required": [
+          "sku",
+          "channel_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v1/portfolios/stocks/{sku}",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "branch": "$branch",
+          "quantity": "$quantity",
+          "type": "AVAILABLE"
+        }
+      }
+    },
+    {
+      "name": "magalu_update_stock",
+      "description": "Change the available stock of a SKU in a channel (optionally per distribution centre). 0 stops sales. Asynchronous: answers 202 with a trace_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "description": "Your SKU code (up to 32 characters), as used when the SKU was created."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units available. 0 stops sales in the channel."
+          },
+          "branch": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Distribution centre id."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Distribution centre for multi-origin Magalu Entregas sellers: `{\"id\": \"...\"}` with an id from magalu_list_warehouses; leave out otherwise."
+          }
+        },
+        "required": [
+          "sku",
+          "channel_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/seller/v1/portfolios/stocks/{sku}",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "branch": "$branch",
+          "quantity": "$quantity",
+          "type": "AVAILABLE"
+        }
+      }
+    },
+    {
+      "name": "magalu_answer_question",
+      "description": "Answer a customer question. The answer goes through Magalu's moderation before it is public (status APPROVED or RESPONSE_REJECTED). Answers 202.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Question id."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Answer text."
+          },
+          "owner_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the person or system answering, as shown to Magalu (e.g. the store name)."
+          },
+          "owner_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your own id for the author (e.g. the agent's user id in your ERP)."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own id for this answer (optional)."
+          }
+        },
+        "required": [
+          "question_id",
+          "message",
+          "owner_name",
+          "owner_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://services.magalu.com/v0/questions/{question_id}/answer",
+        "bodyMapping": {
+          "message": "$message",
+          "owner": {
+            "name": "$owner_name",
+            "external_id": "$owner_id"
+          },
+          "external_id": "$external_id"
+        }
+      }
+    },
+    {
+      "name": "magalu_send_conversation_message",
+      "description": "Send a message to the customer in a chat conversation (at most 2,200 characters). Answers 201.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Conversation id (24 hex characters, `id` of magalu_list_conversations)."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2200,
+            "description": "Message text, at most 2,200 characters."
+          },
+          "owner_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the person or system answering, as shown to Magalu (e.g. the store name)."
+          },
+          "owner_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your own id for the author (e.g. the agent's user id in your ERP)."
+          },
+          "external_id": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Your own id for this message (optional)."
+          }
+        },
+        "required": [
+          "conversation_id",
+          "content",
+          "owner_name",
+          "owner_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://services.magalu.com/v0/conversations/{conversation_id}/messages",
+        "bodyMapping": {
+          "content": "$content",
+          "owner": {
+            "name": "$owner_name",
+            "external_id": "$owner_id"
+          },
+          "external_id": "$external_id"
+        }
+      }
+    },
+    {
+      "name": "magalu_mark_conversation_read",
+      "description": "Mark a chat conversation as read by the seller, so it no longer counts as unread in the Magalu seller tools. No body is sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Conversation id (24 hex characters, `id` of magalu_list_conversations)."
+          }
+        },
+        "required": [
+          "conversation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "https://services.magalu.com/v0/conversations/{conversation_id}/read_by"
+      }
+    },
+    {
+      "name": "magalu_send_ticket_message",
+      "description": "Send a message in a SAC ticket to the customer, to Magalu (channel) or as a seller note (at most 3,000 characters). Asynchronous: answers 202 with a transaction_id (magalu_get_transaction).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SAC ticket id (UUID, `id` of magalu_list_tickets)."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 3000,
+            "description": "Message text, at most 3,000 characters."
+          },
+          "destination": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "channel",
+              "seller"
+            ],
+            "description": "customer, channel (Magalu) or seller."
+          },
+          "owner_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the person or system answering, as shown to Magalu (e.g. the store name)."
+          },
+          "owner_code": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your own id for the author."
+          },
+          "code": {
+            "type": "string",
+            "description": "Free field for your system (optional)."
+          }
+        },
+        "required": [
+          "ticket_id",
+          "message",
+          "destination",
+          "owner_name",
+          "owner_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v0/tickets/{ticket_id}/messages",
+        "bodyMapping": {
+          "message": "$message",
+          "destination": "$destination",
+          "owner": {
+            "name": "$owner_name",
+            "code": "$owner_code"
+          },
+          "code": "$code"
+        }
+      }
+    },
+    {
+      "name": "magalu_create_ticket_event",
+      "description": "Record a return step on a SAC ticket: product_sent, return_info_sent (return label sent to the customer) or product_received (returned item arrived). Refund authorisation is deliberately not offered. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SAC ticket id (UUID, `id` of magalu_list_tickets)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "product_sent",
+              "return_info_sent",
+              "product_received"
+            ],
+            "description": "Event type."
+          },
+          "code": {
+            "type": "string",
+            "description": "Free field for your system (optional)."
+          }
+        },
+        "required": [
+          "ticket_id",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v0/tickets/{ticket_id}/events",
+        "bodyMapping": {
+          "type": "$type",
+          "code": "$code"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "magalu_create_ticket",
+      "description": "Open a SAC ticket for an order delivery: a cancellation request or a shipping problem, with the items concerned. A cancellation cannot be taken back. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "cancellation",
+              "shipping"
+            ],
+            "description": "cancellation or shipping."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "missing_parts",
+              "damaged_parts",
+              "price_discrepancy",
+              "freight_discrepancy",
+              "shipping_address_issues",
+              "shipped_but_lost",
+              "held_at_customs",
+              "shipping_delay",
+              "unavailability"
+            ],
+            "description": "Reason."
+          },
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "order_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Order id (`id` of the order)."
+          },
+          "order_code": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Order code."
+          },
+          "delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Delivery (package) id: `deliveries[].id` of magalu_get_order or `id` of magalu_list_deliveries."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Item id in the delivery."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "SKU."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Quantity."
+                }
+              },
+              "required": [
+                "id",
+                "sku",
+                "quantity"
+              ]
+            },
+            "minItems": 1,
+            "description": "Items: `[{\"id\": \"item id\", \"sku\": \"SKU-1\", \"quantity\": 1}]` (item id from the delivery)."
+          }
+        },
+        "required": [
+          "type",
+          "channel_id",
+          "order_id",
+          "order_code",
+          "delivery_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v0/tickets",
+        "bodyMapping": {
+          "type": "$type",
+          "reason": "$reason",
+          "channel": {
+            "id": "$channel_id"
+          },
+          "order": {
+            "id": "$order_id",
+            "code": "$order_code",
+            "delivery": {
+              "id": "$delivery_id",
+              "items": "$items"
+            }
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "magalu_create_ticket_return",
+      "description": "Request a reverse shipment (return code) for a SAC ticket; Magalu Entregas then collects the item from the customer. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticket_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SAC ticket id (UUID, `id` of magalu_list_tickets)."
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v0/tickets/{ticket_id}/returns"
+      },
+      "enabled": false
+    },
+    {
+      "name": "magalu_generate_shipping_labels",
+      "description": "Generate Magalu Entregas shipping labels for deliveries: answers a signed_url to the PDF or ZPL file and its expiry. Labels are tied to Magalu's logistics contract. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Channel id (UUID): `channel.id` of magalu_get_seller, or `order.channel.id` of the order for delivery writes."
+          },
+          "deliveries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Delivery id."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "minItems": 1,
+            "description": "Deliveries: `[{\"id\": \"delivery id\"}]`."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "pdf",
+              "zpl"
+            ],
+            "description": "pdf or zpl."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "full"
+            ],
+            "description": "summary or full."
+          }
+        },
+        "required": [
+          "channel_id",
+          "deliveries",
+          "format",
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller/v1/logistics/shipping-labels",
+        "bodyMapping": {
+          "channel": {
+            "id": "$channel_id"
+          },
+          "deliveries": "$deliveries",
+          "label": {
+            "format": "$format",
+            "type": "$type"
+          }
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

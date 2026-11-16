@@ -40,9 +40,11 @@ export const CHECKOUT_BILLING_PERIODS = ['monthly', 'yearly'] as const;
  * - trial_banner: the countdown banner at the top of every page.
  * - license_page: Settings → License.
  * - trial_ended_wall: the wall shown when the free trial is over.
- * - post_approve: "add a card" on the page after approving an AI client.
+ * - post_approve: "add a payment method" on the page after approving an AI
+ *   client.
  * - signup_prompt: the card-trial page shown once after sign-up.
- * - trial_limit / starter_pack: "add a card" next to the connector limit.
+ * - trial_limit / starter_pack: "add a payment method" next to the connector
+ *   limit.
  * - chat_setup: the plan link the setup tools give the AI in a chat.
  * - start_trial: /start-trial opened without a known source.
  * - pricing_signed_in: a plan button on the public pricing page, clicked by
@@ -77,7 +79,7 @@ export const CHECKOUT_SOURCES = [
 export type CheckoutSource = (typeof CHECKOUT_SOURCES)[number];
 /** The setup tools' plan links (`?source=` on /start-trial and /settings/license). */
 export const CHAT_SETUP_SOURCE: CheckoutSource = 'chat_setup';
-/** "Add a card" on the page after approving an AI client (login.controller). */
+/** "Add a payment method" on the page after approving an AI client (login.controller). */
 export const POST_APPROVE_SOURCE: CheckoutSource = 'post_approve';
 /** Sent when the app did not name an entry point, so no checkout goes without one. */
 export const DEFAULT_CHECKOUT_SOURCE: CheckoutSource = 'app';

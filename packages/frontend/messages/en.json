@@ -32,7 +32,8 @@
       "knowledgeGraph": "Knowledge Graph",
       "aiSkills": "AI Skills",
       "memory": "Memory",
-      "setup": "Setup & onboarding"
+      "setup": "Setup & onboarding",
+      "learning": "Learning projects"
     },
     "settings": "Settings",
     "switchWorkspace": "Switch workspace",
@@ -355,30 +356,34 @@
       "paysToday": "Keep your workspace running",
       "trial": "Your free trial"
     },
-    "ending": "Your free trial ends on <strong>{date}</strong>, too soon to carry on with a card trial. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
-    "endingSoon": "Your free trial ends soon, too soon to carry on with a card trial. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
-    "returning": "This email address has had an AnythingMCP subscription before, so a new free trial is not available with a card. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are, and your current trial keeps running until <strong>{date}</strong> if you decide later.",
-    "returningNoDate": "This email address has had an AnythingMCP subscription before, so a new free trial is not available with a card. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
-    "trial": "Every feature, free until <strong>{date}</strong>. Add a card now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: the no-card trial has a <strong>lower connector limit</strong>, and you can add a card any time to unlock your full plan.",
-    "trialNoDate": "Every feature, free until your trial ends. Add a card now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: the no-card trial has a <strong>lower connector limit</strong>, and you can add a card any time to unlock your full plan.",
+    "ending": "Your free trial ends on <strong>{date}</strong>, too soon to add a payment method and keep trying for free. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "endingSoon": "Your free trial ends soon, too soon to add a payment method and keep trying for free. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "returning": "This email address has had an AnythingMCP subscription before, so a new free trial with a payment method is not available. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are, and your current trial keeps running until <strong>{date}</strong> if you decide later.",
+    "returningNoDate": "This email address has had an AnythingMCP subscription before, so a new free trial with a payment method is not available. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
+    "trial": "Every feature, free until <strong>{date}</strong>. Add a payment method now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: that trial has a <strong>lower connector limit</strong>, and you can add a payment method any time to unlock your full plan.",
+    "trialNoDate": "Every feature, free until your trial ends. Add a payment method now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: that trial has a <strong>lower connector limit</strong>, and you can add a payment method any time to unlock your full plan.",
     "authorizationReturn": "Either way, you go straight back to finish connecting your AI client.",
     "chargesToday": "This address already had a subscription, so the checkout will charge {amount} today.",
     "start": {
       "opening": "Opening checkout…",
       "tryAgain": "Try again",
       "checkout": "Continue to checkout",
-      "withCard": "Start free trial with card"
+      "trial": "Start free trial"
     },
     "promo": "Code {code} will be applied at checkout.",
     "price": "{amount}/{period, select, yearly {year} other {month}}",
     "priceLocal": "≈ {local}/{period, select, yearly {year} other {month}} ({exact})",
     "finePrintPaysToday": "{plan}, {price}, billed today and then {period, select, yearly {every year} other {every month}}. Secure checkout by Stripe. Cancel anytime from the billing portal.",
-    "finePrintTrial": "€0 today. {plan}, billed {period, select, yearly {yearly} other {monthly}} from {date}. Secure checkout by Stripe. Cancel before then and you pay nothing.",
-    "finePrintTrialNoDate": "€0 today. {plan}, billed {period, select, yearly {yearly} other {monthly}} from the end of your trial. Secure checkout by Stripe. Cancel before then and you pay nothing.",
+    "finePrintTrial": "{plan}, billed {period, select, yearly {yearly} other {monthly}} from {date}. Secure checkout by Stripe. Cancel before then and you pay nothing.",
+    "finePrintTrialNoDate": "{plan}, billed {period, select, yearly {yearly} other {monthly}} from the end of your trial. Secure checkout by Stripe. Cancel before then and you pay nothing.",
     "notReady": "Not ready yet?",
-    "notReadyCard": "Not ready to add a card?",
+    "notReadyCard": "Not ready to add a payment method?",
     "keepFree": "Keep using the free trial",
-    "tryFree": "Try free without payment details"
+    "tryFree": "Try free without payment details",
+    "methods": {
+      "trial": "€0 today · card, PayPal and other methods",
+      "pay": "Card, PayPal and other methods"
+    }
   },
   "appShell": {
     "toggleTheme": "Toggle theme",
@@ -949,14 +954,17 @@
     "pill": {
       "signInExpired": "Sign-in expired",
       "tokenRefused": "Token refused",
+      "credentialsRefused": "Key refused",
       "expiresSoon": "Token expires soon"
     },
     "banner": {
       "signInRefused": "The provider refused the sign-in, so tool calls stop here until you authorize again.",
       "tokenRefused": "The provider refused the access token, so tool calls stop here until you save a new one.",
+      "credentialsRefused": "Every tool call of this connector fails until you save valid credentials.",
       "expiresOn": "The access token stops working on {date}.",
       "expiresSoon": "The access token stops working soon.",
-      "since": "Since {date}"
+      "since": "Since {date}",
+      "updateCredentials": "Update credentials"
     }
   },
   "authTypes": {
@@ -1011,6 +1019,8 @@
       "required": "Required",
       "looksWrongExample": "Looks wrong. Example: {example}",
       "looksWrong": "Looks wrong",
+      "choose": "Choose…",
+      "chooseOne": "Choose one of the options",
       "optional": "(optional)",
       "stored": "Stored. Leave empty to keep it",
       "hide": "Hide",
@@ -1536,11 +1546,21 @@
       "keysMissing": "Save your app's client ID and secret first, then authorize. The provider needs them to open its sign-in page (for Etsy: the Keystring and the Shared Secret).",
       "keysStillEmpty": "Still empty: {names}",
       "enterKeys": "Enter the keys",
-      "clientId": "client ID"
+      "clientId": "client ID",
+      "signInStarting": "Opening the sign-in for {name}…",
+      "signInManual": "The sign-in could not start by itself. Start it with this button:"
     },
     "shopee": {
       "title": "Shopee shop authorization",
       "body": "Sign in with the shop account and approve this app. The tokens are stored encrypted and renewed automatically. Authorize again when the authorization expires or the connector asks for it."
+    },
+    "sheinShop": {
+      "title": "SHEIN shop authorization",
+      "body": "Sign in to SHEIN with the shop's main account and approve the app. SHEIN then hands this connector the shop's key, which is stored encrypted. SHEIN documents no fixed lifetime and no renewal: authorize again when SHEIN ends the authorization (the seller unbinds the app or resets the key, or it expires) and the connector asks for it."
+    },
+    "iopSeller": {
+      "title": "Seller authorization",
+      "body": "Sign in with the seller account and approve the app (Lazada, Miravia, AliExpress). The app's callback URL must be your AnythingMCP address followed by /api/iop-auth/callback. The tokens are stored encrypted and renewed automatically; authorize again when the authorization expires or the connector asks for it."
     },
     "tiktokShop": {
       "title": "TikTok Shop authorization",
@@ -2199,8 +2219,8 @@
         "description": "On a schedule (roughly daily), let the AI extend the graph and generate skills from the captured user intents — so your network and skills keep improving on their own. Cost-careful: it only runs every so often, skips when nothing changed, and stays off until you enable it. Requires AI enrichment + Capture user intent."
       },
       "skillAutoApply": {
-        "label": "Auto-apply high-confidence skills",
-        "description": "When AI generates a skill it is confident about (≥ 0.90), apply it automatically instead of leaving it as a suggestion to review. Lower-confidence skills still wait for manual approval."
+        "label": "Auto-apply skills learned from fixed errors",
+        "description": "When the same failed call was fixed in the same way at least 3 times, apply the skill learned from it automatically. Skills generated by AI always wait for your review."
       }
     },
     "security": {
@@ -3097,7 +3117,8 @@
       "hideHistory": "Hide history",
       "history": "History ({count, plural, one {# earlier version} other {# earlier versions}})",
       "replaced": "replaced {date}",
-      "historyProcedure": "Procedure: {count, number} characters"
+      "historyProcedure": "Procedure: {count, number} characters",
+      "draftOnly": "Draft: served to its member only"
     },
     "sources": {
       "llm": "AI-generated",
@@ -3105,7 +3126,8 @@
       "mergedByAi": "merged by AI",
       "errors": "learned from fixed errors",
       "finder": "from Skills Finder",
-      "manual": "written by hand"
+      "manual": "written by hand",
+      "learning": "from a learning project"
     },
     "form": {
       "titlePlaceholder": "Title",
@@ -3731,7 +3753,55 @@
     "workspaces": "{count} workspaces on AnythingMCP Cloud",
     "directory": "Listed in the Claude Directory",
     "directoryChatgpt": "Listed in the ChatGPT Plugin Directory",
-    "directoryBoth": "Listed in the Claude and ChatGPT directories"
+    "directoryBoth": "Listed in the Claude and ChatGPT directories",
+    "workspaceLabel": "Workspace:",
+    "reasons": {
+      "paymentFailed": {
+        "title": "Your payment didn’t go through",
+        "bodyAdmin": "Your last payment didn’t go through, so your subscription is on hold. Update your payment method and it resumes right away: the open payment is taken as soon as the new one is saved. Your connectors and configurations are preserved.",
+        "bodyMember": "The last payment for this workspace’s subscription didn’t go through, so the subscription is on hold. Ask a workspace admin to update the payment method. Your connectors and configurations are preserved."
+      },
+      "noLicense": {
+        "title": "License Required",
+        "body": "This workspace doesn’t have an active license. Start a trial or purchase a plan to continue."
+      },
+      "trialEnded": {
+        "title": "Your Trial Has Expired",
+        "body": "Your 7-day trial period has ended. Purchase a license to continue using AnythingMCP Cloud. Your connectors and configurations are preserved."
+      },
+      "lapsed": {
+        "title": "Your Subscription Is Not Active",
+        "body": "Your subscription is not active — usually a renewal payment that did not go through. Update your payment method in the billing portal and it resumes; buying a new plan would start a second subscription beside this one. Your connectors and configurations are preserved."
+      },
+      "expired": {
+        "title": "Your License Has Expired",
+        "body": "Your license is no longer active. Purchase or renew a license to continue using AnythingMCP. Your connectors and configurations are preserved."
+      }
+    },
+    "startTrial": {
+      "start": "Start 7-Day Free Trial",
+      "starting": "Starting…",
+      "failed": "Could not start the trial. Please try again or contact support."
+    },
+    "viewPlans": "View Plans & Purchase License",
+    "openingCheckout": "Opening checkout…",
+    "subscribeTo": "Subscribe to {plan}",
+    "comparePlans": "Compare plans",
+    "opening": "Opening…",
+    "payment": {
+      "update": "Update payment method",
+      "updated": "I’ve updated my payment method",
+      "checking": "Checking…",
+      "openFailed": "Could not open the payment page. Please try again or contact support.",
+      "notYet": "The payment has not come through yet. If you just updated your payment method, try again in a minute.",
+      "checkFailed": "Could not check right now. Please try again in a minute."
+    },
+    "updateBilling": "Update Billing",
+    "switchWorkspace": "Switch to another workspace",
+    "alreadyPurchased": "Already purchased?",
+    "enterKey": "Enter your license key",
+    "notContinuing": "Not continuing?",
+    "deleteAccount": "Delete your account"
   },
   "planFit": {
     "title": "What changes with {plan}",
@@ -3809,5 +3879,224 @@
     "starterTitle": "On Starter",
     "seeStarter": "See what changes with Starter",
     "hideStarter": "Hide"
+  },
+  "activeSubscription": {
+    "title": "Cancel the subscription first",
+    "body": "This workspace still has a subscription, and deleting the workspace does not cancel it: you would go on being charged. Cancel it first, then come back and delete.",
+    "cancelButton": "Cancel subscription",
+    "opening": "Opening…",
+    "after": "You will return here once it is cancelled.",
+    "openFailed": "Could not open the cancellation page.",
+    "licensePage": "Open Settings → License"
+  },
+  "planPicker": {
+    "periodLabel": "Billing period",
+    "planLabel": "Plan",
+    "monthly": "Monthly",
+    "yearly": "Yearly",
+    "twoMonthsFree": "2 months free",
+    "mostPopular": "Most popular",
+    "summary": "{connectors} connectors · {mcpServers} MCP servers · {users, plural, one {# user} other {up to # users}}",
+    "price": "{amount}/{period, select, yearly {year} other {month}}",
+    "priceLocal": "≈ {amount}/{period, select, yearly {year} other {month}}",
+    "exactly": "{price} exactly",
+    "yearlyPerMonth": "≈ {amount}/month",
+    "outgrown": "This workspace has {items}",
+    "usage": {
+      "connectors": "{count, plural, one {# connector} other {# connectors}}",
+      "mcpServers": "{count, plural, one {# MCP server} other {# MCP servers}}",
+      "users": "{count, plural, one {# user} other {# users}}"
+    },
+    "footer": {
+      "vat": "Prices in EUR, VAT included.",
+      "noVat": "Prices in EUR.",
+      "local": "Prices in EUR, paid in {currency} at checkout.",
+      "localVat": "Prices in EUR, paid in {currency} at checkout, VAT included."
+    },
+    "enterpriseQuestion": "More users, single sign-on or SCIM?",
+    "pastTeam": "This workspace goes past Team.",
+    "enterpriseLink": "Ask about Enterprise",
+    "listSeparator": ", "
+  },
+  "cardCheckout": {
+    "failed": "We could not open the checkout. Please try again in a moment."
+  },
+  "trialBanner": {
+    "today": "Your trial expires today.",
+    "tomorrow": "Your trial expires tomorrow.",
+    "daysLeft": "Trial: {days} days left.",
+    "includesTeam": "Your trial includes everything in Team.",
+    "aboveStarter": {
+      "link": "Above Starter: see what changes",
+      "title": "Your workspace is above Starter",
+      "body": "Your trial includes everything in Team. If you choose Starter, this changes when the trial ends. Team keeps everything as it is.",
+      "close": "Close"
+    },
+    "choosePlan": "Choose a plan",
+    "openingCheckout": "Opening checkout…",
+    "addPaymentBefore": "Add a payment method: no charge before {date}",
+    "addPayment": "Add a payment method",
+    "upgrade": "Upgrade now"
+  },
+  "learning": {
+    "title": "Learning projects",
+    "intro": "A learning project keeps what one colleague teaches the AI on one MCP server: their corrections and explanations become skills for everyone. Nothing is kept before they accept, and they can stop at any time.",
+    "loading": "Loading…",
+    "loadFailed": "Could not load the learning projects",
+    "allowance": {
+      "unlimited": "Your plan includes learning projects without a limit.",
+      "some": "{used} of {max} learning projects in use."
+    },
+    "upsell": {
+      "cloudTitle": "Learning projects are part of the Team and Enterprise plans",
+      "cloudBody": "Keep what an experienced colleague teaches the AI before they leave: their corrections become skills the whole team's AI assistants use. Team includes one project, Enterprise has no limit.",
+      "cloudCta": "See plans",
+      "selfTitle": "Learning projects are part of AnythingMCP Enterprise",
+      "selfBody": "Keep what an experienced colleague teaches the AI before they leave: their corrections become skills the whole team's AI assistants use. The 30-day evaluation includes one project.",
+      "contact": "Contact us about Enterprise",
+      "key": "Enter a license key"
+    },
+    "new": {
+      "button": "New learning project",
+      "title": "New learning project",
+      "name": "Name",
+      "namePlaceholder": "e.g. Hardware for old windows",
+      "member": "Learn from",
+      "memberPlaceholder": "Choose a member",
+      "server": "On the MCP server",
+      "serverPlaceholder": "Choose an MCP server",
+      "folder": "File the skills in",
+      "noFolder": "No folder",
+      "endsAt": "Ends on (optional)",
+      "tags": "Labels (optional)",
+      "tagsHint": "Separated by commas, e.g. windows, hardware",
+      "publishMode": "Publishing",
+      "publishManual": "A person publishes each topic",
+      "publishConfirmed": "Lessons the member confirms are published",
+      "showName": "Show the member's name to everyone, not to admins only",
+      "create": "Start and ask the member",
+      "creating": "Starting…",
+      "cancel": "Cancel",
+      "created": "Started. The member accepts it under Settings → Profile; nothing is kept before that.",
+      "limitReached": "Your plan's learning projects are all in use. End or pause one to start another."
+    },
+    "status": {
+      "draft": "Waiting for the member",
+      "active": "Active",
+      "paused": "Paused",
+      "ended": "Ended",
+      "overPlan": "Not in your plan"
+    },
+    "card": {
+      "expert": "Learning from {name}",
+      "expertHidden": "Member shown to admins only",
+      "server": "on {name}",
+      "noServer": "its MCP server was deleted",
+      "lessons": "{confirmed} confirmed · {draft} to confirm",
+      "topics": "{count} topic(s)",
+      "open": "Open",
+      "ends": "ends {date}"
+    },
+    "empty": "No learning project yet.",
+    "detail": {
+      "back": "All learning projects",
+      "notFound": "Learning project not found",
+      "tabs": {
+        "topics": "Topics",
+        "lessons": "Lessons",
+        "settings": "Settings"
+      },
+      "pause": "Pause",
+      "resume": "Resume",
+      "end": "End",
+      "delete": "Delete",
+      "confirmEnd": "End this learning project? Its lessons and published skills are kept; it cannot be started again.",
+      "confirmDelete": "Delete this learning project and all its lessons? Published skills are kept.",
+      "waiting": "Waiting for {name} to accept under Settings → Profile. Nothing is kept before that.",
+      "waitingHidden": "Waiting for the member to accept under Settings → Profile. Nothing is kept before that.",
+      "overPlan": "This project is beyond the number your plan includes, so nothing is captured. End another project or upgrade the plan."
+    },
+    "topics": {
+      "empty": "No lessons yet. They appear when the member corrects the AI or explains something on this server.",
+      "when": "When:",
+      "published": "Published {date}",
+      "notPublished": "Not published",
+      "changes": "Confirmed changes to publish",
+      "counts": "{confirmed} confirmed · {draft} to confirm",
+      "preview": "Preview",
+      "hidePreview": "Hide preview",
+      "publish": "Publish",
+      "publishing": "Publishing…",
+      "publishedMsg": "Published: {count} lesson(s) are now a skill for everyone on this server.",
+      "nothing": "Nothing confirmed to publish yet.",
+      "dropped": "{count} older lesson(s) did not fit in the text and were left out.",
+      "viewSkill": "Open AI Skills"
+    },
+    "lessons": {
+      "filter": {
+        "all": "All",
+        "draft": "To confirm",
+        "confirmed": "Confirmed",
+        "rejected": "Rejected"
+      },
+      "empty": "No lessons here.",
+      "kind": {
+        "rule": "Rule",
+        "fact": "Fact",
+        "correction": "Correction",
+        "example": "Example"
+      },
+      "source": {
+        "model": "reported by the AI",
+        "diff": "seen in the work",
+        "interview": "from an interview",
+        "manual": "edited by a curator"
+      },
+      "status": {
+        "draft": "To confirm",
+        "confirmed": "Confirmed",
+        "rejected": "Rejected",
+        "superseded": "Replaced"
+      },
+      "before": "Instead of:",
+      "after": "Use:",
+      "reason": "Why:",
+      "askWhy": "No reason given yet",
+      "seen": "said {count}×",
+      "confirm": "Confirm",
+      "reject": "Reject",
+      "reopen": "Reopen",
+      "edit": "Reword",
+      "save": "Save",
+      "cancel": "Cancel",
+      "more": "Show more"
+    },
+    "settings": {
+      "name": "Name",
+      "folder": "File the skills in",
+      "folderHint": "Applies to topics started from now on.",
+      "endsAt": "Ends on",
+      "tags": "Labels",
+      "publishMode": "Publishing",
+      "showName": "Show the member's name to everyone, not to admins only",
+      "save": "Save",
+      "saved": "Saved."
+    },
+    "profile": {
+      "title": "Learning projects",
+      "ask": "Your admin asks to keep what you teach the AI on the MCP server “{server}”, for the learning project “{name}”.",
+      "notice": "On the MCP server “{server}”, when you correct the AI or explain how the work is done, the AI saves that as a lesson for the learning project “{name}”. Lessons become skills your colleagues' AI assistants can use. Kept: the lessons. Not kept: the conversation itself, your work on other servers, and any figures about your work. You confirm each lesson before it is shared. Workspace admins and editors can read the lessons. You can stop at any time on this page and erase everything that was not published.",
+      "nameHidden": "Your name is shown to admins only.",
+      "nameShown": "Your name is shown with the skills learned from you.",
+      "accept": "Accept",
+      "decline": "Decline",
+      "accepted": "Accepted. Refresh the tools list of this connector in your AI client to get the learning tools.",
+      "active": "“{name}” is active on “{server}” since {date}.",
+      "paused": "“{name}” is paused by your admin.",
+      "stop": "Stop",
+      "erase": "Also erase my lessons that were not published",
+      "stopped": "Stopped.",
+      "failed": "Could not save your answer"
+    }
   }
 }

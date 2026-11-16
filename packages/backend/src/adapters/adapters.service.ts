@@ -20,6 +20,8 @@ import { pickProbe, probeResultFailure } from './probe.util';
 import { resolveDerivedEnvVars, withDerivedValues } from './derived-settings';
 import { shopeeNeedsAuthorization } from '../connectors/engines/shopee-token.service';
 import { tiktokShopNeedsAuthorization } from '../connectors/engines/tiktok-shop-token.service';
+import { iopNeedsAuthorization } from '../connectors/engines/iop-token.service';
+import { sheinNeedsAuthorization } from '../connectors/engines/shein-token.service';
 import { metaLoginNeedsAuthorization } from '../connectors/engines/meta-login.util';
 import { odooCheckAdvice } from './odoo-database-hint';
 import {
@@ -62,7 +64,8 @@ import { setupEffort } from './setup-guide';
 import { fileSearchSetupPath } from './file-search-setup';
 import { describeDiscoveredTools, mergeDiscoveredMcpTools } from './mcp-adapter.util';
 import { deriveToolAnnotations } from '../mcp-server/tool-annotations';
-import { mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
+import { codeHint, providerErrorCode } from '../mcp-server/error-hints';
+import { mcpFixedArgumentsOf, mcpToolPrefixOf } from '../connectors/mcp-connector-config.util';
 import { matchCatalogUrl, UrlMatch, UrlMatchCandidate } from './catalog-url-match';
 import { APP_APPROVAL_ADAPTERS } from './app-approval-watch';
 import { describeHtmlAnswer, looksLikeHtml } from './html-excerpt';
@@ -695,7 +698,13 @@ export class AdaptersService {
       });
       // The adapter knows its own failures better than the shared classifier:
       // an Odoo 404 means "older than 19", not "check the tool path".
-      const own = adapter.verifyHints?.[String(status)] ?? adapter.verifyHints?.[classified.kind];
+      // A provider that answers every refusal with the same status says which
+      // one in its body (Shopify's token request: 400 with `app_not_installed`,
+      // `shop_not_permitted`…): a hint filed under that code comes first.
+      const own =
+        codeHint(adapter.verifyHints, providerErrorCode(`${upstream}\n${rawResponseText(err)}`)) ??
+        adapter.verifyHints?.[String(status)] ??
+        adapter.verifyHints?.[classified.kind];
       // A server that only accepts approved addresses answers with a page or
       // a refusal that says nothing about the keys: name the address to allow.
       const ipRefusal =
@@ -1064,6 +1073,7 @@ export class AdaptersService {
           adapter.tools,
           discovered,
           mcpToolPrefixOf(adapter.connector.config),
+          mcpFixedArgumentsOf(adapter.connector.config),
         );
         mcpProbe = {
           ok: true,
@@ -1195,6 +1205,10 @@ export class AdaptersService {
     if (shopeeNeedsAuthorization(adapter.connector.authType, auth)) return null;
     // And for a TikTok shop, authorized from the connector page too.
     if (tiktokShopNeedsAuthorization(adapter.connector.authType, auth)) return null;
+    // And for a seller at an IOP gateway (Lazada, Miravia, AliExpress seller).
+    if (iopNeedsAuthorization(adapter.connector.authType, auth)) return null;
+    // And for a SHEIN shop, authorized through SHEIN's store authorization.
+    if (sheinNeedsAuthorization(adapter.connector.authType, auth)) return null;
     const call = pickProbe(adapter);
     if (!call) return null;
     const started = Date.now();

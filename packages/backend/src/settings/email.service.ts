@@ -17,8 +17,10 @@ import {
   activationReminderEmail,
   cardTrialOfferEmail,
   appApprovedEmail,
+  appApprovedReminderEmail,
   cloudPageUrl,
   connectorAuthEmail,
+  connectorCredentialsRefusedEmail,
   connectorAddedFromSupportEmail,
   planCapsAppliedEmail,
   existingAccountEmail,
@@ -135,9 +137,13 @@ export class EmailService {
    * advertise it. Without a signing secret or a matching account, the footer
    * falls back to the account settings and no one-click header is sent.
    */
-  private async marketing(to: string): Promise<{ ctx: MarketingContext; headers: Record<string, string> }> {
+  private async marketing(
+    to: string,
+    /** Where this instance's pages live, when it is not the Cloud (a self-hosted dashboard). */
+    siteUrl?: string,
+  ): Promise<{ ctx: MarketingContext; headers: Record<string, string> }> {
     const base = await this.brand();
-    const cloudUrl = this.cloudUrl();
+    const cloudUrl = siteUrl || this.cloudUrl();
     const secret = unsubscribeSecret();
     const user = secret
       ? await findUserByEmail<{ id: string; email: string }>(this.prisma, to, { id: true }).catch(() => null)
@@ -890,7 +896,14 @@ export class EmailService {
    */
   async sendConnectorAuthEmail(
     to: string,
-    input: { name: string | null; connectorName: string; message: string; connectorPath: string },
+    input: {
+      name: string | null;
+      connectorName: string;
+      message: string;
+      connectorPath: string;
+      /** `credentials`: a saved key the API keeps refusing, not a sign-in to renew. */
+      kind?: 'sign_in' | 'credentials';
+    },
     organizationId?: string,
   ): Promise<boolean> {
     const transport = await this.createTransporter(organizationId);
@@ -899,7 +912,8 @@ export class EmailService {
       return false;
     }
     const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '') || this.cloudUrl();
-    const email = connectorAuthEmail(
+    const template = input.kind === 'credentials' ? connectorCredentialsRefusedEmail : connectorAuthEmail;
+    const email = template(
       {
         name: input.name,
         connectorName: input.connectorName,
@@ -922,12 +936,24 @@ export class EmailService {
    * The provider approved the app behind a connector (Etsy: the app left
    * Pending); see AppApprovalWatcherService. Transactional, once per
    * connector, through the workspace's SMTP or the system one, like the
-   * connector sign-in email. False when none is configured (self-hosted
-   * without SMTP) or the send failed.
+   * connector sign-in email. `connectorPath` opens the connector page so that
+   * the provider's sign-in starts (signInPath); it survives the dashboard
+   * sign-in as the `redirect` of cloudPageUrl. False when no SMTP is
+   * configured (self-hosted without SMTP) or the send failed.
    */
   async sendAppApprovedEmail(
     to: string,
-    input: { name: string | null; providerName: string; connectorPath: string; prompt: string; promptUrl: string },
+    input: {
+      name: string | null;
+      providerName: string;
+      connectorPath: string;
+      prompt: string;
+      promptUrl: string;
+      /** Days added to the workspace's trial with this email, when any. */
+      trialDaysAdded?: number;
+      /** Whether the reminder follows in two days (false for a reader who opted out). */
+      reminderFollows?: boolean;
+    },
     organizationId?: string,
   ): Promise<boolean> {
     const transport = await this.createTransporter(organizationId);
@@ -943,6 +969,8 @@ export class EmailService {
         connectorUrl: cloudPageUrl(base, input.connectorPath, await this.signInProvider(to)),
         prompt: input.prompt,
         promptUrl: input.promptUrl,
+        trialDaysAdded: input.trialDaysAdded,
+        reminderFollows: input.reminderFollows,
       },
       await this.brand(),
     );
@@ -952,6 +980,47 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(`Failed to send app-approved email to ${maskEmail(to)}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * The one reminder two days after sendAppApprovedEmail, while the connector
+   * still waits for the provider's sign-in (AppApprovalWatcherService).
+   * Through the same SMTP as that email. A nudge: the caller sends it only to
+   * an owner who did not opt out, and it carries the unsubscribe line. False
+   * when no SMTP is configured or the send failed.
+   */
+  async sendAppApprovedReminderEmail(
+    to: string,
+    input: { name: string | null; providerName: string; connectorPath: string; prompt: string; promptUrl: string },
+    organizationId?: string,
+  ): Promise<boolean> {
+    const transport = await this.createTransporter(organizationId);
+    if (!transport) {
+      this.logger.warn(`Skipping app-approved reminder to ${maskEmail(to)}: no SMTP configured`);
+      return false;
+    }
+    const base = (process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '') || this.cloudUrl();
+    // The Cloud's unsubscribe link is built as for its other emails; a
+    // self-hosted instance's points at its own address.
+    const { ctx, headers } = await this.marketing(to, this.deployment.isCloud() ? undefined : base);
+    const email = appApprovedReminderEmail(
+      {
+        name: input.name,
+        providerName: input.providerName,
+        connectorUrl: cloudPageUrl(base, input.connectorPath, await this.signInProvider(to)),
+        prompt: input.prompt,
+        promptUrl: input.promptUrl,
+      },
+      ctx,
+    );
+    try {
+      await transport.transporter.sendMail({ from: transport.from, to, ...this.mail(email, headers) });
+      this.logger.log(`App-approved reminder sent to ${maskEmail(to)}`);
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send app-approved reminder to ${maskEmail(to)}: ${err}`);
       return false;
     }
   }

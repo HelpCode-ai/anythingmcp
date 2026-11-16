@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP connects Claude, ChatGPT, Copilot and Gemini to ERP, e-commerce, REST, SOAP and SQL systems and to your file servers: 732 connectors, plus company memory, skills and file search." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP connects Claude, ChatGPT, Copilot and Gemini to ERP, e-commerce, REST, SOAP and SQL systems and to your file servers: 845 connectors, plus company memory, skills and file search." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: the open-source MCP gateway that becomes your company brain</h1>
@@ -20,7 +20,7 @@
 <p align="center">
   <strong>AnythingMCP is an open-source, self-hosted MCP gateway that connects Claude, ChatGPT, Copilot and Gemini to the software your company runs and to the documents on your file servers, without writing an MCP server.</strong><br/>
   On top of the gateway it keeps your company brain: a knowledge graph of how your systems connect, AI skills and company memory, shared by every AI client and limited by each user's role.<br/>
-  732 ready connectors with 12,000+ tools, among them SAP, Odoo, weclapp and Amazon Seller; 42 need no API key.
+  845 ready connectors with 12,000+ tools, among them SAP, Odoo, weclapp and Amazon Seller; 46 need no API key.
 </p>
 
 <p align="center">
@@ -57,6 +57,7 @@ A gateway forwards calls. A company brain also knows where your documents are, h
 | **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](docs/connectors/file-search.md) | Cloud; self-hosted Enterprise |
 | **Company memory** | Facts and preferences saved from one AI client and found again in any other: said once in Claude, used by Copilot. Personal and company scopes, with folders and role limits. [Memory](docs/memory.md) | Enterprise |
 | **AI skills** | The procedures your agents follow, written by hand or learned from real requests and fixed errors, approved by an admin. [AI skills](docs/knowledge-graph.md#ai-skills) | All |
+| **Learning projects** | Keep what an experienced colleague teaches the AI before they leave: their corrections on one MCP server become skills for the whole team, after they agree and confirm. [Learning projects](docs/learning-projects.md) | Team, Enterprise |
 | **Knowledge graph** | How your systems connect, so the agent links a customer in one system to their orders in another without being told. [Knowledge Graph](docs/knowledge-graph.md) | All |
 | **Code Mode** | One short program that calls several tools in an isolated sandbox with no secrets and no network, so a five-step lookup becomes one call. [Code Mode](docs/code-mode.md) | All; write access Enterprise |
 | **Governance** | Roles and per-tool permissions, response mapping that drops fields before they reach the model, an audit log of every call. SSO and SCIM from your directory. [Security](#security-and-governance) | All; SSO/SCIM Enterprise |
@@ -129,7 +130,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-732 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages. The [full catalog by category](docs/catalog/README.md) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](https://anythingmcp.com/marketplace) has a page for each one.
+845 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages. The [full catalog by category](docs/catalog/README.md) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](https://anythingmcp.com/marketplace) has a page for each one.
 
 | Category | Examples |
 |---|---|

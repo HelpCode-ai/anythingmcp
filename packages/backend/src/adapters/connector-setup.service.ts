@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AdaptersService } from './adapters.service';
-import { describeAdapterEnvVars, needsBrowserAuthorization } from './env-var-meta';
+import { describeAdapterEnvVars, describeEnvVarOptions, needsBrowserAuthorization } from './env-var-meta';
 import { normalizeAdapterEnvValue } from './env-var-checks';
 import { addressFix, describeAddressFix } from './address-fix';
 import { LicenseGuardService } from '../license/license-guard.service';
@@ -29,6 +29,7 @@ import { fileSearchSetupPath } from './file-search-setup';
 import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
 import { inspectOdooAddress } from './odoo-database-hint';
 import { WOOCOMMERCE_SLUG, WOOCOMMERCE_URL_VAR } from './woocommerce-setup';
+import { appApprovalAnnounced, signInPath } from './app-approval-watch';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -118,6 +119,23 @@ function providerApp(definition: {
  * - the trial's connector limit, and INSTALLS_PER_HOUR per user;
  * - every install is recorded as a security event.
  */
+/**
+ * Why an install from the chat was refused, as a short code read from the
+ * answer the assistant got. Order matters: the first match wins.
+ */
+export function installRefusalReason(body: unknown): string {
+  const b = (body ?? {}) as { error?: unknown; upgradeUrl?: unknown; setupUrl?: unknown };
+  const text = typeof b.error === 'string' ? b.error : '';
+  if (/^No catalog connector/.test(text)) return 'unknown_app';
+  if (/File Search wizard/.test(text)) return 'file_search_wizard';
+  if (/is not a setting of/.test(text)) return 'unknown_setting';
+  if (/is a secret and is never taken|looks like a password, API key or token/.test(text)) return 'secret_in_chat';
+  if (/must be one of:|does not look right/.test(text)) return 'invalid_setting';
+  if (/connectors an hour can be installed/.test(text)) return 'too_many_installs';
+  if (typeof b.upgradeUrl === 'string' || /limit reached|no active licence|trial/i.test(text)) return 'plan_limit';
+  return 'other';
+}
+
 @Injectable()
 export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit {
   private readonly logger = new Logger(ConnectorSetupService.name);
@@ -257,7 +275,21 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
             ...(full.setupKind === 'oauth_browser' && !registersItsOwnClient(full) ? providerApp(full) : {}),
             settingsYouMayPass: vars
               .filter((v) => !v.secret)
-              .map((v) => ({ name: v.name, label: v.label, required: v.required, help: v.help, example: v.example })),
+              .map((v) => ({
+                name: v.name,
+                label: v.label,
+                required: v.required,
+                help: v.help,
+                example: v.example,
+                // A fixed list of choices (one API host per country): the
+                // user picks, the model passes that choice's value.
+                ...(v.options?.length
+                  ? {
+                      options: v.options,
+                      howToPass: 'Takes one of the options and nothing else. Ask the user which one applies (name the labels), then pass the value of the one they pick, exactly as listed.',
+                    }
+                  : {}),
+              })),
             enteredByTheUserOnTheLinkedPage: vars.filter((v) => v.secret).map((v) => v.label),
           };
         }),
@@ -283,6 +315,47 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
   // ── Install ───────────────────────────────────────────────────────────
 
   async install(
+    ctx: SetupContext,
+    args: { adapter?: string; settings?: Record<string, unknown> },
+    opts: SetupCallOptions = {},
+  ): Promise<SetupCallResult> {
+    const out = await this.installOnce(ctx, args, opts);
+    if (out.isError) this.recordInstallRefused(ctx, args, opts, out);
+    return out;
+  }
+
+  /**
+   * `setup_install_failed`: an install asked for from a chat (or the picker
+   * after approval) that did not add a connector, with the reason as a short
+   * code. A successful one already logs `setup_completed`. Together they say
+   * how many found an app and tried to add it, and why it did not work; an
+   * app that was found and never asked for leaves neither.
+   *
+   * Only the code and the catalog id are kept: the refusal texts can repeat a
+   * setting name or an address the model sent.
+   */
+  private recordInstallRefused(
+    ctx: SetupContext,
+    args: { adapter?: string },
+    opts: SetupCallOptions,
+    out: SetupCallResult,
+  ): void {
+    const slug = String(args.adapter ?? '').trim().toLowerCase();
+    // log() catches its own failures: a refused install is answered regardless.
+    void this.productEvents.log({
+      event: ProductEvents.SETUP_INSTALL_FAILED,
+      userId: ctx.userId,
+      organizationId: ctx.organizationId,
+      metadata: {
+        ...(/^[a-z0-9][a-z0-9-]{0,59}$/.test(slug) ? { adapterSlug: slug } : {}),
+        via: opts.via ?? 'mcp',
+        // `kind`: the key the event store keeps for why a setup failed.
+        kind: installRefusalReason(out.body),
+      },
+    });
+  }
+
+  private async installOnce(
     ctx: SetupContext,
     args: { adapter?: string; settings?: Record<string, unknown> },
     opts: SetupCallOptions = {},
@@ -340,7 +413,17 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
           },
         };
       }
-      if (text && d.pattern && !matchesPattern(d.pattern, text)) {
+      // A variable with a fixed list of choices takes one of their values.
+      if (text && d.options?.length && !d.options.some((o) => o.value === text)) {
+        return {
+          isError: true,
+          body: {
+            error: `'${d.label}' must be one of: ${describeEnvVarOptions(d.options)}.`,
+            hint: 'Ask the user which one applies and pass its value exactly as listed (the value, not the label), or install without it: they can choose it on the page linked in the answer.',
+          },
+        };
+      }
+      if (text && !d.options?.length && d.pattern && !matchesPattern(d.pattern, text)) {
         // Secrets never get here, so the fixed address can be named.
         const fix = d.kind !== 'credential' ? addressFix(d.pattern, text) : undefined;
         return {
@@ -420,6 +503,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     const state = await this.connectorState(imported.connectorId);
     if (state.status === 'ready') {
       return {
+        connectorId: imported.connectorId,
         body: {
           installed: definition.name,
           status: 'ready',
@@ -432,6 +516,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     }
     const link = await this.createLink(ctx, imported.connectorId);
     return {
+      connectorId: imported.connectorId,
       body: {
         installed: definition.name,
         status: state.status,
@@ -491,7 +576,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     return {
       error: reason,
       whatTheUserCanDo: onTrial
-        ? 'Add a card to continue the trial on the full plan (nothing is charged before the trial ends), or remove a connector.'
+        ? 'Add a payment method to continue the trial on the full plan (nothing is charged before the trial ends), or remove a connector.'
         : 'Choose a plan with more connectors, or remove a connector.',
       upgradeUrl: `${ctx.dashboardBase}${onTrial ? '/start-trial' : '/settings/license'}?source=${CHAT_SETUP_SOURCE}`,
     };
@@ -629,8 +714,13 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     const out = [];
     let unfinished = 0;
     let refused = 0;
+    let approved = 0;
     for (const { row: r, state } of states) {
       const check = checks.get(r.id);
+      // The provider approved the user's app (Etsy: it left Pending) and only
+      // the sign-in is left: said first, with the link of the approval email.
+      const appApproved = state.status === 'needs_authorization' && appApprovalAnnounced(r.config);
+      if (appApproved) approved++;
       // A catalog connector added (mostly from a chat) whose values were never
       // entered: 28 of the 41 WooCommerce connectors never called in Oct-Nov
       // 2026 still held {{WOOCOMMERCE_URL}}, their link long expired. After a
@@ -648,6 +738,7 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
         name: r.name,
         status: state.status,
         ...(state.status !== 'ready' ? { finishSetupUrl: await this.createLink(ctx, r.id) } : {}),
+        ...(appApproved ? { appApproved: true, finishSignInUrl: `${ctx.dashboardBase}${signInPath(r.id)}` } : {}),
         ...(waiting ? { unfinishedSince: r.createdAt.toISOString() } : {}),
         ...(credentialRefused
           ? {
@@ -666,6 +757,12 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     const trial = await this.trialAnswer(ctx);
     return {
       body: {
+        ...(approved
+          ? {
+              appApprovedHint:
+                "appApproved: the provider approved the user's app for that connector; only the sign-in is left. Before anything else, tell the user and show them its finishSignInUrl as a clickable link: it starts the provider's sign-in.",
+            }
+          : {}),
         connectors: out,
         ...(out.length === 0 ? { hint: 'No connectors yet: use setup_find_connectors.' } : {}),
         ...([...checks.values()].some((c) => c.check?.ok === false)

@@ -185,6 +185,10 @@ x-backend: &backend
     - META_PLATFORM_APP_SECRET=${META_PLATFORM_APP_SECRET:-}
     - META_PLATFORM_CONFIG_ID=${META_PLATFORM_CONFIG_ID:-}
     - META_PLATFORM_ORG_IDS=${META_PLATFORM_ORG_IDS:-}
+    # One-tap Telegram bot: off unless the manager bot's token is set (see .env.example).
+    - TELEGRAM_MANAGER_BOT_TOKEN=${TELEGRAM_MANAGER_BOT_TOKEN:-}
+    - TELEGRAM_MANAGER_WEBHOOK_SECRET=${TELEGRAM_MANAGER_WEBHOOK_SECRET:-}
+    - TELEGRAM_MANAGED_BOT_ORG_IDS=${TELEGRAM_MANAGED_BOT_ORG_IDS:-}
     # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
     # a private docker IP, which the guard blocks by default). Harmless on
     # self-host (no such host on their network).
@@ -200,6 +204,14 @@ x-backend: &backend
     # /.well-known/openai-apps-challenge. Unset = route answers 404.
     - OPENAI_APPS_CHALLENGE_TOKEN=${OPENAI_APPS_CHALLENGE_TOKEN:-}
     - KG_LLM_REDACT_INTENTS=${KG_LLM_REDACT_INTENTS:-true}
+    # Scheduled AI extension: the kg-discovery cron extends the graph and the
+    # skills of workspaces that turned the switch on, only when this is true.
+    # These four were never passed to the container, so the job could not be
+    # turned on from the droplet's .env.
+    - KG_LLM_CRON_ENABLED=${KG_LLM_CRON_ENABLED:-false}
+    - KG_LLM_MIN_INTERVAL_HOURS=${KG_LLM_MIN_INTERVAL_HOURS:-24}
+    - KG_LLM_CRON_MAX_ORGS=${KG_LLM_CRON_MAX_ORGS:-20}
+    - KG_LLM_BATCH=${KG_LLM_BATCH:-false}
     # System (operator) transactional-email fallback — used when a workspace
     # hasn't set its own SMTP (e.g. Resend). Read only by the email sender,
     # never exposed to workspace admins. Set these in the droplet .env.
@@ -432,7 +444,7 @@ services:
         max-file: "5"
 
   file-extractor:
-    image: ${FILE_EXTRACTOR_IMAGE:-anythingmcp-file-extractor:3}
+    image: ${FILE_EXTRACTOR_IMAGE:-anythingmcp-file-extractor:4}
     build:
       context: ./deploy/ee/file-extractor
     profiles: [files]

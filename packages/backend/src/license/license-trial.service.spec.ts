@@ -27,11 +27,17 @@ function httpError(status?: number) {
   return { response: status === undefined ? undefined : { status }, message: `HTTP ${status}` };
 }
 
-function makeService(opts: { isCloud?: boolean; users?: any[] } = {}) {
+function makeService(opts: { isCloud?: boolean; users?: any[]; workspace?: any } = {}) {
   const isCloud = opts.isCloud ?? true;
   const prisma = {
     license: { upsert: jest.fn(async () => ({})) },
     user: { findMany: jest.fn(async () => opts.users ?? []) },
+    // The workspace as the background retry reads it: still there, no licence.
+    organization: {
+      findUnique: jest.fn(async () =>
+        'workspace' in opts ? opts.workspace : { id: 'org-1', licenses: [] },
+      ),
+    },
   };
   const siteSettings = {
     get: jest.fn(async (k: string) => (k === 'instance_id' ? 'instance-1' : null)),
@@ -244,5 +250,151 @@ describe('LicenseService — repairMissingTrials', () => {
     const [args] = prisma.license.upsert.mock.calls[0] as any[];
     expect(args.create.status).toBe('active');
     expect(args.update.status).toBe('active');
+  });
+});
+
+/**
+ * 14 Nov 2026: the licence site did not answer for half a minute, a new user
+ * waited 33 seconds in the Google sign-in callback for three attempts of 10
+ * seconds each, and then had no trial until the hourly repair, half an hour
+ * later. A sign-up now makes one attempt and leaves the rest to the background.
+ */
+describe('LicenseService — trial at sign-up', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Each test queues exactly the answers it needs.
+    mockedAxios.post.mockReset();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  /** Let the timers due in `ms` fire and their promises settle. */
+  const pass = async (ms: number) => {
+    await jest.advanceTimersByTimeAsync(ms);
+  };
+
+  it('asks once while the user waits, not three times', async () => {
+    mockedAxios.post.mockRejectedValue(httpError(undefined));
+    const { svc } = makeService();
+
+    await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toThrow(
+      /Failed to start trial/,
+    );
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    await svc.onModuleDestroy();
+  });
+
+  it('returns the trial when the first attempt works, and plans no retry', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ data: TRIAL_RESPONSE } as any);
+    const { svc, prisma } = makeService();
+
+    const result = await svc.requestTrialAtSignup('user@example.com', 'User', 'org-1');
+    await pass(10 * 60_000);
+
+    expect(result.licenseKey).toBe(TRIAL_RESPONSE.licenseKey);
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    expect(prisma.organization.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('asks again in the background after 30 seconds and stores the trial it gets', async () => {
+    mockedAxios.post
+      .mockRejectedValueOnce(httpError(undefined))
+      .mockResolvedValueOnce({ data: TRIAL_RESPONSE } as any);
+    const { svc, prisma } = makeService();
+
+    await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toThrow();
+    await pass(29_000);
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+
+    await pass(2_000);
+    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+    expect(prisma.license.upsert).toHaveBeenCalledTimes(1);
+    expect((prisma.license.upsert.mock.calls[0] as any[])[0].create.organizationId).toBe('org-1');
+
+    // Done: nothing more is asked later.
+    await pass(10 * 60_000);
+    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('tries three times in the background (30 s, 2 min, 5 min) and then leaves it to the hourly repair', async () => {
+    mockedAxios.post.mockRejectedValue(httpError(503));
+    const { svc } = makeService();
+
+    await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toThrow();
+    await pass(31_000);
+    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+    await pass(121_000);
+    expect(mockedAxios.post).toHaveBeenCalledTimes(3);
+    await pass(301_000);
+    expect(mockedAxios.post).toHaveBeenCalledTimes(4);
+
+    await pass(60 * 60_000);
+    expect(mockedAxios.post).toHaveBeenCalledTimes(4);
+  });
+
+  it('stops when the workspace got a licence another way, or was deleted', async () => {
+    for (const workspace of [{ id: 'org-1', licenses: [{ id: 'lic-1' }] }, null]) {
+      mockedAxios.post.mockReset();
+      mockedAxios.post.mockRejectedValue(httpError(undefined));
+      const { svc } = makeService({ workspace });
+
+      await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toThrow();
+      await pass(10 * 60_000);
+
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('keeps one chain of retries per workspace when sign-up is repeated', async () => {
+    mockedAxios.post.mockRejectedValue(httpError(undefined));
+    const { svc } = makeService();
+
+    await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toThrow();
+    await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toThrow();
+    expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+
+    await pass(31_000);
+    // One background attempt, not two.
+    expect(mockedAxios.post).toHaveBeenCalledTimes(3);
+    await svc.onModuleDestroy();
+  });
+
+  it('does not retry a trial that has already ended', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: { ...TRIAL_RESPONSE, expiresAt: new Date(Date.now() - 1000).toISOString(), trialDaysLeft: 0 },
+    } as any);
+    const { svc } = makeService();
+
+    await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toBeInstanceOf(
+      TrialAlreadyEndedError,
+    );
+    await pass(10 * 60_000);
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('plans nothing on a self-hosted install', async () => {
+    mockedAxios.post.mockRejectedValue(httpError(undefined));
+    const { svc } = makeService({ isCloud: false });
+
+    await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toThrow();
+    await pass(10 * 60_000);
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the pending retries on shutdown', async () => {
+    mockedAxios.post.mockRejectedValue(httpError(undefined));
+    const { svc } = makeService();
+
+    await expect(svc.requestTrialAtSignup('user@example.com', 'User', 'org-1')).rejects.toThrow();
+    await svc.onModuleDestroy();
+    await pass(10 * 60_000);
+
+    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
   });
 });

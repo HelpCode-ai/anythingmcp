@@ -92,6 +92,16 @@ export const SecurityEvents = {
    * their mode, or the member opted out / back in. One row per member.
    */
   LEARNING_CHANGED: 'LEARNING_CHANGED',
+  /** An admin started a learning project for a member on an MCP server. */
+  LEARNING_PROJECT_CREATED: 'LEARNING_PROJECT_CREATED',
+  /** The member of a learning project accepted it, declined it or stopped it. */
+  LEARNING_PROJECT_CONSENT: 'LEARNING_PROJECT_CONSENT',
+  /** A learning project was paused, resumed or ended. */
+  LEARNING_PROJECT_STATUS: 'LEARNING_PROJECT_STATUS',
+  /** A topic's confirmed lessons were published as a skill for everyone. */
+  LEARNING_PUBLISHED: 'LEARNING_PUBLISHED',
+  /** Lessons of a learning project were erased, by its member or with the project. */
+  LEARNING_ERASED: 'LEARNING_ERASED',
   /** An admin changed what a member may do with workspace memory. One row per member. */
   MEMORY_ACCESS_CHANGED: 'MEMORY_ACCESS_CHANGED',
   /** The workspace's memory default access or organization write mode changed. */
@@ -112,7 +122,11 @@ export const SecurityEvents = {
   /** Cloud: the support desk installed a connector from a credential the user posted in the support chat. */
   CONNECTOR_INSTALLED_VIA_SUPPORT_CHAT: 'CONNECTOR_INSTALLED_VIA_SUPPORT_CHAT',
   // ── Licence plane ───────────────────────────────────────────────────────
-  /** Cloud: the workspace's trial was extended by 7 days from the email link. */
+  /**
+   * Cloud: the workspace's trial was extended by 7 days, from the email link
+   * (metadata.via 'email_link') or by the server when a provider approved the
+   * user's app after the trial had run out (metadata.via 'app_approved').
+   */
   TRIAL_EXTENDED: 'TRIAL_EXTENDED',
   /** Cloud: an admin switched invoices by email on or off, or changed their address (recipient domain only). */
   INVOICE_EMAIL_CHANGED: 'INVOICE_EMAIL_CHANGED',

@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { McpEndpointController } from './mcp-endpoint.controller';
+import { McpClientSeenRegistry, type McpClientSeen } from './mcp-client-seen';
 import * as toolset from './shared-toolset';
 import { withRegistryIndexes } from './registry-test-double';
 
@@ -19,7 +20,7 @@ describe('shared /mcp: shared_tool_called', () => {
     jest.restoreAllMocks();
   });
 
-  function build(withEvents: boolean) {
+  function build(withEvents: boolean, clientSeen?: McpClientSeenRegistry) {
     const productEvents = { log: jest.fn().mockResolvedValue(undefined) };
     const prisma = {
       productEvent: { findMany: jest.fn().mockResolvedValue([]) },
@@ -45,6 +46,9 @@ describe('shared /mcp: shared_tool_called', () => {
       undefined,
       withEvents ? (productEvents as any) : undefined,
       withEvents ? (prisma as any) : undefined,
+      undefined,
+      undefined,
+      clientSeen,
     );
     (controller as any).serveStateless = jest.fn(
       async (_req: unknown, _res: unknown, _body: unknown, factory: () => McpServer) => {
@@ -93,6 +97,68 @@ describe('shared /mcp: shared_tool_called', () => {
     expect(provider.find).toHaveBeenCalledWith(expect.anything(), { query: 'telegram' }, { via: 'mcp_search_fallback' });
     expect(provider.install).toHaveBeenCalledWith(expect.anything(), { adapter: 'telegram-bot' }, undefined);
     register.mockRestore();
+  });
+
+  describe('a tools/list tells whoever listens that the workspace\'s client is connected', () => {
+    const listing = (user: Record<string, unknown>) =>
+      ({ user, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' }, headers: { host: 'x' } }) as any;
+    const USER = { sub: 'u1', organizationId: 'org-1', authMethod: 'oauth', azp: 'client-claude' };
+
+    it('with the connection\'s workspace and user, on every listing and for no other request', async () => {
+      const register = jest.spyOn(toolset, 'registerSharedToolset').mockImplementation(() => undefined);
+      const clientSeen = new McpClientSeenRegistry();
+      const heard: McpClientSeen[] = [];
+      clientSeen.register((seen) => heard.push(seen));
+      const { controller, productEvents } = build(true, clientSeen);
+
+      await controller.handleGlobalPost({ ...listing(USER), body: { method: 'initialize' } }, {} as any);
+      await controller.handleGlobalPost({ ...listing(USER), body: { method: 'tools/call', params: { name: 'x' } } }, {} as any);
+      expect(heard).toEqual([]);
+
+      await controller.handleGlobalPost(listing(USER), {} as any);
+      await controller.handleGlobalPost(listing(USER), {} as any);
+      await new Promise((r) => setImmediate(r));
+      // Twice: the once-a-day rule is the event's, not the listeners'.
+      expect(heard).toEqual([
+        { organizationId: 'org-1', userId: 'u1' },
+        { organizationId: 'org-1', userId: 'u1' },
+      ]);
+      expect(productEvents.log.mock.calls.filter((c) => c[0].event === 'mcp_tools_listed')).toHaveLength(1);
+      register.mockRestore();
+    });
+
+    it('also without the events service, and a request without a workspace tells nothing', async () => {
+      const register = jest.spyOn(toolset, 'registerSharedToolset').mockImplementation(() => undefined);
+      const clientSeen = new McpClientSeenRegistry();
+      const heard: McpClientSeen[] = [];
+      clientSeen.register((seen) => heard.push(seen));
+      const { controller } = build(false, clientSeen);
+      await controller.handleGlobalPost(listing({ sub: 'u1', authMethod: 'oauth' }), {} as any);
+      expect(heard).toEqual([]);
+      await controller.handleGlobalPost(listing(USER), {} as any);
+      expect(heard).toEqual([{ organizationId: 'org-1', userId: 'u1' }]);
+      register.mockRestore();
+    });
+
+    it('is never failed or held up by a listener: one that throws is skipped, and nothing is awaited', async () => {
+      const register = jest.spyOn(toolset, 'registerSharedToolset').mockImplementation(() => undefined);
+      const clientSeen = new McpClientSeenRegistry();
+      const later = jest.fn();
+      clientSeen.register(() => {
+        throw new Error('listener broke');
+      });
+      // What a listener returns is not looked at: a promise that never settles holds nothing up.
+      clientSeen.register((() => new Promise(() => undefined)) as any);
+      clientSeen.register(later);
+      const { controller } = build(true, clientSeen);
+      const serve = (controller as any).serveStateless as jest.Mock;
+
+      await expect(controller.handleGlobalPost(listing(USER), {} as any)).resolves.toBeUndefined();
+      expect(later).toHaveBeenCalledWith({ organizationId: 'org-1', userId: 'u1' });
+      // The listing itself was answered as always.
+      expect(serve).toHaveBeenCalledTimes(1);
+      register.mockRestore();
+    });
   });
 
   it('reports nothing when the events service is not there', async () => {

@@ -1,5 +1,12 @@
 import { getAdapter, listAdapters } from './catalog';
-import { carriedSetupValues, describeAdapterEnvVars, labelFromName, setupKind } from './env-var-meta';
+import {
+  carriedSetupValues,
+  describeAdapterEnvVars,
+  describeEnvVarOptions,
+  envVarOptions,
+  labelFromName,
+  setupKind,
+} from './env-var-meta';
 
 describe('carriedSetupValues', () => {
   it('carries the Odoo address and database to the JSON-RPC setup, never the key', () => {
@@ -61,6 +68,70 @@ describe('describeAdapterEnvVars', () => {
       );
       for (const d of described) expect(d.label.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('describeAdapterEnvVars — a fixed list of choices (envVarMeta.options)', () => {
+  const countries = [
+    { value: 'https://fr.market.example.test', label: 'France' },
+    { value: 'https://es.market.example.test', label: 'Spain' },
+  ];
+  const market = (meta: Record<string, unknown>) =>
+    ({
+      slug: 'acme-market',
+      connector: { type: 'REST', authType: 'API_KEY', baseUrl: '{{ACME_MARKET_URL}}/api' },
+      requiredEnvVars: ['ACME_MARKET_URL', 'ACME_MARKET_API_KEY'],
+      optionalEnvVars: ['ACME_MARKET_LOCALE'],
+      envVarMeta: { ACME_MARKET_URL: { label: 'Country', ...meta } },
+    }) as unknown as Parameters<typeof describeAdapterEnvVars>[0];
+  const described = (meta: Record<string, unknown>) =>
+    Object.fromEntries(describeAdapterEnvVars(market(meta)).map((d) => [d.name, d]));
+
+  it('carries the choices on the descriptor, next to what the name gives', () => {
+    const out = described({ options: countries, help: 'The country you sell in.' });
+    expect(out.ACME_MARKET_URL).toEqual({
+      name: 'ACME_MARKET_URL',
+      required: true,
+      label: 'Country',
+      kind: 'address',
+      secret: false,
+      help: 'The country you sell in.',
+      options: countries,
+    });
+    // A copy: nothing downstream can change the catalog entry.
+    expect(out.ACME_MARKET_URL.options).not.toBe(countries);
+  });
+
+  it('adds nothing to a variable without choices', () => {
+    const out = described({ options: countries });
+    expect(out.ACME_MARKET_API_KEY).toEqual({
+      name: 'ACME_MARKET_API_KEY',
+      required: true,
+      label: 'Market API Key',
+      kind: 'credential',
+      secret: true,
+    });
+    expect('options' in out.ACME_MARKET_LOCALE).toBe(false);
+    expect('options' in described({}).ACME_MARKET_URL).toBe(false);
+  });
+
+  it('leaves out entries that are not a value and a label, and the field when none is left', () => {
+    const out = described({
+      options: [countries[0], null, 'es', { value: '', label: 'Empty' }, { value: 'x' }, { value: 7, label: 'Seven' }, { ...countries[0], label: 'Again' }, countries[1]],
+    });
+    expect(out.ACME_MARKET_URL.options).toEqual(countries);
+    for (const options of ['fr,es', {}, [], [{ label: 'No value' }]]) {
+      expect('options' in described({ options }).ACME_MARKET_URL).toBe(false);
+    }
+  });
+
+  it('reads the choices of a meta entry, and names them in a sentence', () => {
+    expect(envVarOptions(undefined)).toBeUndefined();
+    expect(envVarOptions({})).toBeUndefined();
+    expect(envVarOptions({ options: countries })).toEqual(countries);
+    expect(describeEnvVarOptions([...countries, { value: 'eu', label: 'eu' }])).toBe(
+      'France (https://fr.market.example.test), Spain (https://es.market.example.test), eu',
+    );
   });
 });
 

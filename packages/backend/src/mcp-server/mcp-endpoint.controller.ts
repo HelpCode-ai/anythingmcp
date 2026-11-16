@@ -1,4 +1,11 @@
 import { APP_VERSION } from '../common/app-version';
+import { FileUploadService } from '../file-uploads/file-upload.service';
+import {
+  FILE_PUBLIC_URL_TOOL,
+  FILE_UPLOAD_LINK_TOOL,
+  fileParamNames,
+  withFileRefHints,
+} from '../file-uploads/file-upload-params';
 import {
   Controller,
   Post,
@@ -16,6 +23,8 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
+import { LearningService, type ActiveLearning } from '../ee/learning/learning.service';
+import { learningFooter, learningInstruction, learningToolEntries } from '../ee/learning/learning-tools';
 import { McpServer, isLegacyRequest } from '@modelcontextprotocol/server';
 import {
   NodeStreamableHTTPServerTransport as StreamableHTTPServerTransport,
@@ -36,7 +45,8 @@ import { processGauges } from '../common/process-vitals';
 import { ToolRegistry, RegisteredTool, isListable } from './tool-registry';
 import { slugifyForPrefix } from '../connectors/graphql-builtins';
 import { SharedSetupRegistry, type SetupCallOptions } from './shared-setup';
-import { SharedToolCallRecorder } from './shared-tool-calls';
+import { SharedToolCallRecorder, ToolsListedRecorder } from './shared-tool-calls';
+import { McpClientSeenRegistry } from './mcp-client-seen';
 import { ProductEventService } from '../audit/product-event.service';
 import { PrismaService } from '../common/prisma.service';
 import {
@@ -102,6 +112,7 @@ import {
   type FolderAccess,
 } from '../knowledge-folders/knowledge-folders.service';
 import { outputSchemaToZodShape } from '../connectors/output-schema.util';
+import { signInPath } from '../adapters/app-approval-watch';
 import {
   annotationsSignature,
   deriveToolAnnotations,
@@ -217,6 +228,10 @@ interface ToolSetParams {
    *  + the inlineCode role capability + a configured runner): offers
    *  code_execute over these connectors. */
   inlineCode?: { connectorIds: string[] };
+  /** Set when the caller is the member of an active learning project on this
+   *  server: offers learning_record / learning_review / learning_confirm and
+   *  reminds the model after a tool that changed something. */
+  learning?: ActiveLearning;
 }
 
 interface InvocationContext {
@@ -337,12 +352,17 @@ export class McpEndpointController {
     @Optional() productEvents?: ProductEventService,
     @Optional() prisma?: PrismaService,
     @Optional() private readonly refusals?: CrossWorkspaceRefusalStore,
+    @Optional() private readonly learning?: LearningService,
+    @Optional() private readonly clientSeen?: McpClientSeenRegistry,
+    @Optional() private readonly fileUploads?: FileUploadService,
   ) {
     this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
+    this.toolsListed = productEvents && prisma ? new ToolsListedRecorder(prisma, productEvents) : null;
   }
 
   /** Records which shared /mcp tools a workspace calls (once a day per tool). */
   private readonly sharedCalls: SharedToolCallRecorder | null;
+  private readonly toolsListed: ToolsListedRecorder | null;
 
   /** The caller's knowledge-folder access in a workspace (null without the module). */
   private async folderAccessFor(organizationId: string, userId?: string | null) {
@@ -439,6 +459,7 @@ export class McpEndpointController {
       return;
     }
     const visible = await this.attachVisibleTools(req);
+    this.noteToolsListed(req);
     // The fixed tool set (see shared-toolset.ts). Operator credentials
     // (`visible === null`) keep the direct tools: they only exist on a
     // single-tenant self-hosted box.
@@ -641,6 +662,9 @@ export class McpEndpointController {
       },
       connectors: (ids) => this.mcpServersService.getConnectorSummaries(ids),
       connectorUrl: (id) => `${dashboardBase}/connectors/${encodeURIComponent(id)}`,
+      // The link of the "your app was approved" email: the same page, opened
+      // so that the provider's sign-in starts.
+      signInUrl: (id) => `${dashboardBase}${signInPath(id)}`,
       // The workspace this connection mainly reaches: an ended trial is said
       // up front in anythingmcp_list_connectors, with the reactivation link.
       trialEnded: () => this.toolExecutor.trialEndedNotice(setupOrg || organizationId || undefined, user.sub),
@@ -959,6 +983,37 @@ export class McpEndpointController {
       },
     });
     return true;
+  }
+
+  /**
+   * Records that a client listed the tools of the shared endpoint (see
+   * ToolsListedRecorder), and tells McpClientSeenRegistry. Runs after the
+   * grant is resolved, so the workspace is the one this connection reaches.
+   * Never awaited.
+   */
+  private noteToolsListed(req: Request): void {
+    if (!this.toolsListed && !this.clientSeen) return;
+    const body = (req as any).body;
+    if (!body || Array.isArray(body) || body.method !== 'tools/list') return;
+    const user = (req as any).user;
+    const grant = (req as { mcpGrant?: ResolvedGrant | null }).mcpGrant ?? null;
+    const organizationId =
+      grant?.mode === 'organization'
+        ? grant.organizationId
+        : grant?.mode === 'servers'
+          ? grant.servers[0]?.organizationId
+          : user?.organizationId;
+    if (typeof organizationId !== 'string' || !organizationId) return;
+    const userId = typeof user?.sub === 'string' ? user.sub : null;
+    // On every listing, not once a day like the event: a listener hears that
+    // this workspace's client is connected now (the one-tap Telegram bot then
+    // tells its creator). It returns at once and cannot throw.
+    this.clientSeen?.notify({ organizationId, userId });
+    void this.toolsListed?.record({
+      organizationId,
+      userId,
+      oauthClientId: oauthClientId(user ?? {}),
+    });
   }
 
   /**
@@ -1428,9 +1483,25 @@ export class McpEndpointController {
       mcpServerConfig.organizationId,
       user?.sub,
     );
-    const instructions = captureIntent
-      ? [content.instructions, INTENT_INSTRUCTION].filter(Boolean).join('\n\n')
-      : content.instructions;
+    // The caller's active learning project on this server, if they are the
+    // member of one (and accepted it): its tools and a note in the instructions.
+    const learning =
+      (await this.learning
+        ?.activeFor(mcpServerConfig.organizationId, user?.sub, serverId)
+        .catch((e: any) => {
+          this.logger.warn(`Learning project lookup failed on server ${serverId}: ${e?.message ?? e}`);
+          return null;
+        })) ?? undefined;
+    const instructions =
+      captureIntent || learning
+        ? [
+            content.instructions,
+            captureIntent ? INTENT_INSTRUCTION : null,
+            learning ? learningInstruction(learning) : null,
+          ]
+            .filter(Boolean)
+            .join('\n\n')
+        : content.instructions;
 
     // A server/discover probe, once the caller may reach this server, reads
     // the name, capabilities and instructions only: answered without
@@ -1532,6 +1603,7 @@ export class McpEndpointController {
       memory: withFolders(await this.memory?.caller(mcpServerConfig.organizationId, user?.sub), folderAccess),
       folders: folderAccess,
       inlineCode,
+      learning,
     };
 
     // Register this server's tool surface onto the per-request McpServer.
@@ -1960,6 +2032,10 @@ export class McpEndpointController {
         memory: withFolders(await this.memory?.caller(serverOrganizationId, user?.sub), folderAccess),
         folders: folderAccess,
         inlineCode,
+        learning:
+          (await this.learning
+            ?.activeFor(serverOrganizationId, user?.sub, serverId)
+            .catch(() => null)) ?? undefined,
       });
       const signature = this.aggregateSig(entries);
       if (signature === session.signature) return; // nothing changed here
@@ -1995,6 +2071,90 @@ export class McpEndpointController {
   }
 
   /**
+   * file_upload_link and file_public_url: how an AI client hands a file it
+   * created (in its code sandbox) to a connector tool. The workspace and the
+   * user come from the MCP session, never from the arguments.
+   */
+  private fileUploadEntries(invocationContext: InvocationContext, registeredNames: Set<string>): ToolEntry[] {
+    const uploads = this.fileUploads;
+    const orgId = invocationContext.organizationId;
+    if (!uploads || !orgId) return [];
+    const asText = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
+    const asError = (err: unknown) => ({
+      content: [{ type: 'text' as const, text: (err as { message?: string })?.message ?? String(err) }],
+      isError: true,
+    });
+    const out: ToolEntry[] = [];
+    if (!registeredNames.has(FILE_UPLOAD_LINK_TOOL)) {
+      const description =
+        'Upload a file you created (in your code sandbox) so a connector tool can use it, when the tool asks for a file URL and the file ' +
+        'has no public link: a listing photo, a ZIP for a digital product, a PDF, a video. Returns a one-time upload URL, the curl command to ' +
+        'run in your sandbox, and a file_ref ("amcp-file:<id>"). Pass file_ref as the tool\'s file parameter (e.g. file_url, image_url). ' +
+        'Files are deleted a few hours after upload. Program files are refused.';
+      out.push({
+        name: FILE_UPLOAD_LINK_TOOL,
+        sig: `${FILE_UPLOAD_LINK_TOOL}|${description}`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            FILE_UPLOAD_LINK_TOOL,
+            {
+              description,
+              inputSchema: {
+                filename: z.string().describe('File name with its extension, e.g. "mug-front.png" or "planner-pages.zip".'),
+                size_bytes: z.number().int().positive().optional().describe('The file size in bytes, if known: refused early when over the limit.'),
+              },
+              annotations: { title: 'Upload a file', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+            },
+            async (args: { filename: string; size_bytes?: number }) => {
+              try {
+                return asText(
+                  await uploads.createLink({
+                    organizationId: orgId,
+                    userId: invocationContext.userId ?? null,
+                    mcpServerId: invocationContext.mcpServerId ?? null,
+                    filename: args.filename,
+                    sizeBytes: args.size_bytes ?? null,
+                  }),
+                );
+              } catch (err) {
+                return asError(err);
+              }
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+    if (!registeredNames.has(FILE_PUBLIC_URL_TOOL)) {
+      const description =
+        'A public download link (valid one hour) for a file uploaded with file_upload_link, for tools where the app fetches the file ' +
+        'itself from a URL (e.g. a product image src). Images (JPG, PNG, GIF, WebP), videos (MP4, MOV) and PDFs only. Anyone with the link ' +
+        'can download the file until it expires, so prefer passing file_ref directly when the tool takes a file.';
+      out.push({
+        name: FILE_PUBLIC_URL_TOOL,
+        sig: `${FILE_PUBLIC_URL_TOOL}|${description}`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            FILE_PUBLIC_URL_TOOL,
+            {
+              description,
+              inputSchema: {
+                file_ref: z.string().describe('The "amcp-file:<id>" reference from file_upload_link.'),
+              },
+              annotations: { title: 'Public link to an uploaded file', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+            },
+            async (args: { file_ref: string }) => {
+              try {
+                return asText(await uploads.publicUrl(args.file_ref, orgId));
+              } catch (err) {
+                return asError(err);
+              }
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+    return out;
+  }
+
+  /**
    * Compute the ordered set of tool registrations for a server, plus a content
    * signature used to detect when the set has actually changed. Pure: builds
    * registration thunks but does not touch any McpServer.
@@ -2011,6 +2171,7 @@ export class McpEndpointController {
     const registeredNames = new Set<string>();
     // The connector that holds each bare name.
     const bareOwner = new Map<string, string>();
+    const uploadsOn = !!(this.fileUploads?.enabled() && invocationContext.organizationId);
     const listed = serverTools.filter(
       (tool) =>
         // A connector that is not set up yet would only produce errors.
@@ -2051,10 +2212,14 @@ export class McpEndpointController {
       if (registeredNames.has(exposedName)) continue;
       registeredNames.add(exposedName);
 
-      const schema = this.stripEnvVarParams(
+      const stripped = this.stripEnvVarParams(
         tool.parameters,
         tool.connectorConfig.envVars,
       );
+      // A file parameter also takes an uploaded file's reference (amcp-file:).
+      const schema = uploadsOn
+        ? withFileRefHints(stripped, tool.endpointMapping?.bodyMapping)
+        : stripped;
       const zodShape = this.jsonSchemaToZodShape(schema);
       if (captureIntent) {
         zodShape._intent = z.string().optional().describe(INTENT_DESCRIPTION);
@@ -2091,15 +2256,26 @@ export class McpEndpointController {
         annotationsSignature(annotations),
       ].join('');
 
+      // A correction usually follows a tool that changed something: that is
+      // where the member of a learning project's model is reminded to keep it.
+      const footer =
+        [
+          resultFooter,
+          params.learning && annotations.readOnlyHint !== true ? learningFooter(params.learning) : null,
+        ]
+          .filter(Boolean)
+          .join('\n\n') || undefined;
+
       entries.push({
         name: exposedName,
-        sig,
+        // The footer is part of what a live session registered.
+        sig: footer ? `${sig}|${footer}` : sig,
         register: (mcpServer: McpServer) => {
           const withFooter = (r: any) => {
-            if (!resultFooter || r?.isError || !Array.isArray(r?.content)) return r;
+            if (!footer || r?.isError || !Array.isArray(r?.content)) return r;
             return {
               ...r,
-              content: [...r.content, { type: 'text' as const, text: resultFooter }],
+              content: [...r.content, { type: 'text' as const, text: footer }],
             };
           };
           const handler = async (args: any) => {
@@ -2180,6 +2356,14 @@ export class McpEndpointController {
           ) as unknown as ToolHandle;
         },
       });
+    }
+
+    // Agent file uploads: only on servers with a tool that sends a file.
+    if (uploadsOn && listed.some((t) => fileParamNames(t.endpointMapping?.bodyMapping).length > 0)) {
+      for (const entry of this.fileUploadEntries(invocationContext, registeredNames)) {
+        registeredNames.add(entry.name);
+        entries.push(entry);
+      }
     }
 
     // Inject the org-level Knowledge Graph helper tool. Lets the agent ask
@@ -2360,6 +2544,20 @@ export class McpEndpointController {
     if (params.memory && this.memory && invocationContext.mcpServerId) {
       for (const entry of this.memoryEntries(params.memory, invocationContext, registeredNames)) {
         entries.push(entry);
+      }
+    }
+
+    // Learning project: offered to its member only, on its server only. A
+    // connector tool with the same name keeps its name.
+    if (params.learning && this.learning && invocationContext.mcpServerId) {
+      for (const entry of learningToolEntries(this.learning, params.learning)) {
+        if (registeredNames.has(entry.name)) continue;
+        registeredNames.add(entry.name);
+        entries.push({
+          name: entry.name,
+          sig: entry.sig,
+          register: (mcpServer: McpServer) => entry.register(mcpServer) as ToolHandle,
+        });
       }
     }
 

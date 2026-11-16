@@ -1,0 +1,1832 @@
+{
+  "slug": "miravia",
+  "name": "Miravia Seller",
+  "aliases": [
+    "Miravia Open Platform",
+    "Miravia Seller Center",
+    "Miravia AliExpress M2A"
+  ],
+  "description": "Let your AI run your Miravia shop, the Alibaba group's marketplace in Spain, with the AliExpress orders and listings that come with it: orders and item lines, packing, tracking and ready-to-ship, shipping labels, products with price and stock, categories and brands, returns and refunds. Cancellations, refund decisions and product removal are installed switched off.",
+  "region": "es",
+  "category": "e-commerce",
+  "icon": "miravia",
+  "docsUrl": "https://open.miravia.com/apps/doc/api",
+  "instructions": "## Miravia Seller\nThis connector works with the **Miravia Open Platform** API (`https://api.miravia.es/rest`) for a seller on Miravia, the Alibaba group's marketplace in Spain: orders and their item lines, packing, tracking and ready-to-ship, shipping labels, products with price and stock, categories and brands, returns and refunds. Miravia and AliExpress work as an alliance (Miravia calls it M2A): the same account also carries the shop's AliExpress orders and listings, through the same calls, marked `marketplace: ae`.\n\n**What you need**: a Miravia seller account, a Miravia Open Platform account with a **Seller Profile** and a **Seller In House App** there. About 20 minutes, plus Miravia's approval of the app for production use.\n\n**Setup**\n1. Open https://open.miravia.com and create an Open Platform account (email and password, then the 6-digit code Miravia emails you). When Miravia asks for the profile, choose **Seller Profile** and log in with your Seller Center account: the profile is created after that login.\n2. In the **App Console** apply for the app category **Seller In House App** (Miravia wants the category permission before an app is created; a seller can have at most 5 such apps). Then click **Create App** and fill in **App Name**, **Callback URL**, **Description** and **App Logo** (jpg or png, about 100x100 px). The Callback URL is this server's address followed by `/api/iop-auth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/iop-auth/callback`).\n3. The app now appears on the App Management dashboard. Click **Manage** to open it and copy the App Key into `MIRAVIA_APP_KEY` and the App Secret into `MIRAVIA_APP_SECRET`.\n4. Miravia's tutorial puts two things between a new app key and production: pass **Integration validation** in the App Console (one orders scene, Orders single or Orders multiple, and either the Product or the Feed scene; with the validation method **File** you fill in Miravia's template and click **Start test** in the console), then open the app with **Manage** and, under **Basic Information**, click **Apply Online** next to **App Status** and give a reason. Once Miravia approves the request the status changes to **Online**. The tutorial does not say how long that takes.\n5. On the connector page click **Authorize**. Miravia's sign-in page opens: sign in with the seller account of the shop and approve. Miravia sends you back with a code, which AnythingMCP exchanges for the shop's tokens. AnythingMCP opens `https://auth.miravia.com/apps/oauth/authorize`; if Miravia shows an error there, compare that address with the authorization URL the App Console shows for your app under **Manage**.\n\n**Tokens**: per Miravia's guide the access token lasts 14 days and the refresh token 712 days (about two years). AnythingMCP reads the real lifetimes from Miravia's token answer (`expires_in` and `refresh_expires_in`, in seconds), renews the access token on its own and adds it to every call: there is no token to paste. When the refresh token ends, or Miravia refuses it, the connector asks for a new sign-in: click **Authorize** again.\n\n**How it signs**: every call carries `app_key`, `access_token`, a millisecond `timestamp`, `sign_method=sha256` and `sign`, an upper-case HMAC-SHA256 keyed with the App Secret over the API path followed by every parameter sorted by name. The secret never leaves AnythingMCP. Miravia refuses a timestamp more than 7200 seconds off.\n\n**Where to start**\n- The shop: `miravia_get_seller` (name, status, the countries it sells in, whether it is an M2A seller) and `miravia_get_shipping_permission` (may the seller ship orders itself).\n- Orders: `miravia_list_orders` needs created_after or update_after; then `miravia_get_order` for one order and `miravia_get_order_items` (or `miravia_get_multiple_order_items` for several orders) for the item lines with their status, package and tracking.\n- Products: `miravia_list_products` (by status, date or SKU, with stock details), `miravia_search_products` (the V2 listing with page numbers) and `miravia_get_product` for one product.\n- Returns: `miravia_list_reverse_orders` lists cancellations, returns and refunds; `miravia_list_reverse_reasons` gives the reasons a seller may reject one with.\n\n**Shipping an order**: on the item lines `delivery_option_sof` 1 means the seller ships (DBS, Delivery by Seller), otherwise Miravia's carrier collects the parcel (DBM, Delivery by Miravia).\n- DBM: `miravia_pack_order` (returns the `package_id`), `miravia_get_shipping_label` for the label to print, then `miravia_set_ready_to_ship`.\n- DBS: `miravia_pack_order`, `miravia_list_shipment_providers` for the carrier's `provider_code`, `miravia_update_tracking` with your tracking number, then `miravia_set_ready_to_ship` (refused until the tracking number is set). Labels do not exist for DBS parcels.\n- `miravia_fulfill_order` is the V2 call that does the packing step in one request (for DBS with carrier and tracking number) and can be sent again to change the tracking number.\n- After hand-over a DBS parcel that Miravia cannot track itself is moved on with `miravia_confirm_package_collected` (shipped) and `miravia_confirm_package_delivered` (delivered). Both are switched off: they cannot be undone, and Miravia may blacklist a seller who reports a delivery that did not happen.\n\n**Miravia and AliExpress (M2A)**\n- Orders, item lines, products and returns carry `marketplace`: `miravia` or `ae`. The list tools take it as a filter; without it they answer for both.\n- AliExpress orders are packed with the same tools, with two differences Miravia documents: in `miravia_pack_order` every entry is `orderItemId:quantity`, with a `warehouse_code` for parcels AliExpress logistics carries (DBA); in `miravia_update_tracking` the fields `carrier_code` and `carrier_name` are mandatory.\n- Unpaid orders, and orders locked for 15 minutes after payment while the buyer may still change the address, are not served: the order lists leave them out and a direct read answers error 98.\n- AliExpress orders can show three more statuses: NR Pending (the buyer reported the parcel as not received, the case is open), NR confirmed (the claim was accepted and the buyer is refunded) and Shipped_back_success (the parcel came back to the seller before delivery).\n- Products: prices are in EUR, the texts are sent in Spanish (Miravia translates them for the other countries), `CountryPrice` sets a price per country, `CountryLevelStatusList` and the `marketplace` value of the status tools (`miravia`, `miravia_ES`, `miravia_PT`, `ae`, `ae_ES`, `ae_IT`, `ae_PT`) switch a product on or off per marketplace and country. `ae_product_info` on a product shows how the last synchronisation to AliExpress went.\n- The V1 cancellation (`miravia_check_order_cancellation`, `miravia_create_order_cancellation`) is refused for Miravia-to-AliExpress orders (error 1001, cancellation not supported). `miravia_cancel_order` is the V2 cancellation; Miravia's pages do not say whether it takes those orders, so read its answer.\n\n**V1 and V2 calls**: Miravia runs two generations side by side and says both stay for now, recommending a gradual move to V2. V2 here: `miravia_search_products`, `miravia_create_or_update_product`, `miravia_update_price`, `miravia_update_quantity`, `miravia_update_sku_status`, `miravia_fulfill_order`, `miravia_cancel_order`, `miravia_accept_return_refund`, `miravia_reject_return_refund`. V2 addresses a SKU by its seller SKU alone and takes at most 20 SKUs per call. Miravia's own AliExpress guide still walks through the V1 order calls (pack, tracking, ready to ship), so those are the ones to use for AliExpress orders.\n\n**Products**\n- Category first: `miravia_search_categories` finds leaf categories by keyword, `miravia_get_category_tree` returns the whole tree (large), `miravia_get_category_attributes` the attributes of one category with the mandatory ones. Brands: `miravia_search_brands` by name (with your permission for it), `miravia_list_brands` page by page. A product without a brand is listed as `No Brand`.\n- Create and change: `miravia_create_product` and `miravia_update_product` (V1 payloads) or `miravia_create_or_update_product` (V2: a seller SKU that exists is updated, a new one is added). Image addresses must be reachable by Miravia; this connector has no image or video upload.\n- Price and stock: `miravia_update_price_quantity` (V1: price, sale price, quantity and country prices, up to 50 SKUs, 20 recommended), `miravia_update_sellable_stock` (V1: sellable quantity), `miravia_update_price` and `miravia_update_quantity` (V2, up to 20 SKUs, quantity also per warehouse). The default warehouse code is `dropshipping`.\n\n**Switched off at install** (turn a tool on in the connector's tool list when you want the AI to use it, and confirm each call): `miravia_cancel_order`, `miravia_create_order_cancellation`, `miravia_accept_return_refund`, `miravia_reject_return_refund`, `miravia_remove_product`, `miravia_deactivate_product`, `miravia_update_product_status`, `miravia_update_sku_status`, `miravia_confirm_package_collected`, `miravia_confirm_package_delivered`. Miravia warns that a cancellation by the seller can affect the shop's ability to sell and can set the stock of the SKU to 0; a removed product cannot be restored.\n\n**Formats and pitfalls**\n- Ids (order, order item, product, SKU) are long numbers: pass them as text. An order has an `order_id` and each line an `order_item_id`; packing returns the `package_id` (`FP...`) that the label, tracking and ready-to-ship calls need. A product has an `item_id`, each variant a `SkuId`, a `ShopSku` and your own `SellerSku`.\n- Times: order filters take ISO 8601 with an offset (`2026-11-01T00:00:00+01:00`) and order answers carry their own offset (Miravia's examples show `+0800`, so convert before quoting a time). Product times are Unix milliseconds, return times Unix seconds.\n- Paging: orders up to 100 per call with `offset`, and offset plus limit may not pass 5000 (narrow the time window instead); products up to 50 per call (10 for AliExpress products); returns by `page_no` and `page_size`.\n- Answers: a successful answer has `code` `0` and the result in `data` (the fulfilment calls use `result.data` and `result.success`). The V2 write calls answer per SKU or order line with `status` and an `errors` list: read it even when the call itself succeeded. A refusal has another `code` with `type` and `message`: `IllegalAccessToken`, `IncompleteSignature` or `InvalidAppKey` (authentication), `InsufficientPermission` or `AppWhiteIpLimit` (the app may not call this API, or its IP whitelist does not include this server), `AppCallLimit` or `AppApiCallLimit` (too many calls: wait).\n- Not covered: instant messaging with buyers (it needs its own app category at Miravia), image and video upload, the Feed API for bulk files, Fulfilment by Miravia stock and finance statements.",
+  "prerequisites": "A Miravia seller account and a Miravia Open Platform account with a Seller Profile, where you create a Seller In House App (App Key and App Secret) with this server's callback URL, pass Miravia's integration validation and apply for online status. About 20 minutes, plus Miravia's approval, for which its tutorial names no time.",
+  "appRegistrationUrl": "https://open.miravia.com/apps/",
+  "requiredEnvVars": [
+    "MIRAVIA_APP_KEY",
+    "MIRAVIA_APP_SECRET"
+  ],
+  "envVarMeta": {
+    "MIRAVIA_APP_KEY": {
+      "label": "App Key",
+      "kind": "setting",
+      "help": "Miravia Open Platform, App Console, your Seller In House App, Manage: the App Key (a number).",
+      "example": "512345",
+      "link": "https://open.miravia.com/apps/",
+      "pattern": "^[0-9]{4,12}$",
+      "patternMessage": "The App Key is a number."
+    },
+    "MIRAVIA_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown with the App Key of your app in the App Console. It signs every request and is never sent.",
+      "link": "https://open.miravia.com/apps/",
+      "pattern": "^\\S{16,128}$",
+      "patternMessage": "Paste the App Secret alone, without spaces or quotes."
+    }
+  },
+  "verifyHints": {
+    "401": "Miravia refused the app key, the signature or the shop's token. Check that MIRAVIA_APP_KEY and MIRAVIA_APP_SECRET belong to the same app in the App Console; if they do, click Authorize again to sign in to the shop anew.",
+    "403": "The app may not call this API. Check in the App Console that the app is a Seller In House App with online status; if the app has an IP whitelist, it must include this server's address.",
+    "404": "Miravia found no order with that id for this shop. Check the id and the seller account that authorized the connector.",
+    "rate_limited": "The app's call quota is used up for the moment. Wait a little and try again with fewer calls."
+  },
+  "probe": {
+    "tool": "miravia_get_seller"
+  },
+  "setupGuide": {
+    "effort": "own_app",
+    "minutes": 20,
+    "examples": [
+      "Which Miravia orders still have to be packed?",
+      "Show the items of my last order and whether I ship it myself",
+      "Set the price of SKU MUG-01 to 24.90 and its stock to 15",
+      "Which returns are waiting for a refund?"
+    ],
+    "needs": [
+      "Your Miravia seller account (the Seller Center login)",
+      "A free account on the Miravia Open Platform, with a Seller Profile",
+      "About 20 minutes, plus Miravia's approval of your app for production use: its tutorial names no time"
+    ],
+    "why": "Miravia lets other tools reach a shop only through an app registered on its Open Platform. A seller registers a Seller In House App for the own shop, which is free. AnythingMCP signs every request with the app's secret and asks Miravia for access to the shop.\n\nYou approve that access on Miravia's own page. AnythingMCP never sees your Miravia password, and deleting the connector removes the keys and the access it holds.",
+    "steps": [
+      {
+        "id": "create-app",
+        "title": "Create your Miravia app",
+        "body": "Sign in to the **Miravia Open Platform** (create an account first if you have none: email, password and the 6-digit code Miravia emails you). When Miravia asks for the profile, choose **Seller Profile** and log in with your Seller Center account.\n\nIn the **App Console**, apply for the app category below, then click **Create App** and fill in the form as below. The app then appears on the App Management dashboard.",
+        "action": {
+          "label": "Open the Miravia App Console",
+          "url": "https://open.miravia.com/apps/"
+        },
+        "values": [
+          {
+            "label": "Profile",
+            "value": "Seller Profile",
+            "pick": true
+          },
+          {
+            "label": "App category",
+            "value": "Seller In House App",
+            "pick": true,
+            "note": "For an app that manages your own shop. A seller can have at most 5."
+          },
+          {
+            "label": "App Name",
+            "value": "AnythingMCP",
+            "note": "Any name works."
+          },
+          {
+            "label": "Callback URL",
+            "value": "{{redirectUri}}",
+            "note": "Paste it exactly: Miravia sends you back to this address after you authorize."
+          },
+          {
+            "label": "Description",
+            "value": "Connects my own Miravia shop to my AI assistant through AnythingMCP, to manage orders and products from a chat. Only I use it."
+          }
+        ],
+        "confirm": "I created the app",
+        "problems": [
+          {
+            "q": "I cannot create an app yet",
+            "a": "Miravia wants two things first: an approved profile and the permission for the app category. A **Seller Profile** is created as soon as you log in with your Seller Center account; then apply for **Seller In House App** and create the app."
+          },
+          {
+            "q": "Which profile and category for an agency?",
+            "a": "Miravia has an **ISV Profile** and the **Public App** category for companies that manage other sellers' shops; it reviews those profiles, usually within 2 to 3 business days. For your own shop, **Seller Profile** and **Seller In House App** are the right ones."
+          },
+          {
+            "q": "Miravia asks for an App Logo",
+            "a": "Any jpg or png works; Miravia recommends 100x100 px."
+          }
+        ]
+      },
+      {
+        "id": "keys",
+        "title": "Copy the App Key and App Secret",
+        "body": "In the App Console, click **Manage** on your app to open it. Copy its **App Key** and its **App Secret** into the fields below.",
+        "action": {
+          "label": "Open the Miravia App Console",
+          "url": "https://open.miravia.com/apps/"
+        },
+        "fields": [
+          "MIRAVIA_APP_KEY",
+          "MIRAVIA_APP_SECRET"
+        ],
+        "problems": [
+          {
+            "q": "I have more than one app",
+            "a": "Use the Seller In House App you created for AnythingMCP. The App Key and the App Secret must come from the same app."
+          }
+        ]
+      },
+      {
+        "id": "go-online",
+        "title": "Pass Miravia's validation and apply online",
+        "body": "Miravia's tutorial puts two things between a new app and production use.\n\n1. In the App Console open **Integration validation** and pass one orders scene (**Orders single** or **Orders multiple**) and either the **Product** or the **Feed** scene. With the validation method **File** you fill in Miravia's template and click **Start test** in the console.\n2. Open your app with **Manage**. Under **Basic Information**, next to **App Status**, click **Apply Online** and give a reason.\n\nOnce Miravia approves the request, the status changes to **Online**. Miravia's tutorial does not say how long that takes; nothing else is needed from you in the meantime.",
+        "action": {
+          "label": "Open the Miravia App Console",
+          "url": "https://open.miravia.com/apps/"
+        },
+        "confirm": "My app's status is Online",
+        "problems": [
+          {
+            "q": "Which validation method should I pick?",
+            "a": "**File**: you fill in the template Miravia shows for the scene and start the test in the console. The other method expects the calls to come from your own software while the test runs."
+          },
+          {
+            "q": "Where do I see whether the app is approved?",
+            "a": "On the app's overview page (**Manage**), under **Basic Information**: **App Status** reads **Online** once Miravia approved the request."
+          }
+        ]
+      },
+      {
+        "id": "authorize",
+        "title": "Authorize your shop",
+        "body": "Continue saves your keys and opens Miravia's sign-in page. Sign in with the seller account of the shop and approve the access. Miravia then sends you back here.\n\nAnythingMCP keeps the shop's tokens encrypted and renews them on its own: per Miravia's guide the access token lasts 14 days and the refresh token about two years, after which you authorize again.",
+        "problems": [
+          {
+            "q": "Miravia shows an error instead of the sign-in page",
+            "a": "Open your app in the App Console with **Manage**: Miravia shows the app's authorization URL there. Compare its address with the page AnythingMCP opened (`https://auth.miravia.com/apps/oauth/authorize`), and check that the **Callback URL** of the app is exactly the one from step 1."
+          },
+          {
+            "q": "After I approve, the connector reports an invalid code",
+            "a": "Miravia answers `InvalidCode` when it does not accept the authorization code. Start this step again to get a fresh code, and approve without leaving the page open in between."
+          },
+          {
+            "q": "Calls fail with InsufficientPermission",
+            "a": "The app may not call that API. Check that the app is a **Seller In House App** and that its **App Status** is **Online**."
+          },
+          {
+            "q": "I signed in with the wrong account",
+            "a": "A Seller In House App manages one shop: the seller account it was created for. Start this step again and sign in with that seller account."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Miravia Open Platform API",
+    "type": "REST",
+    "baseUrl": "https://api.miravia.es/rest",
+    "authType": "HMAC",
+    "authConfig": {
+      "tokenProvider": "iop",
+      "iop": {
+        "appKey": "{{MIRAVIA_APP_KEY}}",
+        "authorizeUrl": "https://auth.miravia.com/apps/oauth/authorize",
+        "tokenBaseUrl": "https://api.miravia.es/rest",
+        "tokenPath": "/auth/token/create",
+        "refreshPath": "/auth/token/refresh",
+        "authorizeParams": {
+          "force_auth": "true"
+        }
+      },
+      "signature": {
+        "algorithm": "sha256",
+        "encoding": "hex-upper",
+        "secret": "{{MIRAVIA_APP_SECRET}}",
+        "placement": "query",
+        "paramName": "sign",
+        "timestampParam": "timestamp",
+        "timestampFormat": "ms",
+        "queryParams": {
+          "app_key": "{{MIRAVIA_APP_KEY}}",
+          "sign_method": "sha256"
+        },
+        "template": "${apiPath}${sortedParams}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "matches": "AccessToken|RefreshToken|AppKey|Signature|IllegalTimestamp|InvalidCode",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 401
+        },
+        {
+          "path": "code",
+          "matches": "^Insufficient\\w*Permission|WhiteIp",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 403
+        },
+        {
+          "path": "code",
+          "matches": "CallLimit|Throttl|Frequen|^E?0*(901|429)$",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 429
+        },
+        {
+          "path": "code",
+          "matches": "^E?0*404$",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 404
+        },
+        {
+          "path": "code",
+          "matches": "^(?!0$).+",
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 400
+        },
+        {
+          "path": "result.success",
+          "equals": false,
+          "messagePath": [
+            "result.error_code",
+            "result.error_msg"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "miravia_get_seller",
+      "description": "The seller account behind this connector: seller_id, shop name, company name, short_code, email, location, status (ACTIVE, INACTIVE or DELETED), verified, cb (cross-border seller), sell_countries, is_m2a_seller and m2a_sell_countries (the countries where the shop sells on AliExpress through the Miravia and AliExpress alliance). No parameters; the lightest call, also used to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/get"
+      }
+    },
+    {
+      "name": "miravia_get_shipping_permission",
+      "description": "Whether the seller may ship orders with its own carrier (DBS, Delivery by Seller): DBS_permission true or false. True means the seller is whitelisted on at least one from-to country route; every order goes out as DBS only when all routes are whitelisted and the products prefer DBS. No parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller/shipping_permission/get"
+      }
+    },
+    {
+      "name": "miravia_list_orders",
+      "description": "List orders by creation or update time, with optional status, marketplace and country filters. Per order: order_id, order_number, created_at, updated_at, statuses, price, payment_method, items_count, marketplace (miravia or ae), shipping_fee, voucher amounts, warehouse_code and the shipping and billing address. Give created_after or update_after: one of them is mandatory. Up to 100 orders per call, paged with offset; offset plus limit may not pass 5000, so narrow the time window for more. Unpaid orders and orders still locked after payment are left out. Amounts are in EUR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_after": {
+            "type": "string",
+            "description": "Orders created at or after this time, ISO 8601 with offset, for example 2026-11-01T00:00:00+01:00. This or update_after is mandatory."
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Orders created at or before this time, ISO 8601 with offset."
+          },
+          "update_after": {
+            "type": "string",
+            "description": "Orders changed at or after this time, ISO 8601 with offset. This or created_after is mandatory."
+          },
+          "update_before": {
+            "type": "string",
+            "description": "Orders changed at or before this time, ISO 8601 with offset."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "pending",
+              "repacked",
+              "packed",
+              "ready_to_ship",
+              "shipped",
+              "delivered",
+              "returned",
+              "canceled",
+              "failed",
+              "lost"
+            ],
+            "description": "Only orders in this status. pending = paid and waiting to be packed. Unpaid orders are no longer returned."
+          },
+          "marketplace": {
+            "type": "string",
+            "enum": [
+              "miravia",
+              "ae"
+            ],
+            "description": "Only one marketplace: miravia or ae (AliExpress). Leave empty for both."
+          },
+          "country": {
+            "type": "string",
+            "description": "Only orders shipped to this country, two letters: ES, PT, IT.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "buyer_id": {
+            "type": "string",
+            "description": "Only orders of this buyer id."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at"
+            ],
+            "default": "created_at",
+            "description": "Sort column."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC",
+            "description": "DESC = newest first (default here), ASC = oldest first."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Orders to skip. Offset plus limit may not pass 5000."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Orders per call, up to 100. Defaults to 20 here."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/get",
+        "queryParams": {
+          "created_after": "$created_after",
+          "created_before": "$created_before",
+          "update_after": "$update_after",
+          "update_before": "$update_before",
+          "status": "$status",
+          "marketplace": "$marketplace",
+          "country": "$country",
+          "buyer_id": "$buyer_id",
+          "sort_by": "$sort_by",
+          "sort_direction": "$sort_direction",
+          "offset": "$offset",
+          "limt": "$limit"
+        }
+      }
+    },
+    {
+      "name": "miravia_get_order",
+      "description": "One order by its id: order_number, created_at, updated_at, statuses, price, payment_method, items_count, marketplace (miravia or ae), shipping fees, voucher amounts, warehouse_code, remarks and the shipping and billing address (buyer data can be masked). An unpaid order, or one still locked after payment, answers error 98. Amounts are in EUR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id.",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/get",
+        "queryParams": {
+          "order_id": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "miravia_get_order_items",
+      "description": "The item lines of one order: order_item_id, name, sku (your seller SKU), shop_sku, sku_id, status, item_price, paid_price, currency, voucher amounts, shipping_type, shipment_provider, tracking_code, package_id (once packed), delivery_option_sof (1 = the seller ships, DBS), is_fbm, warehouse_code, marketplace and marketplace_order_line_id, sla_time_stamp (the ship-by time), and reason and return_status on cancelled or returned lines.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id.",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/items/get",
+        "queryParams": {
+          "order_id": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "miravia_get_multiple_order_items",
+      "description": "The item lines of several orders in one call: per order its order_id, order_number and order_items with the same fields as miravia_get_order_items (order_item_id, sku, status, prices, package_id, tracking_code, delivery_option_sof, marketplace). Fewer than 80 orders per call. Unpaid or locked orders are left out of the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "string",
+            "description": "Order ids separated by commas, for example 4987609516102,4987609316102.",
+            "pattern": "^[0-9]{1,24}(\\s*,\\s*[0-9]{1,24})*$"
+          }
+        },
+        "required": [
+          "order_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/items/get",
+        "queryParams": {
+          "order_ids": "[${order_ids}]"
+        }
+      }
+    },
+    {
+      "name": "miravia_pack_order",
+      "description": "Pack item lines of one order into a parcel, the first fulfilment step (the order goes from pending to packed). Returns per line the package_id every later step needs, item_err_code (0 = packed) with msg, and for seller-delivered lines a placeholder tracking number. Miravia order: plain order item ids. AliExpress order (marketplace ae): every entry is orderItemId:quantity, and parcels that AliExpress logistics carries (DBA) also need warehouse_code. It marks the lines as packed; it buys no label and pays for nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "order_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,24}(:[0-9]{1,6})?$"
+            },
+            "minItems": 1,
+            "description": "The order item ids to pack, from miravia_get_order_items. For an AliExpress order write each as orderItemId:quantity, for example 8201985108092056:1."
+          },
+          "warehouse_code": {
+            "type": "string",
+            "description": "Only for AliExpress orders carried by AliExpress logistics (DBA): the warehouse code, or the address id for sellers without the merchant warehouse model."
+          },
+          "shipping_allocate_type": {
+            "type": "string",
+            "enum": [
+              "TFS"
+            ],
+            "description": "Miravia's order guide sends TFS for Miravia orders; its AliExpress examples leave the field out."
+          }
+        },
+        "required": [
+          "order_id",
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/pack",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "packReq": {
+            "__json": {
+              "pack_order_list": [
+                {
+                  "order_item_list": "$order_item_ids",
+                  "order_id": "$order_id",
+                  "warehouse_code": "$warehouse_code"
+                }
+              ],
+              "delivery_type": "dropship",
+              "shipping_allocate_type": "$shipping_allocate_type"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_update_tracking",
+      "description": "Register the carrier and tracking number of a parcel the seller ships itself (DBS). Needed before miravia_set_ready_to_ship; refused for parcels Miravia's logistics carries. Returns per package item_err_code (0 = accepted), msg and retry. For AliExpress orders carrier_code and carrier_name are mandatory as well.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "The package id from packing (starts with FP), also on the order's item lines.",
+            "pattern": "^[A-Za-z0-9_-]{4,64}$"
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "The carrier's tracking number. Miravia checks its format against the carrier.",
+            "minLength": 1
+          },
+          "shipment_provider_code": {
+            "type": "string",
+            "description": "provider_code of the carrier, from miravia_list_shipment_providers, for example DBSSP100000016."
+          },
+          "carrier_code": {
+            "type": "string",
+            "description": "AliExpress orders only: the carrier code, for example 100001."
+          },
+          "carrier_name": {
+            "type": "string",
+            "description": "AliExpress orders only: the carrier name, for example DHL Express."
+          }
+        },
+        "required": [
+          "package_id",
+          "tracking_number",
+          "shipment_provider_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/package/tracking/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "updateTrackingInfoReq": {
+            "__json": {
+              "update_packages": [
+                {
+                  "tracking_number": "$tracking_number",
+                  "package_id": "$package_id",
+                  "shipment_provider_code": "$shipment_provider_code",
+                  "carrier_code": "$carrier_code",
+                  "carrier_name": "$carrier_name"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_set_ready_to_ship",
+      "description": "Mark a packed parcel as ready to ship (RTS). For a seller-delivered parcel the tracking number must be set first (error 700005 otherwise). Returns per package item_err_code (0 = done), msg and retry. After this step the order can no longer be cancelled directly: a buyer's cancellation becomes a request the seller answers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "The package id from packing (starts with FP), also on the order's item lines.",
+            "pattern": "^[A-Za-z0-9_-]{4,64}$"
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/package/rts",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "readyToShipReq": {
+            "__json": {
+              "packages": [
+                {
+                  "package_id": "$package_id"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_fulfill_order",
+      "description": "V2 fulfilment in one call: moves the given item lines of an order from 'to pack' to 'to hand over', like Pack and print in the Seller Center, and can be sent again to change the tracking number. Seller-delivered (DBS) lines need the carrier code and the tracking number; lines Miravia carries (DBM) need neither. Returns per line order_item_id, status, package_id, label_url and base_error_list. Miravia documents it for Miravia orders; for AliExpress orders use miravia_pack_order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text. DBS: `{\"order_id\":\"3241804772774\",\"order_item_id_list\":[3241804872774],\"shipping_provider_code\":\"DBSSP100000358\",\"tracking_number\":\"3184279271540910191\"}`. DBM: `{\"order_id\":\"3241804772774\",\"order_item_id_list\":[3241804872774]}`. shipping_provider_code comes from miravia_list_shipment_providers.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/order/fulfill",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_list_shipment_providers",
+      "description": "The carriers a seller-delivered (DBS) parcel can be registered with: name, provider_code and, where Miravia gives them, carrier_info_list with carrier_name and carrier_code. Use provider_code in miravia_update_tracking and miravia_fulfill_order. The list changes over time, so read it rather than remembering codes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_id": {
+            "type": "string",
+            "description": "Optional: your seller_id from miravia_get_seller, to get the carriers enabled for your shop.",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/shipment/sof/providers/get",
+        "queryParams": {
+          "getDBSShipmentProviderReq": "{\"sellerId\":${seller_id}}"
+        }
+      }
+    },
+    {
+      "name": "miravia_get_shipping_label",
+      "description": "The shipping label (AWB) of one packed parcel that Miravia's or AliExpress's logistics carries: doc_type, pdf_url (a download link valid for ten minutes) and file (base64: for PDF a snippet that embeds the same link, for HTML the label page itself). There is no label for seller-delivered (DBS) parcels or for pending and cancelled orders. Reading a label books nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "The package id from packing (starts with FP), also on the order's item lines.",
+            "pattern": "^[A-Za-z0-9_-]{4,64}$"
+          },
+          "doc_type": {
+            "type": "string",
+            "enum": [
+              "PDF",
+              "HTML",
+              "ZPL"
+            ],
+            "default": "PDF",
+            "description": "Label format. PDF and HTML are always available; Miravia's reference also names ZPL."
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/package/document/get",
+        "queryParams": {
+          "getDocumentReq": "{\"doc_type\":\"${doc_type}\",\"packages\":[{\"package_id\":\"${package_id}\"}]}"
+        }
+      }
+    },
+    {
+      "name": "miravia_confirm_package_collected",
+      "description": "Tell Miravia that the carrier collected a seller-delivered (DBS) parcel that is ready to ship: the parcel moves to shipped. Only for parcels Miravia cannot track itself; tracked parcels move on their own and the call is refused. It cannot be undone. Returns per package package_id and retry. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "The package id from packing (starts with FP), also on the order's item lines.",
+            "pattern": "^[A-Za-z0-9_-]{4,64}$"
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/package/sof/confirm/collected",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "dbsCollectedReq": {
+            "__json": {
+              "packages": [
+                {
+                  "package_id": "$package_id"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_confirm_package_delivered",
+      "description": "Tell Miravia that a shipped seller-delivered (DBS) parcel reached the buyer, optionally with a proof-of-delivery link: the parcel moves to delivered. Only for parcels Miravia cannot track itself. It cannot be undone, and Miravia may blacklist a seller who reports a delivery that did not happen. Returns per package package_id and retry. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "The package id from packing (starts with FP), also on the order's item lines.",
+            "pattern": "^[A-Za-z0-9_-]{4,64}$"
+          },
+          "epod_url": {
+            "type": "string",
+            "description": "Optional link to the electronic proof of delivery.",
+            "pattern": "^https?://\\S+$"
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/package/sof/confirm/delivered",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "dbs_delivered_req": {
+            "__json": {
+              "packages": [
+                {
+                  "package_id": "$package_id",
+                  "epod_url": "$epod_url"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_list_products",
+      "description": "List the shop's products with their SKUs: total_products and per product item_id, primary_category, status and subStatus, attributes (name, description, brand), images, country_level_status_list, ae_product_info (the AliExpress side: status per country and the last synchronisation results), edit_lock_status and per SKU SellerSku, ShopSku, SkuId, Status, quantity, price, special_price, package sizes and multiWarehouseInventories. Filter by status, dates, seller SKUs or item ids. Up to 50 per call (10 for AliExpress products), paged with offset. Prices are in EUR, times Unix milliseconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "all",
+              "live",
+              "inactive",
+              "deleted",
+              "pending",
+              "rejected",
+              "sold-out"
+            ],
+            "default": "all",
+            "description": "Product status to list."
+          },
+          "marketplace": {
+            "type": "string",
+            "enum": [
+              "miravia",
+              "ae"
+            ],
+            "description": "miravia = products on Miravia (including those also on AliExpress), ae = only products that are on AliExpress."
+          },
+          "seller_skus": {
+            "type": "string",
+            "description": "Only these seller SKUs, as a JSON array in text, whole SKUs only, at most 100: `[\"SKU-1\",\"SKU-2\"]`. Wins over item_ids."
+          },
+          "item_ids": {
+            "type": "string",
+            "description": "Only these item ids, separated by commas, for example 1357296984086901,263638312812323.",
+            "pattern": "^[0-9]{1,24}(\\s*,\\s*[0-9]{1,24})*$"
+          },
+          "create_after": {
+            "type": "string",
+            "description": "Created at or after this time, ISO 8601, for example 2026-11-01T00:00:00+0100."
+          },
+          "create_before": {
+            "type": "string",
+            "description": "Created at or before this time, ISO 8601."
+          },
+          "update_after": {
+            "type": "string",
+            "description": "Changed at or after this time, ISO 8601."
+          },
+          "update_before": {
+            "type": "string",
+            "description": "Changed at or before this time, ISO 8601."
+          },
+          "options": {
+            "type": "string",
+            "enum": [
+              "1"
+            ],
+            "description": "1 adds stock details per SKU: ReservedStock, RtsStock, PendingStock, RealTimeStock and FulfillmentBySellable."
+          },
+          "country": {
+            "type": "string",
+            "description": "Optional country, two letters, for example es."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language for the texts (name, description), for example es_ES, pt_PT or it_IT. Leave empty for the product's own language."
+          },
+          "show_all_languages": {
+            "type": "boolean",
+            "description": "true adds every available translation of the texts in a multi_language object."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50000,
+            "default": 0,
+            "description": "Products to skip, at most 50000. For large catalogues page by date instead."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Products per call: up to 50 for Miravia, 10 for AliExpress products."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/get",
+        "queryParams": {
+          "filter": "$filter",
+          "marketplace": "$marketplace",
+          "sku_seller_list": "$seller_skus",
+          "item_id_list": "[${item_ids}]",
+          "create_after": "$create_after",
+          "create_before": "$create_before",
+          "update_after": "$update_after",
+          "update_before": "$update_before",
+          "options": "$options",
+          "country": "$country",
+          "language": "$language",
+          "show_all_languages": "$show_all_languages",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "miravia_get_product",
+      "description": "One product by item id or by seller SKU: item_id, primary_category, status and subStatus, attributes, images, variation (the variant fields and their options), country_level_status_list, ae_product_info (AliExpress status per country and the last synchronisation results), edit_lock_status (1 = the price is locked in at least one country) and every SKU with SellerSku, ShopSku, SkuId, Status, quantity, price, special_price, package sizes and stock per warehouse. Give item_id or seller_sku.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "The product's item id.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "seller_sku": {
+            "type": "string",
+            "description": "Your seller SKU of one variant, instead of item_id."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language for the texts (name, description), for example es_ES, pt_PT or it_IT. Leave empty for the product's own language."
+          },
+          "show_all_languages": {
+            "type": "boolean",
+            "description": "true adds every available translation of the texts in a multi_language object."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/item/get",
+        "queryParams": {
+          "item_id": "$item_id",
+          "seller_sku": "$seller_sku",
+          "language": "$language",
+          "show_all_languages": "$show_all_languages"
+        }
+      }
+    },
+    {
+      "name": "miravia_search_products",
+      "description": "The V2 product listing: total_product, total_page, page and per product product_id, category_id, status and sub_status, product_category_attribute_fields (name, description, brand), default_images, ae_product_info, edit_lock_status, created_time and updated_time (Unix milliseconds) and sku_data with seller_sku, sku_id, shop_sku, status, price, sale_price, quantity, warehouse_quantities and country_prices. Filter by product ids, seller SKUs, status, marketplace and a creation-time window; paged with page and page_size. With extra_info_filter the quality control log is added. Use miravia_list_products for update-time filters and the stock details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "string",
+            "description": "Product (item) ids separated by commas, for example 1357296984086901,263638312812323.",
+            "pattern": "^[0-9]{1,24}(\\s*,\\s*[0-9]{1,24})*$"
+          },
+          "seller_skus": {
+            "type": "string",
+            "description": "Seller SKUs as a JSON array in text: `[\"SKU-1\",\"SKU-2\"]`."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "live",
+              "inactive",
+              "deleted",
+              "pending",
+              "rejected",
+              "sold-out"
+            ],
+            "description": "Product status. Leave empty for all."
+          },
+          "marketplace": {
+            "type": "string",
+            "enum": [
+              "miravia",
+              "ae"
+            ],
+            "description": "miravia = products on Miravia (including those also on AliExpress), ae = only products that are on AliExpress."
+          },
+          "min_created_at": {
+            "type": "integer",
+            "description": "Lower bound of the creation time, Unix milliseconds."
+          },
+          "max_created_at": {
+            "type": "integer",
+            "description": "Upper bound of the creation time, Unix milliseconds, for example 1704884033000."
+          },
+          "extra_info_filter": {
+            "type": "string",
+            "enum": [
+              "[\"quality_control_log\"]"
+            ],
+            "description": "Extra data to add, as a JSON array in text. Only the quality control log exists: `[\"quality_control_log\"]`."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language for the texts (name, description), for example es_ES, pt_PT or it_IT. Leave empty for the product's own language."
+          },
+          "show_all_languages": {
+            "type": "boolean",
+            "description": "true adds every available translation of the texts in a multi_language object."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, from 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Products per page. Defaults to 20 here."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/product/get",
+        "queryParams": {
+          "product_ids": "[${product_ids}]",
+          "seller_skus": "$seller_skus",
+          "status": "$status",
+          "marketplace": "$marketplace",
+          "min_created_at": "$min_created_at",
+          "max_created_at": "$max_created_at",
+          "extraInfo_filter": "$extra_info_filter",
+          "language": "$language",
+          "show_all_languages": "$show_all_languages",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "miravia_update_price_quantity",
+      "description": "V1 price and stock update for one or more SKUs: price, sale price, quantity and prices per country in one call. Up to 50 SKUs, 20 recommended. Prices are in EUR with at most two decimals; a sale price above the price is refused. Regional prices can be set for every EU country and take effect when the country is active. Returns code 0 or the reason per SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text: `{\"Request\":{\"Product\":{\"Skus\":{\"Sku\":[{\"ItemId\":1355986947364117,\"SellerSku\":\"SKU-1\",\"Price\":\"123.00\",\"SalePrice\":\"90.00\",\"Quantity\":10}]}}}}`. Leave out what should not change. Optional per SKU: `\"CountryPrice\":[{\"CountryCode\":\"PT\",\"Price\":22.22,\"SalePrice\":10.10}]`.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/price_quantity/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_update_sellable_stock",
+      "description": "V1 stock update: sets the sellable quantity of one or more SKUs (what buyers can still order, on top of what open orders reserve). Up to 50 SKUs, 20 recommended. Returns code 0 or the reason, for example a quantity that would turn negative.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text: `{\"Request\":{\"Product\":{\"Skus\":{\"Sku\":[{\"ItemId\":\"1355777778204115\",\"SkuId\":\"2068481564679635\",\"SellerSku\":\"SKU-1\",\"SellableQuantity\":\"60\"}]}}}}`.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/stock/sellable/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_update_price",
+      "description": "V2 price update by seller SKU, up to 20 SKUs per call. price is the list price in EUR with at most two decimals; sale_price is the discounted price and, when left out, the price applies. A sale_price without a price is an error. Returns per SKU product_id, seller_sku, status and errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON array in text: `[{\"seller_sku\":\"SKU-1\",\"price\":\"18.75\",\"sale_price\":\"10.75\"}]`.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/product/price/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_update_quantity",
+      "description": "V2 stock update by seller SKU, up to 20 SKUs per call: the total quantity of the default warehouse, or the quantity per warehouse with warehouse_quantity. Returns per SKU product_id, seller_sku, status and errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON array in text. One warehouse: `[{\"seller_sku\":\"SKU-1\",\"quantity\":\"14\"}]`. Several: `[{\"seller_sku\":\"SKU-1\",\"warehouse_quantity\":[{\"warehouse_code\":\"ES100TL-WH-10035\",\"quantity\":\"14\"}]}]`.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/product/quantity/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_create_product",
+      "description": "V1: create one product with one or more SKUs (up to 50, 20 recommended). Take the category from miravia_search_categories and its mandatory attributes from miravia_get_category_attributes first. Texts go in Spanish, prices in EUR, package sizes in cm and kg, image addresses must be reachable by Miravia. A SellerSku that already exists updates that product instead. Returns item_id and sku_list (sellerSku, shop_sku, sku_id), or the validation error with its code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text: `{\"Request\":{\"Product\":{\"PrimaryCategory\":\"62206293\",\"Images\":{\"Image\":[\"https://example.com/a.jpg\"]},\"Attributes\":{\"name\":\"Taza de gres azul\",\"description\":\"Taza hecha a mano\",\"brand\":\"No Brand\",\"delivery_option_sof\":\"No\"},\"Skus\":{\"Sku\":[{\"SellerSku\":\"SKU-1\",\"quantity\":10,\"price\":\"10\",\"special_price\":\"8\",\"package_length\":\"11\",\"package_width\":\"12\",\"package_height\":\"13\",\"package_weight\":\"1\"}]}}}}`. Variant fields (for example color_family, size) and ean_code go on each Sku; delivery_option_sof Yes prefers shipping by the seller. Optional: CountryPrice per Sku and CountryLevelStatusList next to Attributes.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/create",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_update_product",
+      "description": "V1: change attributes or SKUs of an existing product, or add SKUs to it (up to 50 per call, 20 recommended). The SellerSku is the key: Miravia finds the product by it when the ItemId does not match. Send only the fields that change. Returns code 0 or the validation error with its code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text: `{\"Request\":{\"Product\":{\"ItemId\":\"1370417784554464\",\"Attributes\":{\"name\":\"Taza de gres azul 300 ml\"},\"Skus\":{\"Sku\":[{\"SellerSku\":\"SKU-1\",\"price\":\"12\",\"special_price\":\"10\"}]}}}}`. When CountryLevelStatusList is left out the status per marketplace and country stays as it is.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_create_or_update_product",
+      "description": "V2: create a product or update it in one call, without item ids: a seller_sku that exists is updated, a new one is added to the product or creates it. category_id and default_images are optional (Miravia picks a category when none is given). Texts go in Spanish, prices in EUR. Returns category_id, product_id and per SKU product_id, seller_sku and errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text: `{\"category_id\":\"62198631\",\"product_category_attribute_fields\":{\"name\":\"Taza de gres azul\",\"description\":\"Taza hecha a mano\",\"brand\":\"No Brand\"},\"default_images\":[\"https://example.com/a.jpg\"],\"sku_data\":[{\"seller_sku\":\"SKU-1\",\"quantity\":\"2\",\"price\":\"10.5\",\"sale_price\":\"9.95\",\"package_width\":\"20\",\"package_height\":\"18\",\"package_length\":\"30\",\"package_weight\":\"1\",\"sku_category_attribute_fields\":{\"color_family\":\"red\",\"size\":\"40\"}}]}`.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/product/createAndUpdate",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "miravia_remove_product",
+      "description": "Permanently remove whole products, or single SKUs of a product. It cannot be undone: a removed product has to be created again. Give item_ids to remove whole products or sku_ids to remove SKUs, never both; at most 50 SKUs per call. Returns code 0 or the reason. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_ids": {
+            "type": "string",
+            "description": "Item ids of the products to remove, separated by commas.",
+            "pattern": "^[0-9]{1,24}(\\s*,\\s*[0-9]{1,24})*$"
+          },
+          "sku_ids": {
+            "type": "string",
+            "description": "SKUs to remove, as a JSON array in text where each entry is SkuId_ plus the item id, an underscore and the SKU id: `[\"SkuId_1269656765_5230534246\"]`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/remove",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "item_id_list": "[${item_ids}]",
+          "seller_sku_list": "$sku_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_deactivate_product",
+      "description": "V1: take a product, or one SKU of it, offline (inactive: no longer visible or sold). With marketplace only one side or one country is switched off. The product must be online. Returns code 0 or the reason. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text. Whole product: `{\"Request\":{\"Product\":{\"ItemId\":\"234234234\"}}}`. One SKU: `{\"Request\":{\"Product\":{\"ItemId\":\"234234234\",\"Skus\":{\"SellerSku\":\"SKU-1\"}}}}`. Optional next to ItemId: `\"marketplace\":\"ae\"` (values miravia, miravia_ES, miravia_PT, ae, ae_ES, ae_IT, ae_PT).",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/deactivate",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_update_product_status",
+      "description": "V1: activate or deactivate a product or some of its SKUs. With only item_id every SKU of the product changes. marketplace limits the change to Miravia or AliExpress, or to one country of either; without it both marketplaces and all countries change. DEACTIVATE takes the product offline. Returns code 0 or the reason. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVATE",
+              "DEACTIVATE"
+            ],
+            "description": "ACTIVATE puts it online, DEACTIVATE takes it offline."
+          },
+          "item_id": {
+            "type": "string",
+            "description": "The product's item id.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "seller_skus": {
+            "type": "string",
+            "description": "Only these seller SKUs, as a JSON array in text, up to 50 (20 recommended): `[\"SKU-1\",\"SKU-2\"]`."
+          },
+          "marketplace": {
+            "type": "string",
+            "description": "miravia, miravia_ES, miravia_PT, ae, ae_ES, ae_IT or ae_PT. Leave empty for every marketplace and country.",
+            "pattern": "^(miravia|ae)(_[A-Za-z]{2})?$"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/product/status/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "status": "$status",
+          "item_id": "$item_id",
+          "seller_sku_list": "$seller_skus",
+          "marketplace": "$marketplace"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_update_sku_status",
+      "description": "V2: set the status of SKUs or whole products: active, inactive (offline) or delete (permanent: the product cannot be restored, and a wrong SKU fails silently). Give a seller SKU or an item id per entry, never both; an item id alone changes all its SKUs. marketplace limits the change to one side. Returns per entry seller_sku, status and errors. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON array in text: `[{\"seller_sku\":\"SKU-1\",\"status\":\"inactive\",\"marketplace\":\"miravia\"}]`. status is active, inactive or delete; marketplace is optional (miravia, miravia_ES, miravia_PT, ae, ae_ES, ae_IT, ae_PT).",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/product/status/update",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_get_category_tree",
+      "description": "The whole category tree of Miravia: per category category_id, name, leaf, permission (yes or no: restricted categories need an application in the Seller Center) and children. Products can only be listed in leaf categories. The answer is large; to find one category use miravia_search_categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language_code": {
+            "type": "string",
+            "enum": [
+              "es_ES",
+              "en_US"
+            ],
+            "default": "es_ES",
+            "description": "Language of the names: es_ES (Spanish) or en_US (English)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/tree/get",
+        "queryParams": {
+          "language_code": "$language_code"
+        }
+      }
+    },
+    {
+      "name": "miravia_search_categories",
+      "description": "Find leaf categories by a keyword in their name: every match comes with its full category path, from the top category down to the leaf, whose category_id a product needs. Only leaf categories are returned, the ones products can be listed in; an empty list means no leaf category matched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Part of the category name, for example vestidos or wallets.",
+            "minLength": 1
+          },
+          "language_code": {
+            "type": "string",
+            "enum": [
+              "es_ES",
+              "en_US"
+            ],
+            "default": "es_ES",
+            "description": "Language of the names: es_ES (Spanish) or en_US (English)."
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/search/keyword",
+        "queryParams": {
+          "keyword": "$keyword",
+          "language_code": "$language_code"
+        }
+      }
+    },
+    {
+      "name": "miravia_get_category_attributes",
+      "description": "The attributes of one category, for building a product: per attribute name (the key to send), label, input_type (text, numeric, singleSelect, multiSelect, enumInput and others), is_mandatory (1 = required), is_sale_prop (1 = it creates variants), attribute_type (sku or normal) and options (send the option's label as the value).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "primary_category_id": {
+            "type": "string",
+            "description": "The id of a leaf category, for example 62198631.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "language_code": {
+            "type": "string",
+            "enum": [
+              "es_ES",
+              "en_US"
+            ],
+            "default": "es_ES",
+            "description": "Language of the names: es_ES (Spanish) or en_US (English)."
+          }
+        },
+        "required": [
+          "primary_category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/attributes/get",
+        "queryParams": {
+          "primary_category_id": "$primary_category_id",
+          "language_code": "$language_code"
+        }
+      }
+    },
+    {
+      "name": "miravia_list_brands",
+      "description": "All brands known to Miravia, page by page: per brand its id, local_brand_name, global_brand_name, status (1 = usable) and main_categories. Up to 200 per call, paged with start_row. To check one brand and whether the shop may use it, miravia_search_brands is quicker.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_row": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Brands to skip."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 40,
+            "description": "Brands per call, up to 200."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/brands/query",
+        "queryParams": {
+          "start_row": "$start_row",
+          "page_size": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "miravia_search_brands",
+      "description": "Find brands by name: per match brandId, localBrandName (the name in Miravia's database) and permission (true when this shop may list products under the brand). A brand that does not exist, or a product without one, is listed as No Brand.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand_name": {
+            "type": "string",
+            "description": "The brand name or part of it, for example Nike.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "brand_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/category/brand/search",
+        "queryParams": {
+          "brand_name": "$brand_name"
+        }
+      }
+    },
+    {
+      "name": "miravia_check_order_cancellation",
+      "description": "Check whether the seller can cancel item lines of an order (V1) and which reasons Miravia accepts: reason_options with reason_id and reason_name, plus tip_content, Miravia's warning about the consequences (for example that the stock is set to 0). Cancelling is possible while the lines are pending, packed or ready to ship. It changes nothing. Miravia-to-AliExpress orders are refused here with error 1001.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "order_item_ids": {
+            "type": "string",
+            "description": "The order item ids to check, as a JSON array in text: `[\"3633109072774\"]`."
+          }
+        },
+        "required": [
+          "order_id",
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/reverse/cancel/validate",
+        "queryParams": {
+          "order_id": "$order_id",
+          "order_item_id_list": "$order_item_ids"
+        }
+      }
+    },
+    {
+      "name": "miravia_cancel_order",
+      "description": "V2: cancel an order as the seller, wholly (name every item line) or partly (name some). It cannot be undone, and Miravia warns that cancellations can affect the shop's ability to sell. Reasons: 18001 no stock, 18003 pricing error, 18005 the customer asked for it, 18007 problem with the delivery address. Returns per line order_item_id, order_id and status. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text: `{\"order_id\":\"3633108972774\",\"cancel_input_data_list\":[{\"order_item_id\":\"3633109072774\",\"reason_id\":\"18003\"}]}`.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/order/cancel",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_create_order_cancellation",
+      "description": "V1: cancel item lines of an order as the seller, with a reason from miravia_check_order_cancellation. It cannot be undone, can set the stock of the SKU to 0, and Miravia warns that cancellations can affect the shop's ability to sell. Returns tip_content and tip_type. Miravia-to-AliExpress orders are refused (error 1001). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "The order id.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "order_item_ids": {
+            "type": "string",
+            "description": "The order item ids to cancel, as a JSON array in text: `[\"3633109072774\"]`."
+          },
+          "reason_id": {
+            "type": "string",
+            "description": "reason_id from miravia_check_order_cancellation, for example 10000021.",
+            "pattern": "^[0-9]{1,12}$"
+          }
+        },
+        "required": [
+          "order_id",
+          "order_item_ids",
+          "reason_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/reverse/cancel/create",
+        "queryParams": {
+          "order_id": "$order_id",
+          "order_item_id_list": "$order_item_ids",
+          "reason_id": "$reason_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_list_reverse_orders",
+      "description": "List reverse orders: cancellations, returns and refunds, of Miravia and AliExpress orders. Returns total, page_no and per reverse order reverse_order_id, trade_order_id, request_type (CANCEL, RETURN and others), shipping_type and reverse_order_lines with reverse_order_line_id, reverse_status, refund_amount, reason_text, seller_sku_id, marketplace, tracking_number, is_instant_refund, is_not_received and is_dispute. Filter by order, status, time or tracking number. Times in the answer are Unix seconds, amounts in EUR.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_no": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, from 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 10,
+            "description": "Reverse orders per page. Defaults to 10."
+          },
+          "marketplace": {
+            "type": "string",
+            "enum": [
+              "miravia",
+              "ae"
+            ],
+            "description": "Only one marketplace: miravia or ae (AliExpress). Leave empty for both."
+          },
+          "trade_order_id": {
+            "type": "string",
+            "description": "Only the reverse orders of this order id.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "reverse_order_id": {
+            "type": "string",
+            "description": "Only this reverse order.",
+            "pattern": "^[0-9]{1,24}$"
+          },
+          "reverse_status_list": {
+            "type": "string",
+            "description": "Only these statuses, as a JSON array in text: `[\"REFUND_PENDING\",\"BUYER_RETURN_ITEM\"]`. Values include REQUEST_INITIATE, REQUEST_REJECT, REQUEST_CANCEL, CANCEL_SUCCESS, REFUND_PENDING, REFUND_SUCCESS, REFUND_REJECT, SELLER_AGREE_RETURN, SELLER_REJECT_RETURN, BUYER_RETURN_ITEM, SELLER_AGREE_REFUND, SELLER_REJECT_REFUND, AGREE_CANCEL_ORDER, REJECT_CANCEL_ORDER."
+          },
+          "ofc_status_list": {
+            "type": "string",
+            "description": "Only these return logistics statuses, as a JSON array in text: `[\"RETURN_DELIVERED\"]`. Values include RETURN_PICKUP_PENDING, RETURN_TPL_RECEIVED, RETURN_DELIVERED, RETURN_STOCK_INBOUND, RETURN_QC_DONE, RETURN_LOGISTIC_CLOSURE."
+          },
+          "reverse_order_line_time_start": {
+            "type": "integer",
+            "description": "Reverse lines created from this Unix time. Miravia's reference says milliseconds, but its example (1690796413) and the times in the answer are seconds: try seconds first."
+          },
+          "reverse_order_line_time_end": {
+            "type": "integer",
+            "description": "Reverse lines created up to this Unix time (same unit as the start)."
+          },
+          "trade_order_time_start": {
+            "type": "integer",
+            "description": "Orders placed from this Unix time (same unit)."
+          },
+          "trade_order_time_end": {
+            "type": "integer",
+            "description": "Orders placed up to this Unix time (same unit)."
+          },
+          "dispute_in_progress": {
+            "type": "boolean",
+            "description": "true = only reverse orders with an open dispute."
+          },
+          "reverse_tracking_number": {
+            "type": "string",
+            "description": "Only the return with this tracking number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reverse/getreverseordersforseller",
+        "queryParams": {
+          "page_no": "$page_no",
+          "page_size": "$page_size",
+          "marketplace": "$marketplace",
+          "trade_order_id": "$trade_order_id",
+          "reverse_order_id": "$reverse_order_id",
+          "reverse_status_list": "$reverse_status_list",
+          "ofc_status_list": "$ofc_status_list",
+          "reverse_order_line_time_range_start_time_stamp": "$reverse_order_line_time_start",
+          "reverse_order_line_time_range_end_time_stamp": "$reverse_order_line_time_end",
+          "trade_order_time_range_start_time_stamp": "$trade_order_time_start",
+          "trade_order_time_range_end_time_stamp": "$trade_order_time_end",
+          "dispute_in_progress": "$dispute_in_progress",
+          "reverse_tracking_number": "$reverse_tracking_number"
+        }
+      }
+    },
+    {
+      "name": "miravia_list_reverse_reasons",
+      "description": "The reasons a seller can give when rejecting a return, refund or cancellation request, for one reverse order line: reason_id, text (English) and multi_language_text. The reason_id goes into the rejection.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reverse_order_line_id": {
+            "type": "string",
+            "description": "reverse_order_line_id from miravia_list_reverse_orders.",
+            "pattern": "^[0-9]{1,24}$"
+          }
+        },
+        "required": [
+          "reverse_order_line_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/reverse/reason/list",
+        "queryParams": {
+          "reverseOrderLineId": "$reverse_order_line_id"
+        }
+      }
+    },
+    {
+      "name": "miravia_accept_return_refund",
+      "description": "V2: accept a buyer's refund-only, return-and-refund or cancellation request for item lines of an order, with the amount to refund in EUR. Miravia then refunds the buyer: it cannot be undone. Returns per line order_id, refund_amount and status. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text as in Miravia's guide: `{\"order_id\":\"3633108972774\",\"accept_input_data_list\":[{\"refund_amount\":\"47.5\",\"order_item\":\"3633109172774\"}]}`. Miravia's API reference shows a second form: `{\"order_id\":\"703802872774\",\"order_item_id_list\":[123456789],\"refund_amount\":\"23.5\"}`.",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/order/returnRefund/accept",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "miravia_reject_return_refund",
+      "description": "V2: reject a buyer's refund, return or cancellation request for item lines of an order, with a reason, a comment the buyer reads and, for a refund, proof images. Reasons for a refund: 1007 item not damaged or defective as claimed; for a cancellation after ready-to-ship: 1019 already handed over to the carrier, 1020 logistics information updated, 1021 the buyer asked to withdraw the request, 1022 other. Returns per line order_id and status. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "JSON text as in Miravia's guide: `{\"order_id\":\"3633108672774\",\"reject_input_data_list\":[{\"order_item_id\":\"3633108872774\",\"comment\":\"The item arrived undamaged\",\"reason_id\":\"1007\",\"image_list\":[{\"image_name\":\"proof\",\"image_url\":\"https://example.com/proof.png\"}]}]}`. Miravia's API reference shows the same fields in camel case (orderId, orderItemIdList, comment, reasonId, imageList).",
+            "minLength": 2
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/order/returnRefund/reject",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "payload": "$payload"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    }
+  ]
+}

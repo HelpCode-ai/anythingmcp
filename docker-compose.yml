@@ -104,6 +104,10 @@ services:
       - META_PLATFORM_APP_SECRET=${META_PLATFORM_APP_SECRET:-}
       - META_PLATFORM_CONFIG_ID=${META_PLATFORM_CONFIG_ID:-}
       - META_PLATFORM_ORG_IDS=${META_PLATFORM_ORG_IDS:-}
+      # One-tap Telegram bot: off unless the manager bot's token is set (see .env.example).
+      - TELEGRAM_MANAGER_BOT_TOKEN=${TELEGRAM_MANAGER_BOT_TOKEN:-}
+      - TELEGRAM_MANAGER_WEBHOOK_SECRET=${TELEGRAM_MANAGER_WEBHOOK_SECRET:-}
+      - TELEGRAM_MANAGED_BOT_ORG_IDS=${TELEGRAM_MANAGED_BOT_ORG_IDS:-}
       # Code mode: WebSocket URL of the code-runner service that executes code
       # runs in isolation (see deploy/code-runner/README.md). Empty = code mode
       # off, the default. Set together with COMPOSE_PROFILES=code-runner to run
@@ -332,7 +336,7 @@ services:
   file-extractor:
     build:
       context: ./deploy/ee/file-extractor
-    image: anythingmcp-file-extractor:3
+    image: anythingmcp-file-extractor:4
     profiles: ["files"]
     container_name: ${COMPOSE_PROJECT_NAME:-amcp}-file-extractor
     environment:

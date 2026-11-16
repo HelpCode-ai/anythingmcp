@@ -1,0 +1,2263 @@
+{
+  "slug": "target-plus",
+  "name": "Target Plus",
+  "description": "Target Plus marketplace API for invited sellers on Target's US marketplace: product catalog and variation families, prices, stock per distribution center, orders with acknowledgement and fulfillments, returns and disputes, reports and the Target item taxonomy. API key, seller ID and seller token.",
+  "aliases": [
+    "Target Plus marketplace",
+    "Target Plus Partner Portal",
+    "Target marketplace",
+    "Target Plus API",
+    "Target seller API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "target-plus",
+  "docsUrl": "https://plus.target.com/docs/spec/seller",
+  "instructions": "## Target Plus\nThis connector works with the **Target Plus marketplace** APIs at `https://api.target.com`. Target Plus is Target's **invite-only** third-party marketplace on target.com: only sellers Target has invited and approved can sell there, and the API works only for partners whose Target Plus API access is switched on. It covers the product catalog (create, update, variation families, catalog errors), prices, stock per distribution center, product logistics, orders, shipping addresses and fulfillments, returns and return disputes, return policies, reports, distribution centers and ship nodes, legalizations and the Target item taxonomy.\n\nThe official reference is at https://plus.target.com/docs and needs a Target Plus Partner Portal login. The connector uses three Target APIs: `sellers-v1` (products, returns, reports, setup), `seller_orders-v1` (orders; it replaced the deprecated order calls of sellers-v1 in February 2024) and `item_taxonomies-v2` (taxonomy).\n\n**Setup (about 10 minutes, administrator of the Partner Portal account)**\n1. **Seller ID**: in the Target Plus Partner Portal (https://plus.target.com) open **Business Info, Basic Info** and copy the **SMS ID** into `TARGET_PLUS_SELLER_ID`.\n2. **Seller token**: open **Partner Settings, API Tokens** and create a token. Only administrators can do this, and the token is shown once: copy it straight into `TARGET_PLUS_SELLER_TOKEN`.\n3. **API key**: the `x-api-key` comes with your Target Plus API access, from the Target developer portal where the partner app is registered (look for **API Management** or **Apps and Keys**). Copy it into `TARGET_PLUS_API_KEY`. The exact screen names can differ per account; if you cannot find the key, ask your Target Plus partner contact to enable API access.\n\nEvery call sends the three headers `x-api-key`, `x-seller-id` and `x-seller-token`; the seller ID also goes into each seller path. Taxonomy calls only need the API key.\n\n**Where to start**: `target_plus_list_distribution_centers` (it also proves the credentials), then `target_plus_list_orders` with order_status [\"RELEASED_FOR_SHIPMENT\", \"ACKNOWLEDGED_BY_SELLER\"] for orders still to ship, and `target_plus_list_products` for the catalog.\n\n**Orders**: `target_plus_list_orders`, `target_plus_get_order`, `target_plus_get_order_address`, `target_plus_list_order_addresses`. The order id is the order number and ship advice number joined by a dash (`1028521085032-1635740801`). Statuses: PENDING, RELEASED_FOR_SHIPMENT, ACKNOWLEDGED_BY_SELLER, PARTIALLY_SHIPPED, SHIPPED, CANCELED, REFUNDED. Confirm an order with `target_plus_update_order_status` (ACKNOWLEDGED_BY_SELLER), then report each shipped package with `target_plus_create_order_fulfillments` (order_line_number, quantity, shipped_date, tracking_number and the shipping_method name from `target_plus_list_shipping_methods`). `target_plus_list_order_fulfillments` shows what is recorded and `target_plus_update_order_fulfillments` corrects it by fulfillment id. `target_plus_update_order_line` (cancel units with a reason) is installed switched off: a cancellation cannot be undone and counts against the seller. Sellers cannot set REFUNDED; refunds go through the Target Plus operations team. Addresses are buyer personal data: use them only to ship.\n\n**Products**: `target_plus_list_products`, `target_plus_get_product`, `target_plus_create_product`, `target_plus_update_product`, `target_plus_upsert_variation_family`, `target_plus_list_product_catalog_errors`, `target_plus_unlist_product` (switched off). A product has a Target Plus id, your SKU (external_id), a TCIN once Target assigns one, and fields as name/value pairs. Every create or update adds a new product version (product_status with latest=true) that Target validates (validation_status INITIATED, VALIDATED, ERROR, REVIEW, BLOCKED) and lists (listing_status PENDING, APPROVED, REJECTED); the version with current=true is the one on sale. Child products (VC) exist only inside a variation family with one parent (VAP). After a submission, read `target_plus_list_product_catalog_errors` for field_name, reason and partner_action.\n\n**Which fields a product needs**: find the item type with `target_plus_list_taxonomies` (type ITEM_TYPE, name), list its attributes with `target_plus_list_attribute_assignments` (taxonomy_id; required=true marks mandatory ones), look up attributes with `target_plus_list_attributes` and allowed values with `target_plus_list_attribute_values`. `target_plus_get_catalog_item` reads a Target item by TCIN. Before listing a new item type or brand, check `target_plus_list_legalizations` (what you are approved to sell) and `target_plus_list_protected_legalizations` (what no partner may sell).\n\n**Price, stock and logistics** (no new product version): `target_plus_get_product_price` and `target_plus_update_product_price` (list_price required, offer_price at most list_price, map_price; USD). Stock is kept per distribution center: `target_plus_get_product_quantities`, `target_plus_get_product_quantity`, `target_plus_update_product_quantity` (absolute, 0 allowed) and `target_plus_bulk_update_product_quantities` (several centers for one product, each at least 1; answers 207 with a status per entry). `target_plus_get_product_logistics` and `target_plus_update_product_logistics` handle fulfillment.is_add_on, fulfillment.two_day_shipping_eligible, shipping_exclusion and seller_return_policy (a return policy id from `target_plus_list_return_policies`); the update is processed asynchronously, so read it back for status PROCESSED and feedback.\n\n**Returns and disputes** (read-only): `target_plus_list_product_returns`, `target_plus_get_product_return`, `target_plus_search_product_returns` (by tracking number, license plate, return order number, date), `target_plus_list_return_disputes`, `target_plus_get_return_dispute`, `target_plus_list_return_policies`. Disputes are filed in the Partner Portal; chargeback and refund amounts are shown for information only.\n\n**Reports**: `target_plus_create_report_request` (type, format, start_date, end_date) builds a file asynchronously; poll `target_plus_get_report_request` until status COMPLETE and give the user its download_url. `target_plus_list_report_requests` lists them; requests are kept 5 days. `target_plus_terminate_report_request` is switched off. A PAYOUT_RECONCILIATION report only reads payout data.\n\n**Setup data**: `target_plus_list_distribution_centers` (ids for the stock tools, with ship nodes), `target_plus_list_ship_nodes` (carriers, service levels, cut-off times).\n\n**Paging**: most lists take page (from 1) and per_page; Target's own default is 10 and deep paging stops at 10,000 results, so narrow by date for more. Their X-Total-Count and Link headers come back in `_headers`, and `_pagination` names the next page until the last one. `target_plus_list_products`, `target_plus_list_product_catalog_errors` and `target_plus_search_product_returns` page with after_id: pass the id of the last row.\n\n**Formats and pitfalls**: dates are ISO 8601 in UTC; range filters (order_date, last_modified, return_date) take an interval `start/end`, for example `2026-11-01T00:00:00Z/2026-11-14T23:59:59Z`. Prices are USD. Errors come back as `{\"message\": ..., \"errors\": [...]}`. Target does not publish rate limits in the specs; on a 429 wait before retrying. The connector never moves money: it cannot refund, pay out or buy labels.",
+  "prerequisites": "An invited and approved Target Plus seller account (the marketplace is invite-only) with Target Plus API access enabled, and an administrator of the Partner Portal account to create the seller token. About 10 minutes.",
+  "requiredEnvVars": [
+    "TARGET_PLUS_API_KEY",
+    "TARGET_PLUS_SELLER_ID",
+    "TARGET_PLUS_SELLER_TOKEN"
+  ],
+  "envVarMeta": {
+    "TARGET_PLUS_API_KEY": {
+      "label": "API key (x-api-key)",
+      "kind": "credential",
+      "secret": true,
+      "help": "The x-api-key that comes with your Target Plus API access, from the Target developer portal where the partner app is registered (API Management or Apps and Keys; names can differ per account). Ask your Target Plus partner contact if API access is not enabled.",
+      "link": "https://plus.target.com/docs",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the API key only, without spaces."
+    },
+    "TARGET_PLUS_SELLER_ID": {
+      "label": "Seller ID (SMS ID)",
+      "kind": "setting",
+      "help": "Target Plus Partner Portal, Business Info, Basic Info: the SMS ID of your seller account, usually 24 letters and digits.",
+      "link": "https://plus.target.com",
+      "example": "5d9b63230b782d009720a6cb",
+      "pattern": "^[A-Za-z0-9]{6,64}$",
+      "patternMessage": "The seller ID is letters and digits only, e.g. 5d9b63230b782d009720a6cb."
+    },
+    "TARGET_PLUS_SELLER_TOKEN": {
+      "label": "Seller token (x-seller-token)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Target Plus Partner Portal, Partner Settings, API Tokens: create a token (administrators only). It is shown once; create a new one if it was lost.",
+      "link": "https://plus.target.com",
+      "pattern": "^\\S{16,512}$",
+      "patternMessage": "Paste the seller token without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Target rejected the request. The response lists the field in errors; check ids, enum values and the start/end format of date ranges.",
+    "401": "Target did not accept the credentials. Check TARGET_PLUS_API_KEY, and create a new seller token under Partner Settings, API Tokens if TARGET_PLUS_SELLER_TOKEN may be revoked.",
+    "403": "Target refused the call: the seller token does not belong to TARGET_PLUS_SELLER_ID (the SMS ID under Business Info, Basic Info), or Target Plus API access is not enabled for this API key.",
+    "404": "Target found no product, order, return or report with that id for this seller.",
+    "rate_limited": "Target is limiting requests. Wait a minute and retry with fewer calls."
+  },
+  "probe": {
+    "tool": "target_plus_list_distribution_centers",
+    "params": {}
+  },
+  "connector": {
+    "name": "Target Plus API",
+    "type": "REST",
+    "baseUrl": "https://api.target.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{TARGET_PLUS_API_KEY}}",
+      "extraHeaders": {
+        "x-seller-id": "{{TARGET_PLUS_SELLER_ID}}",
+        "x-seller-token": "{{TARGET_PLUS_SELLER_TOKEN}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "target_plus_list_products",
+      "description": "List your Target Plus product catalog: per product id, external_id (your SKU), tcin, relationship_type (SA stand-alone, VAP parent, VC child), parent_id, fields (name/value properties), price, quantities per distribution center and the latest and current product_statuses (listing_status APPROVED, PENDING, REJECTED, UNLISTED, SUSPENDED; validation_status). Deep paging with after_id; the Link header in _headers names the next page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "PENDING",
+              "REJECTED",
+              "UNLISTED",
+              "SUSPENDED"
+            ],
+            "description": "Only products whose latest version has this listing status."
+          },
+          "tcin": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Target Corporation Item Number (TCIN), digits only, e.g. 81789642."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Only the product with this SKU."
+          },
+          "last_modified": {
+            "type": "string",
+            "pattern": "^[0-9TZ:.+-]*/[0-9TZ:.+-]*$",
+            "description": "Only products changed in this range, as an ISO 8601 interval start/end in UTC, e.g. 2026-11-01T00:00:00Z/2026-11-14T23:59:59Z. Leave one side empty for an open range (2026-11-01T00:00:00Z/)."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "fields",
+                "product_statuses"
+              ]
+            },
+            "description": "Expand fields and/or the full product_statuses history (by default at most the latest and current status)."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return only these object fields, e.g. [\"id\", \"external_id\", \"tcin\", \"product_statuses\"]."
+          },
+          "after_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Deep paging: the id of the last row of the previous page. Leave out for the first page; stop when a page comes back short or empty."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10). Target recommends up to 200 for this endpoint.",
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products_catalog",
+        "queryParams": {
+          "listing_status": "$listing_status",
+          "tcin": "$tcin",
+          "external_id": "$external_id",
+          "last_modified": "$last_modified",
+          "expand": "$expand",
+          "fields": "$fields",
+          "after_id": "$after_id",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_product",
+      "description": "Read one product by its Target Plus product id: external_id, tcin, relationship_type, parent_id, fields, price, quantities and product_statuses with errors (category, field_name, reason, partner_action, error_severity). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          },
+          "expand": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "fields",
+                "product_statuses"
+              ]
+            },
+            "description": "product_statuses returns the full version history instead of only latest and current."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Return only these object fields."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products/{product_id}",
+        "queryParams": {
+          "expand": "$expand",
+          "fields": "$fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_create_product",
+      "description": "Create a stand-alone product (relationship_type SA) or a parent (VAP) from your SKU and its properties. The new version starts as PENDING and goes through Target validation; check product_statuses and target_plus_list_product_catalog_errors afterwards. Child products (VC) can only be created with target_plus_upsert_variation_family. Returns the product with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your SKU for the product."
+          },
+          "relationship_type": {
+            "type": "string",
+            "enum": [
+              "SA",
+              "VAP"
+            ],
+            "default": "SA",
+            "description": "SA (default) for a stand-alone product, VAP for a variation parent."
+          },
+          "fields": {
+            "type": "array",
+            "description": "Product properties as name/value pairs, e.g. [{\"name\": \"product_title\", \"value\": \"Oak side table\"}, {\"name\": \"item_type_id\", \"value\": \"...\"}]. Property names come from the item type: see target_plus_list_attribute_assignments. Values are strings.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Property name."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Property value as a string."
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "external_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products",
+        "bodyMapping": {
+          "external_id": "$external_id",
+          "relationship_type": "$relationship_type",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "target_plus_update_product",
+      "description": "Submit a new version of an existing product: send external_id, relationship_type and the full set of fields. Target adds a new product_status with latest=true that is validated again; the current live version stays on sale until the new one is approved. For price, stock and logistics use their own tools, which do not create a version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          },
+          "external_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Your SKU (unchanged)."
+          },
+          "relationship_type": {
+            "type": "string",
+            "enum": [
+              "SA",
+              "VAP",
+              "VC"
+            ],
+            "description": "Relationship type of the product as it is now."
+          },
+          "fields": {
+            "type": "array",
+            "description": "Product properties as name/value pairs, e.g. [{\"name\": \"product_title\", \"value\": \"Oak side table\"}, {\"name\": \"item_type_id\", \"value\": \"...\"}]. Property names come from the item type: see target_plus_list_attribute_assignments. Values are strings.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Property name."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Property value as a string."
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "product_id",
+          "external_id",
+          "relationship_type",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products/{product_id}",
+        "bodyMapping": {
+          "external_id": "$external_id",
+          "relationship_type": "$relationship_type",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "target_plus_upsert_variation_family",
+      "description": "Create or update a variation family in one call: exactly one parent (VAP) and its children (VC). Existing products get a new version. Answers 207 with a status per product (results), so check every entry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": "object",
+            "description": "The parent product: external_id, relationship_type VAP and fields (including the variation theme properties).",
+            "properties": {
+              "external_id": {
+                "type": "string",
+                "description": "Your SKU."
+              },
+              "relationship_type": {
+                "type": "string",
+                "enum": [
+                  "VAP",
+                  "VC"
+                ],
+                "description": "VAP for the parent, VC for each child."
+              },
+              "fields": {
+                "type": "array",
+                "description": "Product properties as name/value pairs, e.g. [{\"name\": \"product_title\", \"value\": \"Oak side table\"}, {\"name\": \"item_type_id\", \"value\": \"...\"}]. Property names come from the item type: see target_plus_list_attribute_assignments. Values are strings.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "Property name."
+                    },
+                    "value": {
+                      "type": "string",
+                      "description": "Property value as a string."
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "external_id",
+              "relationship_type"
+            ]
+          },
+          "children": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "description": "One product: external_id (your SKU), relationship_type (VAP parent or VC child) and fields.",
+              "properties": {
+                "external_id": {
+                  "type": "string",
+                  "description": "Your SKU."
+                },
+                "relationship_type": {
+                  "type": "string",
+                  "enum": [
+                    "VAP",
+                    "VC"
+                  ],
+                  "description": "VAP for the parent, VC for each child."
+                },
+                "fields": {
+                  "type": "array",
+                  "description": "Product properties as name/value pairs, e.g. [{\"name\": \"product_title\", \"value\": \"Oak side table\"}, {\"name\": \"item_type_id\", \"value\": \"...\"}]. Property names come from the item type: see target_plus_list_attribute_assignments. Values are strings.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "Property name."
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "Property value as a string."
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "value"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "external_id",
+                "relationship_type"
+              ]
+            },
+            "description": "The child products, each with relationship_type VC."
+          }
+        },
+        "required": [
+          "parent",
+          "children"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/product_variation_update",
+        "bodyMapping": {
+          "parent": "$parent",
+          "children": "$children"
+        }
+      }
+    },
+    {
+      "name": "target_plus_unlist_product",
+      "description": "Unlist a product: its current version becomes UNLISTED and the item stops being sellable on target.com until a new version is submitted and approved. Installed switched off; turn it on deliberately.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products/{product_id}:unlist"
+      }
+    },
+    {
+      "name": "target_plus_list_product_catalog_errors",
+      "description": "List products with errors on their latest product statuses: id, external_id, tcin, parent_id and per status listing_status, validation_status and errors (category, field_name, reason, partner_action, error_severity CRITICAL or NON_CRITICAL). Use it after creating or updating products. Deep paging with after_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "listing_status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "PENDING",
+              "REJECTED"
+            ],
+            "description": "Listing status of the latest version (Target defaults to APPROVED and REJECTED)."
+          },
+          "error_severity": {
+            "type": "string",
+            "enum": [
+              "CRITICAL",
+              "NON_CRITICAL",
+              "WARNING"
+            ],
+            "description": "Only errors of this severity."
+          },
+          "tcin": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Target Corporation Item Number (TCIN), digits only, e.g. 81789642."
+          },
+          "external_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these SKUs."
+          },
+          "parent_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Only children of this parent product id."
+          },
+          "created_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Filter by creation date (ISO 8601, UTC)."
+          },
+          "last_modified_since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Filter by last modified date (ISO 8601, UTC)."
+          },
+          "after_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Deep paging: the id of the last row of the previous page. Leave out for the first page; stop when a page comes back short or empty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/product_catalog_errors",
+        "queryParams": {
+          "listing_status": "$listing_status",
+          "error_severity": "$error_severity",
+          "tcin": "$tcin",
+          "externalIds": "$external_ids",
+          "parentId": "$parent_id",
+          "createdDateSearch": "$created_since",
+          "lastModifiedDateSearch": "$last_modified_since",
+          "after_id": "$after_id"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_product_price",
+      "description": "Read the price of a product: list_price, offer_price and map_price (minimum advertised price) in USD, and last_updated. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/prices/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_update_product_price",
+      "description": "Set the price of a product in USD: list_price is required; offer_price (the selling price, at most list_price) and map_price are optional. Does not create a new product version. Returns the stored price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          },
+          "list_price": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "List price in USD, e.g. 24.99."
+          },
+          "offer_price": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Offer (selling) price in USD; must be less than or equal to list_price."
+          },
+          "map_price": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Minimum advertised price in USD."
+          }
+        },
+        "required": [
+          "product_id",
+          "list_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/prices/{product_id}",
+        "bodyMapping": {
+          "list_price": "$list_price",
+          "offer_price": "$offer_price",
+          "map_price": "$map_price"
+        }
+      }
+    },
+    {
+      "name": "target_plus_get_product_quantities",
+      "description": "Read the available quantity of a product in every distribution center: per entry distribution_center_id, quantity, last_modified and last_modified_by. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products/{product_id}/quantities"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_product_quantity",
+      "description": "Read the available quantity of a product in one distribution center: quantity, last_modified and last_modified_by. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          },
+          "distribution_center_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Distribution center id (id of target_plus_list_distribution_centers)."
+          }
+        },
+        "required": [
+          "product_id",
+          "distribution_center_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products/{product_id}/quantities/{distribution_center_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_update_product_quantity",
+      "description": "Set the available quantity of a product in one distribution center (an absolute number, 0 to stop selling from there). Returns the stored quantity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          },
+          "distribution_center_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Distribution center id (id of target_plus_list_distribution_centers)."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units available to sell from this distribution center."
+          }
+        },
+        "required": [
+          "product_id",
+          "distribution_center_id",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products/{product_id}/quantities/{distribution_center_id}",
+        "bodyMapping": {
+          "quantity": "$quantity"
+        }
+      }
+    },
+    {
+      "name": "target_plus_bulk_update_product_quantities",
+      "description": "Set the quantity of one product in several distribution centers at once. Each quantity must be at least 1 (use target_plus_update_product_quantity to set 0). Answers 207 with a status per distribution center.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          },
+          "quantities": {
+            "type": "array",
+            "minItems": 1,
+            "description": "One entry per distribution center, e.g. [{\"distributionCenterId\": \"f7mzzr\", \"quantity\": 12}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "distributionCenterId": {
+                  "type": "string",
+                  "description": "Distribution center id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Units available, at least 1."
+                }
+              },
+              "required": [
+                "distributionCenterId",
+                "quantity"
+              ]
+            }
+          }
+        },
+        "required": [
+          "product_id",
+          "quantities"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/products/{product_id}/quantities/bulk",
+        "bodyMapping": {
+          "quantities": "$quantities"
+        }
+      }
+    },
+    {
+      "name": "target_plus_get_product_logistics",
+      "description": "Read the logistics properties of a product (fulfillment.is_add_on, fulfillment.two_day_shipping_eligible, shipping_exclusion, seller_return_policy) with status INITIATED or PROCESSED and feedback (code, message, override_value) once processed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/product_logistics/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_update_product_logistics",
+      "description": "Update the logistics properties of a product without creating a new product version. Send fields as name/value pairs with the names fulfillment.is_add_on, fulfillment.two_day_shipping_eligible, shipping_exclusion and seller_return_policy. Processed asynchronously: read the result with target_plus_get_product_logistics (status PROCESSED, feedback).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Target Plus product id (the id field of target_plus_list_products or target_plus_get_product), not your SKU and not the TCIN."
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Logistics properties, e.g. [{\"name\": \"fulfillment.two_day_shipping_eligible\", \"value\": \"true\"}, {\"name\": \"seller_return_policy\", \"value\": \"<return policy id>\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "fulfillment.is_add_on",
+                    "fulfillment.two_day_shipping_eligible",
+                    "shipping_exclusion",
+                    "seller_return_policy"
+                  ],
+                  "description": "Logistics property name."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value as a string."
+                }
+              },
+              "required": [
+                "name",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "product_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/product_logistics/{product_id}",
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "target_plus_list_orders",
+      "description": "List your Target Plus orders, filtered by status, number, TCIN, ship node or date: per order id (order number-ship advice number), order_number, ship_advice_number, status, order_date, requested_shipment_date, requested_delivery_date, level_of_service, ship_node_id, distribution_center_id, currency and order_lines (order_line_number, tcin, external_id, quantity, unit_price, total_price, order_line_statuses). Paged; X-Total-Count and Link in _headers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "RELEASED_FOR_SHIPMENT",
+                "ACKNOWLEDGED_BY_SELLER",
+                "PARTIALLY_SHIPPED",
+                "SHIPPED",
+                "CANCELED",
+                "REFUNDED"
+              ]
+            },
+            "description": "Only orders in these statuses, e.g. [\"RELEASED_FOR_SHIPMENT\", \"ACKNOWLEDGED_BY_SELLER\"] for orders still to ship."
+          },
+          "q": {
+            "type": "string",
+            "description": "Free search in order id, ship advice number and order number."
+          },
+          "order_number": {
+            "type": "string",
+            "description": "Only this order number."
+          },
+          "ship_advice_number": {
+            "type": "string",
+            "description": "Only this ship advice number."
+          },
+          "tcin": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Target Corporation Item Number (TCIN), digits only, e.g. 81789642."
+          },
+          "order_date": {
+            "type": "string",
+            "pattern": "^[0-9TZ:.+-]*/[0-9TZ:.+-]*$",
+            "description": "Only orders placed in this range, as an ISO 8601 interval start/end in UTC, e.g. 2026-11-01T00:00:00Z/2026-11-14T23:59:59Z. Leave one side empty for an open range (2026-11-01T00:00:00Z/)."
+          },
+          "requested_shipment_date": {
+            "type": "string",
+            "pattern": "^[0-9TZ:.+-]*/[0-9TZ:.+-]*$",
+            "description": "Only orders due to ship in this range, as an ISO 8601 interval start/end in UTC, e.g. 2026-11-01T00:00:00Z/2026-11-14T23:59:59Z. Leave one side empty for an open range (2026-11-01T00:00:00Z/)."
+          },
+          "ship_node_id": {
+            "type": "string",
+            "description": "Only orders for this ship node."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. order_date(desc)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/orders",
+        "queryParams": {
+          "order_status": "$order_status",
+          "q": "$q",
+          "order_number": "$order_number",
+          "ship_advice_number": "$ship_advice_number",
+          "tcin": "$tcin",
+          "order_date": "$order_date",
+          "requested_shipment_date": "$requested_shipment_date",
+          "ship_node_id": "$ship_node_id",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_order",
+      "description": "Read one order: status, dates (order, requested shipment and delivery), level_of_service, scac, ship node, distribution center and each order line with order_line_number, tcin, external_id, quantity, unit_price, total_price, shipping, discounts, is_two_day_ship and order_line_statuses. The shipping address is read with target_plus_get_order_address. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Order id as Target returns it: order number and ship advice number joined by a dash, e.g. 1028521085032-1635740801 (id of target_plus_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_order_address",
+      "description": "Read the shipping address of one order: first_name, last_name, address1, address2, city, state, postal_code, country_code and phone_numbers. Personal data of the buyer: use it only to ship. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Order id as Target returns it: order number and ship advice number joined by a dash, e.g. 1028521085032-1635740801 (id of target_plus_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/order_addresses/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_order_addresses",
+      "description": "List shipping addresses of your orders, one entry per order id with shipping_address (name, street, city, state, postal_code, country_code, phone_numbers). Paged. Personal data of buyers: use it only to ship. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. created(desc). Several fields are separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/order_addresses",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_update_order_status",
+      "description": "Acknowledge an order: sets its status to ACKNOWLEDGED_BY_SELLER to confirm you will ship it. Shipping is reported with target_plus_create_order_fulfillments, and cancelling a line uses target_plus_update_order_line. Sellers cannot set REFUNDED. Returns the new status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Order id as Target returns it: order number and ship advice number joined by a dash, e.g. 1028521085032-1635740801 (id of target_plus_list_orders)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACKNOWLEDGED_BY_SELLER"
+            ],
+            "default": "ACKNOWLEDGED_BY_SELLER",
+            "description": "New order status. Only ACKNOWLEDGED_BY_SELLER is offered here."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/order_statuses/{order_id}",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "target_plus_update_order_line",
+      "description": "Update an order line, mainly to cancel units: set order_line_statuses (quantity per status, e.g. 1 CANCELED and 2 SHIPPED) and a cancellation_reason. A cancellation cannot be undone and counts against the seller; REFUNDED can no longer be set and goes through the Target Plus operations team. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Order id as Target returns it: order number and ship advice number joined by a dash, e.g. 1028521085032-1635740801 (id of target_plus_list_orders)."
+          },
+          "order_line_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,40}$",
+            "description": "The order line, i.e. its order_line_number from target_plus_get_order, e.g. 1."
+          },
+          "cancellation_reason": {
+            "type": "string",
+            "enum": [
+              "OTHER",
+              "GENERAL_ADJUSTMENT",
+              "ITEM_NOT_AVAILABLE",
+              "CUSTOMER_RETURNED_ITEM",
+              "COULD_NOT_SHIP",
+              "ALTERNATE_ITEM_PROVIDED",
+              "BUYER_CANCELED",
+              "CUSTOMER_EXCHANGE",
+              "MERCHANDISE_NOT_RECEIVED",
+              "SHIPPING_ADDRESS_UNDELIVERABLE"
+            ],
+            "description": "Why units are cancelled."
+          },
+          "order_line_statuses": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Quantity per status for the whole line, e.g. [{\"status\": \"CANCELED\", \"quantity\": 1}, {\"status\": \"SHIPPED\", \"quantity\": 2}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "PENDING",
+                    "ACKNOWLEDGED_BY_SELLER",
+                    "SHIPPED",
+                    "CANCELED"
+                  ],
+                  "description": "Line status."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units in this status."
+                }
+              },
+              "required": [
+                "status",
+                "quantity"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "order_line_id",
+          "order_line_statuses"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/orders/{order_id}/order_lines/{order_line_id}",
+        "bodyMapping": {
+          "cancellation_reason": "$cancellation_reason",
+          "order_line_statuses": "$order_line_statuses"
+        }
+      }
+    },
+    {
+      "name": "target_plus_list_order_fulfillments",
+      "description": "List the fulfillments (shipments) recorded for an order: per fulfillment id, order_line_number, quantity, shipped_date, shipping_method, tracking_number and level_of_service. The id is needed to correct one with target_plus_update_order_fulfillments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Order id as Target returns it: order number and ship advice number joined by a dash, e.g. 1028521085032-1635740801 (id of target_plus_list_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/orders/{order_id}/fulfillments"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_create_order_fulfillments",
+      "description": "Report shipped units of an order with tracking: one item per order line and package with order_line_number, quantity, shipped_date, shipping_method (the shipping_method name from target_plus_list_shipping_methods, e.g. UPSGround) and tracking_number. Returns the created fulfillments with their ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Order id as Target returns it: order number and ship advice number joined by a dash, e.g. 1028521085032-1635740801 (id of target_plus_list_orders)."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Fulfillments to create.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "order_line_number": {
+                  "type": "string",
+                  "description": "Order line being shipped, e.g. \"1\"."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Units shipped in this package."
+                },
+                "shipped_date": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When it shipped, ISO 8601 with time zone, e.g. 2026-11-14T15:30:00Z."
+                },
+                "shipping_method": {
+                  "type": "string",
+                  "description": "Shipping method name exactly as target_plus_list_shipping_methods returns it, e.g. UPSGround."
+                },
+                "tracking_number": {
+                  "type": "string",
+                  "description": "Carrier tracking number."
+                },
+                "level_of_service": {
+                  "type": "string",
+                  "description": "Optional service class, e.g. G2."
+                }
+              },
+              "required": [
+                "order_line_number",
+                "quantity",
+                "shipped_date",
+                "shipping_method",
+                "tracking_number"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/orders/{order_id}/bulk_fulfillments_create",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "target_plus_update_order_fulfillments",
+      "description": "Correct fulfillments already reported for an order (wrong tracking number, method, date or quantity). Each item repeats the full fulfillment with its id from target_plus_list_order_fulfillments. Returns the updated fulfillments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Order id as Target returns it: order number and ship advice number joined by a dash, e.g. 1028521085032-1635740801 (id of target_plus_list_orders)."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Fulfillments to update, complete with id.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Fulfillment id."
+                },
+                "order_line_number": {
+                  "type": "string",
+                  "description": "Order line, e.g. \"1\"."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Units shipped."
+                },
+                "shipped_date": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When it shipped, ISO 8601 with time zone."
+                },
+                "shipping_method": {
+                  "type": "string",
+                  "description": "Shipping method name from target_plus_list_shipping_methods."
+                },
+                "tracking_number": {
+                  "type": "string",
+                  "description": "Carrier tracking number."
+                },
+                "level_of_service": {
+                  "type": "string",
+                  "description": "Optional service class."
+                }
+              },
+              "required": [
+                "id",
+                "order_line_number",
+                "quantity",
+                "shipped_date",
+                "shipping_method",
+                "tracking_number"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/seller_orders/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/orders/{order_id}/bulk_fulfillments_update",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "target_plus_list_shipping_methods",
+      "description": "List the shipping methods Target Plus accepts on fulfillments: per method shipping_method (the name to send, e.g. USPSPriorityMail), carrier, scac and service_code. 100 per page returns them all. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10). 100 returns every method in one call.",
+            "default": 100
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. created(desc). Several fields are separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/seller_orders/v1/shipping_methods",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_product_returns",
+      "description": "List returns of your products: per return id, order_id, order_number, tcin, external_id, quantity, return_date, return_reason, is_online, customer_can_keep, physical and financial disposition and tracking_data. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Only returns of this order id."
+          },
+          "order_number": {
+            "type": "string",
+            "description": "Only returns of this order number."
+          },
+          "tcin": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Target Corporation Item Number (TCIN), digits only, e.g. 81789642."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. created(desc). Several fields are separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/product_returns",
+        "queryParams": {
+          "order_id": "$order_id",
+          "order_number": "$order_number",
+          "tcin": "$tcin",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_product_return",
+      "description": "Read one product return: order, tcin, SKU, quantity, return_date, return_reason, disposition, inbound tracking and tracking_data (tracking number, ship and CRC received dates, license plate). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_return_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Product return id (id of target_plus_list_product_returns)."
+          }
+        },
+        "required": [
+          "product_return_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/product_returns/{product_return_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_search_product_returns",
+      "description": "Search returns by return order number, tracking number, license plate, bill of lading, location or return date, for example to match a parcel that came back. Same fields as target_plus_list_product_returns. Pages with page or with after_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Only returns of this order id."
+          },
+          "order_number": {
+            "type": "string",
+            "description": "Order number."
+          },
+          "return_order_number": {
+            "type": "string",
+            "description": "Return order number."
+          },
+          "tcin": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Target Corporation Item Number (TCIN), digits only, e.g. 81789642."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Return tracking number (parcel) or PRO number."
+          },
+          "license_plate": {
+            "type": "string",
+            "description": "License plate generated when the item was returned in store."
+          },
+          "bill_of_lading": {
+            "type": "string",
+            "description": "Bill of lading for non-parcel returns."
+          },
+          "receiving_location_id": {
+            "type": "number",
+            "description": "Receiving location id."
+          },
+          "location_id": {
+            "type": "number",
+            "description": "Location id of the return."
+          },
+          "is_online": {
+            "type": "boolean",
+            "description": "true for returns started online, false for in store."
+          },
+          "return_date": {
+            "type": "string",
+            "pattern": "^[0-9TZ:.+-]*/[0-9TZ:.+-]*$",
+            "description": "Only returns in this range, as an ISO 8601 interval start/end in UTC, e.g. 2026-11-01T00:00:00Z/2026-11-14T23:59:59Z. Leave one side empty for an open range (2026-11-01T00:00:00Z/)."
+          },
+          "after_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Deep paging: the id of the last row of the previous page. Leave out for the first page; stop when a page comes back short or empty."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. created(desc). Several fields are separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/product_returns_search",
+        "queryParams": {
+          "order_id": "$order_id",
+          "order_number": "$order_number",
+          "return_order_number": "$return_order_number",
+          "tcin": "$tcin",
+          "tracking_number": "$tracking_number",
+          "license_plate": "$license_plate",
+          "bill_of_lading": "$bill_of_lading",
+          "receiving_location_id": "$receiving_location_id",
+          "location_id": "$location_id",
+          "is_online": "$is_online",
+          "return_date": "$return_date",
+          "after_id": "$after_id",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_return_disputes",
+      "description": "List your return disputes: per dispute id, case_number, order_id, return_order_number, product_return_id, dispute_reason, quantity, judgement, final_response, chargeback_amount and seller_refund_amount (USD), notes. Paged. Read-only; disputes are filed in the Partner Portal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "description": "Only this case id."
+          },
+          "return_order_number": {
+            "type": "string",
+            "description": "Only this return order number."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Only disputes of this order id."
+          },
+          "judgement": {
+            "type": "string",
+            "enum": [
+              "VALID_CLAIM",
+              "NEEDS_REVIEW",
+              "INVALID_CLAIM",
+              "WAITING_ON_PARTNER"
+            ],
+            "description": "Only disputes with this judgement."
+          },
+          "last_modified": {
+            "type": "string",
+            "pattern": "^[0-9TZ:.+-]*/[0-9TZ:.+-]*$",
+            "description": "Only disputes changed in this range, as an ISO 8601 interval start/end in UTC, e.g. 2026-11-01T00:00:00Z/2026-11-14T23:59:59Z. Leave one side empty for an open range (2026-11-01T00:00:00Z/)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. created(desc). Several fields are separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/return_disputes",
+        "queryParams": {
+          "case_id": "$case_id",
+          "return_order_number": "$return_order_number",
+          "order_id": "$order_id",
+          "judgement": "$judgement",
+          "last_modified": "$last_modified",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_return_dispute",
+      "description": "Read one return dispute: reason, description, quantity, judgement, final_response, responses, chargeback_amount and seller_refund_amount in USD, notes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_dispute_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Return dispute id (id of target_plus_list_return_disputes)."
+          }
+        },
+        "required": [
+          "return_dispute_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/return_disputes/{return_dispute_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_return_policies",
+      "description": "List your return policies: per policy id, status (ACTIVE, INACTIVE), return_address, physical and financial disposition ids, return_authorization and special_return_instructions. The id is the value for the seller_return_policy logistics property. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ],
+            "description": "Only policies with this status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/return_policies",
+        "queryParams": {
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_create_report_request",
+      "description": "Request a report, e.g. ORDERS, INVENTORY, ITEM_ERRORS, BULK_PRODUCT_DATA, RETURN_ORDERS_EXTERNAL, PAYOUT_RECONCILIATION or SALES_METRICS, for a date range. Reports are built asynchronously: the answer carries the id with status PENDING; poll target_plus_get_report_request until COMPLETE and use its download_url. Requests are kept 5 days. Reading only; nothing is paid out.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "PAYOUT_RECONCILIATION",
+              "INVENTORY",
+              "ORDERS",
+              "ALLOWED_ITEM_TYPES",
+              "BULK_PRODUCT_DATA",
+              "ITEM_ERRORS",
+              "ATTRIBUTE_VALUES",
+              "RETURN_ORDERS_EXTERNAL",
+              "ASSORTMENT_ANALYSIS",
+              "MARKETPLACE_USERS",
+              "ORDERS_MISSING_TRANSFERS",
+              "SELLER_OPERATIONS_DETAILS",
+              "AUTO_APPROVAL_BLOCKED_LIST",
+              "ITEM_INCONSISTENCIES",
+              "ORDERS_PAST_SLA",
+              "RETURN_ORDERS_INTERNAL",
+              "PARTNER_CONVERSION",
+              "PARTNER_FINANCIAL_DETAILS",
+              "SALES_METRICS",
+              "ORDER_DEFECTS"
+            ],
+            "description": "Report type. Not every account may request every type."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "CSV",
+              "EXCEL",
+              "JSON"
+            ],
+            "default": "CSV",
+            "description": "File format (Target defaults to EXCEL; some types do not support every format)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start of the report range, ISO 8601 UTC."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of the report range, ISO 8601 UTC."
+          },
+          "report_name": {
+            "type": "string",
+            "description": "File name for the download."
+          },
+          "parameters": {
+            "type": "object",
+            "description": "Extra parameters some report types need, as an object."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/report_requests",
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "report_request": {
+            "__json": {
+              "type": "$type",
+              "format": "$format",
+              "start_date": "$start_date",
+              "end_date": "$end_date",
+              "report_name": "$report_name",
+              "parameters": "$parameters"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "target_plus_list_report_requests",
+      "description": "List your report requests of the last 5 days: per request id, type, format, status (PENDING, PROCESSING, COMPLETE, CANCELED), start_date, end_date, created, download_url when complete and feedback. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Only reports of this type, e.g. ORDERS."
+          },
+          "format": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CSV",
+                "EXCEL",
+                "JSON"
+              ]
+            },
+            "description": "Only these formats."
+          },
+          "created_by": {
+            "type": "string",
+            "description": "Only requests created by this user id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/report_requests",
+        "queryParams": {
+          "type": "$type",
+          "format": "$format",
+          "created_by": "$created_by",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_report_request",
+      "description": "Read one report request: status (PENDING, PROCESSING, COMPLETE, CANCELED), download_url once COMPLETE, feedback with any errors, type, format and range. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Report request id (id of target_plus_create_report_request or target_plus_list_report_requests)."
+          }
+        },
+        "required": [
+          "report_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/report_requests/{report_request_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_terminate_report_request",
+      "description": "Terminate a report request: a request that is not yet COMPLETE becomes CANCELED. Answers 204 without a body. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Report request id."
+          }
+        },
+        "required": [
+          "report_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/report_requests/{report_request_id}"
+      }
+    },
+    {
+      "name": "target_plus_list_distribution_centers",
+      "description": "List your distribution centers: per center id, name, address, timezone, days_of_operation (working hours, days closed), two_day_state_codes and ship_nodes (carriers, service levels with cut-off times, max_orders_per_day). The ids are needed for stock tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/distribution_centers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_ship_nodes",
+      "description": "List the ship nodes of one distribution center: per node id, name, carriers (id, shipping_account), service_levels (id, cut_off_time, generic_time_in_transit, building lead time) and max_orders_per_day. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "distribution_center_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Distribution center id (id of target_plus_list_distribution_centers)."
+          }
+        },
+        "required": [
+          "distribution_center_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/distribution_centers/{distribution_center_id}/ship_nodes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_legalizations",
+      "description": "List your legalizations: the item types and brands Target has approved you to sell (primary_attribute, paired_attributes). Check here before listing a new item type or brand. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "ITEM_TYPE",
+              "BRAND"
+            ],
+            "description": "Only item type or only brand legalizations."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. created(desc). Several fields are separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/sellers/{{TARGET_PLUS_SELLER_ID}}/legalizations",
+        "queryParams": {
+          "type": "$type",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_protected_legalizations",
+      "description": "List protected legalizations: brands and item types that external partners may not sell on Target Plus. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "ITEM_TYPE",
+              "BRAND"
+            ],
+            "description": "Only item types or only brands."
+          },
+          "attribute_id": {
+            "type": "string",
+            "description": "Only this attribute id (item type or brand)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. created(desc). Several fields are separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellers/v1/protected_legalizations",
+        "queryParams": {
+          "type": "$type",
+          "attribute_id": "$attribute_id",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_taxonomies",
+      "description": "Search the Target product taxonomy: per node id, name, type (ITEM_TYPE, PRODUCT_TYPE, PRODUCT_SUBTYPE, MERCHANDISE_TYPE), parent_id, breadcrumbs, child_count and status. Use type ITEM_TYPE with a name to find the item type of a product. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name to search, e.g. side tables."
+          },
+          "name_search_type": {
+            "type": "string",
+            "enum": [
+              "CONTAINS",
+              "STARTS_WITH"
+            ],
+            "description": "How name matches (Target defaults to CONTAINS)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ITEM_TYPE",
+              "PRODUCT_TYPE",
+              "PRODUCT_SUBTYPE",
+              "MERCHANDISE_TYPE"
+            ],
+            "description": "Only nodes of this type."
+          },
+          "id": {
+            "type": "string",
+            "description": "Only these taxonomy ids (comma separated)."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Children of this node."
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Levels of children to return; needs parent_id when above 1."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort as field(asc) or field(desc), e.g. created(desc). Several fields are separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item_taxonomies/v2/taxonomies",
+        "queryParams": {
+          "name": "$name",
+          "name_search_type": "$name_search_type",
+          "type": "$type",
+          "id": "$id",
+          "parent_id": "$parent_id",
+          "depth": "$depth",
+          "page": "$page",
+          "per_page": "$per_page",
+          "sort": "$sort"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_attribute_assignments",
+      "description": "List the attributes assigned to a taxonomy node (for example an item type): per assignment attribute_id, attribute, required, max_selections, allow_value_requests, value_group_ids and priority. This tells you which product fields an item type needs. Needs taxonomy_id or attribute_id. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "taxonomy_id": {
+            "type": "string",
+            "description": "Taxonomy node id, e.g. an item type id from target_plus_list_taxonomies."
+          },
+          "attribute_id": {
+            "type": "string",
+            "description": "Attribute id."
+          },
+          "item_type_id": {
+            "type": "string",
+            "description": "Item type id."
+          },
+          "attribute_group": {
+            "type": "string",
+            "enum": [
+              "SELLING",
+              "CORE",
+              "TAX",
+              "CLAIM",
+              "LOGISTICS",
+              "NONRETAIL"
+            ],
+            "description": "Only attributes of this group."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item_taxonomies/v2/assignments",
+        "queryParams": {
+          "taxonomy_id": "$taxonomy_id",
+          "attribute_id": "$attribute_id",
+          "item_type_id": "$item_type_id",
+          "attribute_group": "$attribute_group",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_attributes",
+      "description": "Search product attributes: per attribute id, name, label, description, type, attribute_group, minimum and maximum value, tags (variation eligible) and value_group_ids. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Attribute name to search."
+          },
+          "name_search_type": {
+            "type": "string",
+            "enum": [
+              "CONTAINS",
+              "STARTS_WITH"
+            ],
+            "description": "How name matches (Target defaults to CONTAINS)."
+          },
+          "attribute_group": {
+            "type": "string",
+            "enum": [
+              "SELLING",
+              "CORE",
+              "TAX",
+              "CLAIM",
+              "LOGISTICS",
+              "NONRETAIL"
+            ],
+            "description": "Only this group."
+          },
+          "mapped_property": {
+            "type": "string",
+            "description": "Only the attribute mapped to this property name."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item_taxonomies/v2/attributes",
+        "queryParams": {
+          "name": "$name",
+          "name_search_type": "$name_search_type",
+          "attribute_group": "$attribute_group",
+          "mapped_property": "$mapped_property",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_list_attribute_values",
+      "description": "Search the allowed values of an attribute (for example the colors or materials Target accepts): per value id, name, description and synonyms. Filter by attribute_id, optionally with taxonomy_id for the values valid in one item type. Paged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attribute_id": {
+            "type": "string",
+            "description": "Attribute id."
+          },
+          "taxonomy_id": {
+            "type": "string",
+            "description": "Taxonomy node id; needs attribute_id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Value name to search, e.g. blue."
+          },
+          "name_search_type": {
+            "type": "string",
+            "enum": [
+              "CONTAINS",
+              "STARTS_WITH"
+            ],
+            "description": "How name matches (Target defaults to CONTAINS)."
+          },
+          "value_group_id": {
+            "type": "string",
+            "description": "Only values of this value group."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1. Deep paging stops at 10,000 results; narrow the filters for more."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Rows per page (Target's own default is 10).",
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item_taxonomies/v2/attribute_values",
+        "queryParams": {
+          "attribute_id": "$attribute_id",
+          "taxonomy_id": "$taxonomy_id",
+          "name": "$name",
+          "name_search_type": "$name_search_type",
+          "value_group_id": "$value_group_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "exposeHeaders": [
+          "link",
+          "x-total-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "target_plus_get_catalog_item",
+      "description": "Read a Target catalog item by TCIN: product_title, brand, item_type and item_type_name, product type and subtype, merch type, department and class, size, color, upcs, parent_sku, relationship_type, item_status, published and launch dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tcin": {
+            "type": "string",
+            "pattern": "^[0-9]{1,15}$",
+            "description": "Target Corporation Item Number (TCIN), digits only, e.g. 81789642."
+          }
+        },
+        "required": [
+          "tcin"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/item_taxonomies/v2/items/{tcin}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

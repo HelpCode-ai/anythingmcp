@@ -28,7 +28,6 @@ export interface CloudPlan {
   monthly: number;
   /** EUR incl. VAT per year, on yearly billing. */
   yearly: number;
-  summary: string;
   /** What the plan includes (the licence's maxConnectors / maxMcpServers / maxUsers). */
   limits: PlanLimits;
   popular?: boolean;
@@ -52,7 +51,6 @@ export const CLOUD_PLANS: readonly CloudPlan[] = [
     name: 'Starter',
     monthly: 19,
     yearly: 190,
-    summary: '5 connectors · 3 MCP servers · 1 user',
     limits: { connectors: 5, mcpServers: 3, users: 1 },
     popular: true,
   },
@@ -61,7 +59,6 @@ export const CLOUD_PLANS: readonly CloudPlan[] = [
     name: 'Team',
     monthly: 49,
     yearly: 490,
-    summary: '15 connectors · 10 MCP servers · up to 3 users',
     limits: { connectors: 15, mcpServers: 10, users: 3 },
   },
 ];
@@ -98,12 +95,6 @@ export function smallestFittingPlan(usage: WorkspaceUsage): CloudPlanId | null {
 export function selectionForUsage(picked: PlanSelection, usage: WorkspaceUsage | null): PlanSelection {
   if (!usage || limitsExceeded(planById(picked.plan), usage).length === 0) return picked;
   return { ...picked, plan: smallestFittingPlan(usage) ?? 'team' };
-}
-
-/** "7 connectors", "1 MCP server", "2 users": the counts a plan does not cover. */
-export function describeUsage(usage: WorkspaceUsage, keys: (keyof PlanLimits)[]): string {
-  const label = { connectors: 'connector', mcpServers: 'MCP server', users: 'user' } as const;
-  return keys.map((k) => `${usage[k]} ${label[k]}${usage[k] === 1 ? '' : 's'}`).join(', ');
 }
 
 // ── What changes on a plan (GET /api/license/plan-fit) ──────────────────────
@@ -205,15 +196,17 @@ export function planById(id: CloudPlanId): CloudPlan {
   return CLOUD_PLANS.find((p) => p.id === id) ?? CLOUD_PLANS[1];
 }
 
-/** "19 €", "15.83 €" (non-breaking space, as on the invoice). */
-export function formatEur(amount: number): string {
-  const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
-  return `${text} €`;
-}
+/** UI languages that write decimals with a comma. Chinese and Japanese use a point, like English. */
+const COMMA_DECIMALS = new Set(['de', 'it', 'es', 'ru']);
 
-/** The price line for a plan: "49 €/month" or "490 €/year". */
-export function formatPlanPrice(plan: CloudPlan, period: BillingPeriod): string {
-  return period === 'yearly' ? `${formatEur(plan.yearly)}/year` : `${formatEur(plan.monthly)}/month`;
+/**
+ * "19 €", "15.83 €" (non-breaking space, as on the invoice). With a UI
+ * language that writes decimals with a comma: "15,83 €".
+ */
+export function formatEur(amount: number, locale?: string): string {
+  const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+  const comma = COMMA_DECIMALS.has((locale ?? '').toLowerCase().split('-')[0]);
+  return `${comma ? text.replace('.', ',') : text} €`;
 }
 
 /** The monthly equivalent of a yearly price, rounded to the cent: 190 → 15.83. */
@@ -434,12 +427,14 @@ export function formatTrialEnd(
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(locale, {
+  const text = d.toLocaleDateString(locale, {
     day: 'numeric',
     month: style === 'long' ? 'long' : 'short',
     ...(style === 'long' && { year: 'numeric' }),
     ...(timeZone && { timeZone }),
   });
+  // Russian ends a full date with "г." (год): dropped, the date sits before a full stop.
+  return text.replace(/\s*г\.$/, '');
 }
 
 // ── Back to an AI client's authorization ────────────────────────────────────

@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 732 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 845 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -29,6 +29,7 @@ A gateway forwards calls. A company brain also knows where your documents are, h
 | **File Share** | Temporary download links for files from your folders, or for files the AI writes (a CSV export, a report), internal or public, with expiry and revoke. [File Share](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>) | Cloud; self-hosted Enterprise |
 | **Company memory** | Facts and preferences saved from one AI client and found again in any other: said once in Claude, used by Copilot. Personal and company scopes, with folders and role limits. [Memory](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>) | Enterprise |
 | **AI skills** | The procedures your agents follow, written by hand or learned from real requests and fixed errors, approved by an admin. [AI skills](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>) | All |
+| **Learning projects** | Keep what an experienced colleague teaches the AI before they leave: their corrections on one MCP server become skills for the whole team, after they agree and confirm. [Learning projects](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>) | Team, Enterprise |
 | **Knowledge graph** | How your systems connect, so the agent links a customer in one system to their orders in another without being told. [Knowledge Graph](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md>) | All |
 | **Code Mode** | One short program that calls several tools in an isolated sandbox with no secrets and no network, so a five-step lookup becomes one call. [Code Mode](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md>) | All; write access Enterprise |
 | **Governance** | Roles and per-tool permissions, response mapping that drops fields before they reach the model, an audit log of every call. SSO and SCIM from your directory. [Security](<https://github.com/HelpCode-ai/anythingmcp/blob/main/README.md#security-and-governance>) | All; SSO/SCIM Enterprise |
@@ -92,7 +93,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-732 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
+845 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
 
 | Category | Examples |
 |---|---|
@@ -690,10 +691,65 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `WOOCOMMERCE_ONE_CLICK` | No | `true` adds "Connect with one click" to the WooCommerce setup page, on Cloud and self-hosted alike: the merchant approves a REST API key on their shop (`/wc-auth/v1/authorize`) and WooCommerce posts it to `<SERVER_URL>/api/woocommerce/callback`, where it is checked on the shop before it is stored. Offered only when `SERVER_URL` is a public https address the shop can reach; otherwise the setup page keeps the paste flow. Default: off |
 | `META_PLATFORM_APP_ID` / `META_PLATFORM_APP_SECRET` / `META_PLATFORM_CONFIG_ID` | No | A Meta app for **Authorize with Provider** on the Instagram connector (`instagram`), on Cloud and self-hosted alike. With `META_PLATFORM_CONFIG_ID` (the Facebook Login for Business configuration id under *API setup with Unified login*, required for every Meta app created since autumn 2026) the sign-in uses Unified Login: users sign in with Instagram or Facebook, no Facebook Page needed, and the token (a Business Integration System User token) does not expire. Without it the app uses the classic Facebook Login. A connector without `META_APP_ID` / `META_APP_SECRET` of its own uses this app, and the setup page stops asking for one. Register `<SERVER_URL>/api/meta/callback` as the configuration's redirect URL (or Facebook Login's valid OAuth redirect URI). Accounts without a role on the app need Meta App Review (Advanced Access) and Live mode. The secret is never stored on a connector or shown. Unset = users enter an app of their own or paste a token. The Instagram Login connector (`instagram-login`) has no server app: new Meta apps cannot get Instagram Login |
 | `META_PLATFORM_ORG_IDS` | No | Comma-separated organization ids the server's Meta app is offered to. Empty (default): every organization. Set it while the app is in Development mode or in App Review, when only its testers can finish the sign-in: every other organization then sees the Instagram connector as on a server without an app (an app of its own, or a pasted token). Same on Cloud and self-hosted. |
+| `TELEGRAM_MANAGER_BOT_TOKEN` | No | The token of a Telegram "manager bot" of this server (a bot with **Bot Management Mode** enabled in @BotFather). With it and `TELEGRAM_MANAGER_WEBHOOK_SECRET`, a user who picks Telegram on the page after approving an AI client creates their own bot with one tap in Telegram instead of a chat with @BotFather and a pasted token; see [One-tap Telegram bot](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#one-tap-telegram-bot>). Default: off, the page is as before |
+| `TELEGRAM_MANAGER_WEBHOOK_SECRET` | With the token | A secret of your own, 16 to 256 characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (for example `openssl rand -hex 32`). Telegram sends it back with every update of the manager bot, to `<SERVER_URL>/api/telegram/manager-webhook`; a call without it is refused |
+| `TELEGRAM_MANAGED_BOT_ORG_IDS` | No | Comma-separated organization ids the one-tap Telegram bot is offered to. Empty (default): every organization. Set it to try the feature on one workspace first: every other organization sees the page as before |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 | `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#license-verification>); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
 ---
+
+## One-tap Telegram bot
+
+Optional and off by default. Without it, a user who picks Telegram on the page after approving an AI client gets a Telegram connector with no token: they create a bot with @BotFather, copy its token and paste it on the setup page. With a manager bot, the same page offers **Create your Telegram bot**: Telegram opens with a name and a username filled in, the user confirms with one tap, and the connector works at once. It uses Telegram's managed bots (Bot API 9.6).
+
+Set it up once per server:
+
+1. In Telegram, open @BotFather, send `/newbot` and create a bot for your server. This is the manager bot. It receives the notice that a user created a bot, and answers a `/start` in its own chat with one short line (see below); it sends nothing else.
+2. Open that bot's settings in @BotFather's mini app and turn on **Bot Management Mode**.
+3. Set `TELEGRAM_MANAGER_BOT_TOKEN` to its token and `TELEGRAM_MANAGER_WEBHOOK_SECRET` to a secret of your own (`openssl rand -hex 32`), then restart the backend.
+
+At start-up the backend asks Telegram whether the bot can manage bots and registers `<SERVER_URL>/api/telegram/manager-webhook` as its webhook, for the update types `managed_bot` and `message`. The log then says `One-tap Telegram bot is on`. It stays off, with a warning in the log and the page as before, when the token or the secret is missing or malformed, when Bot Management Mode is off, or when `SERVER_URL` is not a public https address (Telegram only delivers to https). Telegram being unreachable never stops the server from starting: the registration is tried again, at most once a minute, the next time the page is shown.
+
+How a new bot finds its connector: the username Telegram suggests carries a random code (`amcp_<8 hex>_bot`). The connector keeps a keyed hash of that code for 30 minutes, in its configuration; the token goes into the connector's variables, encrypted like every other credential.
+
+The bot belongs to the user who created it: it appears in their own @BotFather list, and they can rename it, give it a picture, use it with their own customers, and revoke its token or delete it there. The page says so under the button.
+
+### A username the user changed
+
+A user who edits the suggested username in Telegram's creation screen creates a bot that carries no code. The page then offers **Changed the username? Link your bot** (as soon as the server sees such a bot, or 20 seconds after the click on the first button; a minute after Telegram was picked when only the QR code was used). It opens the manager bot's chat; pressing **Start** there sends `/start` with the setup's code and a check keyed with the webhook secret, from the user's own Telegram account. The server connects the setup to the bot that same account created through the manager bot:
+
+- **Bot first, then Start**: the bot is connected at that moment, and the manager bot answers "Your bot is connected".
+- **Start first, then the bot**: the setup now belongs to that Telegram account, and whatever bot the account creates through the manager bot in the setup's 30 minutes is connected, under any username.
+
+A bot is only ever connected to a setup by the account that created it: Telegram says who created a bot and who sent a message, and the two must match. The first account that sends a setup's code keeps the setup; a second one is refused. An account with two bots that carry no code gets the newest one connected (the older one can still be connected by pasting its token). Everything after that is the same as for a bot found by its username. Pasting the token (**Already have a bot? Paste its token**) stays the last resort.
+
+What is remembered between the two halves, without a schema change:
+
+- on the connector, in its configuration: a keyed hash (HMAC with the webhook secret) of the Telegram account that pressed Start;
+- in `site_settings`, for 30 minutes at most, one row per Telegram account under that same keyed hash: the id of the newest bot the account created that carries no code (`telegram_unmatched_bot:<hash>`), or the connector the account asked for (`telegram_claim:<hash>`); and the time of the last such bot (`telegram_unmatched_bot_at`), for the page's hint. Expired rows are deleted on a later write.
+
+No Telegram account id, username or name is stored or logged; a bot's id is kept for those 30 minutes because Telegram needs it to hand out the token. The rows are in the database, not in memory or Redis, so both orders survive a restart and work with several backend processes. Changing `TELEGRAM_MANAGER_WEBHOOK_SECRET` drops every pending setup and link.
+
+The manager bot answers a `/start` in its own chat with one line: connected (go back to the page and tap Continue), nothing to link yet, or the link is no longer valid (an unknown, expired or foreign code gets the same line whatever the reason). A plain `/start` from anyone gets one neutral line. It acts on at most 5 such messages a minute from one account and 120 a minute in all, per backend process; the rest get no answer.
+
+### After the bot is connected
+
+The AI client is not connected yet at that moment: its authorization is finished by **Continue** on the page. Three things say so and follow it up:
+
+- **The page** shows "Telegram is connected" with "Last step: tap Continue to Claude below", and scrolls the button into view. It never follows the button for the user. On a phone or another touch device, the tap on Continue also copies the example request to the clipboard ("Copied. Paste it in a new chat in Claude."), since no chat tab is opened there; a refused clipboard changes nothing, and the tap goes through as always.
+- **The welcome message** the new bot sends its creator says the same: go back to the page and tap "Continue to Claude" (the client's name as the page shows it).
+- **A second message** follows when the AI client really is connected: on the first `tools/list` that the user's client sends to the shared `/mcp` endpoint within 30 minutes of the bot being connected, the bot writes "Claude is now connected to AnythingMCP. Ask it: "Send me a test message on Telegram."". For Claude the message has a button that opens a new chat with that request typed in (`https://claude.ai/new?q=…`); for any other client it is the same sentence without a link. It is sent once per connector, only for a bot created in one tap by the user whose client it is, and only when the welcome could be delivered (the creator pressed **Start** in the bot's chat: a bot cannot write to someone who has not). It never delays or fails the MCP request: the endpoint only notes the request, and the check (one database read per workspace every five seconds at most, none while the feature is off) and the message happen in the background.
+
+What to know:
+
+- **One manager bot per server.** A bot has one webhook: a second server started with the same token takes it over, and the first one stops receiving updates.
+- **Trying it on one workspace.** Set `TELEGRAM_MANAGED_BOT_ORG_IDS` to a comma-separated list of organization ids: only those see the button.
+- **The creator becomes the default chat.** Telegram says who created the bot; that person's chat id is stored as the connector's `TELEGRAM_DEFAULT_CHAT_ID` (a variable of the connector, encrypted like the others, shown and editable in its settings). The send tools write there when a call names no chat, so "send me a test message" works without looking up a chat id. A connector set up with a pasted token has no default chat until its owner enters one.
+- **The user's bot gets no webhook.** The connector's own `telegram_bot_get_updates` keeps working. To greet the user once after they press **Start**, the server reads the new bot's updates without confirming any of them.
+- **Cloud and self-hosted.** The settings are read in both modes. The page that offers the button (shown after approving an AI client, to a workspace with no connectors) exists on Cloud only today, so a self-hosted instance sees no change yet: no setup is ever started there, so the manager bot has nothing to link and the second message has nobody to go to. Redis is not needed for any of it.
+- **Outbound calls.** `api.telegram.org`, with the manager bot's token (start-up, once per created bot, and one answer per `/start` in its chat) and with the user's new bot's token (the welcome message and the "assistant is connected" message).
+- **Events.** `telegram_bot_link_offered`, `telegram_bot_link_opened`, `telegram_bot_connected` (`kind: claim` when the bot was linked by its creator's Start), `telegram_bot_unmatched`, `telegram_bot_claim_offered`, `telegram_bot_claim` (`status`: `linked`, `waiting` or `refused`), `telegram_bot_client_notice` (`status`: `sent` or `failed`) and `telegram_bot_token_pasted`, in `product_events`. None holds a Telegram id, a username or a code.
 
 ## External Services
 
@@ -832,6 +888,7 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 | [Tool definition format](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md>) | Parameters, endpoint mapping, response mapping |
 | [Knowledge Graph &amp; AI skills](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md>) | Per-workspace data-relationship map served over MCP, plus AI skills composed into server instructions |
 | [Workspace memory](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>) | Personal and company memory AI clients save and search over MCP (Enterprise) |
+| [Learning projects](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>) | Keep what one colleague teaches the AI on an MCP server as skills for everyone (Team and Enterprise) |
 | [MCP resources](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/mcp-resources.md>) | Read-only resources on per-server endpoints: URIs, role visibility, fail-closed rules |
 | [Deployment guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md>) | Docker, production setup, reverse proxy, env vars |
 | [Authentication](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#authentication>) | OAuth2, JWT, API keys, MCP auth modes |
@@ -962,6 +1019,16 @@ curl -s http://localhost:4000/api/connectors \
     "authType": "CONNECTION_STRING"
   }'
 ```
+
+### Where the password is stored
+
+You can type the username and password into the connection string, as above. When the connector is saved, AnythingMCP moves them into the connector's encrypted credentials and stores the connection string without them; the database engine puts them back when it connects.
+
+- The dashboard and the API show the connection string without `user:password@`. An older connection string that still holds its password shows it as `********`.
+- To change the password, type `user:password@` into the connection string again. A string that still shows `********` keeps the stored password.
+- An API request that sends `authConfig` replaces it whole, the moved username and password included.
+- No export contains a password that has moved, an admin export included, so a connector restored from a backup needs it typed in again.
+- A connection string the parser cannot read, such as a multi-host MongoDB URL typed with its credentials, keeps them in place; the password is shown as `********`.
 
 ---
 
@@ -1551,6 +1618,81 @@ and File Share".
 
 ---
 
+## docs/connectors/file-uploads.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/file-uploads.md
+
+# File uploads from AI clients
+
+Many connector tools send a file to the app: a listing photo or a digital download on Etsy, a
+product image on a marketplace, a document to sign. Those tools take a **link** to the file,
+because an MCP tool call carries text and cannot carry the file itself.
+
+When the AI client created the file itself (for example Claude generated an image or a ZIP in
+its code sandbox), there is no public link. File uploads close that gap:
+
+1. The AI calls **`file_upload_link`** with the file name. It gets a one-time upload URL, the
+   `curl` command to run, and a reference such as `amcp-file:3f9c…`.
+2. The AI runs the command in its code sandbox. AnythingMCP stores the file.
+3. The AI passes the reference to the connector tool in place of the link (for example
+   `file_url: "amcp-file:3f9c…"` on `etsy_upload_listing_file`). AnythingMCP reads the file from
+   its own storage and sends it to the app.
+
+For tools where the app downloads the file itself from a URL (an image `src` in a product, for
+example), the AI calls **`file_public_url`** with the reference and gets a direct download link
+that works for one hour.
+
+The two tools appear on an MCP server only when one of its tools sends a file.
+
+## What the user has to do once
+
+The AI client's sandbox must be allowed to reach your AnythingMCP address.
+
+- **Claude (claude.ai, desktop and mobile apps):** Settings → Capabilities → code execution:
+  turn network access on and add `cloud.anythingmcp.com` (or your own AnythingMCP host) to the
+  allowed domains, then start a **new** chat. If `curl` answers 403 or "blocked by allowlist",
+  the domain is not allowed yet.
+- **Claude Code, Cursor, n8n and your own agents** usually have network access already.
+- **ChatGPT**'s code tool has no network access: give a public link to the file instead.
+
+## Limits
+
+| | Largest file | Uploads per day | Kept at once |
+|---|---|---|---|
+| Cloud trial (no card) | 25 MB | 50 | 500 MB |
+| Cloud Starter | 50 MB | 150 | 2 GB |
+| Cloud Team / Business | 100 MB | 500 | 10 GB |
+| Cloud Enterprise | 200 MB | 5,000 | 50 GB |
+| Self-hosted (every edition) | 100 MB, `FILE_UPLOADS_MAX_FILE_BYTES` | no limit, `FILE_UPLOADS_PER_DAY` | no limit, `FILE_UPLOADS_MAX_STORED_BYTES` |
+
+- An upload link works **once**, for **15 minutes**.
+- A file is deleted **8 hours** after upload (`FILE_UPLOADS_TTL_HOURS` on self-hosted). Within
+  that time the reference can be used again, for example for the same photo on several listings.
+- Program files (`.exe`, `.sh`, `.js`, …) are refused.
+- A public link (`file_public_url`) works for one hour and at most 50 downloads per file. It is
+  only made for images (JPG, PNG, GIF, WebP), videos (MP4, MOV) and PDFs whose content matches
+  the extension; ZIP files and other types can only be used by reference.
+
+## Privacy and security
+
+- A reference works only for tools of the workspace that uploaded the file. Another workspace
+  gets the same "unknown or expired" answer as for a reference that never existed.
+- Upload links and public links are random, signed and short-lived; only a hash of the upload
+  token is stored.
+- Anyone who has a public link can download that file until the link expires. Prefer the
+  reference whenever the tool takes a file.
+
+## Cloud and self-hosted
+
+- **AnythingMCP Cloud:** files are kept in the same private storage as File Share, under a
+  separate area that is emptied automatically.
+- **Self-hosted:** every edition, Community included. Files go to the File Share storage
+  (`FILES_STORAGE`: a local directory by default, or your S3 bucket). The backend deletes
+  expired files every 10 minutes; no extra service is needed. Set `FILE_UPLOADS_ENABLED=false`
+  to switch the feature off.
+
+---
+
 ## docs/connectors/graphql.md
 
 Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/graphql.md
@@ -1808,6 +1950,8 @@ If your provider already speaks OAuth2, prefer `OAUTH2` — it has standardised 
                                               response 401? ──► forceRelogin() + retry once
 ```
 
+With `tokenPlacement: "body"` the token is rendered into the tool's body instead of a header, and with `refreshOnBody401` a refused token reported in the response body triggers the same re-login (see [XML logins and a token in the request body](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md#xml-logins-and-a-token-in-the-request-body>)).
+
 The token cache is keyed by `connectorId` (when available) or by `loginUrl|username`. A per-key mutex prevents concurrent refresh storms.
 
 ---
@@ -1836,6 +1980,9 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   },
   // …or a raw string template (only for very simple JSON bodies):
   "loginBodyTemplate": "{\"u\":\"${username}\",\"p\":\"${passwordHashed}\"}",
+  // …or, for an XML API, the document as a string (see "XML logins" below):
+  "loginBodyFormat": "xml",                  // optional: a string loginBody is XML, its values are XML-escaped
+  "loginResponseFormat": "xml",              // optional: parse an XML login answer so the paths below address it
 
   // ─── Credentials & client identity ─────────────────────────────
   "username": "{{SERVICE_EMAIL}}",
@@ -1875,15 +2022,21 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   "tokenTTLSeconds": 2592000,                        // fallback when expiry is absent (30 days)
 
   // ─── Or: the session is a cookie the login sets ────────────────
-  "tokenSource": "cookie",                           // body (default) | cookie
+  "tokenSource": "cookie",                           // body (default) | cookie | header
   "cookieName":  "B1SESSION",                        // the cookie whose value is ${token}
   "cookieMode":  "single",                           // single (default) | all — see below
 
+  // ─── Or: the token comes back in a response header ─────────────
+  "tokenSource": "header",                           // body (default) | cookie | header
+  "tokenHeaderName": "access_token",                 // the response header whose value is ${token}
+
   // ─── Re-login policy ───────────────────────────────────────────
   "refreshOn401": true,                              // re-login on a 401 and retry once (default true)
+  "refreshOnBody401": false,                         // also when the body reports the refused token (default false, see below)
   "proactiveRefreshSeconds": 86400,                  // re-login when this much remains (default 24 h)
 
   // ─── Header injection for downstream tool calls ────────────────
+  "tokenPlacement": "header",                        // header (default) | body: no token header, ${loginToken} in the bodyTemplate
   "headerName":     "Authorization",                 // default Authorization
   "headerTemplate": "Bearer ${token}",               // default "Bearer ${token}"
   "extraHeaders": {
@@ -1918,7 +2071,105 @@ The placeholders below are substituted by the engine when rendering `loginBody` 
 | `${otp}` | `authConfig.otp` |
 | `${signedJwt}` | a JWT signed for this login (see below; renamed via `outputParam`) |
 
-In `headerTemplate` and `extraHeaders`, only `${token}` and `${aud}` are available (these refer to the issued token, not the credentials).
+In `headerTemplate` and `extraHeaders`, only `${token}`, `${aud}` and `${uuid}` are available. `${token}` and `${aud}` refer to the issued token, not the credentials. `${uuid}` is a new random UUID for every API request (the same value wherever it appears in that request), for APIs that want a unique request or correlation id on each call. In `loginHeaders`, `${uuid}` is the only placeholder and gives each login its own UUID.
+
+With `tokenPlacement: "body"`, a tool's `endpointMapping.bodyTemplate` has one more placeholder, `${loginToken}`: the issued token (see [XML logins and a token in the request body](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md#xml-logins-and-a-token-in-the-request-body>)).
+
+A `loginBody` that is a string is sent as is, with its placeholders filled in (XML-escaped with `loginBodyFormat: "xml"`). Together with `"Content-Type": "application/x-www-form-urlencoded"` in `loginHeaders` that covers OAuth-style token endpoints which take a form body, such as Walmart's client-credentials call (`"loginBody": "grant_type=client_credentials"` with `loginBasicAuth: true`).
+
+### XML logins and a token in the request body
+
+Some APIs speak XML from the login on and never use an `Authorization` header:
+Fnac Darty's marketplace API takes an XML document with a partner id, a shop id
+and a key at `/auth`, answers `<auth_response><token>…</token><validity>…</validity></auth_response>`,
+and expects the token as an attribute of the root element of every later
+request. Four fields cover this. Each is opt-in, and a connector without them
+behaves exactly as before.
+
+```json
+"authConfig": {
+  "loginUrl": "https://api.example.com/auth",
+  "loginBodyFormat": "xml",
+  "loginBody": "<auth xmlns=\"urn:example\"><partner_id>${username}</partner_id><shop_id>${aud}</shop_id><key>${password}</key></auth>",
+  "loginHeaders": { "Content-Type": "text/xml; charset=utf-8" },
+  "username": "{{PARTNER_ID}}",
+  "password": "{{API_KEY}}",
+  "aud": "{{SHOP_ID}}",
+  "loginResponseFormat": "xml",
+  "tokenJsonPath": "auth_response.token",
+  "expiryJsonPath": "auth_response.validity",
+  "expiryFormat": "iso8601",
+  "tokenPlacement": "body",
+  "refreshOnBody401": true
+}
+```
+
+- **`loginBodyFormat: "xml"`**: a string `loginBody` is an XML document. The
+  values `${username}`, `${password}`, `${aud}` and the other login
+  placeholders insert are XML-escaped (`&` `<` `>` `"` `'`), and the request is
+  labelled `application/xml; charset=utf-8` unless `loginHeaders` set a
+  Content-Type. Without the field a string `loginBody` is sent as before: the
+  values go in as they are and the request is labelled `application/json`
+  unless `loginHeaders` say otherwise. The field has no effect on a structured
+  `loginBody` or on `loginBodyTemplate`.
+- **`loginResponseFormat: "xml"`**: a login answer that is a string and is
+  declared XML (`text/xml`, `application/xml`, `…+xml`), or starts with `<`,
+  is parsed with the parser the REST engine uses for XML answers: attributes
+  sit next to child elements without a prefix, namespace prefixes are dropped
+  and every value stays a string. `tokenJsonPath`, `expiryJsonPath` and
+  `audJsonPath` then address the document by element name, root element
+  included (`auth_response.token`). When the answer carries no token, the text
+  of its first `<error>` element is reported as the service's refusal, with the
+  error's `code` attribute in front. Anything that is not an XML document is
+  read as it arrived.
+- **`tokenPlacement: "body"`**: REST tool calls send no token header
+  (`headerName` and `headerTemplate` are not used; `extraHeaders` still are).
+  The token is the placeholder `${loginToken}` in a tool's
+  `endpointMapping.bodyTemplate`: XML-escaped with `bodyEncoding: "xml"`,
+  JSON-escaped in a JSON template. The engine's value always wins: a tool
+  argument named `loginToken` cannot replace it. A body that carries the token
+  is not sent again to another origin after a redirect. Fixed values the body
+  needs next to the token (a partner id, a shop id) are ordinary connector
+  variables: `{{PARTNER_ID}}` in the template.
+
+  ```json
+  "endpointMapping": {
+    "method": "POST",
+    "path": "/offers_query",
+    "bodyEncoding": "xml",
+    "bodyTemplate": "<offers_query partner_id=\"{{PARTNER_ID}}\" shop_id=\"{{SHOP_ID}}\" token=\"${loginToken}\"><paging>${page}</paging></offers_query>"
+  }
+  ```
+
+- **`refreshOnBody401: true`**: an API of this kind also reports an expired
+  token in the body rather than with HTTP 401. Describe the error in
+  `connector.config.errorWhen` (see
+  [Errors inside a 200 response](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#errors-inside-a-200-response>))
+  with `status: 401`; when such a rule matches a 2xx answer, or the body of an
+  HTTP error answer (Fnac's test platform refuses a wrong key with HTTP 400 and
+  the XML error in the body), the engine logs in again and repeats the call
+  once, with the new token in the header or in the body. A second refusal is
+  reported as it is. Without the field a mapped 401 is reported and nothing is
+  retried, as before.
+
+  ```json
+  "config": {
+    "errorWhen": [
+      { "path": "offers_query_response.error.code", "in": ["ERR_098", "ERR_102"], "messagePath": "offers_query_response.error.#text", "status": 401 }
+    ]
+  }
+  ```
+
+  An `<error code="ERR_098">text</error>` element parses to
+  `{ "code": "ERR_098", "#text": "text" }`, hence the `#text` path.
+
+`tokenPlacement: "body"` and `refreshOnBody401` apply to REST connectors.
+`scripts/validate-adapters.mjs` checks the combinations (rule
+`login-token-xml`): a `${loginToken}` without `tokenPlacement: "body"`, a body
+placement no template uses, a `refreshOnBody401` without a 401 rule.
+
+Optional elements of an XML request are left out with template blocks, see
+[XML bodies](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#xml-bodies>).
 
 ### Signed JWT logins
 
@@ -1971,6 +2222,43 @@ With `"tokenSource": "cookie"` the token is read from the login response's
 
 The body can still supply `${aud}` through `audJsonPath` (`"."` takes the
 whole body, for logins that answer with a bare token string).
+
+### Token in a response header
+
+With `"tokenSource": "header"` the token is the value of the login response's
+header named `tokenHeaderName`, and the body is not read for it, so
+`tokenJsonPath` is not needed. Ceneo's token call works this way: a `GET` with
+the API key in `Authorization: Basic <key>` answers an empty body and the
+headers `access_token`, `expires_in` and `token_type`.
+
+```json
+"loginUrl": "https://developers.ceneo.pl/AuthorizationService.svc/GetToken?grantType='client_credentials'",
+"loginMethod": "GET",
+"loginHeaders": { "Authorization": "Basic {{CENEO_API_KEY}}" },
+"loginBody": {},
+"username": "{{CENEO_API_KEY}}",
+"password": "{{CENEO_API_KEY}}",
+"tokenSource": "header",
+"tokenHeaderName": "access_token",
+"tokenTTLSeconds": 900,
+"proactiveRefreshSeconds": 120
+```
+
+- The header name is matched without regard to case (`access_token`,
+  `Access_Token` and `ACCESS_TOKEN` are the same header). White space around
+  the value is dropped.
+- The login fails with `header "<name>" not found in the login response
+  headers` when the response has no such header or an empty one. A
+  `tokenSource` of `header` without `tokenHeaderName` is refused before any
+  request is sent, and `scripts/validate-adapters.mjs` reports it (rule
+  `login-token-source`).
+- The expiry is not read from a header: set `tokenTTLSeconds` to the token's
+  lifetime (900 for Ceneo's 15 minutes), or `expiryJsonPath` when the body
+  carries it.
+- `username` and `password` are still required. A login that only sends a key
+  in `loginHeaders` sets both to that key and `"loginBody": {}`, so nothing
+  but the header travels (a `GET` login sends `loginBody` as query
+  parameters, and without a `loginBody` the credentials themselves).
 
 ---
 
@@ -2115,7 +2403,7 @@ The MCP Bridge supports automatic token refresh for OAuth2-protected remote serv
 | **Basic Auth** | `Authorization: Basic base64(username:password)`, e.g. an Atlassian personal API token as `email:token` |
 | **OAuth2** | Sign in at the provider ("Authorize with Provider"); tokens refresh automatically |
 | **API Key** | API key in a header of your choice |
-| **None** | For unprotected local MCP servers |
+| **None** | For servers that need no credentials: a public catalog endpoint (Decathlon US Shop, Spartoo Shop) or an unprotected local MCP server. No `Authorization` header is sent |
 
 ### OAuth2 against a remote MCP server
 
@@ -2165,6 +2453,7 @@ install. Through the API they can be set on any MCP connector.
 | `mcpPath` | Endpoint path when the base URL cannot say it. A base URL without a path means `<origin>/mcp`, so a server at the root of its host (Stripe, Apify) sets `"/"`. |
 | `mcpToolPrefix` | Prepended to the remote tool names (`linear_` turns `list_issues` into `linear_list_issues`), so two bridges with tools of the same name can share an MCP server. Characters outside `[A-Za-z0-9_]` become `_`, and a name that already starts with the prefix keeps it once. Calls still use the remote name. |
 | `mcpOAuth` | How "Authorize with Provider" works for this connector, below. |
+| `mcpFixedArguments` | An object merged into the arguments of every tool call, and left out of the tool schemas the model sees. See [Fixed arguments](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md#fixed-arguments-mcpfixedarguments>). |
 
 `mcpOAuth` (every field optional):
 
@@ -2187,6 +2476,50 @@ install. Through the API they can be set on any MCP connector.
 | `tokenAuthMethod` | `none`, `client_secret_post` or `client_secret_basic`: for a pre-registered client, how it authenticates at the token endpoint; for dynamic registration, the method to register with. |
 | `resource` | RFC 8707 indicator. Default: sent when the server publishes a protected-resource document, with that document's `resource` (else the MCP URL). `true` always sends it, `false` never, a string sends that value. |
 
+### Fixed arguments (`mcpFixedArguments`)
+
+Some servers want the same argument on every call, with a value that belongs to the connector
+and not to the conversation: a shop that speaks the Universal Commerce Protocol asks each
+`tools/call` for the URL of the calling agent's profile in `meta.ucp-agent.profile`.
+`mcpFixedArguments` holds such arguments once, on the connector:
+
+```json
+"config": {
+  "mcpToolPrefix": "acme_shop_",
+  "mcpFixedArguments": {
+    "meta": { "ucp-agent": { "profile": "https://example.com/.well-known/ucp-agent.json" } }
+  }
+}
+```
+
+It is the counterpart of a tool's `omitParameters`: that only hides a parameter, this hides it
+and sends its value.
+
+- **On every call** the object is merged into the arguments before they go to the remote
+  server. Objects merge key by key, so other fields the caller puts into `meta` are kept. At a
+  path the connector fixes, the fixed value always wins over what the caller sent. Arrays and
+  plain values are replaced as a whole.
+- **In the tool schemas** the fixed paths are dropped, at install, after "Authorize with
+  Provider" and on every **Discover tools**, so the model is never asked for them. A fixed
+  value removes its parameter, also from `required`. A nested object loses only the fixed
+  fields: when it has no other properties the whole parameter disappears (a `meta` that only
+  carried `ucp-agent`), otherwise it stays with the rest (a `meta` that also takes an
+  `idempotency-key`). A parameter that is fixed as an object and declares no properties of its
+  own is dropped; one described through `$ref`, `anyOf`, `oneOf` or `allOf` is left as it is.
+  Tools already stored keep their schema until the next **Discover tools**.
+- **Values may use `{{VAR}}`** placeholders. They are resolved from the connector's
+  environment variables on each call, like the base URL and headers; a call with a variable
+  that has no value is refused before anything is sent.
+- **Opt-in.** A connector without the key behaves exactly as before. The key is read on MCP
+  connectors only, and the adapter validator refuses it on any other type or when it is not an
+  object.
+
+It applies to `tools/call` only. `initialize` and `tools/list` are sent as they are, and the
+tool-import dialog (**Import tools** from an MCP source) stores the schemas as the server lists
+them.
+
+In both Cloud and self-hosted deployments the setting works the same way.
+
 ### Vendor MCP servers in the catalog
 
 These catalog adapters bridge a vendor's official remote MCP server. At install AnythingMCP lists
@@ -2207,6 +2540,8 @@ declares none, so a refused token is reported on the setup form before anything 
 | Apify | `https://mcp.apify.com` (root, `mcpPath: "/"`) | Bearer (API token) |
 | Notion | `https://mcp.notion.com/mcp` | OAuth2, dynamic registration |
 | Helium 10 | `https://mcp.helium10.com/mcp` | OAuth2, dynamic registration |
+| Decathlon US Shop | `https://www.decathlon.com/api/ucp/mcp` | None (the agent profile URL goes out as a fixed argument) |
+| Spartoo Shop | `https://www.spartoo.<tld>/mcp`, one per country site | None |
 
 One authorization serves every caller of a connector: whoever clicks "Authorize" is the identity
 the tools act as. For per-user tools (Notion, Slack, Salesforce) use a dedicated account until
@@ -2963,6 +3298,46 @@ way. Set `tokenAuthMethod` to `private_key_jwt` and describe the signature under
   (`BEGIN EC PRIVATE KEY`). A key pasted into a single-line field, with its line breaks gone, still works.
   Passphrase-protected keys are refused with a message saying how to export one without a passphrase.
 
+#### Token answers inside a wrapper (`tokenResponsePath`)
+
+RFC 6749 §5.1 puts `access_token`, `refresh_token` and `expires_in` at the top level of the token answer,
+and that is where they are read. A few providers wrap them in an answer of their own. Joom's token and
+refresh calls answer:
+
+```json
+{ "code": 0, "message": "", "data": { "access_token": "…", "refresh_token": "…", "expires_in": 2592000 } }
+```
+
+Name the object that holds the token fields in `authConfig.tokenResponsePath`, as a dotted path of keys:
+
+```json
+"authConfig": {
+  "grant": "refresh_token",
+  "authorizationUrl": "https://api-merchant.joom.com/api/v2/oauth/authorize",
+  "tokenUrl": "https://api-merchant.joom.com/api/v2/oauth/access_token",
+  "refreshUrl": "https://api-merchant.joom.com/api/v2/oauth/refresh_token",
+  "tokenResponsePath": "data",
+  "pkce": false,
+  "clientId": "{{JOOM_CLIENT_ID}}",
+  "clientSecret": "{{JOOM_CLIENT_SECRET}}",
+  "refreshToken": "{{JOOM_REFRESH_TOKEN}}"
+}
+```
+
+- The setting applies to the authorization-code exchange, to every refresh and to the `client_credentials`
+  and `password` grants: the access token, the refresh token and the lifetime are all read from that object.
+- It is opt-in. Without it nothing changes: the fields are read at the top level and a `data` object in the
+  answer is not looked into.
+- When the answer has no object at the path, the sign-in or the renewal fails with a message that names
+  the path and quotes the provider's own top-level `code` and `message` (how these APIs report a refused
+  code or refresh token inside a `200`). Nothing else of the answer is quoted.
+- It is part of the adapter definition (or of a connector's `authConfig` set through the API); the connector
+  form has no field for it. `scripts/validate-adapters.mjs` checks it (rule `token-response-path`): a dotted
+  path of keys, on `OAUTH2` only.
+
+`refreshUrl`, in the same example, is for providers that renew at another address than the one that issues
+the first token; without it refreshes go to `tokenUrl`.
+
 ---
 
 ## Environment Variables
@@ -3570,8 +3945,42 @@ holding an example (`host`, `example.com`, `your-api-key`, `<...>`,
 `PASTE_KEY_HERE`) and a credential pasted more than once (the same string
 repeated). See `packages/backend/src/adapters/env-var-checks.ts`.
 
+`envVarMeta.<VAR>.options` gives a variable a fixed list of choices, for an
+API with one host per country or region. The setup form shows a select with
+the labels instead of a text field, a model setting the connector up from a
+chat is given the list and asks the user to pick, and every path that writes
+the variable refuses a value that is not one of the listed `value`s (an
+optional variable may stay empty). List 2 to 20 choices with unique values;
+write each `value` exactly as it is stored (a whole `https://` URL when the
+variable starts `connector.baseUrl`), make it match `pattern` when there is
+one, and never combine `options` with `"secret": true`:
+
+```json
+"envVarMeta": {
+  "ACME_MARKET_URL": {
+    "label": "Country",
+    "kind": "address",
+    "help": "The country of your seller account.",
+    "options": [
+      { "value": "https://fr.market.example.com", "label": "France" },
+      { "value": "https://es.market.example.com", "label": "Spain" }
+    ]
+  }
+}
+```
+
 `verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
-`"unreachable"`) to what the setup check tells the user. A tool call that
+`"unreachable"`) to what the setup check tells the user. For a provider that
+answers every refusal with the same status and says which one in the body, a
+hint can be filed under that error code instead, and is tried first: Shopify's
+token request answers 400 with `{"error":"app_not_installed"}` or
+`{"error":"shop_not_permitted"}`, so the Shopify adapter has a hint under each
+of those names next to its `"400"`. The code is read from `"error"`, `"code"`,
+`"error_code"` or `"errorCode"` in the answer (letters and underscores, 3 to 40
+characters); the names of the failure kinds are never read as codes. A hint
+under a code is also given at a failed tool call that carries the code. A
+failed check records the code as `code` on the `setup_verify_failed` product
+event. A tool call that
 the API answers 401 uses the adapter's `"401"` (or `"auth_failed"`) hint too
 when no built-in rule matches, followed by a link to the connector's page,
 so a connector saved without a passing check hears the same advice. Hints are
@@ -3646,6 +4055,26 @@ JSON-Schema `parameters` when it accepts input. Parameter properties should
 include descriptions for the model. `"enabled": false` installs a tool switched
 off, for writes a workspace should turn on deliberately.
 
+`endpointMapping.envDefaults` fills a parameter the caller left out from a
+connector variable, for a value that is the same on nearly every call of one
+workspace and that a model cannot know (the chat a bot writes to):
+
+```json
+"endpointMapping": {
+  "method": "POST",
+  "path": "/sendMessage",
+  "envDefaults": { "chat_id": "TELEGRAM_DEFAULT_CHAT_ID" },
+  "bodyMapping": { "chat_id": "$chat_id", "text": "$text" }
+}
+```
+
+The parameter must be one the tool declares and does not list in `required`;
+say in its description what leaving it out does. The variable must be a
+non-secret one the adapter declares (usually in `optionalEnvVars`): its value
+is sent as a plain argument. A value the caller gives always wins, and a
+variable that is not set leaves the call as it was. The default is applied
+before the schema's own `default`s, on a tool call and on "Run test" alike.
+
 See [connector configuration](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#connector>)
 and [authentication](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/tool-definition.md#authentication>) for the nested connector fields.
 
@@ -3698,6 +4127,45 @@ rule. Connectors installed from the catalog follow the adapter's rules even if
 they were installed before the rules existed; a connector's own
 `config.errorWhen` overrides them, and `[]` switches the check off.
 
+### Large integers (64-bit ids)
+
+JSON numbers are doubles in JavaScript: an integer above 9007199254740991
+(2^53 - 1) is rounded when the answer is parsed, so a 64-bit id such as
+SHEIN's goodsId `5230236437987443003` comes back as `5230236437987443000`, and
+a JSON number in a tool call is rounded by the MCP client before it reaches
+the server. Two opt-ins, both off unless set
+(`packages/backend/src/connectors/engines/json-integers.util.ts`):
+
+- `connector.config.largeIntegers: "string"` (REST connectors): every
+  integer literal of a JSON answer outside ±(2^53 - 1) becomes a string with
+  its exact digits and sign. Everything else parses exactly as before:
+  safe integers, decimals and exponents stay numbers, numbers inside strings
+  are untouched, and a body that is not valid JSON is still handed back as
+  text. It applies wherever the engine reads the answer: the tool result, the
+  `errorWhen` rules, error bodies and the install check. A catalog connector
+  follows its adapter's setting, like `errorWhen`.
+- `endpointMapping.bodyIntegers` (a tool with a JSON body): body paths whose
+  values go out as JSON number literals written with exactly the digits the
+  tool received as text. `"orderGoodsId"` is a field, `"goodsIdList[]"` every
+  element of a list, `"infoList[].goodsId"` a field of every element. Declare
+  such parameters as strings (`"type": "string", "pattern": "^(0|[1-9][0-9]{0,19})$"`)
+  so no client turns them into numbers. A value that is not a whole number
+  is refused before anything is sent.
+
+```json
+"connector": { "type": "REST", "config": { "largeIntegers": "string" } },
+"endpointMapping": {
+  "method": "POST",
+  "path": "/open-api/order/import-batch-multiple-express",
+  "bodyMapping": { "orderNo": "$order_no", "infoList": "$items" },
+  "bodyIntegers": ["infoList[].goodsId"]
+}
+```
+
+`scripts/validate-adapters.mjs` checks both (rule `large-integers`):
+`"string"` on a REST connector, and paths that start at a field the
+bodyMapping writes, on a tool that is not a GET.
+
 ### Authentication
 
 Use `NONE`, `API_KEY`, `BEARER_TOKEN`, `BASIC`, `BASIC_AUTH`, `OAUTH2`,
@@ -3721,6 +4189,16 @@ eBay is the case: its `redirect_uri` is the app's RuName, and the RuName's
 Use a variable (`"providerRedirectUri": "{{EBAY_RUNAME}}"`); until it has a
 value, the sign-in asks for it instead of starting. `authConfig.pkce: false`
 leaves out the PKCE challenge and verifier for providers that do not use them.
+
+The token answer is read as RFC 6749 has it, with `access_token`,
+`refresh_token` and `expires_in` at the top level. A provider that wraps them
+(Joom answers `{ "code": 0, "message": "", "data": { "access_token": … } }`)
+names the wrapping object in `authConfig.tokenResponsePath`, a dotted path of
+keys such as `"data"`. The code exchange, the refreshes and the
+`client_credentials` and `password` grants then read the token fields from
+that object, and fail with the provider's own `code` and `message` when it is
+missing. Without the field nothing changes. See
+[REST connectors](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/rest.md#token-answers-inside-a-wrapper-tokenresponsepath>).
 
 A `User-Agent` set for the API calls, in `authConfig.extraHeaders` or in the
 connector's `headers` (`extraHeaders` wins, as it does on the API calls), is
@@ -3884,9 +4362,103 @@ with `queryParams: { "app_key": ... }` and `excludeMultipartBody: true`. Pass
 array values as comma-separated strings on this kind of adapter: TikTok signs
 one value per query key.
 
+#### Plain digest and body placement (opt-in)
+
+Some platforms take every call as a JSON body that carries its own signature,
+and compute it as a plain hash rather than an HMAC (Temu's Partner API). These
+fields describe that; a signature without any of them is computed exactly as
+described above.
+
+| Field | Meaning |
+|-------|---------|
+| `mode` | `hmac` (default) or `digest`: a plain hash of the rendered template, with no key. The secret is then written into `template`, where the vendor puts it; `secret` is not used. |
+| `algorithm` | Also `md5`, accepted in `digest` mode only. |
+| `placement` | Also `body`: the digest is written into the JSON body as the field `paramName` (default `sign`). The tool must be a `POST`, `PUT`, `PATCH` or `DELETE` that sends a JSON object (a `bodyMapping` or `bodyTemplate`, or no body of its own). |
+| `bodyParams` | Static fields written into the JSON body of every call (an app key, an access token, a fixed `data_type`), signed like the tool's own fields. They win over a tool's field of the same name. Text, numbers or `true`/`false`. |
+| `timestampParam` | With `placement: "body"` the timestamp is written into the body: as a JSON number for the `s` and `ms` formats, as text for `iso`. |
+
+With `placement: "body"`, `${sortedParams}` is built from the JSON body
+instead of the query:
+
+- every top-level field of the body as sent (the tool's fields, `bodyParams`
+  and the timestamp), sorted by name in ASCII order and concatenated as name +
+  value with no separators; the query is not part of it;
+- a string contributes its text as it is;
+- every other value contributes its JSON text, exactly as the body carries it:
+  a number in its shortest form (`0`, `19.9`), `true`, `false`, `null`, and an
+  array or object as compact JSON without spaces, with its keys in the order
+  they are sent (`[{"skuId":1,"quantity":2}]`);
+- the signature field itself is left out; an empty string is sent, so its name
+  is signed.
+
+Temu (`intl/temu.json`) signs `app_secret + sorted fields + app_secret` with
+MD5 in capitals:
+
+```json
+"signature": {
+  "mode": "digest",
+  "algorithm": "md5",
+  "encoding": "hex-upper",
+  "placement": "body",
+  "paramName": "sign",
+  "timestampParam": "timestamp",
+  "bodyParams": {
+    "app_key": "{{TEMU_APP_KEY}}",
+    "access_token": "{{TEMU_ACCESS_TOKEN}}",
+    "data_type": "JSON"
+  },
+  "template": "{{TEMU_APP_SECRET}}${sortedParams}{{TEMU_APP_SECRET}}"
+}
+```
+
+Each tool then only names its operation and its own fields:
+`"bodyMapping": { "type": "bg.order.detail.v2.get", "parentOrderSn": "$parent_order_sn" }`.
+A tool cannot replace `app_key`, the timestamp or the signature, and the
+secret never leaves the server. A digest can also go in a header or the query
+(`mode: "digest"` with the default placement or `placement: "query"`).
+
+One limit of the string above: a top-level text value is signed as it is. A
+vendor that signs such a value as JSON text instead (with `"` and `\` escaped)
+agrees with this for every value without those characters, which covers ids,
+codes and dates; send free text in a nested object, where it is JSON text on
+both sides.
+
+#### Nonce and header template (opt-in)
+
+Some platforms mix a random string into the key and send it along with the
+digest (SHEIN Open Platform: the key is secret + 5 random characters, and the
+header is those characters followed by the Base64 of the hex digest).
+
+| Field | Meaning |
+|-------|---------|
+| `nonceLength` | 1 to 64. A random string of that many characters (`A-Z a-z 0-9`) is drawn for every signature and is available as `${nonce}` in `template`, in `secret` and in `headerTemplate`. |
+| `secret` | May contain `${nonce}`: `"{{KEY}}${nonce}"` is an HMAC key of the secret followed by the nonce. |
+| `headerTemplate` | The header value around the digest: `${signature}` is the digest, `${nonce}` the random string. Default: the digest alone. It must contain `${signature}`. (A signed-JWT signature has its own `headerTemplate`, see above.) |
+| `encoding` | Also `hex-base64`: the Base64 of the lower-case hex text of the digest. |
+
+```json
+"signature": {
+  "algorithm": "sha256",
+  "encoding": "hex-base64",
+  "secret": "{{SECRET_KEY}}${nonce}",
+  "nonceLength": 5,
+  "template": "{{OPEN_KEY_ID}}&${timestamp}&${pathname}",
+  "timestampFormat": "ms",
+  "headerName": "x-lt-signature",
+  "headerTemplate": "${nonce}${signature}",
+  "timestampHeader": "x-lt-timestamp",
+  "extraHeaders": { "x-lt-openKeyId": "{{OPEN_KEY_ID}}" }
+}
+```
+
+`scripts/validate-adapters.mjs` refuses a signature whose `mode`, `placement`,
+`encoding` or `algorithm` is not one of the values above, `md5` outside
+`digest` mode, `bodyParams` without `placement: "body"`, and `${nonce}`
+without `nonceLength` (rule `hmac-signature`).
+
 #### Shop authorization (token providers)
 
-Two marketplaces authorize a shop with their own flow instead of OAuth 2, set
+Some marketplaces authorize a shop with their own flow instead of OAuth 2, set
 with `authConfig.tokenProvider` on an `HMAC` connector. The provider stores the
 shop's tokens encrypted on the connector, renews them before they expire, adds
 them to every call, and marks the connector as needing a new authorization when
@@ -3897,6 +4469,8 @@ the marketplace refuses the refresh token. The connector page shows
 |-----------------|------|---------------------------|
 | `shopee` | Signed `auth_partner` link; callback `<SERVER_URL>/api/shopee/callback/<state>` | `access_token` and `shop_id` query parameters, signed |
 | `tiktok-shop` | `services.tiktokshop.com/open/authorize?service_id=...` (US: `services.us.tiktokshop.com`); callback `<SERVER_URL>/api/tiktok-shop/callback`, set as the app's Redirect URL | the access token in the `x-tts-access-token` header (not signed) and `shop_cipher` in the query (signed), except on `/authorization/`, `/seller/` and upload paths |
+| `iop` | The Alibaba IOP gateways (Lazada, Miravia, AliExpress seller): `authConfig.iop.authorizeUrl` with `response_type=code`, `client_id`, `redirect_uri` and `state`; callback `<SERVER_URL>/api/iop-auth/callback`, set as the app's callback URL | `access_token` query parameter, signed |
+| `shein` | SHEIN's store authorization: `authConfig.shein.authorizeUrl` (`https://openapi-sem.sheincorp.com/#/empower`) with `appid`, `redirectUrl` (the callback in Base64) and `state`; callback `<SERVER_URL>/api/shein-auth/callback` | the shop's `openKeyId` and `secretKey`, filled into `${openKeyId}` and `${secretKey}` of the signature block (nothing to renew) |
 
 The TikTok Shop provider reads the app key from `authConfig.appKey` (or the
 `app_key` query parameter), the secret from `signature.secret` and the Service
@@ -3921,6 +4495,135 @@ install record for 30 minutes when its `app_key` is the server's; the
 dashboard completes it with `POST /api/tiktok-shop/install` once the seller is
 signed in, reusing the workspace's newest TikTok Shop connector that uses the
 server's app and has no shop authorized yet, or installing a new one.
+
+The `iop` provider (`iop-token.service.ts`, `iop-auth.controller.ts`) takes
+the gateway from the adapter, not from code per vendor:
+
+```json
+"authType": "HMAC",
+"authConfig": {
+  "tokenProvider": "iop",
+  "iop": {
+    "appKey": "{{LAZADA_APP_KEY}}",
+    "authorizeUrl": "https://auth.lazada.com/oauth/authorize",
+    "tokenBaseUrl": "https://auth.lazada.com/rest",
+    "tokenPath": "/auth/token/create",
+    "refreshPath": "/auth/token/refresh",
+    "authorizeParams": { "force_auth": "true" }
+  },
+  "signature": {
+    "algorithm": "sha256",
+    "encoding": "hex-upper",
+    "secret": "{{LAZADA_APP_SECRET}}",
+    "placement": "query",
+    "paramName": "sign",
+    "timestampParam": "timestamp",
+    "timestampFormat": "ms",
+    "queryParams": { "app_key": "{{LAZADA_APP_KEY}}", "sign_method": "sha256" },
+    "template": "${apiPath}${sortedParams}"
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `iop.appKey` | The app key, sent as `client_id` and signed as `app_key`. Default: `signature.queryParams.app_key`. |
+| `iop.authorizeUrl` | https URL of the seller authorize page, without a query. |
+| `iop.tokenBaseUrl` | https URL the token paths are appended to. |
+| `iop.tokenPath` / `iop.refreshPath` | The token-create and token-refresh operations. |
+| `iop.authorizeParams` | Optional static query parameters of the authorize URL. They cannot set `response_type`, `client_id`, `redirect_uri` or `state`. |
+| `iop.tokenResponsePath` | Optional dotted path of the object that holds the token fields, for a gateway that wraps them. Unset, they are read at the top level, where Lazada, Miravia and AliExpress put them. |
+
+The callback exchanges `code` at `tokenBaseUrl + tokenPath`; before a call,
+an access token with less than 30 minutes (or half its lifetime) left is
+renewed at `tokenBaseUrl + refreshPath` with `refresh_token`. Both token calls
+reuse the connector's `signature` block (secret, algorithm, `paramName`,
+`timestampParam`, `queryParams`) and are always signed as IOP system calls,
+the operation's path in front of the sorted parameters, even when the
+business calls sign `${sortedParams}` alone (AliExpress `/sync`). As in the
+gateways' SDKs, `app_key`, `sign_method`, `timestamp` and `sign` go in the
+query and `code` or `refresh_token` in a form body. Lifetimes come from the
+answer: `expires_in` and `refresh_expires_in` in seconds (AliExpress's
+absolute `expire_time` and `refresh_token_valid_time` are read only when
+those are missing); a token without a lifetime is used until it is refused.
+The stored fields are `accessToken`, `refreshToken`, `expiresAt`,
+`expiresIn`, `refreshExpiresAt`, `refreshExpiresIn`, `authorizedAt` and
+`lastRefreshedAt`, encrypted with the rest of the authConfig.
+
+A call refused with 401 (an `errorWhen` rule with `status: 401`, such as
+`IllegalAccessToken`, or HTTP 401) is renewed once and resent once, unless
+the gateway's code names the signature, the app key, the timestamp or a
+permission, which a new token cannot fix. A refresh token the gateway
+refuses (`IllegalRefreshToken`, `AUTH_TYPE_UNSUPPORTED`), or one past its own
+`refresh_expires_in` (or issued with `refresh_expires_in` 0), marks the
+connector as needing a new authorization, with one email to the owner,
+without asking the gateway again. No access-token variable is needed, and
+`signature.queryParams` must not set `access_token`. The setup page fills
+`{{redirectUri}}` in such an adapter's setup guide with
+`<SERVER_URL>/api/iop-auth/callback` (on AnythingMCP Cloud:
+`https://cloud.anythingmcp.com/api/iop-auth/callback`), and its last step
+sends the seller to the authorize page. `scripts/validate-adapters.mjs`
+checks the block (rule `iop-token-provider`): `HMAC` only, https URLs, paths,
+and the IOP signature (`placement: "query"`, `encoding: "hex-upper"`,
+`timestampFormat: "ms"`, a template with `${sortedParams}`).
+
+The `shein` provider (`shein-token.service.ts`, `shein-auth.controller.ts`)
+follows SHEIN's "Store Authorization Application Manual". The seller opens the
+authorize page, signs in with the shop's main account and approves the app;
+SHEIN sends the browser back to the callback with `appid`, `tempToken` (valid
+for a few minutes) and `state`. The tempToken is exchanged at
+`tokenBaseUrl + tokenPath` (`POST /open-api/auth/get-by-token`, JSON body
+`{ "tempToken": … }`), signed with the app's id and secret (header
+`x-lt-appid` instead of `x-lt-openKeyId`). The answer's `secretKey` is
+decrypted with the app secret (AES-128-CBC, `shein-secret.util.ts`) and
+stored with `openKeyId`, `supplierId`, `supplierBusinessMode` and
+`authorizedAt`, encrypted with the rest of the authConfig.
+
+```json
+"authType": "HMAC",
+"authConfig": {
+  "tokenProvider": "shein",
+  "shein": {
+    "appId": "{{SHEIN_APP_ID}}",
+    "appSecret": "{{SHEIN_APP_SECRET}}",
+    "authorizeUrl": "https://openapi-sem.sheincorp.com/#/empower",
+    "tokenBaseUrl": "{{SHEIN_API_HOST}}",
+    "tokenPath": "/open-api/auth/get-by-token"
+  },
+  "signature": {
+    "algorithm": "sha256",
+    "encoding": "hex-base64",
+    "secret": "${secretKey}${nonce}",
+    "nonceLength": 5,
+    "template": "${openKeyId}&${timestamp}&${pathname}",
+    "timestampFormat": "ms",
+    "headerName": "x-lt-signature",
+    "headerTemplate": "${nonce}${signature}",
+    "timestampHeader": "x-lt-timestamp",
+    "extraHeaders": { "x-lt-openKeyId": "${openKeyId}" }
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `shein.appId` / `shein.appSecret` | The app's App ID and App Secret (SHEIN Open Platform, Application Management). They sign get-by-token and decrypt the shop's secretKey; seller calls never use them. |
+| `shein.authorizeUrl` | https URL of the authorize page, hash route included. The engine appends `?appid=…&redirectUrl=…&state=…` after it. |
+| `shein.tokenBaseUrl` | The API host of the app's type, an https URL or one variable: `https://openapi.sheincorp.com` (self-operated, semi-managed) or `https://openapi.sheincorp.cn` (fully managed, SHEIN-operated, other). |
+| `shein.tokenPath` | `/open-api/auth/get-by-token`. |
+
+Before each call the provider fills the stored keys into `${openKeyId}` and
+`${secretKey}` of `signature.secret`, `signature.template` and the values of
+`signature.extraHeaders`, in memory; the stored authConfig keeps the
+placeholders. A shop key does not expire on a schedule SHEIN documents and has
+no refresh. A call answered with `openapi00004` ("The user [...] has expired")
+marks the connector as needing a new authorization, with one email to the
+owner; `openapi00001` (signature refused, also what a key that changed
+elsewhere gives) only adds a hint to authorize again. The setup page fills
+`{{redirectUri}}` with `<SERVER_URL>/api/shein-auth/callback`.
+`scripts/validate-adapters.mjs` checks the block (rule
+`shein-token-provider`): `HMAC` only, the app settings, and SHEIN's signature
+with the two placeholders, which no other connector may use.
 
 #### Meta sign-in (Instagram connectors)
 
@@ -3977,6 +4680,18 @@ leaves out (the server's own hints win). `omitParameters` (an array of
 top-level parameter names) drops those parameters from the schema the server
 lists, at install and on every **Discover tools**, for vendor fields such as
 attribution that a workspace has no use for.
+When the server needs the same argument on every call instead (an agent
+profile URL, a fixed channel), set `connector.config.mcpFixedArguments` to an
+object: it is merged into the arguments of every tool call, its values win
+over the caller's, `{{VAR}}` is resolved in them, and its paths are dropped
+from the listed schemas (nested ones too, so
+`{ "meta": { "ucp-agent": { "profile": "…" } } }` removes `meta` where it holds
+nothing else). Write the snapshot's `parameters` without those paths: the
+snapshot is installed as it is when the server cannot be reached. The
+validator accepts the setting on `MCP` connectors only, as an object. See
+[MCP Bridge](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md#fixed-arguments-mcpfixedarguments>).
+A public server that needs no credentials uses `authType: "NONE"` with no
+`authConfig` and an empty `requiredEnvVars` (see `intl/decathlon-shop.json`).
 Each tool's `endpointMapping` is `{ "method": "<remote tool name>", "path": "/mcp" }`
 (`"/"` for a server at the root of its host, together with
 `connector.config.mcpPath: "/"`).
@@ -3991,7 +4706,7 @@ adapter that signs in at the provider uses `authType: "OAUTH2"` with no
 `authConfig`; `connector.config.mcpOAuth` says how (dynamic registration,
 a client of the user's own from `{{VAR}}`s, scope, RFC 8707 resource). Both
 are described in [MCP Bridge](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md#connector-settings-connectorconfig>).
-`prerequisites` (an array of short sentences) lists what the user needs at
+`prerequisites` (a sentence or two, Markdown) says what the user needs at
 the vendor first; the setup page shows it above the form.
 `requiresIpAllowlist: true` marks an API that refuses every call from an
 address not registered with the provider (eMAG, Shopee, the Korean law API):
@@ -4017,6 +4732,14 @@ of the REST rules simply do not apply to it:
   bound parameters, never string-interpolated.
 - Adapters install **read-only**; the engine rejects anything but a read until
   the user flips the switch in the connector's settings.
+- A table name cannot be a bound parameter. When part of it depends on the
+  installation (OpenCart's table prefix), list the variable in
+  `connector.config.sqlIdentifierVars` and write it as `{{VAR}}` inside the
+  identifier: `` FROM `{{OPENCART_DB_PREFIX}}order` ``. Its value must then be
+  at most 20 letters, digits or underscores (empty is allowed), or the call
+  is refused before anything reaches the database; no other `{{VAR}}` may
+  appear in the SQL of that connector. Values still go through `${name}`.
+  Without the list nothing is checked, so never put `{{VAR}}` in SQL without it.
 - Declare a `probe` (a listing tool with no required parameters). A DATABASE
   adapter has no HTTP healthcheck, so without one the install reports nothing.
 
@@ -4139,6 +4862,33 @@ Supported types: `string`, `integer`, `number`, `boolean`, `array`, `object`
 
 > **Tip:** Parameters matching environment variable names are automatically stripped from the tool schema, so the AI never sees them.
 
+### `pattern` on a string parameter
+
+A catalog adapter may give a string parameter (or the string items of an
+array parameter) a `pattern`. A value that does not match is refused before
+the request is sent, and the answer quotes the parameter's `description`, so
+write there what to pass instead:
+
+```json
+"includes": {
+  "type": "string",
+  "description": "Comma-separated, any of: Images, Shop, User. For stock and prices call the inventory tool.",
+  "pattern": "^(Images|Shop|User)(,(Images|Shop|User))*$"
+}
+```
+
+- Make the pattern no stricter than the API: check it against values that
+  work (case, non-ASCII characters, optional parts) before adding it.
+- Keep it simple. `catalog-patterns.spec.ts` runs every catalog pattern on
+  texts built to slow a regular expression down, and fails when one needs
+  more than a moment. Backreferences are not allowed.
+- Values longer than 2,000 characters are not checked.
+- Only catalog tools are checked, and only while the installed tool still
+  carries the catalog's pattern: a workspace that edits or removes the
+  pattern on its own copy turns the check off for that tool. Patterns of
+  hand-built tools and of tools imported from an OpenAPI file stay
+  documentation.
+
 ---
 
 ## 2. Endpoint Mapping
@@ -4221,6 +4971,14 @@ instead of a text field containing the URL. Declare the parameter with `"type": 
 "format": "uri"` so the model knows to pass a link. `__file` in a `form-urlencoded` body is a
 configuration error — that encoding cannot carry a file at all.
 
+The same parameter also accepts an uploaded file's reference, `amcp-file:<id>`. An AI client
+that created the file in its own code sandbox calls the built-in `file_upload_link` tool, sends
+the file to the one-time URL it returns with `curl`, and passes the reference instead of a URL.
+The engine then reads the file from AnythingMCP's own storage, only for a tool of the workspace
+that uploaded it. Nothing to declare in the tool: every `__file` parameter gets this, and the
+MCP endpoint adds a sentence about it to the parameter's description. See
+[File uploads from AI clients](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-uploads.md>).
+
 ### JSON-encoded fields (`__json`)
 
 Some APIs take a method's arguments as one field holding JSON text, e.g. a form body
@@ -4272,6 +5030,39 @@ break the document:
   or the tool sets its own `Content-Type`.
 
 Without `bodyEncoding: "xml"`, `__raw` values are inserted as they are, as
+before.
+
+**Optional and repeated blocks.** An API that validates requests against a
+schema refuses an element that is present but empty (`<paging></paging>` where
+a number is expected), so an XML `bodyTemplate` can leave parts out and repeat
+parts per item of a list:
+
+| Block | Meaning |
+|-------|---------|
+| `${?name}…${/name}` | Kept when the parameter `name` has a value. |
+| `${?a\|b}…${/a\|b}` | Kept when `a` or `b` has a value. |
+| `${*items}…${/items}` | Repeated for every item of the list `items` (a single value counts as a list of one). Inside, `${.}` is the item, and the fields of an object item are placeholders of their own (`${sku}`), on top of the call's parameters. |
+
+"Has a value" means not missing, not `null`, not `""` and not an empty list;
+`0` and `false` are values. Blocks nest, also under the same name, so a wrapper
+element goes with its list:
+
+```json
+{
+  "method": "POST",
+  "path": "/orders_query",
+  "bodyEncoding": "xml",
+  "bodyTemplate": "<orders_query${?results_count} results_count=\"${results_count}\"${/results_count}>${?page}<paging>${page}</paging>${/page}${?states}<states>${*states}<state>${.}</state>${/states}</states>${/states}${?date_min|date_max}<date type=\"${date_type}\">${?date_min}<min>${date_min}</min>${/date_min}${?date_max}<max>${date_max}</max>${/date_max}</date>${/date_min|date_max}</orders_query>"
+}
+```
+
+With `{"page": 1, "states": ["Created", "ToShip"]}` this sends
+`<orders_query><paging>1</paging><states><state>Created</state><state>ToShip</state></states></orders_query>`.
+Every substituted value is XML-escaped, as elsewhere in an XML body. A block
+that is opened and never closed, or that names no parameter, stops the call
+before anything is sent; `scripts/validate-adapters.mjs` reports it (rule
+`xml-template-blocks`). Blocks exist only in a `bodyTemplate` with
+`bodyEncoding: "xml"`, and a template without them is rendered exactly as
 before.
 
 ### Response headers and pagination (`exposeHeaders`)
@@ -4890,6 +5681,10 @@ A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenti
 
 When the login answer is not documented, `tokenJsonPath` may be a list of paths tried in order (the first non-empty string wins), e.g. `["AuthenticationResult.IdToken", "idToken", "token", "."]`.
 
+An XML API (Fnac Darty's marketplace) logs in with an XML document and carries the token in the body of every request instead of a header. Four opt-in fields cover it: `"loginBodyFormat": "xml"` (a string `loginBody` is XML, its values are XML-escaped), `"loginResponseFormat": "xml"` (the XML login answer is parsed, so `tokenJsonPath` reads `auth_response.token`), `"tokenPlacement": "body"` (no token header; the token is `${loginToken}` in a tool's `bodyTemplate`) and `"refreshOnBody401": true` (log in again when a `config.errorWhen` rule with `status: 401` matches the response body). `scripts/validate-adapters.mjs` checks the combinations (rule `login-token-xml`).
+
+A login that answers the token in a response header instead of the body (Ceneo's `GetToken` answers it in a header called `access_token`) sets `"tokenSource": "header"` and `"tokenHeaderName": "access_token"`. The name is matched without regard to case, `tokenJsonPath` is not needed, and the lifetime comes from `tokenTTLSeconds`. `scripts/validate-adapters.mjs` checks the pair (rule `login-token-source`).
+
 See [`docs/connectors/login-token-auth.md`](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md>) for the full field-by-field reference, salt-source types (`fetch` vs `static`), expiry formats (`iso8601` / `unix` / `ttl_seconds`), and re-login policies.
 
 ---
@@ -5107,7 +5902,7 @@ AnythingMCP is listed in Claude's connector directory: [claude.ai/directory/anyt
 
 AnythingMCP Cloud needs a verified email address. If you sign in with an email and password that are not verified yet, the page asks for the 6-digit code from the verification email before you can approve. You can send a new code from there. You can also continue with Google, Microsoft or GitHub instead, which verifies the address without a code.
 
-If your workspace has no apps yet, the page after approving says so. You can pick one of a few quick-setup apps there (Telegram, Shopify, WooCommerce, Odoo, Printify, Google Gemini), or skip it: **Continue to Claude** works either way. A picked app is added without credentials, and you finish it in the chat. Back in Claude, you can add any catalog app by asking, for example "Connect my Telegram bot to AnythingMCP." Claude finds the connector and adds it. Passwords and keys are never typed into the chat: Claude gives you a link to a page where you enter them.
+If your workspace has no apps yet, the page after approving says so. You can pick one of a few quick-setup apps there (Etsy, Telegram, WooCommerce, Odoo, Printify), or skip it: **Continue to Claude** works either way. A picked app is added without credentials, and you finish it in the chat. Telegram can be finished right on that page: **Create your Telegram bot** opens Telegram with a name and a username filled in (on a computer, scan the QR code with your phone), you confirm, press **Start** in the new bot's chat, and the page shows the bot as connected. Keep the suggested username: a bot whose username you change cannot be matched, and you then paste its token on the same page, as you can for a bot you already have. Back in Claude, you can add any catalog app by asking, for example "Connect my Telegram bot to AnythingMCP." Claude finds the connector and adds it. Passwords and keys are never typed into the chat: Claude gives you a link to a page where you enter them.
 
 The listing always connects to AnythingMCP Cloud. For a self-hosted instance, use option 2.
 
@@ -7473,6 +8268,7 @@ Enterprise features follow the licence key (see [license FAQ](<https://github.co
 | File Search | Team limits | 1 folder, 500 files | 3 folders, 2,000 files | by contract |
 | Code mode | Team features | 5 saved code tools, no inline code | 20 saved code tools, inline code | unlimited |
 | Connectors with inbound webhooks | 5 | 1 | 5 | unlimited |
+| [Learning projects](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>) | 1 | – | 1 | unlimited |
 
 The trial includes everything in Team, so you can try every feature before you
 choose a plan. File Search and code mode have their own limits, described in
@@ -8307,7 +9103,9 @@ whole MCP server.
    *when to use*, *instruction*), scoped per connector or per server. Generating
    again replaces only the previous AI suggestions that are still pending:
    skills you created by hand and skills filed by the Agent Skills Finder are
-   kept.
+   kept. The model is told which skills the scope already has, and a
+   suggestion that repeats a skill you applied or dismissed is not filed
+   again.
 3. **Review.** On the **Skills** page each suggestion has **Apply / Edit /
    Dismiss / Delete**. The list has status tabs with counts (All / Suggested /
    Active / Dismissed), a search box and pagination, so it stays usable with
@@ -8315,11 +9113,16 @@ whole MCP server.
 4. **Serve.** *Applied* skills are composed into the MCP server's **instructions**
    at serve time — see below.
 
+To keep what one particular colleague teaches the AI, with their agreement
+and their name on record, use a [learning project](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>).
+
 **Managing skills at scale:**
 
-- **Auto-apply (optional).** Turn on *Auto-apply high-confidence skills*
-  (Settings → Features) and generated skills at/above **0.90** confidence are
-  applied automatically; lower-confidence ones still wait for review.
+- **Auto-apply (optional).** Turn on *Auto-apply skills learned from fixed
+  errors* (Settings → Features) and a skill learned from an error that was
+  fixed the same way at least **3 times** is applied automatically. Skills
+  generated by AI always wait for review: the confidence a model gives its
+  own suggestion is not evidence.
 - **Consolidate with AI.** The *Consolidate* button proposes merges of a
   scope's **active** skills (same connector/server target selector as
   Generate). Each merged skill is filed as a *Suggested* proposal that lists
@@ -8436,7 +9239,9 @@ tiny built-in client (no SDK). Two ways to run them:
   skills from newly captured intents. It only spends when the graph changed or
   new intents arrived, enforces a per-workspace cooldown and a per-run cap, and
   can run as an **Anthropic Message Batch** (~50% cheaper, processed
-  asynchronously).
+  asynchronously). The *Scheduled AI extension* switch is shown only where
+  this job is turned on (`KG_LLM_CRON_ENABLED=true`); a self-hosted instance
+  without it generates on demand.
 
 ---
 
@@ -8634,6 +9439,179 @@ Search uses PostgreSQL full text with the `simple` configuration (no stemming,
 so German, Italian and English behave alike), ranked by relevance, and falls
 back to a substring match for partial words and codes. No extra service or
 embedding provider is needed.
+
+---
+
+## docs/learning-projects.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/learning-projects.md
+
+# Learning projects
+
+A learning project keeps what one colleague teaches the AI. An admin turns
+learning on for **one member on one MCP server**. When that member corrects
+the AI or explains how the work is really done, the lesson is kept, and the
+lessons of a topic become a skill for everyone on that server.
+
+It is made for knowledge that leaves with a person: the colleague who knows
+which part fits which old model, which quantity is always wrong in the first
+draft, which customer rule is written nowhere.
+
+Learning projects are part of the **Team and Enterprise plans** on AnythingMCP
+Cloud and of **Enterprise** on a self-hosted instance (see
+[Plans](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#plans>)). Nothing is kept before the member agrees.
+
+- [How it works](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#how-it-works>)
+- [Start a project](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#start-a-project>)
+- [What the member sees](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#what-the-member-sees>)
+- [MCP tools](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#mcp-tools>)
+- [Review and publish](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#review-and-publish>)
+- [Privacy and safety](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#privacy-and-safety>)
+- [Plans](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#plans>)
+- [Limits](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md#limits>)
+
+## How it works
+
+AnythingMCP sees tool calls, not the conversation. The member's own AI client
+saw the whole conversation, so it is the one that writes the lesson down;
+AnythingMCP stores it and serves it back.
+
+1. **A lesson** is one thing the member taught: a *rule*, a *fact*, a
+   *correction* (what the AI did, what the member changed it to, and why) or a
+   worked *example*.
+2. **A topic** groups lessons about one kind of work, for example "Quotes for
+   old windows". One topic is one skill. The skill text is put together from
+   the topic's lessons, so a new lesson never rewrites the others.
+3. **A draft** of the skill, with every lesson, is served to the member only.
+   Their AI client improves at once; if they correct it again, the lesson is
+   revised.
+4. **The member confirms** lessons in the chat ("this is what I learned, is it
+   right?").
+5. **A person publishes** a topic: its confirmed lessons become a skill for
+   everyone on the server. It is an ordinary [AI skill](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>)
+   with versions, a folder and usage counts, marked *from a learning project*.
+
+No AI key is needed on the instance: the member's AI client writes the lesson,
+the server only stores and arranges text.
+
+## Start a project
+
+**Learning projects → New learning project** (admins):
+
+| Field | Meaning |
+|---|---|
+| Name | For example "Hardware for old windows". The member and their AI client see it. |
+| Learn from | The member. One project per member and MCP server. |
+| On the MCP server | Lessons are kept only from the member's work on this server. |
+| File the skills in | Optional [folder](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md#folders>). A folder limited to roles also limits who is served the published skill. |
+| Ends on | Optional. The project ends on its own that day. |
+| Labels | Put on the learned skills, next to `learned`. |
+| Publishing | *A person publishes each topic* (default), or *lessons the member confirms are published*. |
+| Show the member's name | Off by default: the name is shown to admins only. |
+
+The project then waits for the member. You can pause, resume, end or delete it
+from its page. Ending keeps the lessons and the published skills; deleting
+removes the lessons and keeps the published skills.
+
+## What the member sees
+
+Under **Settings → Profile → Learning projects** the member reads what would
+be kept and chooses **Accept** or **Decline**. The notice they accepted is
+stored with the project.
+
+After accepting, they refresh the connector's tool list in their AI client
+(in claude.ai: *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
+list*) and work as usual.
+
+At any time they can **Stop** the project on the same page, and choose to
+erase everything that was not published. Their opt-out of
+[skill learning](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#who-contributes-to-skill-learning>) also
+stops every learning project.
+
+## MCP tools
+
+On `/mcp/<serverId>`, for the project's member only:
+
+| Tool | What it does |
+|---|---|
+| `learning_record(topic, kind, text, before?, after?, reason?, tool?, whenToUse?, replaces?)` | Keeps one lesson under a topic. A new topic name starts a new skill. |
+| `learning_review(topic?, limit?)` | Lists the lessons the member has not confirmed yet. |
+| `learning_confirm(decisions)` | Records the member's answers: `confirm`, `reject` or `correct` (with the corrected text). |
+
+The AI client is told when to call them in three places: the server's
+instructions, the description of `learning_record`, and one line at the end of
+the result of every tool that may change something ("if the user corrects this
+result, call learning_record"). The last one matters because some clients never
+show a server's instructions to the model.
+
+The tools disappear when the project is paused or ended, the member stops it
+or opts out, or the plan no longer includes it. A call made after that saves
+nothing.
+
+## Review and publish
+
+On the project's page (admins and editors):
+
+- **Lessons**: confirm, reject, reopen or reword a lesson. Rewording keeps the
+  earlier wording as *replaced*.
+- **Topics**: *Preview* shows the text publishing would write from the
+  confirmed lessons; **Publish** writes it. Publishing again updates the same
+  skill and keeps the earlier text as a version.
+
+A topic with confirmed lessons newer than its last publication is marked
+*Confirmed changes to publish*.
+
+## Privacy and safety
+
+- **Consent first.** Nothing is kept until the member accepts, and the text
+  they accepted is stored.
+- **What is kept:** the lessons. **Not kept:** the conversation, the member's
+  work on other servers, any figures about their work.
+- **A draft is served to its member only**, on every path that serves skills.
+  Admins and editors see drafts in the dashboard, marked as drafts.
+- **Nothing reaches other users unconfirmed.** A published skill holds only
+  lessons that were confirmed.
+- **Secrets and instructions are refused.** A lesson that looks like a
+  password, token or key, or that tells the assistant to ignore its
+  instructions, is not saved.
+- **The member's name** is shown to admins only, unless the project is set to
+  show it.
+- **Removal:** removing the member keeps the lessons without the link to the
+  person. Deleting an MCP server keeps what was learned on it.
+- **Audit:** `LEARNING_PROJECT_CREATED`, `LEARNING_PROJECT_CONSENT`,
+  `LEARNING_PROJECT_STATUS`, `LEARNING_PUBLISHED` and `LEARNING_ERASED` in the
+  security event log.
+
+Recording what one employee teaches can fall under workplace rules where you
+are (in Germany, for example, co-determination by a works council). Check
+before you start a project.
+
+## Plans
+
+| | Learning projects |
+|---|---|
+| Cloud Starter | none |
+| Cloud Team, and the Cloud trial | 1 at a time |
+| Enterprise (Cloud and self-hosted) | no limit |
+| Self-hosted Community | none |
+| Self-hosted 30-day evaluation | 1 at a time |
+
+A project *waiting for the member* or *active* counts; a paused or ended one
+does not. When a plan includes fewer projects than a workspace has, the oldest
+keep working up to the plan's number and the others capture nothing; no lesson
+and no published skill is removed, and an upgrade puts them back to work.
+
+Over the limit the API answers `403` with `code: "PLAN_LIMIT"` and
+`axis: "learningProjects"`; on a plan without learning projects,
+`code: "edition_required"`.
+
+## Limits
+
+Per project: 40 topics, 300 lessons per topic, 2,000 lessons, 60 new lessons
+an hour. A lesson holds up to 2,000 characters. A learned skill holds up to
+20,000 characters; past that the oldest examples leave the text (they stay
+stored), and the AI client is asked to file new lessons under a narrower
+topic.
 
 ---
 
@@ -11432,6 +12410,7 @@ For the current shipped state, see the [latest release](<https://github.com/Help
 - **File Search and File Share** (v0.52.0): a searchable index of SFTP, FTP/FTPS, WebDAV, S3 and network-share folders, with search, find, grep and read tools for every AI client, and temporary download links. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md>)
 - **Code Mode** (v0.52.0): one short program that calls several tools, in an isolated runner with no secrets and no network; saved code tools turn a recurring chain into a single tool, which answers most of [tool composition (#986)](<https://github.com/HelpCode-ai/anythingmcp/issues/986>). [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md>)
 - **Company memory** (Enterprise): facts and preferences saved from one AI client and found by every other, personal or company-wide, in folders with role limits. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md>)
+- **Learning projects** (Team and Enterprise): learning turned on for one member on one MCP server; their corrections become skills for everyone, after they agree and confirm. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/learning-projects.md>)
 - **AI skills v2**: on-demand skills and procedures with versions, folders and usage, learned from real requests and fixed errors and approved by an admin. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/knowledge-graph.md#ai-skills>)
 - **MCP resources** on per-server endpoints. [Docs](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/mcp-resources.md>)
 - **Inbound webhooks**, first slice: Stripe events stored per connector and readable as a tool ([#988](<https://github.com/HelpCode-ai/anythingmcp/issues/988>) stays open for other providers).

@@ -1,0 +1,1612 @@
+{
+  "slug": "erli",
+  "name": "Erli",
+  "description": "Erli.pl Marketplace API for sellers: products with price and stock, timed promotions, orders and their change feed, seller status, tracking numbers, delivery price lists, categories and attributes, terms and commission estimates. API key from the Erli seller panel.",
+  "instructions": "## Erli\nThis connector works with the **Erli Marketplace API** (Shop API) of Erli.pl, the Polish marketplace (also selling to Germany): products with price and stock, timed promotions, orders and their change feed, your fulfilment status, tracking numbers of your own carrier, delivery price lists, the category and attribute dictionaries, terms and commission estimates.\n\n**Setup (about 3 minutes)**\n1. Sign in to your Erli shop, open **moje Erli > Ustawienia sklepu > Metoda integracji** and choose **Własna integracja po API** (own API integration). Erli then turns off adding products by hand in the panel.\n2. Under **Klucze API** click **Wygeneruj nowy klucz**. Give it the scopes you need (product, order, pricelist; read-only scopes end in `:read`) or full access. Copy the key at once: the secret is shown only when it is created.\n3. Paste it into `ERLI_API_KEY`, keep `ERLI_API_URL` on production (the sandbox at sandbox.erli.dev needs its own account and key from Erli support), install and run `erli_get_shop`.\n\n**Where to start**: `erli_get_shop` shows the shop, its markets and the key's scopes. `erli_list_order_changes` returns new and changed orders (mark them with `erli_mark_order_changes_read` once processed), or search with `erli_search_orders` (`paymentStatus` completed for paid orders) and read one with `erli_get_order`.\n\n**Products**: your own id is the `externalId` in every product call. `erli_search_products` (keyset paging with `after`), `erli_get_product`, `erli_create_product` and `erli_update_product` (only the fields that change; price and stock updates too). Writes answer 202: Erli checks categories, images and buyability afterwards, so read `buyableProblems` a few minutes later. Fields edited in the Erli panel are **frozen** and the API silently keeps them. Products cannot be deleted: pause with status inactive; `erli_archive_product` (switched off) archives for good. Promotions: `erli_create_product_discount` and `erli_get_product_discount`. `erli_list_product_changes` and `erli_mark_product_changes_read` tell you which products Erli wants sent again.\n\n**Categories and attributes**: `erli_search_categories`, `erli_list_category_attributes` and `erli_list_attribute_values` give Erli ids to send with source marketplace; otherwise send your own category path and Erli maps it. `erli_list_terms` lists the returns, complaints and warranties terms whose identifiers a product can name. `erli_estimate_commission` estimates the fee.\n\n**Orders and shipping**: `status` is Erli's payment state (pending, purchased, cancelled, returned); `sellerStatus` is yours, set with `erli_update_order_status`. Ship with your own carrier and register the tracking number with `erli_add_tracking` (one parcel per call; `erli_list_delivery_vendors` lists the carrier codes), then `erli_get_external_parcel` or `erli_update_external_parcel`. `erli_delete_external_parcel` and `erli_cancel_order` are installed switched off; cancelling makes Erli refund the buyer and stock is not restored, so raise it yourself with `erli_update_product`. `erli_set_order_external_id` stores your own order number. Erli's own paid labels (Przesyłki Erli) are not part of this connector; `erli_list_shipping_methods` only lists them. Returns arrive inside the order (`returns`, status returned); there is no endpoint for buyer messages.\n\n**Delivery prices**: `erli_list_delivery_price_lists`, `erli_get_delivery_price_lists_details` and `erli_list_delivery_methods`.\n\n**Markets**: shops that also sell in Germany pass `market` (pl or de) on product, promotion and terms calls; without it the shop's base market is used, and a market the shop does not run answers 400.\n\n**Formats and limits**: money is in grosze (10000 = 100.00 PLN or EUR); weights in grams; dates ISO 8601. Order ids look like 123456x7890. Erli does not publish fixed rate limits: the allowance follows its load and a 429 means wait and retry. A key without the needed scope answers 403 (`SAI-12`); a key not used for 90 days is switched off. Errors carry `message`, `errorCode` and a Polish `polishMessage`.\n\n**Writes: confirm first.** Prices, stock, promotions, order status and tracking act on the live shop. Before each call show the user what changes and wait for a yes.",
+  "aliases": [
+    "Erli.pl",
+    "Erli Shop API",
+    "Erli Marketplace"
+  ],
+  "region": "pl",
+  "category": "e-commerce",
+  "icon": "erli",
+  "docsUrl": "https://erli.pl/svc/shop-api/doc",
+  "requiredEnvVars": [
+    "ERLI_API_URL",
+    "ERLI_API_KEY"
+  ],
+  "envVarMeta": {
+    "ERLI_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "Production for your live Erli shop. The sandbox needs a separate sandbox account and key from Erli support.",
+      "link": "https://erli.pl/svc/shop-api/doc",
+      "options": [
+        {
+          "value": "https://erli.pl/svc/shop-api",
+          "label": "Production (erli.pl)"
+        },
+        {
+          "value": "https://sandbox.erli.dev/svc/shop-api",
+          "label": "Sandbox (sandbox.erli.dev)"
+        }
+      ]
+    },
+    "ERLI_API_KEY": {
+      "label": "API key (klucz API)",
+      "kind": "credential",
+      "secret": true,
+      "help": "moje Erli > Ustawienia sklepu > Metoda integracji > Własna integracja po API > Klucze API > Wygeneruj nowy klucz. The secret is shown only once.",
+      "link": "https://erli.pl/svc/shop-api/doc",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the whole API key without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Erli refused the API key. Copy it again from Ustawienia sklepu > Metoda integracji > Klucze API, or generate a new one (the secret is shown only once). Sandbox and production keys differ.",
+    "403": "The key lacks the scope for this call (errorCode SAI-12; the WWW-Authenticate header names it), or it was switched off after 90 days without use. Generate a key with the product, order and pricelist scopes.",
+    "404": "Erli found no product with that externalId, order or parcel.",
+    "rate_limited": "Erli adapts its rate limit to its load. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "erli_get_shop",
+    "params": {}
+  },
+  "prerequisites": "An Erli.pl seller shop with the integration method set to own API integration, and an API key generated in the seller panel. About 3 minutes.",
+  "connector": {
+    "name": "Erli Marketplace API",
+    "type": "REST",
+    "baseUrl": "{{ERLI_API_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{ERLI_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "erli_get_shop",
+      "description": "Read the shop the API key belongs to: id, name, active, company (NIP and name), the markets it sells on (pl, de) and the scopes of the key. Costs nothing; use it to check the connection and the markets.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_search_products",
+      "description": "Search your products: externalId, marketplaceId, name, status (active or inactive), archived, price and stock (price in grosze), currency, buyableProblems (why a product cannot be bought: delivery, stock, category, image, terms, blocked, missingTaxRate), frozen fields, categories, created and updated. Keyset paging: pass the sort field value of the last row as after. Up to 200 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Filter: `{\"field\": \"status\", \"operator\": \"=\", \"value\": \"active\"}`. Fields: externalId, marketplaceId, name, ean, sku, created, updated, archivedAt, price, stock, categoryId, taxRate (operators `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `nin`), status and archived (= or !=). Combine with `{\"operator\": \"and\", \"value\": [ ... ]}`, or, not."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "description",
+                "ean",
+                "sku",
+                "baseMarket",
+                "externalReferences",
+                "importantFeatures",
+                "externalAttributes",
+                "externalCategories",
+                "externalVariantGroup",
+                "images",
+                "price",
+                "cataloguePrice",
+                "stock",
+                "status",
+                "archived",
+                "dispatchTime",
+                "deliveryPriceList",
+                "weight",
+                "taxRate",
+                "invoiceType",
+                "basketLimit",
+                "returnIdentifier",
+                "obligatoryIdentifier",
+                "voluntaryIdentifier",
+                "frozen",
+                "buyableProblems",
+                "marketplaceId",
+                "created",
+                "updated"
+              ],
+              "description": "Field name."
+            },
+            "description": "Fields to return; leave out for the default set."
+          },
+          "sort_field": {
+            "type": "string",
+            "enum": [
+              "externalId",
+              "marketplaceId",
+              "name",
+              "ean",
+              "sku",
+              "created",
+              "updated",
+              "archivedAt"
+            ],
+            "description": "Sort field (default externalId)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Keyset cursor: the sort field value of the last row of the previous page (a date-time for created, updated, archivedAt)."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "ASC (default) or DESC."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Rows per page, 1 to 200 (default 50)."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "Market of the shop to act on: `pl` or `de`. Leave out for the shop's base market (see `markets` of erli_get_shop)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/_search",
+        "bodyMapping": {
+          "pagination": {
+            "sortField": "$sort_field",
+            "after": "$after",
+            "order": "$order",
+            "limit": "$limit"
+          },
+          "filter": "$filter",
+          "fields": "$fields"
+        },
+        "headers": {
+          "X-ERLI-MARKET": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_get_product",
+      "description": "Read one product by your externalId: name, description, ean, sku, images, price and cataloguePrice (grosze), stock, status, archived, dispatchTime, deliveryPriceList, taxRate, categories, attributes, variant group, terms identifiers and frozen fields. 404 when no such product exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1023,
+            "description": "Your own product id (externalId) as used when the product was created, 1 to 1023 characters."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "Market of the shop to act on: `pl` or `de`. Leave out for the shop's base market (see `markets` of erli_get_shop)."
+          }
+        },
+        "required": [
+          "external_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{external_id}",
+        "headers": {
+          "X-ERLI-MARKET": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_get_product_discount",
+      "description": "Read the timed price promotion of a product: newPrice (grosze), startAt, restoreAt and unfreezeAfterwards. 404 when the product has no promotion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1023,
+            "description": "Your own product id (externalId) as used when the product was created, 1 to 1023 characters."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "Market of the shop to act on: `pl` or `de`. Leave out for the shop's base market (see `markets` of erli_get_shop)."
+          }
+        },
+        "required": [
+          "external_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{external_id}/discount",
+        "headers": {
+          "X-ERLI-MARKET": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_search_orders",
+      "description": "Search orders, by default oldest updated first: id, status (pending, purchased, cancelled, returned), sellerStatus (your fulfilment status), buyer (proxy email, delivery and invoice address with NIP), items (externalId, quantity, unitPrice in grosze, name, sku, ean), delivery method and price, totalPrice, currency, market, deliveryTracking, returns, created, updated, purchasedAt and cursor. Up to 200 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Filter: `{\"field\": \"paymentStatus\", \"operator\": \"=\", \"value\": \"completed\"}` for paid orders, or `{\"field\": \"created\", \"operator\": \">=\", \"value\": \"2026-11-01T00:00:00Z\"}`. Fields: id, created, updated, paymentStatus, userEmail; operators `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `nin`; combine with and, or, not. There is no filter on status."
+          },
+          "sort_field": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated"
+            ],
+            "description": "created or updated (default)."
+          },
+          "after": {
+            "type": "string",
+            "description": "Keyset cursor: the `cursor` (or the sort date) of the last order of the previous page."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "ASC (default) or DESC."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Orders per page, 1 to 200 (default 50)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/_search",
+        "bodyMapping": {
+          "pagination": {
+            "sortField": "$sort_field",
+            "after": "$after",
+            "order": "$order",
+            "limit": "$limit"
+          },
+          "filter": "$filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_get_order",
+      "description": "Read one order: status, sellerStatus, buyer and addresses, invoice details, items with prices in grosze, delivery method, pickup point and cash on delivery, deliveryTracking (status, vendor, trackingNumber, trackingUrl), returns with reasons, comment, externalOrderId and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}x[0-9]{1,20}$",
+            "description": "Erli order id, e.g. 123456x7890 (field `id` of erli_search_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_order_changes",
+      "description": "Read the 500 oldest unread order events (orderCreated, orderStatusChanged, orderSellerStatusChanged), each with id, created, type and the whole order as payload. Mark them read with erli_mark_order_changes_read, or the same events come back on the next call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "orderCreated",
+                "orderStatusChanged",
+                "orderSellerStatusChanged"
+              ],
+              "description": "Event type."
+            },
+            "description": "Event types to return; all when left out."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Filter on the event date: `{\"field\": \"created\", \"operator\": \">=\", \"value\": \"2026-11-15T00:00:00Z\"}`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/changes/_search",
+        "bodyMapping": {
+          "types": "$types",
+          "filter": "$filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_product_changes",
+      "description": "Read the 500 oldest unread product events (productsNeedSync: Erli asks you to send the listed externalProductIds again, optionally only some fields). Mark them read with erli_mark_product_changes_read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "description": "Filter on the event date: `{\"field\": \"created\", \"operator\": \">=\", \"value\": \"2026-11-15T00:00:00Z\"}`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/changes/_search",
+        "bodyMapping": {
+          "types": [
+            "productsNeedSync"
+          ],
+          "filter": "$filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_get_external_parcel",
+      "description": "Read a parcel you registered with erli_add_tracking: id, orderId, vendor, trackingNumber, status and statusHistory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Parcel id returned by erli_add_tracking."
+          }
+        },
+        "required": [
+          "parcel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/external/{parcel_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_delivery_price_lists",
+      "description": "List your delivery price lists: id and name. Products point to a list by name in deliveryPriceList; the default list is named `*`.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/delivery/priceLists"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_get_delivery_price_lists_details",
+      "description": "Read delivery price lists in detail: per delivery method the basePrice and nextItemPrice in grosze, item limit and next-day option, plus erliProEnabled and nextDayDeliveryEnabled. Filter by one id or name, or leave both out for all lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Price list id (erli_list_delivery_price_lists)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Price list name."
+          },
+          "erli_pro_enabled": {
+            "type": "boolean",
+            "description": "Only lists with (true) or without (false) Erli Pro."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/delivery/priceListsDetails",
+        "queryParams": {
+          "id": "$id",
+          "name": "$name",
+          "erliProEnabled": "$erli_pro_enabled"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_delivery_methods",
+      "description": "List the delivery methods a price list can offer: id, name, vendor and whether it is cash on delivery. Use the ids in delivery price lists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only this delivery method id."
+          },
+          "cod": {
+            "type": "boolean",
+            "description": "true: only cash on delivery methods."
+          },
+          "vendor": {
+            "type": "string",
+            "description": "Only methods of this carrier, e.g. inpost."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dictionaries/deliveryMethods",
+        "queryParams": {
+          "id": "$id",
+          "cod": "$cod",
+          "vendor": "$vendor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_delivery_vendors",
+      "description": "List the carriers Erli knows (vendor codes such as inpost, dpd, dhl, pocztaPolska, ownTransport, selfPickup), the values accepted as vendor by erli_add_tracking.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dictionaries/deliveryVendors"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_shipping_methods",
+      "description": "List Erli's own shipping services (Przesyłki Erli): id, group, operator and cash on delivery. Read-only reference; this connector does not buy Erli labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only this shipping method id."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Only this group."
+          },
+          "operator": {
+            "type": "string",
+            "description": "Only this operator, e.g. inpost."
+          },
+          "cod": {
+            "type": "boolean",
+            "description": "true: only cash on delivery."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dictionaries/shippingMethods",
+        "queryParams": {
+          "id": "$id",
+          "groupId": "$group_id",
+          "operator": "$operator",
+          "cod": "$cod"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_search_categories",
+      "description": "List Erli marketplace categories: id, name, leaf and breadcrumb. Paging by id: pass the last id as after. Up to 200 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Categories per page, at most 200 (default 50)."
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Return categories with an id above this one (the last id of the previous page)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dictionaries/category/_search",
+        "bodyMapping": {
+          "limit": "$limit",
+          "after": "$after"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_category_attributes",
+      "description": "List the Erli attributes of a category (id, name, type, unit, whether required) to send as externalAttributes with source marketplace.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Erli category id (erli_search_categories), preferably a leaf."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dictionaries/attributes/_search",
+        "bodyMapping": {
+          "categoryId": "$category_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_attribute_values",
+      "description": "List the allowed values of the dictionary attributes of a category (attribute id, value id and name).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Erli category id (erli_search_categories)."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dictionaries/attributeValues/_search",
+        "bodyMapping": {
+          "categoryId": "$category_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_list_terms",
+      "description": "List your return, statutory warranty (complaints) or guarantee terms: identifier, duration, default flag, who pays the return and the return address. The identifiers go into returnIdentifier, obligatoryIdentifier and voluntaryIdentifier of a product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "returns",
+              "complaints",
+              "warranties"
+            ],
+            "description": "returns (zwroty), complaints (rękojmia) or warranties (gwarancja)."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "Market of the shop to act on: `pl` or `de`. Leave out for the shop's base market (see `markets` of erli_get_shop)."
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dictionaries/{kind}",
+        "headers": {
+          "X-ERLI-MARKET": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_estimate_commission",
+      "description": "Estimate today's Erli commission for selling a product: commission in grosze, market and currency. Nothing is charged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Erli category id."
+          },
+          "unit_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Unit price in grosze (integer, 100 = 1.00 PLN or EUR)."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Quantity (default 1)."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "pl or de; default the shop's base market."
+          }
+        },
+        "required": [
+          "category_id",
+          "unit_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/commissions/_estimate",
+        "bodyMapping": {
+          "categoryId": "$category_id",
+          "unitPrice": "$unit_price",
+          "quantity": "$quantity",
+          "market": "$market"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "erli_create_product",
+      "description": "Create a product under your own externalId. Answers 202 when the data passed basic checks; categories, images and buyability are processed afterwards and the storefront can take about 20 minutes. Check buyableProblems with erli_get_product. 409 when the externalId exists.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1023,
+            "description": "Your own product id (externalId) as used when the product was created, 1 to 1023 characters."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 150,
+            "description": "Product title, 3 to 150 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description as HTML (paragraphs, lists, bold; Erli keeps a limited set of tags)."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Public image URL, at most 2000 characters."
+                },
+                "isVariantImage": {
+                  "type": "boolean",
+                  "description": "true: use this image as the thumbnail of the variant group."
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Images in display order, the first is the main one: objects with `url` (WebP, PNG or JPEG, at most 200). Example: `[{\"url\": \"https://shop.example/1.jpg\"}]`."
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Price in grosze (integer, 100 = 1.00 PLN or EUR), e.g. 10000 for 100.00."
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units in stock. Erli lowers it on each sale but does not raise it again after a cancellation."
+          },
+          "dispatch_days": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Working days needed to get the item ready for dispatch (dispatchTime.period), e.g. 1."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ],
+            "description": "active (for sale) or inactive (paused)."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN / GTIN barcode."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU."
+          },
+          "catalogue_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Catalogue (reference) price in grosze (integer, 100 = 1.00 PLN or EUR); shown crossed out when higher than price."
+          },
+          "tax_rate": {
+            "type": "string",
+            "enum": [
+              "TAX_0",
+              "TAX_5",
+              "TAX_8",
+              "TAX_23",
+              "TAX_NP",
+              "TAX_ZW",
+              "TAX_7",
+              "TAX_19"
+            ],
+            "description": "VAT rate. Allowed rates depend on the category; TAX_7 and TAX_19 are for the German market."
+          },
+          "invoice_type": {
+            "type": "string",
+            "enum": [
+              "vatInvoice",
+              "vatInvoiceWithMarginScheme",
+              "invoiceWithoutVat",
+              "withoutInvoice"
+            ],
+            "description": "Invoice type; without it the shop's default is used."
+          },
+          "delivery_price_list": {
+            "type": "string",
+            "description": "Name of the delivery price list (erli_list_delivery_price_lists); the default list is named `*`."
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Weight in grams (used for filters in the panel only)."
+          },
+          "basket_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum units of this product per basket, 1 to 100."
+          },
+          "external_categories": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Your category path: `[{\"breadcrumb\": [{\"id\": \"12\", \"name\": \"Odzież\"}, {\"id\": \"34\", \"name\": \"Kurtki\"}]}]`. Use `\"source\": \"marketplace\"` with ids of erli_search_categories to pick an Erli category directly."
+          },
+          "external_attributes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Attributes: `[{\"id\": \"color\", \"name\": \"Kolor\", \"type\": \"string\", \"values\": [\"czerwony\"]}]`. type is string, number, range or dictionary; with `\"source\": \"marketplace\"` use ids of erli_list_category_attributes."
+          },
+          "external_variant_group": {
+            "type": "object",
+            "description": "Variant group: `{\"id\": \"jacket-1\", \"attributes\": [0]}`, where attributes lists the index of the attributes that differ between variants (optionally \"thumbnail\" first)."
+          },
+          "return_identifier": {
+            "type": "string",
+            "description": "Name of the return terms to use (erli_list_terms with kind returns); default terms when left out."
+          },
+          "obligatory_identifier": {
+            "type": "string",
+            "description": "Name of the statutory warranty (rękojmia) terms (erli_list_terms with kind complaints)."
+          },
+          "voluntary_identifier": {
+            "type": "string",
+            "description": "Name of the voluntary guarantee terms (erli_list_terms with kind warranties)."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "Market of the shop to act on: `pl` or `de`. Leave out for the shop's base market (see `markets` of erli_get_shop)."
+          }
+        },
+        "required": [
+          "external_id",
+          "name",
+          "images",
+          "price",
+          "stock",
+          "dispatch_days"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/{external_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "images": "$images",
+          "price": "$price",
+          "stock": "$stock",
+          "dispatchTime": {
+            "period": "$dispatch_days"
+          },
+          "status": "$status",
+          "ean": "$ean",
+          "sku": "$sku",
+          "cataloguePrice": "$catalogue_price",
+          "taxRate": "$tax_rate",
+          "invoiceType": "$invoice_type",
+          "deliveryPriceList": "$delivery_price_list",
+          "weight": "$weight",
+          "basketLimit": "$basket_limit",
+          "externalCategories": "$external_categories",
+          "externalAttributes": "$external_attributes",
+          "externalVariantGroup": "$external_variant_group",
+          "returnIdentifier": "$return_identifier",
+          "obligatoryIdentifier": "$obligatory_identifier",
+          "voluntaryIdentifier": "$voluntary_identifier"
+        },
+        "headers": {
+          "X-ERLI-MARKET": "$market"
+        }
+      }
+    },
+    {
+      "name": "erli_update_product",
+      "description": "Change a product: send only the fields that change (price and stock too; prices in grosze). Answers 202 with updatedFields. Fields the seller edited in the Erli panel are frozen and silently kept; price changes are ignored while a promotion runs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1023,
+            "description": "Your own product id (externalId) as used when the product was created, 1 to 1023 characters."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 150,
+            "description": "Product title, 3 to 150 characters."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description as HTML (paragraphs, lists, bold; Erli keeps a limited set of tags)."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Public image URL, at most 2000 characters."
+                },
+                "isVariantImage": {
+                  "type": "boolean",
+                  "description": "true: use this image as the thumbnail of the variant group."
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Images in display order, the first is the main one: objects with `url` (WebP, PNG or JPEG, at most 200). Example: `[{\"url\": \"https://shop.example/1.jpg\"}]`."
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Price in grosze (integer, 100 = 1.00 PLN or EUR), e.g. 10000 for 100.00."
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Units in stock. Erli lowers it on each sale but does not raise it again after a cancellation."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ],
+            "description": "active (for sale) or inactive (paused)."
+          },
+          "ean": {
+            "type": "string",
+            "description": "EAN / GTIN barcode."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Your SKU."
+          },
+          "catalogue_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Catalogue (reference) price in grosze (integer, 100 = 1.00 PLN or EUR); shown crossed out when higher than price."
+          },
+          "tax_rate": {
+            "type": "string",
+            "enum": [
+              "TAX_0",
+              "TAX_5",
+              "TAX_8",
+              "TAX_23",
+              "TAX_NP",
+              "TAX_ZW",
+              "TAX_7",
+              "TAX_19"
+            ],
+            "description": "VAT rate. Allowed rates depend on the category; TAX_7 and TAX_19 are for the German market."
+          },
+          "invoice_type": {
+            "type": "string",
+            "enum": [
+              "vatInvoice",
+              "vatInvoiceWithMarginScheme",
+              "invoiceWithoutVat",
+              "withoutInvoice"
+            ],
+            "description": "Invoice type; without it the shop's default is used."
+          },
+          "delivery_price_list": {
+            "type": "string",
+            "description": "Name of the delivery price list (erli_list_delivery_price_lists); the default list is named `*`."
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Weight in grams (used for filters in the panel only)."
+          },
+          "basket_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum units of this product per basket, 1 to 100."
+          },
+          "external_categories": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Your category path: `[{\"breadcrumb\": [{\"id\": \"12\", \"name\": \"Odzież\"}, {\"id\": \"34\", \"name\": \"Kurtki\"}]}]`. Use `\"source\": \"marketplace\"` with ids of erli_search_categories to pick an Erli category directly."
+          },
+          "external_attributes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Attributes: `[{\"id\": \"color\", \"name\": \"Kolor\", \"type\": \"string\", \"values\": [\"czerwony\"]}]`. type is string, number, range or dictionary; with `\"source\": \"marketplace\"` use ids of erli_list_category_attributes."
+          },
+          "external_variant_group": {
+            "type": "object",
+            "description": "Variant group: `{\"id\": \"jacket-1\", \"attributes\": [0]}`, where attributes lists the index of the attributes that differ between variants (optionally \"thumbnail\" first)."
+          },
+          "return_identifier": {
+            "type": "string",
+            "description": "Name of the return terms to use (erli_list_terms with kind returns); default terms when left out."
+          },
+          "obligatory_identifier": {
+            "type": "string",
+            "description": "Name of the statutory warranty (rękojmia) terms (erli_list_terms with kind complaints)."
+          },
+          "voluntary_identifier": {
+            "type": "string",
+            "description": "Name of the voluntary guarantee terms (erli_list_terms with kind warranties)."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "Market of the shop to act on: `pl` or `de`. Leave out for the shop's base market (see `markets` of erli_get_shop)."
+          },
+          "dispatch_time": {
+            "type": "object",
+            "properties": {
+              "period": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Working days."
+              }
+            },
+            "required": [
+              "period"
+            ],
+            "description": "New dispatch time: `{\"period\": 2}` (working days to get the item ready)."
+          }
+        },
+        "required": [
+          "external_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{external_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "description": "$description",
+          "images": "$images",
+          "price": "$price",
+          "stock": "$stock",
+          "dispatchTime": "$dispatch_time",
+          "status": "$status",
+          "ean": "$ean",
+          "sku": "$sku",
+          "cataloguePrice": "$catalogue_price",
+          "taxRate": "$tax_rate",
+          "invoiceType": "$invoice_type",
+          "deliveryPriceList": "$delivery_price_list",
+          "weight": "$weight",
+          "basketLimit": "$basket_limit",
+          "externalCategories": "$external_categories",
+          "externalAttributes": "$external_attributes",
+          "externalVariantGroup": "$external_variant_group",
+          "returnIdentifier": "$return_identifier",
+          "obligatoryIdentifier": "$obligatory_identifier",
+          "voluntaryIdentifier": "$voluntary_identifier"
+        },
+        "headers": {
+          "X-ERLI-MARKET": "$market"
+        }
+      }
+    },
+    {
+      "name": "erli_archive_product",
+      "description": "Archive a product: it can no longer be bought and disappears from the panel. Cannot be undone through the API; to pause a product set status inactive with erli_update_product instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1023,
+            "description": "Your own product id (externalId) as used when the product was created, 1 to 1023 characters."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "Market of the shop to act on: `pl` or `de`. Leave out for the shop's base market (see `markets` of erli_get_shop)."
+          }
+        },
+        "required": [
+          "external_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{external_id}",
+        "bodyMapping": {
+          "archived": true
+        },
+        "headers": {
+          "X-ERLI-MARKET": "$market"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "erli_create_product_discount",
+      "description": "Start a timed price promotion for a product: newPrice (grosze) from startAt until restoreAt, then the old price returns. unfreezeAfterwards true unlocks the price for the API after the promotion.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1023,
+            "description": "Your own product id (externalId) as used when the product was created, 1 to 1023 characters."
+          },
+          "new_price": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Promotion price in grosze (integer, 100 = 1.00 PLN or EUR)."
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start, ISO 8601 date-time, e.g. 2026-11-20T00:00:00Z."
+          },
+          "restore_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End, ISO 8601 date-time."
+          },
+          "unfreeze_afterwards": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: let the API change the price again after the promotion."
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "pl",
+              "de"
+            ],
+            "description": "Market of the shop to act on: `pl` or `de`. Leave out for the shop's base market (see `markets` of erli_get_shop)."
+          }
+        },
+        "required": [
+          "external_id",
+          "new_price",
+          "start_at",
+          "restore_at"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/{external_id}/discount",
+        "bodyMapping": {
+          "newPrice": "$new_price",
+          "startAt": "$start_at",
+          "restoreAt": "$restore_at",
+          "unfreezeAfterwards": "$unfreeze_afterwards"
+        },
+        "headers": {
+          "X-ERLI-MARKET": "$market"
+        }
+      }
+    },
+    {
+      "name": "erli_update_order_status",
+      "description": "Set your fulfilment status of an order (sellerStatus): readyToProcess, inProgress, sent, readyToPickup (personal pickup ready), received, returned, returningToSender. Answers 204. Cancelling has its own tool, erli_cancel_order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}x[0-9]{1,20}$",
+            "description": "Erli order id, e.g. 123456x7890 (field `id` of erli_search_orders)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "readyToProcess",
+              "inProgress",
+              "sent",
+              "readyToPickup",
+              "received",
+              "returned",
+              "returningToSender",
+              "unknown"
+            ],
+            "description": "New seller status."
+          }
+        },
+        "required": [
+          "order_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/orders/{order_id}/status",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "erli_cancel_order",
+      "description": "Cancel an order on the seller side (sellerStatus canceled). Cannot be undone; Erli refunds the buyer, and stock is not restored automatically. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}x[0-9]{1,20}$",
+            "description": "Erli order id, e.g. 123456x7890 (field `id` of erli_search_orders)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/orders/{order_id}/status",
+        "bodyMapping": {
+          "status": "canceled"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "erli_set_order_external_id",
+      "description": "Store your own order number on an Erli order (externalOrderId, up to 2000 characters). Fails on cancelled orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}x[0-9]{1,20}$",
+            "description": "Erli order id, e.g. 123456x7890 (field `id` of erli_search_orders)."
+          },
+          "external_order_id": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Your order number, e.g. from your ERP."
+          }
+        },
+        "required": [
+          "order_id",
+          "external_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/orders/{order_id}",
+        "bodyMapping": {
+          "externalOrderId": "$external_order_id"
+        }
+      }
+    },
+    {
+      "name": "erli_add_tracking",
+      "description": "Register a parcel you ship with your own carrier, with its tracking number, so the buyer can follow it. Answers a list with the created parcel (id, status, trackingNumber) or the input with error. trackingNumber is required except for ownTransport and selfPickup, which need status instead. Not for Erli's own labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}x[0-9]{1,20}$",
+            "description": "Erli order id, e.g. 123456x7890 (field `id` of erli_search_orders)."
+          },
+          "vendor": {
+            "type": "string",
+            "enum": [
+              "inpost",
+              "pocztaPolska",
+              "dhl",
+              "dpd",
+              "ups",
+              "gls",
+              "orlen",
+              "pocztex24",
+              "ownTransport",
+              "selfPickup",
+              "ambroExpress",
+              "pekaes",
+              "tntExpress",
+              "schenker",
+              "dsv",
+              "dts",
+              "geis",
+              "fedex",
+              "jasFBG",
+              "patronService",
+              "raben",
+              "rhenus",
+              "rohligSuus",
+              "hellmann"
+            ],
+            "description": "Carrier code (erli_list_delivery_vendors)."
+          },
+          "tracking_number": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 32,
+            "description": "Tracking number, 2 to 32 characters."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "preparing",
+              "readyToSend",
+              "waitingForCourier",
+              "sent",
+              "readyToPickup",
+              "pickupTimeExpired",
+              "delivered",
+              "returned",
+              "canceled",
+              "deliveryUnsuccessful",
+              "redirected"
+            ],
+            "description": "Parcel status; required for ownTransport, selfPickup and freight carriers."
+          },
+          "type_id": {
+            "type": "string",
+            "enum": [
+              "dpd",
+              "dpdDE",
+              "dhl",
+              "dhlDE"
+            ],
+            "description": "Only for DPD and DHL: dpd or dpdDE, dhl or dhlDE (default dpd or dhl)."
+          }
+        },
+        "required": [
+          "order_id",
+          "vendor"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipping/external",
+        "bodyMapping": [
+          {
+            "orderId": "$order_id",
+            "vendor": "$vendor",
+            "trackingNumber": "$tracking_number",
+            "status": "$status",
+            "typeId": "$type_id"
+          }
+        ]
+      }
+    },
+    {
+      "name": "erli_update_external_parcel",
+      "description": "Change a parcel registered with erli_add_tracking: carrier, tracking number, status or type. 409 when the tracking number is already used.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Parcel id."
+          },
+          "vendor": {
+            "type": "string",
+            "enum": [
+              "inpost",
+              "pocztaPolska",
+              "dhl",
+              "dpd",
+              "ups",
+              "gls",
+              "orlen",
+              "pocztex24",
+              "ownTransport",
+              "selfPickup",
+              "ambroExpress",
+              "pekaes",
+              "tntExpress",
+              "schenker",
+              "dsv",
+              "dts",
+              "geis",
+              "fedex",
+              "jasFBG",
+              "patronService",
+              "raben",
+              "rhenus",
+              "rohligSuus",
+              "hellmann"
+            ],
+            "description": "Carrier code."
+          },
+          "tracking_number": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 32,
+            "description": "Tracking number, 2 to 32 characters."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "preparing",
+              "readyToSend",
+              "waitingForCourier",
+              "sent",
+              "readyToPickup",
+              "pickupTimeExpired",
+              "delivered",
+              "returned",
+              "canceled",
+              "deliveryUnsuccessful",
+              "redirected"
+            ],
+            "description": "Parcel status."
+          },
+          "type_id": {
+            "type": "string",
+            "enum": [
+              "dpd",
+              "dpdDE",
+              "dhl",
+              "dhlDE"
+            ],
+            "description": "dpd or dpdDE, dhl or dhlDE."
+          }
+        },
+        "required": [
+          "parcel_id",
+          "vendor"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/shipping/external/{parcel_id}",
+        "bodyMapping": {
+          "vendor": "$vendor",
+          "trackingNumber": "$tracking_number",
+          "status": "$status",
+          "typeId": "$type_id"
+        }
+      }
+    },
+    {
+      "name": "erli_delete_external_parcel",
+      "description": "Delete a parcel registered with erli_add_tracking (the buyer loses its tracking). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parcel_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Parcel id."
+          }
+        },
+        "required": [
+          "parcel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/shipping/external/{parcel_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "erli_mark_order_changes_read",
+      "description": "Mark order events as read so erli_list_order_changes moves on: everything up to last_message_id, or the listed ids. Answers the number of events marked.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_message_id": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24,
+            "description": "Id of the last event you processed (24 characters); it and all older events are marked."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 24,
+              "maxLength": 24,
+              "description": "Event id, 24 characters."
+            },
+            "description": "Or: the ids of the events to mark."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/changes/mark-read",
+        "bodyMapping": {
+          "lastMessageId": "$last_message_id",
+          "ids": "$ids"
+        }
+      }
+    },
+    {
+      "name": "erli_mark_product_changes_read",
+      "description": "Mark product events as read so erli_list_product_changes moves on: everything up to last_message_id, or the listed ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_message_id": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 24,
+            "description": "Id of the last event you processed (24 characters)."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 24,
+              "maxLength": 24,
+              "description": "Event id, 24 characters."
+            },
+            "description": "Or: the ids of the events to mark."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/changes/mark-read",
+        "bodyMapping": {
+          "lastMessageId": "$last_message_id",
+          "ids": "$ids"
+        }
+      }
+    }
+  ]
+}

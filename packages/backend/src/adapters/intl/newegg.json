@@ -1,0 +1,1299 @@
+{
+  "slug": "newegg",
+  "name": "Newegg Marketplace",
+  "description": "Newegg Marketplace API for sellers on Newegg.com: order search and shipping with tracking, inventory and prices per item, returns (RMA) and courtesy refunds as reads, and order, settlement, inventory and price reports. API key, secret key and seller ID.",
+  "instructions": "## Newegg Marketplace\nThis connector works with the **Newegg Marketplace API** at `https://api.newegg.com/marketplace`, for sellers on Newegg.com (United States): orders and shipping, inventory and prices per item, returns (RMA), courtesy refunds and reports.\n\n**Setup (about 5 minutes once Newegg has issued the keys)**\n1. Ask Newegg for API access from Seller Portal, signed in as the account administrator. Newegg's integration team approves the request and sends you an **API key** and a **secret key**.\n2. Paste the API key into `NEWEGG_API_KEY` and the secret key into `NEWEGG_SECRET_KEY`.\n3. Enter your **Seller ID** (a short code such as A006) in `NEWEGG_SELLER_ID`. Newegg checks its upper and lower case.\n\nEvery call sends the two keys as the headers `Authorization` and `SecretKey` and the seller ID as `sellerid` in the address. Keys are per platform: these tools use Newegg.com, not Neweggbusiness.com or Newegg.ca.\n\n**Where to start**: `newegg_get_seller_status` proves the keys work. `newegg_list_orders` with `status` 0 lists what has to be shipped.\n\n**Orders**: `newegg_list_orders` searches by status and date, `newegg_get_orders` reads given order numbers, `newegg_get_order_status` is the quick check. Ship with `newegg_ship_order`: one entry per package with tracking number, a carrier name from `newegg_list_shipping_carriers` and the items in it. Always read `PackageProcessingSummary` in the answer: a package Newegg refused is reported there, not as an error. `newegg_confirm_orders_downloaded` marks orders as fetched. `newegg_cancel_order` voids an order and refunds the customer; it is installed switched off.\n\n**Inventory and price**: `newegg_get_item_inventory`, `newegg_get_batch_inventory` (up to 100 items), `newegg_get_item_price`, `newegg_update_item_inventory`, `newegg_update_item_price`. Items are addressed by your seller part number (`id_type` 1, the default), the Newegg item number (0) or a UPC (2). Warehouses and destinations are three-letter ISO country codes such as USA. Stock of items shipped by Newegg cannot be changed.\n\n**Returns**: `newegg_list_rmas` and `newegg_list_courtesy_refunds` are reads. `newegg_receive_rma` moves a return on towards its refund and is installed switched off. The connector issues no refunds and buys no shipping labels.\n\n**Reports** are asynchronous: request one with `newegg_request_order_list_report`, `newegg_request_settlement_summary_report`, `newegg_request_inventory_report` or `newegg_request_price_report`, poll `newegg_get_report_status` until FINISHED, then read it with `newegg_get_report_result` and the matching `operation_type`.\n\n**Reading the answers**: Newegg's read calls are PUT or POST requests with a search body; the tools marked read-only change nothing. Dates in requests and answers are Pacific Time, not UTC. Many numbers come back as strings. A failed call answers with a list of `Code` and `Message`.\n\n**Rate limits** are per seller and per function: order search and shipping 1000 calls per hour, order status 500, inventory and price 10,000, carriers 10 per minute, report requests 100 per hour, report status and result 500. Newegg answers 429 when a limit is reached.",
+  "aliases": [
+    "Newegg Seller",
+    "Newegg Seller Portal",
+    "Newegg Marketplace API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "newegg",
+  "docsUrl": "https://developer.newegg.com/newegg_marketplace_api/",
+  "requiredEnvVars": [
+    "NEWEGG_API_KEY",
+    "NEWEGG_SECRET_KEY",
+    "NEWEGG_SELLER_ID"
+  ],
+  "envVarMeta": {
+    "NEWEGG_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API key Newegg's integration team sent you after approving your API access request. It is sent as the Authorization header.",
+      "link": "https://developer.newegg.com/newegg_marketplace_api/newegg_marketplace_api_authentication/",
+      "pattern": "^\\S{16,80}$",
+      "patternMessage": "Paste the API key only, without spaces and without the word Authorization."
+    },
+    "NEWEGG_SECRET_KEY": {
+      "label": "Secret key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The secret key sent together with the API key. It is sent as the SecretKey header.",
+      "link": "https://developer.newegg.com/newegg_marketplace_api/newegg_marketplace_api_authentication/",
+      "pattern": "^\\S{16,80}$",
+      "patternMessage": "Paste the secret key only, without spaces."
+    },
+    "NEWEGG_SELLER_ID": {
+      "label": "Seller ID",
+      "kind": "setting",
+      "help": "Your Newegg seller ID, a short code such as A006. Upper and lower case matter.",
+      "example": "A006",
+      "pattern": "^[A-Za-z0-9]{3,10}$",
+      "patternMessage": "The seller ID is a short code of letters and digits, e.g. A006."
+    }
+  },
+  "verifyHints": {
+    "400": "Newegg refused the request. The answer lists a Code and a Message that name the field or the order state.",
+    "401": "Newegg did not accept the keys. Check that the API key and the secret key are the pair Newegg sent you for Newegg.com and that the seller ID is yours, with the same upper and lower case.",
+    "403": "Newegg refused the call: these keys are not authorized for this seller ID or for this function. Ask Newegg's integration team to check the API access of the account.",
+    "404": "Newegg found no such order, item or report for this seller. Addresses are lower case; the seller ID keeps its own case.",
+    "rate_limited": "Newegg limits each function separately (order search 1000 calls per hour, report requests 100 per hour). Wait and try again."
+  },
+  "probe": {
+    "tool": "newegg_get_seller_status",
+    "params": {}
+  },
+  "prerequisites": "A Newegg.com seller account and API access granted by Newegg: request it from Seller Portal as the account administrator, and Newegg's integration team sends an API key and a secret key. You also need your Newegg seller ID.",
+  "connector": {
+    "name": "Newegg Marketplace API",
+    "type": "REST",
+    "baseUrl": "https://api.newegg.com/marketplace",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{NEWEGG_API_KEY}}",
+      "extraHeaders": {
+        "SecretKey": "{{NEWEGG_SECRET_KEY}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "newegg_get_seller_status",
+      "description": "Read the status of the seller account: SellerName, Status (Active or not), Membership level and the fulfilment centres with their warehouse location and the countries they ship to. A cheap call that proves the keys and the seller ID work. Limit: 500 calls per hour. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellermgmt/seller/accountstatus",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}",
+          "version": "307"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_list_orders",
+      "description": "Search orders by status, type and order date: OrderNumber, OrderDate, OrderStatus with OrderStatusDescription, CustomerName, ship-to address and phone, ShipService, OrderItemAmount, ShippingAmount, OrderTotalAmount (USD), and per item SellerPartNumber, NeweggItemNumber, Description, OrderedQty, ShippedQty, UnitPrice and Status, plus PackageInfoList for shipped packages. `ResponseBody.PageInfo` gives TotalCount and TotalPageCount; raise page_index for more (100 rows per page at most). Dates are Pacific Time, written yyyy-MM-dd or yyyy-MM-dd HH:mm:ss. Limit: 1000 calls per hour. Read-only, although Newegg uses a PUT request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "description": "0 Unshipped, 1 Partially Shipped, 2 Shipped, 3 Invoiced, 4 Voided, 5 Payment Pending. Leave out for every status.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "order_type": {
+            "type": "integer",
+            "description": "0 All (default), 1 SBN (shipped by Newegg), 2 SBS (shipped by seller), 3 Multi-Channel.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "order_date_from": {
+            "type": "string",
+            "description": "Orders placed at or after this Pacific Time, e.g. 2026-11-01 or 2026-11-01 09:30:00."
+          },
+          "order_date_to": {
+            "type": "string",
+            "description": "Orders placed at or before this Pacific Time."
+          },
+          "exclude_downloaded": {
+            "type": "integer",
+            "description": "0 (default) includes orders already marked as downloaded, 1 leaves them out.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Three-letter ISO country code of the ship-to country, e.g. USA."
+          },
+          "void_soon": {
+            "type": "integer",
+            "description": "Only orders Newegg will void automatically within 24 or 48 hours.",
+            "enum": [
+              24,
+              48
+            ]
+          },
+          "page_index": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ordermgmt/order/orderinfo",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}",
+          "version": "315"
+        },
+        "bodyMapping": {
+          "OperationType": "GetOrderInfoRequest",
+          "RequestBody": {
+            "PageIndex": "$page_index",
+            "PageSize": "$page_size",
+            "RequestCriteria": {
+              "Status": "$status",
+              "Type": "$order_type",
+              "OrderDateFrom": "$order_date_from",
+              "OrderDateTo": "$order_date_to",
+              "OrderDownloaded": "$exclude_downloaded",
+              "CountryCode": "$country_code",
+              "VoidSoon": "$void_soon"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_get_orders",
+      "description": "Read up to 100 orders by their Newegg order numbers: OrderNumber, OrderDate, OrderStatus with OrderStatusDescription, CustomerName, ship-to address and phone, ShipService, OrderItemAmount, ShippingAmount, OrderTotalAmount (USD), and per item SellerPartNumber, NeweggItemNumber, Description, OrderedQty, ShippedQty, UnitPrice and Status, plus PackageInfoList for shipped packages. Other filters are ignored when order numbers are given. Limit: 1000 calls per hour (shared with newegg_list_orders). Read-only, although Newegg uses a PUT request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "array",
+            "description": "Newegg order numbers, e.g. [159243598].",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "page_index": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        "required": [
+          "order_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ordermgmt/order/orderinfo",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}",
+          "version": "315"
+        },
+        "bodyMapping": {
+          "OperationType": "GetOrderInfoRequest",
+          "RequestBody": {
+            "PageIndex": "$page_index",
+            "PageSize": "$page_size",
+            "RequestCriteria": {
+              "OrderNumberList": {
+                "OrderNumber": "$order_numbers"
+              }
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_get_order_status",
+      "description": "Read the current status of one order: OrderStatusCode and OrderStatusName (Unshipped, PartiallyShipped, Shipped, Invoiced, Voided), OrderDownloaded, SalesChannel and FulfillmentOption. Limit: 500 calls per hour. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "integer",
+            "description": "Newegg order number, e.g. 159243598."
+          }
+        },
+        "required": [
+          "order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ordermgmt/orderstatus/orders/{order_number}",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}",
+          "version": "304"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_ship_order",
+      "description": "Mark an order (or part of it) as shipped with your own carrier and tracking numbers. One package lists its tracking number, carrier, service and the items in it. Returns PackageProcessingSummary (SuccessCount, FailCount) and per package ProcessStatus and ProcessResult; check them, a failed package is not an HTTP error. Limit: 1000 calls per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "integer",
+            "description": "Newegg order number, e.g. 159243598."
+          },
+          "packages": {
+            "type": "array",
+            "description": "Packages shipped. Each object: TrackingNumber, ShipCarrier (a name from newegg_list_shipping_carriers, same spelling), ShipService (e.g. Ground), and ItemList with Item, a list of objects holding SellerPartNumber and ShippedQty (greater than 0).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "order_number",
+          "packages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ordermgmt/orderstatus/orders/{order_number}",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "Action": "2",
+          "Value": {
+            "Shipment": {
+              "Header": {
+                "SellerID": "{{NEWEGG_SELLER_ID}}",
+                "SONumber": "$order_number"
+              },
+              "PackageList": {
+                "Package": "$packages"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "newegg_cancel_order",
+      "description": "Cancel (void) a whole order. Newegg refunds the customer and the cancellation counts against the seller metrics; it cannot be undone. Returns the order with OrderStatus Void. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "integer",
+            "description": "Newegg order number, e.g. 159243598."
+          },
+          "reason_code": {
+            "type": "string",
+            "description": "24 Out of stock, 72 Customer requested to cancel, 73 Price error, 74 Unable to fulfill order.",
+            "enum": [
+              "24",
+              "72",
+              "73",
+              "74"
+            ]
+          }
+        },
+        "required": [
+          "order_number",
+          "reason_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/ordermgmt/orderstatus/orders/{order_number}",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "Action": "1",
+          "Value": "$reason_code"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "newegg_confirm_orders_downloaded",
+      "description": "Mark orders as downloaded, so that newegg_list_orders with exclude_downloaded 1 no longer returns them. It changes nothing else on the order. Returns the confirmed order numbers. Limit: 1000 calls per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "array",
+            "description": "Newegg order numbers to mark as downloaded.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "order_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ordermgmt/orderstatus/orders/confirmation",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "OperationType": "OrderConfirmationRequest",
+          "RequestBody": {
+            "DownloadedOrderList": {
+              "OrderNumber": "$order_numbers"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "newegg_list_shipping_carriers",
+      "description": "List the shipping carriers Newegg.com accepts (ShippingCarrierName). Use a name exactly as returned as ShipCarrier in newegg_ship_order. The list is complete, without paging. Limit: 10 calls per minute. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ordermgmt/order/shipping-carriers",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_get_item_inventory",
+      "description": "Read the available quantity of one item per warehouse country: ItemNumber, SellerPartNumber and InventoryAllocation with WarehouseLocation, FulfillmentOption (0 shipped by seller, 1 shipped by Newegg) and AvailableQuantity. Limit: 10,000 calls per hour. Read-only, although Newegg uses a PUT request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_type": {
+            "type": "integer",
+            "description": "What item_value is: 0 = Newegg item number, 1 = your seller part number (default), 2 = UPC.",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 1
+          },
+          "item_value": {
+            "type": "string",
+            "description": "The item identifier, of the kind given in id_type, e.g. your seller part number."
+          },
+          "condition": {
+            "type": "integer",
+            "description": "Only with id_type 2 (UPC): 1 New (default), 2 Refurbished, 3 Used Like New, 4 Used Very Good, 5 Used Good, 6 Used Acceptable.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          },
+          "warehouse_locations": {
+            "type": "array",
+            "description": "Three-letter ISO codes of the warehouse countries to read. Default USA.",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "USA"
+            ]
+          }
+        },
+        "required": [
+          "item_value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contentmgmt/item/international/inventory",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "Type": "$id_type",
+          "Value": "$item_value",
+          "Condition": "$condition",
+          "WarehouseList": {
+            "WarehouseLocation": "$warehouse_locations"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_get_batch_inventory",
+      "description": "Read the available quantity of up to 100 items in one call: per item ItemNumber, SellerPartNumber, Condition and InventoryAllocation with WarehouseLocation, FulfillmentOption and AvailableQuantity. Items that are not found are left out. Limit: 10,000 calls per hour. Read-only, although Newegg uses a POST request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_type": {
+            "type": "integer",
+            "description": "What item_value is: 0 = Newegg item number, 1 = your seller part number (default), 2 = UPC.",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 1
+          },
+          "item_values": {
+            "type": "array",
+            "description": "1 to 100 item identifiers of the kind given in id_type, each at most 40 characters.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "warehouse_locations": {
+            "type": "array",
+            "description": "Three-letter ISO codes of warehouse countries, e.g. USA. Leave out for all.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "item_values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contentmgmt/item/international/inventorylist",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "Type": "$id_type",
+          "Values": "$item_values",
+          "WarehouseList": "$warehouse_locations"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_get_item_price",
+      "description": "Read the price settings of one item per destination country: Currency, SellingPrice, MAP (minimum advertised price), CheckoutMAP, Active, EnableFreeShipping, OnPromotion and LimitQuantity. Limit: 10,000 calls per hour. Read-only, although Newegg uses a PUT request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_type": {
+            "type": "integer",
+            "description": "What item_value is: 0 = Newegg item number, 1 = your seller part number (default), 2 = UPC.",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 1
+          },
+          "item_value": {
+            "type": "string",
+            "description": "The item identifier, of the kind given in id_type, e.g. your seller part number."
+          },
+          "condition": {
+            "type": "integer",
+            "description": "Only with id_type 2 (UPC): 1 New (default), 2 Refurbished, 3 Used Like New, 4 Used Very Good, 5 Used Good, 6 Used Acceptable.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          },
+          "country_codes": {
+            "type": "array",
+            "description": "Three-letter ISO codes of the destination countries to read. Default USA.",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "USA"
+            ]
+          }
+        },
+        "required": [
+          "item_value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/contentmgmt/item/international/price",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "Type": "$id_type",
+          "Value": "$item_value",
+          "Condition": "$condition",
+          "CountryList": {
+            "CountryCode": "$country_codes"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_update_item_inventory",
+      "description": "Set the available quantity of one seller-fulfilled item per warehouse country. Items shipped by Newegg (SBN) cannot be changed here. Returns the item with the quantities now stored. Limit: 10,000 calls per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_type": {
+            "type": "integer",
+            "description": "What item_value is: 0 = Newegg item number, 1 = your seller part number (default), 2 = UPC.",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 1
+          },
+          "item_value": {
+            "type": "string",
+            "description": "The item identifier, of the kind given in id_type, e.g. your seller part number."
+          },
+          "condition": {
+            "type": "integer",
+            "description": "Only with id_type 2 (UPC): 1 New (default), 2 Refurbished, 3 Used Like New, 4 Used Very Good, 5 Used Good, 6 Used Acceptable.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          },
+          "inventory": {
+            "type": "array",
+            "description": "One object per warehouse country: WarehouseLocation (three-letter ISO code, e.g. USA) and AvailableQuantity (integer).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "item_value",
+          "inventory"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contentmgmt/item/international/inventory",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "Type": "$id_type",
+          "Value": "$item_value",
+          "Condition": "$condition",
+          "InventoryList": {
+            "Inventory": "$inventory"
+          }
+        }
+      }
+    },
+    {
+      "name": "newegg_update_item_price",
+      "description": "Set the price of one item per destination country. The currency must match the country (USD for USA). Returns the item with the prices now stored. Limit: 10,000 calls per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id_type": {
+            "type": "integer",
+            "description": "What item_value is: 0 = Newegg item number, 1 = your seller part number (default), 2 = UPC.",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 1
+          },
+          "item_value": {
+            "type": "string",
+            "description": "The item identifier, of the kind given in id_type, e.g. your seller part number."
+          },
+          "condition": {
+            "type": "integer",
+            "description": "Only with id_type 2 (UPC): 1 New (default), 2 Refurbished, 3 Used Like New, 4 Used Very Good, 5 Used Good, 6 Used Acceptable.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          },
+          "prices": {
+            "type": "array",
+            "description": "One object per destination country: CountryCode (e.g. USA), Currency (e.g. USD), SellingPrice (decimal), and optionally MAP, CheckoutMAP (0 or 1), Active (0 or 1), EnableFreeShipping (0 or 1), LimitQuantity.",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "item_value",
+          "prices"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contentmgmt/item/international/price",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "Type": "$id_type",
+          "Value": "$item_value",
+          "Condition": "$condition",
+          "PriceList": {
+            "Price": "$prices"
+          }
+        }
+      }
+    },
+    {
+      "name": "newegg_list_rmas",
+      "description": "Search returns (RMAs): RMANumber, RMAType (1 replacement, 2 refund), RMAStatus (1 Open, 2 Received, 3 Rejected, 4 Voided, 5 Closed, 6 Processing), RMADate, OrderNumber, OrderAmount, AvailableRefundAmount, who processes it, and the returned items with reason and refund amounts. Dates are Pacific Time, written yyyy-MM-dd or yyyy-MM-dd HH:mm:ss. Limit: 1000 calls per hour. Read-only, although Newegg uses a PUT request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords_type": {
+            "type": "integer",
+            "description": "What keywords_value is: 1 RMA number, 2 order number, 3 customer name, 4 seller RMA number.",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "keywords_value": {
+            "type": "string",
+            "description": "Value to search for, of the kind given in keywords_type."
+          },
+          "status": {
+            "type": "integer",
+            "description": "0 All (default), 1 Open, 2 Received, 3 Rejected, 4 Voided, 5 Closed, 6 Processing.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "default": 0
+          },
+          "rma_type": {
+            "type": "integer",
+            "description": "0 All, 1 Replacement, 2 Refund.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "processed_by": {
+            "type": "integer",
+            "description": "0 All, 1 Seller, 2 Newegg.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "date_from": {
+            "type": "string",
+            "description": "RMAs created on or after this Pacific Time date, e.g. 2026-11-01."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "RMAs created on or before this Pacific Time date."
+          },
+          "page_index": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/servicemgmt/rma/rmainfo",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}",
+          "version": "309"
+        },
+        "bodyMapping": {
+          "OperationType": "GetRMAInfoRequest",
+          "RequestBody": {
+            "PageInfo": {
+              "PageIndex": "$page_index",
+              "PageSize": "$page_size"
+            },
+            "KeywordsType": "$keywords_type",
+            "KeywordsValue": "$keywords_value",
+            "Status": "$status",
+            "RMADateFrom": "$date_from",
+            "RMADateTo": "$date_to",
+            "RMAType": "$rma_type",
+            "ProcessedBy": "$processed_by"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_receive_rma",
+      "description": "Mark a return (RMA) as received by the seller, which moves it on in Newegg's return process (for a refund RMA that leads to the refund). It cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rma_number": {
+            "type": "integer",
+            "description": "Newegg RMA number from newegg_list_rmas."
+          }
+        },
+        "required": [
+          "rma_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/servicemgmt/rma/updaterma",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}",
+          "version": "307"
+        },
+        "bodyMapping": {
+          "OperationType": "ReceiveRMARequest",
+          "RequestBody": {
+            "ReceiveRMAInfo": {
+              "RMANumber": "$rma_number"
+            }
+          }
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "newegg_list_courtesy_refunds",
+      "description": "Search courtesy refunds (refunds given without a return): CourtesyRefundID, SONumber, SOAmount, RefundAmount, Reason, NoteToCustomer, Status (Open, Void, Close) and dates. Dates are Pacific Time, written yyyy-MM-dd or yyyy-MM-dd HH:mm:ss. Limit: 30 calls per minute. Read-only, although Newegg uses a PUT request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keywords_type": {
+            "type": "integer",
+            "description": "0 All (default), 1 courtesy refund ID, 2 order number, 3 customer name.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "default": 0
+          },
+          "keywords_value": {
+            "type": "string",
+            "description": "Value to search for; ignored with keywords_type 0."
+          },
+          "status": {
+            "type": "integer",
+            "description": "0 All (default), 1 Open, 2 Void, 3 Close.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "default": 0
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Refunds created at or after this Pacific Time."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Refunds created at or before this Pacific Time."
+          },
+          "page_index": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/servicemgmt/courtesyrefund/info",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "OperationType": "GetCourtesyRefundInfo",
+          "RequestBody": {
+            "PageInfo": {
+              "PageIndex": "$page_index",
+              "PageSize": "$page_size"
+            },
+            "KeywordsType": "$keywords_type",
+            "KeywordsValue": "$keywords_value",
+            "Status": "$status",
+            "DateFrom": "$date_from",
+            "DateTo": "$date_to"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_request_order_list_report",
+      "description": "Ask Newegg to build an order list report for one order status and a date range. Returns a RequestId with RequestStatus SUBMITTED; follow it with newegg_get_report_status and read it with newegg_get_report_result (operation_type OrderListReportRequest). Dates are Pacific Time, written yyyy-MM-dd or yyyy-MM-dd HH:mm:ss. Limit: 100 report requests per hour. Nothing in the shop changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "description": "Order status of the report: 0 Unshipped, 1 Partially Shipped, 2 Shipped, 3 Invoiced, 4 Voided, 5 Payment Pending.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "keywords_type": {
+            "type": "integer",
+            "description": "0 All (default), 1 order number, 2 invoice number, 3 customer name, 4 seller part number, 5 Newegg item number, 6 customer phone, 7 title, 8 manufacturer, 9 seller order number.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ],
+            "default": 0
+          },
+          "keywords_value": {
+            "type": "string",
+            "description": "Value to search for; ignored with keywords_type 0."
+          },
+          "order_type": {
+            "type": "integer",
+            "description": "0 All, 1 SBN, 2 SBS, 3 Multi-Channel.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "order_date_from": {
+            "type": "string",
+            "description": "Start of the order date range, e.g. 2026-11-01."
+          },
+          "order_date_to": {
+            "type": "string",
+            "description": "End of the order date range."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reportmgmt/report/submitrequest",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "OperationType": "OrderListReportRequest",
+          "RequestBody": {
+            "OrderReportCriteria": {
+              "RequestType": "ORDER_LIST_REPORT",
+              "KeywordsType": "$keywords_type",
+              "KeywordsValue": "$keywords_value",
+              "Status": "$status",
+              "Type": "$order_type",
+              "OrderDateFrom": "$order_date_from",
+              "OrderDateTo": "$order_date_to"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "newegg_request_settlement_summary_report",
+      "description": "Ask Newegg to build a settlement summary report (payments, refunds and fees per settlement date) for a date range. Returns a RequestId; follow it with newegg_get_report_status and read it with newegg_get_report_result (operation_type SettlementSummaryReportRequest). Read access to money data only: nothing is paid or refunded. Dates are Pacific Time, written yyyy-MM-dd or yyyy-MM-dd HH:mm:ss. Limit: 100 report requests per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Start of the settlement date range, e.g. 2026-10-01."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the settlement date range, e.g. 2026-10-31."
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reportmgmt/report/submitrequest",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "OperationType": "SettlementSummaryReportRequest",
+          "RequestBody": {
+            "SettlementSummaryReportCriteria": {
+              "RequestType": "SETTLEMENT_SUMMARY_REPORT",
+              "DateFrom": "$date_from",
+              "DateTo": "$date_to"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "newegg_request_inventory_report",
+      "description": "Ask Newegg to build the daily inventory report: every item with its available quantity per warehouse country. Returns a RequestId; once newegg_get_report_status says FINISHED, newegg_get_report_result (operation_type InternationalInventoryReportRequest) gives a ReportFileURL to the file. Limit: 100 report requests per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fulfill_type": {
+            "type": "integer",
+            "description": "0 All (default), 1 fulfilled by seller, 2 fulfilled by Newegg.",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "default": 0
+          },
+          "warehouse_locations": {
+            "type": "array",
+            "description": "Three-letter ISO codes of the warehouse countries. Default USA.",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "USA"
+            ]
+          },
+          "file_type": {
+            "type": "string",
+            "description": "File format of the report.",
+            "enum": [
+              "TXT",
+              "CSV",
+              "XLS"
+            ],
+            "default": "CSV"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reportmgmt/report/submitrequest",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "OperationType": "InternationalInventoryReportRequest",
+          "RequestBody": {
+            "DailyInventoryReportCriteria": {
+              "FulfillType": "$fulfill_type",
+              "WarehouseList": {
+                "WarehouseLocation": "$warehouse_locations"
+              },
+              "RequestType": "INTERNATIONAL_INVENTORY_REPORT",
+              "FileType": "$file_type"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "newegg_request_price_report",
+      "description": "Ask Newegg to build the daily price report: every item with its price, shipping setting and activation per destination country. Returns a RequestId; once newegg_get_report_status says FINISHED, newegg_get_report_result (operation_type InternationalPriceReportRequest) gives a ReportFileURL to the file. Limit: 100 report requests per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country_codes": {
+            "type": "array",
+            "description": "Three-letter ISO codes of the destination countries. Default USA.",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "USA"
+            ]
+          },
+          "file_type": {
+            "type": "string",
+            "description": "File format of the report.",
+            "enum": [
+              "TXT",
+              "CSV",
+              "XLS"
+            ],
+            "default": "CSV"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reportmgmt/report/submitrequest",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "OperationType": "InternationalPriceReportRequest",
+          "RequestBody": {
+            "DailyPriceReportCriteria": {
+              "CountryList": {
+                "CountryCode": "$country_codes"
+              },
+              "RequestType": "INTERNATIONAL_PRICE_REPORT",
+              "FileType": "$file_type"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "newegg_get_report_status",
+      "description": "Read the status of report requests by their ids: RequestId, RequestType, RequestDate and RequestStatus (SUBMITTED, IN_PROGRESS, FINISHED, CANCELLED). Poll until FINISHED, then call newegg_get_report_result. Limit: 500 calls per hour. Read-only, although Newegg uses a PUT request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_ids": {
+            "type": "array",
+            "description": "Report request ids returned by the newegg_request_ tools, e.g. [\"2PQBYWH4V68ZP\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "max_count": {
+            "type": "integer",
+            "description": "Most rows to return, up to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        "required": [
+          "request_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/reportmgmt/report/status",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}"
+        },
+        "bodyMapping": {
+          "OperationType": "GetReportStatusRequest",
+          "RequestBody": {
+            "GetRequestStatus": {
+              "RequestIDList": {
+                "RequestID": "$request_ids"
+              },
+              "MaxCount": "$max_count"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "newegg_get_report_result",
+      "description": "Read a finished report. Order list and settlement reports come back as rows, page by page (PageInfo with TotalCount and TotalPageCount, 100 rows per page at most); inventory and price reports come back as a ReportFileURL to download. Pass the operation_type that matches the report you requested. Limit: 500 calls per hour. Read-only, although Newegg uses a PUT request for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "Report request id with status FINISHED."
+          },
+          "operation_type": {
+            "type": "string",
+            "description": "Kind of report the id belongs to.",
+            "enum": [
+              "OrderListReportRequest",
+              "SettlementSummaryReportRequest",
+              "InternationalInventoryReportRequest",
+              "InternationalPriceReportRequest"
+            ]
+          },
+          "page_index": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          }
+        },
+        "required": [
+          "request_id",
+          "operation_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/reportmgmt/report/result",
+        "queryParams": {
+          "sellerid": "{{NEWEGG_SELLER_ID}}",
+          "version": "306"
+        },
+        "bodyMapping": {
+          "OperationType": "$operation_type",
+          "RequestBody": {
+            "RequestID": "$request_id",
+            "PageInfo": {
+              "PageSize": "$page_size",
+              "PageIndex": "$page_index"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

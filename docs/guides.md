@@ -47,6 +47,7 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 | [Tool definition format](tool-definition.md) | Parameters, endpoint mapping, response mapping |
 | [Knowledge Graph &amp; AI skills](knowledge-graph.md) | Per-workspace data-relationship map served over MCP, plus AI skills composed into server instructions |
 | [Workspace memory](memory.md) | Personal and company memory AI clients save and search over MCP (Enterprise) |
+| [Learning projects](learning-projects.md) | Keep what one colleague teaches the AI on an MCP server as skills for everyone (Team and Enterprise) |
 | [MCP resources](mcp-resources.md) | Read-only resources on per-server endpoints: URIs, role visibility, fail-closed rules |
 | [Deployment guide](deployment.md) | Docker, production setup, reverse proxy, env vars |
 | [Authentication](deployment.md#authentication) | OAuth2, JWT, API keys, MCP auth modes |

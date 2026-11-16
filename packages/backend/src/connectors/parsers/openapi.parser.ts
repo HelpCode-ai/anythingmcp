@@ -91,7 +91,14 @@ export class OpenApiParser {
     // step still resolves $ref so we can extract tools, just without schema
     // validation. This is intentional: rejecting 3.1 outright (the previous
     // behaviour) blocks every modern spec from MS, AWS, etc.
-    const declaredVersion = (rawSpec as { openapi?: string }).openapi || '';
+    // YAML reads an unquoted `openapi: 3.0` as the number 3 (and `3.1` as
+    // 3.1): spell it out as the version string it stands for.
+    const openapi = (rawSpec as { openapi?: unknown }).openapi;
+    if (typeof openapi === 'number' && Number.isFinite(openapi)) {
+      (rawSpec as any).openapi = Number.isInteger(openapi) ? `${openapi}.0.0` : `${openapi}.0`;
+    }
+    const declaredVersion =
+      typeof (rawSpec as any).openapi === 'string' ? ((rawSpec as any).openapi as string) : '';
     const isOpenApi31 = declaredVersion.startsWith('3.1');
 
     // swagger-parser only recognises OAS 3.0.0–3.0.3; newer patch releases

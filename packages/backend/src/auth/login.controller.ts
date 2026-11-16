@@ -53,9 +53,27 @@ import { maskEmail } from './mcp-email-verification';
 import { hasDashboardHeader, setRecentSignInCookie } from './recent-sign-in.util';
 import { RecentSignInService } from './recent-sign-in.service';
 import { EmailVerificationService, MAX_CODES_PER_HOUR, VERIFICATION_CODE_TTL_MS } from './email-verification.service';
-import { SharedSetupRegistry, type SetupContext, type SharedSetupProvider } from '../mcp-server/shared-setup';
+import {
+  SharedSetupRegistry,
+  type SetupCallResult,
+  type SetupContext,
+  type SharedSetupProvider,
+} from '../mcp-server/shared-setup';
 import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import {
+  TELEGRAM_CONNECTED_REQUEST,
+  TELEGRAM_ONE_TAP,
+  TELEGRAM_SLUG,
+  type TelegramOneTap,
+} from '../adapters/telegram-managed-bot';
+import {
+  TELEGRAM_PANEL_SCRIPT,
+  TELEGRAM_PANEL_STYLES,
+  TELEGRAM_PICK_HOOK,
+  telegramPanelHtml,
+  telegramQrDataUri,
+} from './first-app-telegram';
 
 /**
  * Carries the VERIFIED identity across the second step of the authorize flow.
@@ -140,7 +158,10 @@ export const QUICK_SETUP_APPS: ReadonlyArray<{ slug: string; name: string }> = [
   // it, and the guided setup the chat links to walks through the rest.
   { slug: 'etsy', name: 'Etsy' },
   { slug: 'telegram-bot', name: 'Telegram' },
-  { slug: 'shopify', name: 'Shopify' },
+  // Shopify is not offered here: its setup needs the store's owner to create
+  // an app in the Shopify Dev Dashboard (about ten minutes), and of 75 picks
+  // in four weeks none ever got its keys. Asked for in the chat or added
+  // from the dashboard, where people know what it takes, it works for most.
   { slug: 'woocommerce', name: 'WooCommerce' },
   { slug: 'odoo', name: 'Odoo' },
   { slug: 'printify', name: 'Printify' },
@@ -207,6 +228,15 @@ export function fileSearchWizardPathFor(optionId: string, serverIds: readonly st
   return `/connectors/new/file-search?${q.toString()}`;
 }
 
+/**
+ * Whether the request comes from a phone or tablet browser, by its user agent.
+ * Used only to decide whether Continue may open a second tab.
+ */
+export function isPhoneUserAgent(userAgent: string | string[] | undefined): boolean {
+  const ua = Array.isArray(userAgent) ? userAgent.join(' ') : (userAgent ?? '');
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+}
+
 @ApiTags('MCP client sign-in')
 @Controller('auth')
 export class LoginController {
@@ -236,6 +266,19 @@ export class LoginController {
   private setupProvider(): SharedSetupProvider | null {
     try {
       return this.moduleRef?.get(SharedSetupRegistry, { strict: false })?.get() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The one-tap Telegram bot (adapters/telegram-managed-bot.ts), resolved
+   * lazily for the same reason. Null when the instance has none.
+   */
+  private telegramOneTap(): TelegramOneTap | null {
+    try {
+      const service = this.moduleRef?.get<TelegramOneTap>(TELEGRAM_ONE_TAP, { strict: false });
+      return service && typeof service.isEnabledFor === 'function' ? service : null;
     } catch {
       return null;
     }
@@ -319,6 +362,25 @@ export class LoginController {
     // session that @rekog/mcp-nest's /authorize handler stored (keyed by the
     // httpOnly `oauth_session` cookie) so the user gives INFORMED consent.
     const consent = await this.loadConsentContext(req);
+    // Only inside a pending authorization: a bookmark or a crawler on this
+    // address is not somebody connecting an AI client.
+    if (consent) {
+      void this.productEvents
+        ?.log({
+          event: ProductEvents.AUTHORIZE_PAGE_VIEWED,
+          metadata: {
+            client: consent.clientName,
+            // 'mobile', not 'phone': the only values the event store keeps for `device`.
+            device: isPhoneUserAgent(req.headers['user-agent']) ? 'mobile' : 'desktop',
+            // Reloads and the return from a social sign-in show the page
+            // again: the same attempt, counted once by this value. It is
+            // the moment the pending authorization expires, set once when
+            // it starts; nothing of the session itself is stored.
+            ...(consent.expiresAt ? { attempt: consent.expiresAt.toString(36) } : {}),
+          },
+        })
+        .catch(() => undefined);
+    }
 
     // Issue a CSRF token bound to this render (double-submit, HMAC-signed
     // cookie + matching hidden field). Prevents login CSRF / silent
@@ -1187,6 +1249,9 @@ export class LoginController {
     // The optional app picker, when this instance can install connectors: a
     // CSRF token for its one request, valid as long as the pause.
     const pickerCsrf = this.setupProvider() ? randomBytes(32).toString('base64url') : null;
+    // Telegram can then be finished on this page, with a bot created in one
+    // tap: only where this instance has a manager bot, and for this workspace.
+    const telegramOneTap = !!pickerCsrf && !!this.telegramOneTap()?.isEnabledFor(organizationId);
     if (pickerCsrf) {
       res.cookie(FIRST_APP_CSRF_COOKIE, pickerCsrf, {
         httpOnly: true,
@@ -1234,9 +1299,11 @@ export class LoginController {
       this.renderFirstConnectorOffer({
         clientName: consent.clientName,
         redirectHost: consent.redirectHost,
+        onPhone: isPhoneUserAgent(req.headers['user-agent']),
         callbackUrl,
         welcomeUrl: dashboardLink('/welcome'),
         ...(pickerCsrf ? { pickerCsrf } : {}),
+        ...(telegramOneTap ? { telegramOneTap } : {}),
         ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}`) } } : {}),
       }),
     );
@@ -1290,11 +1357,15 @@ export class LoginController {
   private renderFirstConnectorOffer(params: {
     clientName: string;
     redirectHost?: string;
+    /** A phone or tablet browser: Continue must not open a second tab there. */
+    onPhone?: boolean;
     callbackUrl: string;
     welcomeUrl: string;
     cardTrial?: { endsAt: Date; url: string };
     /** CSRF token of the optional app picker; no picker without it. */
     pickerCsrf?: string;
+    /** Picking Telegram offers a bot created in one tap (first-app-telegram.ts). */
+    telegramOneTap?: boolean;
   }): string {
     const client = this.escapeHtml(params.clientName);
     // "October 13", kept on one line.
@@ -1304,9 +1375,15 @@ export class LoginController {
         ).replace(' ', '&nbsp;')
       : '';
     // Back in Claude, a new chat opens with the request typed in. Only for a
-    // code sent to claude.ai itself, where /new?q= is known to work.
+    // code sent to claude.ai itself, where /new?q= is known to work, and never
+    // on a phone: there the new tab (or the Claude app it opens) takes over
+    // and the authorization in this tab is never finished. From 2 November
+    // 2026, when the chat tab was added, to 15 November about 200
+    // authorization codes a day were never exchanged, against about 10 before,
+    // nearly all from phones.
     const host = (params.redirectHost ?? '').toLowerCase();
-    const opensChat = host === 'claude.ai';
+    const opensChat = host === 'claude.ai' && !params.onPhone;
+    const telegram = !!params.pickerCsrf && !!params.telegramOneTap;
     // Hidden until the script shows it: without JavaScript the page is the
     // same as before, and never more than one click from the chat.
     const picker = params.pickerCsrf
@@ -1320,20 +1397,24 @@ export class LoginController {
       </div>
       <label class="other-label" for="other-app">Another app</label>
       <input type="text" id="other-app" class="other" maxlength="60" autocomplete="off" spellcheck="false" placeholder="e.g. HubSpot">
-      <p class="quick-status" id="quick-status" role="status" aria-live="polite"></p>
+      <p class="quick-status" id="quick-status" role="status" aria-live="polite"></p>${
+        // A phone gets no QR code: the button opens the Telegram app there.
+        telegram ? telegramPanelHtml({ withQr: !params.onPhone }) : ''
+      }
     </section>`
       : '';
     const card = `
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
     <h1>${client} is connected</h1>
-    <p class="sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
+    <p class="sub" id="first-sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
     <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
-    <p class="body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
+    <p class="copied" id="request-copied" role="status" aria-live="polite"${params.onPhone ? ' data-phone="1"' : ''} hidden></p>
+    <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
     <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}"${opensChat ? ' data-open-chat="https://claude.ai/new"' : ''} data-client="${client}">Continue to ${client}</a>
     <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
       params.cardTrial
         ? `
-    <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a card now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
+    <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a payment method now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
         : ''
     }
     <script>
@@ -1398,7 +1479,7 @@ export class LoginController {
             busy = false;
             chip.setAttribute('aria-pressed', 'true');
             request.textContent = out.request;
-            status.textContent = out.name + ' added — you’ll finish it in ' + clientName + '.';
+            status.textContent = out.name + ' added — you’ll finish it in ' + clientName + '.';${telegram ? TELEGRAM_PICK_HOOK : ''}
           }, function () { failed(name); });
         });
       }
@@ -1408,7 +1489,7 @@ export class LoginController {
         request.textContent = app ? 'Connect my ' + app + ' to AnythingMCP.' : fallback;
       });
       picker.hidden = false;
-    })();
+    })();${telegram ? TELEGRAM_PANEL_SCRIPT : ''}
     // Continue still goes back through the authorization; for Claude, the
     // same click also opens a new chat with the request typed in.
     (function () {
@@ -1416,9 +1497,40 @@ export class LoginController {
       var request = document.getElementById('example-request');
       var chat = cont && cont.getAttribute('data-open-chat');
       if (!chat || !request) return;
+      // A touch device that did not say so in its user agent (an iPad asking
+      // for the desktop site): no second tab there either.
+      try {
+        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
+      } catch (e) { /* no media queries: treated as a desktop */ }
       cont.addEventListener('click', function () {
         try {
           window.open(chat + '?q=' + encodeURIComponent(request.textContent || ''), '_blank', 'noopener');
+        } catch (e) { /* the authorization goes on regardless */ }
+      });
+    })();
+    // A phone gets no chat tab (see above), so the same tap copies the
+    // request instead, to paste in a new chat. Best effort and nothing more:
+    // the listener returns at once, never waits for the clipboard, never
+    // prevents the default action and opens nothing, so the browser follows
+    // the link exactly as it does without it. A refused clipboard changes
+    // nothing on the page.
+    (function () {
+      var cont = document.getElementById('continue');
+      var request = document.getElementById('example-request');
+      var note = document.getElementById('request-copied');
+      if (!cont || !request || !note || !navigator.clipboard || !navigator.clipboard.writeText) return;
+      var phone = note.getAttribute('data-phone') === '1';
+      try {
+        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) phone = true;
+      } catch (e) { /* no media queries: what the server saw decides */ }
+      if (!phone) return;
+      var clientName = cont.getAttribute('data-client') || 'your assistant';
+      cont.addEventListener('click', function () {
+        try {
+          navigator.clipboard.writeText(request.textContent || '').then(function () {
+            note.textContent = 'Copied. Paste it in a new chat in ' + clientName + '.';
+            note.hidden = false;
+          }, function () { /* refused: nothing else happens */ });
         } catch (e) { /* the authorization goes on regardless */ }
       });
     })();
@@ -1433,6 +1545,9 @@ export class LoginController {
   .example button.copy { width: auto; min-height: 30px; padding: 0 12px; font-size: 13px; font-weight: 500; flex: none;
              background: #fff; color: var(--text); border-color: var(--border-strong); }
   .example button.copy:hover { background: var(--surface); border-color: var(--brand); }
+  .copied { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.45; margin: -6px 0 14px; text-wrap: balance; }
+  .copied::before { content: '\\2713\\00a0'; color: var(--ok); font-weight: 700; }
+  .copied[hidden] { display: none; }
   .body { color: var(--text-2); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
   .quick { border: 1px solid var(--border); border-radius: 12px; padding: 12px 12px 4px; margin: 0 0 18px; }
   .quick-title { font-size: 13px; font-weight: 500; color: var(--text); margin: 0 0 10px; }
@@ -1450,7 +1565,7 @@ export class LoginController {
   .quick-status { font-size: 13px; color: var(--text-2); margin: 0 0 8px; line-height: 1.45; }
   .quick-status:empty { margin: 0; }
   .trial { font-size: 13px; color: var(--text-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); line-height: 1.5; }
-  .trial a { color: var(--brand); }`,
+  .trial a { color: var(--brand); }${telegram ? TELEGRAM_PANEL_STYLES : ''}`,
     });
   }
 
@@ -1720,7 +1835,7 @@ export class LoginController {
       });
     }
 
-    let out: { body: unknown; isError?: boolean };
+    let out: SetupCallResult;
     try {
       // Recorded as via 'post_approve', apart from installs the chat makes.
       out = await provider.install(ctx, { adapter: app.slug }, { via: 'post_approve' });
@@ -1747,7 +1862,168 @@ export class LoginController {
         error: `${app.name} could not be added right now. You can still continue and add it in the chat.`,
       });
     }
-    return res.json({ ok: true, adapter: app.slug, name: app.name, request: finishSetupRequest(app.name) });
+    const telegram =
+      app.slug === TELEGRAM_SLUG && out.connectorId
+        ? await this.beginTelegramOneTap(req, {
+            userId,
+            organizationId,
+            connectorId: out.connectorId,
+            client: consent.clientName,
+            redirectHost: consent.redirectHost,
+          })
+        : null;
+    return res.json({
+      ok: true,
+      adapter: app.slug,
+      name: app.name,
+      request: finishSetupRequest(app.name),
+      ...(telegram ? { telegram } : {}),
+    });
+  }
+
+  /**
+   * Telegram was just added without a token: where this instance has a
+   * manager bot, the link that creates the user's bot in Telegram with one
+   * tap, and the link that connects a bot whose username the user changed
+   * (`claim`: it opens the manager bot's chat with the setup's code); on a
+   * desktop also their QR codes. Null (the page stays as it is) when the
+   * feature is off for the workspace, or on any failure.
+   */
+  private async beginTelegramOneTap(
+    req: Request,
+    setup: { userId: string; organizationId: string; connectorId: string; client: string; redirectHost?: string },
+  ): Promise<{ link: string; claim: string; qr?: string; claimQr?: string } | null> {
+    const service = this.telegramOneTap();
+    if (!service?.isEnabledFor(setup.organizationId)) return null;
+    try {
+      const started = await service.begin({
+        connectorId: setup.connectorId,
+        organizationId: setup.organizationId,
+        userId: setup.userId,
+        // For the bot's messages: "tap Continue to <client>", and for Claude
+        // (the same test as the chat tab of Continue) a link to a new chat.
+        client: { name: setup.client, claude: (setup.redirectHost ?? '').toLowerCase() === 'claude.ai' },
+      });
+      if (!started) return null;
+      const onPhone = isPhoneUserAgent(req.headers['user-agent']);
+      await this.productEvents
+        ?.log({
+          event: ProductEvents.TELEGRAM_BOT_LINK_OFFERED,
+          userId: setup.userId,
+          organizationId: setup.organizationId,
+          metadata: { adapterSlug: TELEGRAM_SLUG, client: setup.client, device: onPhone ? 'mobile' : 'desktop' },
+        })
+        .catch(() => undefined);
+      return {
+        link: started.link,
+        claim: started.claimLink,
+        ...(onPhone ? {} : { qr: telegramQrDataUri(started.link), claimQr: telegramQrDataUri(started.claimLink) }),
+      };
+    } catch (err) {
+      this.logger.warn(`The one-tap Telegram bot could not be offered (${(err as Error)?.name || 'error'})`);
+      return null;
+    }
+  }
+
+  /**
+   * Who is on the first-connector page, for the requests its Telegram panel
+   * makes: checked exactly like a pick (pickFirstApp), and the user must be
+   * an admin or editor of the workspace the connection was granted. Null
+   * when any of it does not hold.
+   */
+  private async firstAppTelegramCaller(
+    req: Request,
+    csrf: unknown,
+  ): Promise<{ service: TelegramOneTap; userId: string; organizationId: string } | null> {
+    if (!this.deployment.isCloud()) return null;
+    if (!this.verifySignedToken(req, FIRST_APP_CSRF_COOKIE, csrf)) return null;
+    const userId = this.pendingLoginUserId(req);
+    const consent = await this.loadConsentContext(req);
+    const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
+      .signedCookies?.[MCP_RESOURCE_COOKIE];
+    if (!userId || !consent || (typeof requestedServerId === 'string' && requestedServerId)) return null;
+    const account = await this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
+    const workspace = await this.grantedWorkspace(consent.clientId, userId, account?.organizationId);
+    if (!workspace) return null;
+    const member = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId: workspace.organizationId, deactivatedAt: null },
+      select: { role: true },
+    });
+    if (member?.role !== 'ADMIN' && member?.role !== 'EDITOR') return null;
+    const service = this.telegramOneTap();
+    if (!service?.isEnabledFor(workspace.organizationId)) return null;
+    return { service, userId, organizationId: workspace.organizationId };
+  }
+
+  /**
+   * The Telegram panel asks this every two seconds while its page is visible:
+   * has the bot been created and its token stored? Read-only for the page,
+   * apart from noting the first click on the link (`opened`) and the first
+   * time "Link your bot" was shown (`offered`). Protected like a pick: the
+   * CSRF token against its signed cookie, the signed login cookie and the
+   * pending authorization.
+   */
+  @Post('first-app/telegram/status')
+  // One page asks 30 times a minute; several people can share an address.
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async telegramOneTapStatus(
+    @Req() req: Request,
+    @Body() body: { csrf?: unknown; opened?: unknown; offered?: unknown },
+    @Res() res: Response,
+  ) {
+    const caller = await this.firstAppTelegramCaller(req, body?.csrf);
+    if (!caller) return res.status(403).json({ ok: false, error: 'This page has expired.' });
+    try {
+      const status = await caller.service.status({
+        organizationId: caller.organizationId,
+        userId: caller.userId,
+        opened: body?.opened === true,
+        claimOffered: body?.offered === true,
+        device: isPhoneUserAgent(req.headers['user-agent']) ? 'mobile' : 'desktop',
+      });
+      return res.json({
+        ok: true,
+        ...status,
+        ...(status.state === 'connected' ? { request: TELEGRAM_CONNECTED_REQUEST } : {}),
+      });
+    } catch (err) {
+      this.logger.warn(`The one-tap Telegram status could not be read (${(err as Error)?.name || 'error'})`);
+      // Not final: the page asks again.
+      return res.status(503).json({ error: 'Try again.' });
+    }
+  }
+
+  /**
+   * "Already have a bot? Paste its token" on the Telegram panel: checked with
+   * Telegram and stored the way the setup page does it, only into the
+   * connector this user's pick added and only while it has no token. The
+   * token is never logged or sent back.
+   */
+  @Post('first-app/telegram/token')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async telegramOneTapToken(
+    @Req() req: Request,
+    @Body() body: { csrf?: unknown; token?: unknown },
+    @Res() res: Response,
+  ) {
+    const caller = await this.firstAppTelegramCaller(req, body?.csrf);
+    if (!caller) {
+      return res.status(403).json({ ok: false, error: 'This page has expired. Continue, and finish Telegram in the chat.' });
+    }
+    try {
+      const saved = await caller.service.saveToken({
+        organizationId: caller.organizationId,
+        userId: caller.userId,
+        token: body?.token,
+      });
+      if (!saved.ok) return res.json(saved);
+      return res.json({ ...saved, state: 'connected', request: TELEGRAM_CONNECTED_REQUEST });
+    } catch (err) {
+      this.logger.warn(`A pasted Telegram bot token could not be saved (${(err as Error)?.name || 'error'})`);
+      return res.json({ ok: false, error: 'The token could not be saved. Try again.' });
+    }
   }
 
   /** The user id in the signed login cookie of a paused authorization, or null. */
