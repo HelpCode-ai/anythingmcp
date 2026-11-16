@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { report } from '../../scripts/secret-literals/report';
 import { repair } from '../../scripts/secret-literals/repair';
-import { encrypt } from '../common/crypto/encryption.util';
+import { decrypt, encrypt } from '../common/crypto/encryption.util';
 import { openEnvVarsStrict, sealEnvVars } from '../common/crypto/env-vars-at-rest';
 
 /**
@@ -33,8 +33,8 @@ d('secret literal report + repair (real Postgres)', () => {
 
   async function connector(id: string, values: Record<string, unknown>) {
     await client.query(
-      `INSERT INTO connectors (id, user_id, organization_id, name, type, base_url, headers, config, env_vars, updated_at)
-       VALUES ($1, $2, $3, $4, $5::"ConnectorType", $6, $7::jsonb, $8::jsonb, $9::jsonb, now())`,
+      `INSERT INTO connectors (id, user_id, organization_id, name, type, base_url, headers, config, env_vars, auth_config, updated_at)
+       VALUES ($1, $2, $3, $4, $5::"ConnectorType", $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, now())`,
       [
         id,
         USER,
@@ -45,6 +45,7 @@ d('secret literal report + repair (real Postgres)', () => {
         values.headers === undefined ? null : JSON.stringify(values.headers),
         values.config === undefined ? null : JSON.stringify(values.config),
         values.envVars === undefined ? null : JSON.stringify(values.envVars),
+        values.authConfig === undefined ? null : values.authConfig,
       ],
     );
   }
@@ -107,8 +108,21 @@ d('secret literal report + repair (real Postgres)', () => {
     // Nothing to do here.
     await connector('c-clean', { name: 'Clean', baseUrl: 'https://api.example.com/v1' });
     await tool('t-clean', 'c-clean', 'list_items', { method: 'GET', path: '/items/{id}' });
-    await connector('c-db', { name: 'DB', type: 'DATABASE', baseUrl: 'postgres://u:p@db.example.com/x' });
+
+    // A DATABASE connector from before the fix: password still in the
+    // connection string, no authConfig. A tool's own fields are never
+    // inspected for DATABASE, so its secret-looking path stays as it is.
+    await connector('c-db', { name: 'DB', type: 'DATABASE', baseUrl: 'postgresql://app:s3cret@db.example.com:5432/shop' });
     await tool('t-db', 'c-db', 'q', { method: 'query', path: `SELECT '${TG}'` });
+
+    // A DATABASE connector whose authConfig already holds credentials:
+    // left alone, since which one the engine prefers differs by driver.
+    await connector('c-db-protected', {
+      name: 'DB protected',
+      type: 'DATABASE',
+      baseUrl: 'mssql://sa:n3w@sql.example.com:1433/shop',
+      authConfig: encrypt(JSON.stringify({ domain: 'CORP', username: 'sa', password: 'old' }), KEY),
+    });
 
     // Variables encrypted with another key: must be skipped, never overwritten.
     await connector('c-badkey', {
@@ -136,43 +150,62 @@ d('secret literal report + repair (real Postgres)', () => {
     expect(byConnector('c-tg-custom')).toEqual(['tool.description', 'tool.name', 'tool.path']);
     expect(byConnector('c-maps')).toEqual(['baseUrl', 'headers.X-Api-Key']);
     expect(byConnector('c-clean')).toEqual([]);
-    expect(byConnector('c-db')).toEqual([]);
+    expect(byConnector('c-db')).toEqual(['baseUrl']);
+    // Still flagged: the URL still shows it, even though repair will leave
+    // it alone because authConfig already holds credentials.
+    expect(byConnector('c-db-protected')).toEqual(['baseUrl']);
     const text = lines.join('\n');
     expect(text).not.toContain(TG_SECRET);
     expect(text).not.toContain(GOOGLE);
     expect(text).not.toContain('k1k2k3k4k5');
+    expect(text).not.toContain('s3cret');
+    expect(text).not.toContain('n3w');
     const stored = await client.query(`SELECT base_url FROM connectors WHERE id = 'c-tg-catalog'`);
     expect(stored.rows[0].base_url).toContain(TG_SECRET);
   });
 
   it('repair dry run: plans every fix, writes nothing', async () => {
     const result = await repair(client, { workspaceId: ORG, out });
-    expect(result.plans.map((p) => p.connectorId).sort()).toEqual(['c-maps', 'c-tg-catalog', 'c-tg-custom']);
+    // c-db-protected decrypts fine but has nothing to move (authConfig
+    // already holds credentials), so it is in neither list, like a
+    // REST connector that turns out to need no changes.
+    expect(result.plans.map((p) => p.connectorId).sort()).toEqual(['c-db', 'c-maps', 'c-tg-catalog', 'c-tg-custom']);
     expect(result.skipped).toEqual([{ connectorId: 'c-badkey', reason: expect.stringMatching(/could not be decrypted/) }]);
     expect(lines.join('\n')).not.toContain(TG_SECRET);
+    expect(lines.join('\n')).not.toContain('s3cret');
     const tables = await client.query(`SELECT 1 FROM pg_tables WHERE tablename LIKE 'secret_literal_repair_backup_%'`);
     expect(tables.rowCount).toBe(0);
     const stored = await client.query(`SELECT name FROM mcp_tools WHERE id = 't-tg-custom'`);
     expect(stored.rows[0].name).toContain('7123456789');
+    const dbRow = await client.query(`SELECT base_url FROM connectors WHERE id = 'c-db'`);
+    expect(dbRow.rows[0].base_url).toContain('s3cret');
   });
 
   it('repair --apply: backs up, rewrites, keeps every variable, and is idempotent', async () => {
     const result = await repair(client, { workspaceId: ORG, apply: true, backupSuffix: 'fixture', out });
     expect(result.backupTable).toBe('secret_literal_repair_backup_fixture');
 
-    const backup = await client.query(`SELECT kind, id, base_url FROM secret_literal_repair_backup_fixture ORDER BY kind, id`);
+    const backup = await client.query(`SELECT kind, id, base_url, auth_config FROM secret_literal_repair_backup_fixture ORDER BY kind, id`);
     expect(backup.rows.map((r) => `${r.kind}:${r.id}`)).toEqual([
+      'connector:c-db',
       'connector:c-maps',
       'connector:c-tg-catalog',
       'connector:c-tg-custom',
       'tool:t-tg-custom',
     ]);
     expect(backup.rows.find((r) => r.id === 'c-tg-catalog').base_url).toContain(TG_SECRET);
+    // The backup holds the exact prior row: plaintext URL, no authConfig yet.
+    const dbBackup = backup.rows.find((r) => r.id === 'c-db');
+    expect(dbBackup.base_url).toContain('s3cret');
+    expect(dbBackup.auth_config).toBeNull();
 
     const rows = Object.fromEntries(
-      (await client.query(`SELECT id, base_url, headers, config, env_vars FROM connectors WHERE organization_id = $1`, [ORG])).rows.map(
-        (r) => [r.id, r],
-      ),
+      (
+        await client.query(
+          `SELECT id, base_url, headers, config, env_vars, auth_config FROM connectors WHERE organization_id = $1`,
+          [ORG],
+        )
+      ).rows.map((r) => [r.id, r]),
     );
     // Catalog Telegram: same variable reused, nothing added.
     expect(rows['c-tg-catalog'].base_url).toBe('https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}');
@@ -194,15 +227,29 @@ d('secret literal report + repair (real Postgres)', () => {
     expect(rows['c-maps'].headers).toEqual({ 'X-Api-Key': '{{MAPS_API_KEY_2}}', Accept: 'application/json' });
     expect(openEnvVarsStrict(rows['c-maps'].env_vars)).toEqual({ REGION: 'eu', MAPS_API_KEY: GOOGLE, MAPS_API_KEY_2: 'k1k2k3k4k5' });
 
+    // DATABASE: credentials moved out of the URL into encrypted authConfig.
+    expect(rows['c-db'].base_url).toBe('postgresql://db.example.com:5432/shop');
+    expect(JSON.parse(decrypt(rows['c-db'].auth_config, KEY))).toEqual({ username: 'app', password: 's3cret' });
+
+    // DATABASE, authConfig already held credentials: left exactly as it was.
+    expect(rows['c-db-protected'].base_url).toBe('mssql://sa:n3w@sql.example.com:1433/shop');
+    expect(JSON.parse(decrypt(rows['c-db-protected'].auth_config, KEY))).toEqual({
+      domain: 'CORP',
+      username: 'sa',
+      password: 'old',
+    });
+
     // Untouched.
     expect(rows['c-clean'].base_url).toBe('https://api.example.com/v1');
-    expect(rows['c-db'].base_url).toBe('postgres://u:p@db.example.com/x');
     expect(rows['c-badkey'].base_url).toContain(TG_SECRET);
 
-    // A second run finds nothing left to do (the bad-key connector stays skipped).
+    // A second run finds nothing left to do (the bad-key connector stays
+    // skipped; c-db-protected still has nothing to move).
     const again = await repair(client, { workspaceId: ORG, out });
     expect(again.plans).toEqual([]);
     const findings = (await report(client, out)).filter((f) => f.workspaceId === ORG);
-    expect(findings.map((f) => f.connectorId)).toEqual(['c-badkey']);
+    // c-db is now clean; c-db-protected's URL still shows its password —
+    // the one case the fix cannot clean up without risking who connects.
+    expect(findings.map((f) => f.connectorId).sort()).toEqual(['c-badkey', 'c-db-protected']);
   });
 });

@@ -51,13 +51,41 @@ describe('scanConnector', () => {
     expect(JSON.stringify(found)).not.toContain(TG_SECRET);
   });
 
-  it('ignores clean and DATABASE connectors', () => {
+  it('ignores a clean connector', () => {
     expect(scanConnector(connector(), [tool()])).toEqual([]);
-    expect(
-      scanConnector(connector({ type: 'DATABASE', baseUrl: `postgres://u:${TG}@h/db` }), [
-        tool({ endpointMapping: { method: 'query', path: `SELECT '${TG}'` } }),
-      ]),
-    ).toEqual([]);
+  });
+
+  describe('a DATABASE connector', () => {
+    const STORED = 'postgresql://app:s3cret@db.example.com:5432/shop';
+
+    it('finds a password still in the connection string, redacted', () => {
+      const found = scanConnector(connector({ type: 'DATABASE', baseUrl: STORED }), []);
+      expect(found).toEqual([
+        {
+          connectorId: 'c1',
+          workspaceId: 'org1',
+          field: 'baseUrl',
+          kind: 'database_url_password',
+          pattern: 'postgresql://app:********@db.example.com:5432/shop',
+          adapterSlug: null,
+        },
+      ]);
+      expect(JSON.stringify(found)).not.toContain('s3cret');
+    });
+
+    it('finds nothing once the password has moved out of the URL', () => {
+      expect(
+        scanConnector(connector({ type: 'DATABASE', baseUrl: 'postgresql://db.example.com:5432/shop' }), []),
+      ).toEqual([]);
+    });
+
+    it('does not inspect tools: the connection string is the only field that can carry a password', () => {
+      expect(
+        scanConnector(connector({ type: 'DATABASE', baseUrl: 'postgresql://db.example.com:5432/shop' }), [
+          tool({ endpointMapping: { method: 'query', path: "SELECT * FROM t WHERE p = 's3cret'" } }),
+        ]),
+      ).toEqual([]);
+    });
   });
 });
 
@@ -108,5 +136,59 @@ describe('planRepair', () => {
 
   it('returns null when there is nothing to do', () => {
     expect(planRepair(connector(), [tool()])).toBeNull();
+  });
+
+  describe('a DATABASE connector', () => {
+    const STORED = 'postgresql://app:s3cret@db.example.com:5432/shop';
+
+    it('moves the credentials into authConfig when it holds neither', () => {
+      const plan = planRepair(connector({ type: 'DATABASE', baseUrl: STORED, authConfig: null }), [])!;
+      expect(plan.connector.baseUrl).toBe('postgresql://db.example.com:5432/shop');
+      expect(plan.connector.authConfig).toEqual({ username: 'app', password: 's3cret' });
+      expect(plan.tools).toEqual([]);
+    });
+
+    it.each([
+      ['mssql', 'mssql://sa:n3w@sql.example.com:1433/shop', 'mssql://sql.example.com:1433/shop', { username: 'sa', password: 'n3w' }],
+      ['oracle', 'oracle://app:s3cret@ora.example.com:1521/orcl', 'oracle://ora.example.com:1521/orcl', { username: 'app', password: 's3cret' }],
+      ['hana', 'hana://app:s3cret@hana.example.com:30015/shop', 'hana://hana.example.com:30015/shop', { username: 'app', password: 's3cret' }],
+    ])('moves credentials out of a %s URL the same way', (_driver, baseUrl, cleaned, authConfig) => {
+      const plan = planRepair(connector({ type: 'DATABASE', baseUrl, authConfig: null }), [])!;
+      expect(plan.connector.baseUrl).toBe(cleaned);
+      expect(plan.connector.authConfig).toEqual(authConfig);
+    });
+
+    it('does nothing when authConfig already holds a username or password', () => {
+      // Which one wins then differs by driver (pg/mysql/mongo prefer the URL's
+      // username, mssql/oracle/hana prefer authConfig), so moving here could
+      // change who connects — the same rule the live API follows.
+      expect(
+        planRepair(connector({ type: 'DATABASE', baseUrl: STORED, authConfig: { username: 'other' } }), []),
+      ).toBeNull();
+    });
+
+    it('does nothing once the password has already moved out of the URL', () => {
+      expect(
+        planRepair(
+          connector({ type: 'DATABASE', baseUrl: 'postgresql://db.example.com:5432/shop', authConfig: null }),
+          [],
+        ),
+      ).toBeNull();
+    });
+
+    it('does nothing for a connection string it cannot parse', () => {
+      // A multi-host MongoDB URL: DatabaseEngine puts authConfig's credentials
+      // back into it at call time, so leaving it as it is keeps connecting.
+      expect(
+        planRepair(
+          connector({
+            type: 'DATABASE',
+            baseUrl: 'mongodb://app:s3cret@m1.example.com:27017,m2.example.com:27017/shop',
+            authConfig: null,
+          }),
+          [],
+        ),
+      ).toBeNull();
+    });
   });
 });

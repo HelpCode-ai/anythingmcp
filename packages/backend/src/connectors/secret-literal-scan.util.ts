@@ -5,6 +5,7 @@ import {
   type SecretKind,
 } from '../common/secret-literals.util';
 import { SECRET_GUARDED_TYPES, SecretExtractor, type MovedSecret } from './secret-extraction.util';
+import { maskUrlPassword, moveUrlCredentials } from './database-url-credentials.util';
 
 /**
  * Stored connectors and tools checked for secret literals, for the report
@@ -22,6 +23,8 @@ export interface ConnectorRow {
   headers: Record<string, unknown> | null;
   config: Record<string, unknown> | null;
   envVars: Record<string, unknown> | null;
+  /** DATABASE only, decrypted. `null` means "not loaded yet", same as `envVars`. */
+  authConfig?: Record<string, unknown> | null;
 }
 
 export interface ToolRow {
@@ -39,7 +42,7 @@ export interface ScanFinding {
   toolId?: string;
   /** `baseUrl`, `config.baseUrlBaseline`, `headers.X`, `tool.path`, `tool.name`… */
   field: string;
-  kind: SecretKind | 'name_contains_secret';
+  kind: SecretKind | 'name_contains_secret' | 'database_url_password';
   pattern: string;
   /** The catalog adapter the connector came from, if any. */
   adapterSlug: string | null;
@@ -54,8 +57,30 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
+/**
+ * A DATABASE connector's own check: its connection string can carry a
+ * password (database-url-credentials.util.ts), a different shape than the
+ * literal-in-a-header/query/path/name check below. No tool-level check: the
+ * builtin query and recent-events tools never carry the connection string.
+ */
+function scanDatabaseConnector(connector: ConnectorRow): ScanFinding[] {
+  const masked = maskUrlPassword(connector.baseUrl ?? '');
+  if (masked === connector.baseUrl) return [];
+  return [
+    {
+      connectorId: connector.id,
+      workspaceId: connector.organizationId,
+      field: 'baseUrl',
+      kind: 'database_url_password',
+      pattern: masked,
+      adapterSlug: slugOf(connector),
+    },
+  ];
+}
+
 /** Everything secret-looking in one connector and its tools. */
 export function scanConnector(connector: ConnectorRow, tools: ToolRow[]): ScanFinding[] {
+  if (connector.type === 'DATABASE') return scanDatabaseConnector(connector);
   if (!SECRET_GUARDED_TYPES.has(connector.type)) return [];
   const adapterSlug = slugOf(connector);
   const out: ScanFinding[] = [];
@@ -125,6 +150,8 @@ export interface RepairPlan {
   /** Fields of the connector to write (only the changed ones). */
   connector: Partial<Pick<ConnectorRow, 'baseUrl' | 'headers' | 'config'>> & {
     envVars?: Record<string, string>;
+    /** DATABASE only: the credentials moved out of baseUrl, to encrypt and write. */
+    authConfig?: Record<string, unknown>;
   };
   tools: Array<{ id: string; changes: Partial<Pick<ToolRow, 'name' | 'description' | 'parameters' | 'endpointMapping'>> }>;
   moved: MovedSecret[];
@@ -134,12 +161,37 @@ export interface RepairPlan {
 }
 
 /**
+ * What the repair writes for a DATABASE connector: move `user:password@` out
+ * of baseUrl into authConfig, the same move the API now makes on every save
+ * (database-url-credentials.util.ts). `connector.authConfig` must already be
+ * decrypted; pass `null` first to decide cheaply whether to bother decrypting
+ * at all — `moveUrlCredentials` treats `null` as "holds neither", so a
+ * connector whose authConfig turns out to already hold credentials correctly
+ * plans nothing on the authoritative second call.
+ */
+function planDatabaseRepair(connector: ConnectorRow): RepairPlan | null {
+  const moved = moveUrlCredentials(connector.baseUrl, connector.authConfig);
+  if (!moved) return null;
+  return {
+    connectorId: connector.id,
+    workspaceId: connector.organizationId,
+    adapterSlug: slugOf(connector),
+    connector: { baseUrl: moved.baseUrl, authConfig: moved.authConfig },
+    tools: [],
+    moved: [],
+    newVariables: [],
+    renamedTools: [],
+  };
+}
+
+/**
  * What the repair writes for one connector: the same rewrite the API now
  * applies on every save. Catalog connectors' headers are left alone (they
  * are rebuilt from the adapter's template when the variables change).
  * Returns null when there is nothing to change.
  */
 export function planRepair(connector: ConnectorRow, tools: ToolRow[]): RepairPlan | null {
+  if (connector.type === 'DATABASE') return planDatabaseRepair(connector);
   if (!SECRET_GUARDED_TYPES.has(connector.type)) return null;
   const adapterSlug = slugOf(connector);
   const env = Object.fromEntries(
