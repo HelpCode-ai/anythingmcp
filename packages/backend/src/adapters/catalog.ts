@@ -505,6 +505,7 @@ import * as onesignal from './intl/onesignal.json';
 import * as openai from './intl/openai.json';
 import * as openalex from './intl/openalex.json';
 import * as opencart from './intl/opencart.json';
+import * as opencartBridge from './intl/opencart-bridge.json';
 import * as openrouter from './intl/openrouter.json';
 import * as openrouteservice from './intl/openrouteservice.json';
 import * as opentable from './intl/opentable.json';
@@ -1647,6 +1648,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   openai as unknown as AdapterDefinition,
   openalex as unknown as AdapterDefinition,
   opencart as unknown as AdapterDefinition,
+  opencartBridge as unknown as AdapterDefinition,
   openrouter as unknown as AdapterDefinition,
   openrouteservice as unknown as AdapterDefinition,
   opentable as unknown as AdapterDefinition,
