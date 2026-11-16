@@ -97,14 +97,11 @@ async function bootstrap() {
       'Bootstrap',
     );
   }
-  app.use(
-    cookieParser(
-      cookieSecrets({
-        COOKIE_SECRET: configService.get<string>('COOKIE_SECRET'),
-        JWT_SECRET: configService.get<string>('JWT_SECRET'),
-      }),
-    ),
-  );
+  const cookieSecretList = cookieSecrets({
+    COOKIE_SECRET: configService.get<string>('COOKIE_SECRET'),
+    JWT_SECRET: configService.get<string>('JWT_SECRET'),
+  });
+  app.use(cookieParser(cookieSecretList));
 
   // Security headers (CSP relaxed because Swagger UI ships inline scripts/styles)
   app.use(
