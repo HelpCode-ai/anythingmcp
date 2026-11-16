@@ -293,14 +293,15 @@ export function tokenResponsePathProblems(connector) {
 }
 
 const SIGNATURE_MODES = new Set(['hmac', 'digest']);
-const SIGNATURE_PLACEMENTS = new Set(['header', 'query', 'body']);
+const SIGNATURE_PLACEMENTS = new Set(['header', 'query', 'body', 'form']);
 const SIGNATURE_ENCODINGS = new Set(['hex', 'base64', 'hex-upper', 'hex-base64']);
 const HMAC_ALGORITHMS = new Set(['sha256', 'sha1', 'sha512']);
 
 /**
  * `authConfig.signature` of an HMAC connector: the options added for a plain
  * digest in the JSON body (Temu) and for a nonce in the key with a wrapped
- * header value (SHEIN). The engine (applyHmacSignature in
+ * header value (SHEIN), and for a signature in a form body with a timestamp
+ * in the future (Apaczka). The engine (applyHmacSignature in
  * packages/backend/src/connectors/engines/rest.engine.ts) reads these fields
  * leniently, so a typing mistake here would sign differently without failing:
  * the mistakes are refused at this gate instead. A signed-JWT signature
@@ -318,7 +319,7 @@ export function hmacSignatureProblems(connector) {
   const usesNonce = (text) => text.includes('${nonce}');
 
   if (!SIGNATURE_MODES.has(mode)) problems.push('signature.mode must be "hmac" or "digest"');
-  if (!SIGNATURE_PLACEMENTS.has(placement)) problems.push('signature.placement must be "header", "query" or "body"');
+  if (!SIGNATURE_PLACEMENTS.has(placement)) problems.push('signature.placement must be "header", "query", "body" or "form"');
   if (sig.encoding !== undefined && !SIGNATURE_ENCODINGS.has(sig.encoding)) problems.push('signature.encoding must be "hex", "base64", "hex-upper" or "hex-base64"');
   if (sig.algorithm !== undefined && !HMAC_ALGORITHMS.has(sig.algorithm) && !(sig.algorithm === 'md5' && mode === 'digest')) {
     problems.push(sig.algorithm === 'md5'
@@ -333,14 +334,19 @@ export function hmacSignatureProblems(connector) {
     const flat = sig.bodyParams && typeof sig.bodyParams === 'object' && !Array.isArray(sig.bodyParams)
       && Object.values(sig.bodyParams).every((v) => ['string', 'number', 'boolean'].includes(typeof v));
     if (!flat) problems.push('signature.bodyParams must map field names to text, numbers or true/false');
-    if (placement !== 'body') problems.push('signature.bodyParams only applies to signature.placement "body"');
+    if (placement !== 'body' && placement !== 'form') problems.push('signature.bodyParams only applies to signature.placement "body" or "form"');
   }
-  if (placement === 'body') {
+  if (placement === 'body' || placement === 'form') {
     const paramName = sig.paramName ?? 'sign';
     if (sig.bodyParams && typeof sig.bodyParams === 'object' && paramName in sig.bodyParams) problems.push(`signature.bodyParams must not set "${paramName}", the field the signature is written to`);
     if (sig.timestampParam !== undefined && sig.timestampParam === paramName) problems.push('signature.timestampParam and signature.paramName must be different fields');
-    if (sig.headerName !== undefined || sig.headerTemplate !== undefined) problems.push('signature.headerName and signature.headerTemplate do not apply to signature.placement "body"');
-    if (sig.queryParams !== undefined) problems.push('signature.queryParams does not apply to signature.placement "body": use signature.bodyParams');
+    if (sig.headerName !== undefined || sig.headerTemplate !== undefined) problems.push(`signature.headerName and signature.headerTemplate do not apply to signature.placement "${placement}"`);
+    if (sig.queryParams !== undefined) problems.push(`signature.queryParams does not apply to signature.placement "${placement}": use signature.bodyParams`);
+  }
+  if (/\$\{form\.[^{}]+\}/.test(template) && placement !== 'form') problems.push('${form.NAME} in signature.template needs signature.placement "form"');
+  if (sig.timestampOffsetSeconds !== undefined
+    && (!Number.isInteger(sig.timestampOffsetSeconds) || sig.timestampOffsetSeconds < -86400 || sig.timestampOffsetSeconds > 86400)) {
+    problems.push('signature.timestampOffsetSeconds must be a whole number of seconds from -86400 to 86400');
   }
   if (sig.nonceLength !== undefined) {
     if (!Number.isInteger(sig.nonceLength) || sig.nonceLength < 1 || sig.nonceLength > 64) problems.push('signature.nonceLength must be a whole number from 1 to 64');
@@ -353,6 +359,32 @@ export function hmacSignatureProblems(connector) {
     if (!headerTemplate.includes('${signature}')) problems.push('signature.headerTemplate must contain ${signature}');
     if (placement === 'query') problems.push('signature.headerTemplate does not apply to signature.placement "query"');
   }
+  return problems;
+}
+
+/**
+ * Tools of a connector whose signature goes into the form body
+ * (`signature.placement: "form"`): each must send a form, so it must be a
+ * POST, PUT, PATCH or DELETE whose body (when it has one) is a
+ * `bodyMapping` with `bodyEncoding: "form-urlencoded"`. The engine refuses
+ * anything else at call time; this finds it before install.
+ */
+export function hmacFormToolProblems(adapter) {
+  const connector = adapter?.connector;
+  const sig = connector?.authConfig?.signature;
+  if (connector?.authType !== 'HMAC' || !sig || typeof sig !== 'object' || sig.placement !== 'form') return [];
+  const problems = [];
+  (Array.isArray(adapter.tools) ? adapter.tools : []).forEach((tool, i) => {
+    const em = tool?.endpointMapping;
+    if (!em || typeof em !== 'object') return;
+    const method = String(em.method ?? 'GET').toUpperCase();
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      problems.push({ path: `tools[${i}].endpointMapping.method`, problem: `signature.placement "form" signs inside a form body, which a ${method} request does not have` });
+    }
+    if (em.bodyTemplate !== undefined || (em.bodyMapping !== undefined && em.bodyEncoding !== 'form-urlencoded')) {
+      problems.push({ path: `tools[${i}].endpointMapping`, problem: 'signature.placement "form" needs a bodyMapping with bodyEncoding "form-urlencoded"' });
+    }
+  });
   return problems;
 }
 
@@ -1042,7 +1074,11 @@ export function validateAdapter(adapter, file, region) {
   }
 
   for (const problem of hmacSignatureProblems(adapter.connector)) {
-    errors.push(error('hmac-signature', 'connector.authConfig.signature', problem, 'See the tables under "Plain digest and body placement" and "Nonce and header template" for the fields and their values.', 'hmac-signed-requests'));
+    errors.push(error('hmac-signature', 'connector.authConfig.signature', problem, 'See the tables under "Plain digest and body placement", "Nonce and header template" and "Form placement and expiry time" for the fields and their values.', 'hmac-signed-requests'));
+  }
+
+  for (const { path, problem } of hmacFormToolProblems(adapter)) {
+    errors.push(error('hmac-signature', path, problem, 'Give every tool "method": "POST", "bodyEncoding": "form-urlencoded" and a bodyMapping (see "Form placement and expiry time").', 'hmac-signed-requests'));
   }
 
   for (const problem of sheinTokenProviderProblems(adapter.connector)) {

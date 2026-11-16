@@ -726,6 +726,59 @@ test('hmac signature options for a digest in the body and a nonce are checked', 
   assert.match(docs, /^#### Nonce and header template \(opt-in\)$/m);
 });
 
+test('hmac signature in a form body with a timestamp in the future is checked', () => {
+  const problems = (signature) => validatorModule.hmacSignatureProblems({ authType: 'HMAC', authConfig: { signature } });
+  const apaczka = {
+    algorithm: 'sha256', encoding: 'hex', secret: '{{GOOD_SECRET}}', placement: 'form', paramName: 'signature',
+    bodyParams: { app_id: '{{GOOD_KEY}}' }, timestampParam: 'expires', timestampOffsetSeconds: 600,
+    template: '${form.app_id}:${apiPathNoSlash}:${form.request}:${timestamp}',
+  };
+  assert.deepEqual(problems(apaczka), []);
+  assert.deepEqual(problems({ ...apaczka, timestampOffsetSeconds: -30 }), []);
+  // The offset alone is fine on the other placements too.
+  assert.deepEqual(problems({ algorithm: 'sha256', secret: 'k', template: '${timestamp}', headerName: 'X', timestampOffsetSeconds: 300 }), []);
+  for (const [change, expected] of [
+    [{ placement: 'cookie' }, /"header", "query", "body" or "form"/],
+    [{ timestampOffsetSeconds: 1.5 }, /timestampOffsetSeconds must be a whole number/],
+    [{ timestampOffsetSeconds: '600' }, /timestampOffsetSeconds must be a whole number/],
+    [{ timestampOffsetSeconds: 90000 }, /timestampOffsetSeconds must be a whole number/],
+    [{ bodyParams: { signature: 'x' } }, /must not set "signature"/],
+    [{ timestampParam: 'signature' }, /must be different fields/],
+    [{ headerName: 'X-Sign' }, /do not apply to signature.placement "form"/],
+    [{ queryParams: { a: 'b' } }, /does not apply to signature.placement "form": use signature.bodyParams/],
+    [{ placement: 'query', bodyParams: undefined }, /\$\{form.NAME\} in signature.template needs signature.placement "form"/],
+    [{ placement: 'header' }, /bodyParams only applies to signature.placement "body" or "form"/],
+  ]) {
+    const found = problems({ ...apaczka, ...change });
+    assert.ok(found.some((p) => expected.test(p)), `${JSON.stringify(change)} -> ${JSON.stringify(found)}`);
+  }
+
+  // Every tool of such a connector must POST a form.
+  const connector = { type: 'REST', authType: 'HMAC', authConfig: { signature: apaczka } };
+  const formTool = (endpointMapping) => ({
+    name: 'good_lookup', description: 'x'.repeat(60),
+    parameters: { type: 'object', properties: { query: { type: 'string', description: 'query' } } },
+    endpointMapping,
+  });
+  const ok = { method: 'POST', path: '/orders/', bodyEncoding: 'form-urlencoded', bodyMapping: { request: { __json: { q: '$query' } } } };
+  assert.deepEqual(validatorModule.hmacFormToolProblems(adapter({ connector, tools: [formTool(ok)] })), []);
+  assert.deepEqual(validatorModule.hmacFormToolProblems(adapter({ connector, tools: [formTool({ method: 'POST', path: '/me/' })] })), []);
+  const bad = validatorModule.hmacFormToolProblems(adapter({ connector, tools: [
+    formTool({ ...ok, method: 'GET' }),
+    formTool({ method: 'POST', path: '/x/', bodyMapping: { a: '$query' } }),
+    formTool({ method: 'POST', path: '/x/', bodyTemplate: '{}' }),
+  ] }));
+  assert.deepEqual(bad.map((p) => p.path), ['tools[0].endpointMapping.method', 'tools[1].endpointMapping', 'tools[2].endpointMapping']);
+  // Other placements are not looked at.
+  assert.deepEqual(validatorModule.hmacFormToolProblems(adapter({
+    connector: { ...connector, authConfig: { signature: { ...apaczka, placement: 'body' } } },
+    tools: [formTool({ ...ok, method: 'GET' })],
+  })), []);
+  const result = validateAdapter(adapter({ connector, tools: [formTool({ ...ok, method: 'GET' })] }), 'good.json', 'de');
+  assert.ok(result.errors.some((e) => e.rule === 'hmac-signature' && e.path === 'tools[0].endpointMapping.method'));
+  assert.match(docs, /^#### Form placement and expiry time \(opt-in\)$/m);
+});
+
 test('tokenProvider "iop": HMAC only, https gateway URLs, token paths and the IOP signature', () => {
   const lazada = () => ({
     tokenProvider: 'iop',

@@ -1204,6 +1204,26 @@ export class RestEngine {
    *                             It must name `${signature}`.
    *   signature.encoding        'hex-base64': Base64 of the lower-case hex
    *                             text of the digest
+   *
+   * Form placement and a timestamp in the future, opt-in (Apaczka.pl API v2:
+   * every call is a form-urlencoded POST of app_id, request, expires and a
+   * signature over `app_id:route:request:expires`):
+   *   signature.placement       'form': the digest goes into the
+   *                             application/x-www-form-urlencoded body as
+   *                             the field `paramName`
+   *   signature.bodyParams      with placement 'form': static form fields of
+   *                             every call (an app id); they win over a
+   *                             tool's field of the same name
+   *   signature.timestampParam  with placement 'form': the timestamp is
+   *                             written into the form as this field
+   *   signature.timestampOffsetSeconds  a whole number of seconds added to
+   *                             the current time for `${timestamp}`,
+   *                             timestampParam and timestampHeader (an
+   *                             expiry time instead of the signing time)
+   *   template variables        `${form.NAME}` with placement 'form': the
+   *                             value of a form field as sent (decoded), ''
+   *                             when absent; `${apiPathNoSlash}`: `${apiPath}`
+   *                             without its leading slash (`order_send/`)
    */
   private applyHmacSignature(
     axiosConfig: AxiosRequestConfig,
@@ -1229,11 +1249,19 @@ export class RestEngine {
     const headerName = String(sig.headerName ?? 'Signature');
 
     const extended = usesExtendedHmac(sig, credentialParams);
-    const timestamp = extended ? hmacTimestamp(sig.timestampFormat) : String(Math.floor(Date.now() / 1000));
-    // Opt-in (see the comment above): the signature lives in the JSON body, a
-    // plain digest replaces the HMAC, a random nonce joins the key. All three
-    // are false or undefined for a signature written before them.
+    const timestamp = extended
+      ? hmacTimestamp(
+          sig.timestampFormat,
+          sig.timestampOffsetSeconds === undefined
+            ? undefined
+            : Date.now() + timestampOffsetMs(sig.timestampOffsetSeconds),
+        )
+      : String(Math.floor(Date.now() / 1000));
+    // Opt-in (see the comment above): the signature lives in the JSON body or
+    // in the form body, a plain digest replaces the HMAC, a random nonce joins
+    // the key. All are false or undefined for a signature written before them.
     const bodyPlacement = extended && String(sig.placement ?? 'header') === 'body';
+    const formPlacement = extended && String(sig.placement ?? 'header') === 'form';
     const digestMode = extended && sig.mode !== undefined && signatureMode(sig.mode) === 'digest';
     const nonce = extended && sig.nonceLength !== undefined ? signatureNonce(sig.nonceLength) : undefined;
     if (extended) {
@@ -1248,7 +1276,7 @@ export class RestEngine {
         }
       }
       Object.assign(added, credentialParams ?? {});
-      if (sig.timestampParam && !bodyPlacement) added[String(sig.timestampParam)] = timestamp;
+      if (sig.timestampParam && !bodyPlacement && !formPlacement) added[String(sig.timestampParam)] = timestamp;
       // A retry signs again: the previous signature is not part of the query.
       const previous = { ...((axiosConfig.params as Record<string, unknown>) ?? {}) };
       if (String(sig.placement ?? 'header') === 'query') delete previous[String(sig.paramName ?? 'sign')];
@@ -1264,6 +1292,21 @@ export class RestEngine {
         timestamp,
         String(axiosConfig.method ?? 'GET').toUpperCase(),
       );
+    }
+    // Form placement: the same for a form-urlencoded body. The fields signed
+    // below (`${form.NAME}`, `${body}`) are the ones that go out.
+    let formFields: URLSearchParams | undefined;
+    if (formPlacement) {
+      formFields = signedFormFields(
+        axiosConfig,
+        sig,
+        timestamp,
+        String(axiosConfig.method ?? 'GET').toUpperCase(),
+      );
+      axiosConfig.data = formFields.toString();
+      if (!hasHeader(axiosConfig.headers, 'content-type')) {
+        axiosConfig.headers = { ...axiosConfig.headers, 'Content-Type': 'application/x-www-form-urlencoded' };
+      }
     }
 
     // The body as it will actually go out. An object body is serialized the
@@ -1315,13 +1358,14 @@ export class RestEngine {
           timestamp,
           nonce,
           query: params,
+          form: formFields,
           sortedParams: () =>
             bodyPlacement
               ? sortedBodyParamsString(axiosConfig.data as Record<string, unknown>, signParam)
               : sortedParamsString(
                   params,
                   formBodyOf(axiosConfig),
-                  String(sig.placement ?? 'header') === 'query' ? signParam : undefined,
+                  String(sig.placement ?? 'header') === 'query' || formPlacement ? signParam : undefined,
                 ),
           sortedQuery: () =>
             sortedQueryString(params, String(sig.placement ?? 'header') === 'query' ? signParam : undefined),
@@ -1352,6 +1396,15 @@ export class RestEngine {
     const headerTemplate = signatureHeaderTemplate(sig);
     if (bodyPlacement) {
       axiosConfig.data = { ...(axiosConfig.data as Record<string, unknown>), [signParam]: digest };
+      axiosConfig.headers = { ...axiosConfig.headers, ...extra };
+      if (sig.timestampHeader) {
+        (axiosConfig.headers as Record<string, string>)[String(sig.timestampHeader)] = timestamp;
+      }
+      return;
+    }
+    if (formPlacement && formFields) {
+      formFields.append(signParam, digest);
+      axiosConfig.data = formFields.toString();
       axiosConfig.headers = { ...axiosConfig.headers, ...extra };
       if (sig.timestampHeader) {
         (axiosConfig.headers as Record<string, string>)[String(sig.timestampHeader)] = timestamp;
@@ -1660,8 +1713,78 @@ export function usesExtendedHmac(
     sig.bodyParams !== undefined ||
     sig.nonceLength !== undefined ||
     signatureHeaderTemplate(sig) !== undefined ||
-    sig.encoding === 'hex-base64'
+    sig.encoding === 'hex-base64' ||
+    // Form placement, timestamp offset, route without the slash (Apaczka).
+    sig.timestampOffsetSeconds !== undefined ||
+    /\$\{(apiPathNoSlash|form\.[^{}]+)\}/.test(String(sig.template ?? ''))
   );
+}
+
+/**
+ * `signature.timestampOffsetSeconds` in milliseconds: a whole number of
+ * seconds from -86400 to 86400; anything else is a configuration error.
+ */
+export function timestampOffsetMs(seconds: unknown): number {
+  const n = Number(seconds);
+  if (typeof seconds !== 'number' || !Number.isInteger(n) || n < -86400 || n > 86400) {
+    throw new Error('This connector\'s signature.timestampOffsetSeconds must be a whole number from -86400 to 86400.');
+  }
+  return n * 1000;
+}
+
+/**
+ * The form fields of a call signed with `placement: "form"`, before the
+ * signature is added: the tool's own fields (an
+ * application/x-www-form-urlencoded body, or none), then
+ * `signature.bodyParams`, then the timestamp under `timestampParam`. A
+ * static field or the timestamp replaces a tool's field of the same name,
+ * and the signature of an earlier attempt is dropped, so a retry signs the
+ * same fields again.
+ */
+export function signedFormFields(
+  axiosConfig: AxiosRequestConfig,
+  sig: Record<string, unknown>,
+  timestamp: string,
+  method: string,
+): URLSearchParams {
+  if (!REQUEST_BODY_METHODS.has(method)) {
+    throw new Error(
+      `This connector signs inside the form body (signature.placement "form"), which a ${method} request does not have. Use POST for this tool.`,
+    );
+  }
+  const data = axiosConfig.data;
+  let fields: URLSearchParams;
+  if (data === undefined || data === null || data === '') {
+    fields = new URLSearchParams();
+  } else if (data instanceof URLSearchParams) {
+    fields = new URLSearchParams(data);
+  } else if (typeof data === 'string' && isFormContentType(axiosConfig)) {
+    fields = new URLSearchParams(data);
+  } else {
+    throw new Error(
+      'This connector signs inside the form body (signature.placement "form"), so the tool must send an application/x-www-form-urlencoded body (bodyEncoding "form-urlencoded"): not JSON, XML or a file upload.',
+    );
+  }
+  const replace = (name: string, value: string) => {
+    fields.delete(name);
+    fields.append(name, value);
+  };
+  fields.delete(String(sig.paramName ?? 'sign'));
+  const statics = sig.bodyParams;
+  if (statics && typeof statics === 'object' && !Array.isArray(statics)) {
+    for (const [k, v] of Object.entries(statics as Record<string, unknown>)) {
+      if (v !== undefined && v !== null) replace(k, String(v));
+    }
+  }
+  if (sig.timestampParam) replace(String(sig.timestampParam), timestamp);
+  return fields;
+}
+
+/** Whether the request's Content-Type is application/x-www-form-urlencoded. */
+function isFormContentType(axiosConfig: AxiosRequestConfig): boolean {
+  const headers = (axiosConfig.headers ?? {}) as Record<string, unknown>;
+  const contentType = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1];
+  return String(contentType ?? '').toLowerCase().includes('application/x-www-form-urlencoded');
 }
 
 /**
@@ -1887,16 +2010,24 @@ export function renderExtendedHmacTemplate(
     sortedParams?: () => string;
     /** Computed only when the template asks for it. */
     sortedQuery?: () => string;
+    /**
+     * The form fields of a signature with `placement: "form"`, for
+     * `${form.NAME}`; undefined for every other placement.
+     */
+    form?: URLSearchParams;
   },
 ): string {
   return template
     .replace(/\\n/g, '\n')
     .replace(
-      /\$\{(method|url|path|pathname|apiPath|body|timestamp|sortedParams|sortedQuery|nonce|query\.([^{}]+))\}/g,
-      (match: string, name: string, q?: string) => {
+      /\$\{(method|url|path|pathname|apiPathNoSlash|apiPath|body|timestamp|sortedParams|sortedQuery|nonce|query\.([^{}]+)|form\.([^{}]+))\}/g,
+      (match: string, name: string, q?: string, f?: string) => {
         // `${nonce}` is a variable only for a signature with `nonceLength`;
         // without it the text stays as written, as it always has.
         if (name === 'nonce') return vars.nonce === undefined ? match : vars.nonce;
+        // `${form.NAME}` likewise only for placement "form".
+        if (f !== undefined) return vars.form === undefined ? match : (vars.form.get(f) ?? '');
+        if (name === 'apiPathNoSlash') return (vars.apiPath ?? vars.pathname).replace(/^\/+/, '');
         if (q !== undefined) {
           const v = vars.query[q];
           if (v === undefined || v === null) return '';
