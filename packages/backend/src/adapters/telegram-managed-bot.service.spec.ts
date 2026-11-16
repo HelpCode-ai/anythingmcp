@@ -743,8 +743,59 @@ describe('TelegramManagedBotService', () => {
       await t.service.status({ organizationId: 'org-1', userId: 'u1', opened: true, device: 'mobile' });
       await t.service.status({ organizationId: 'org-1', userId: 'u1' });
       expect(t.events('telegram_bot_link_opened')).toEqual([
-        { event: 'telegram_bot_link_opened', userId: 'u1', organizationId: 'org-1', metadata: { adapterSlug: 'telegram-bot', device: 'mobile' } },
+        { event: 'telegram_bot_link_opened', userId: 'u1', organizationId: 'org-1', metadata: { adapterSlug: 'telegram-bot', device: 'mobile', via: 'app' } },
       ]);
+    });
+
+    it('says when the link was opened in Telegram Web', async () => {
+      const t = setup();
+      await t.service.register();
+      await t.begin(t.addConnector());
+      await t.service.status({ organizationId: 'org-1', userId: 'u1', opened: true, openedVia: 'web', device: 'desktop' });
+      expect(t.events('telegram_bot_link_opened')).toEqual([
+        { event: 'telegram_bot_link_opened', userId: 'u1', organizationId: 'org-1', metadata: { adapterSlug: 'telegram-bot', device: 'desktop', via: 'web' } },
+      ]);
+    });
+
+    it('hands the page the two links for Telegram in the browser and the QR code\'s own path', async () => {
+      const t = setup();
+      await t.service.register();
+      const { started, code } = await t.begin(t.addConnector());
+      expect(started!.qrPath).toBe(`/auth/first-app/telegram/qr/${code}`);
+      expect(decodeURIComponent(started!.webLink)).toContain(`username=amcp_${code}_bot`);
+      expect(decodeURIComponent(started!.claimWebLink)).toContain('tg://resolve?domain=');
+    });
+
+    // The QR code points at this server: a scan is counted, once, and always
+    // goes on to Telegram, noted or not.
+    it('counts a scan of the QR code once and answers with the Telegram link of that code', async () => {
+      const t = setup();
+      await t.service.register();
+      const { started, code } = await t.begin(t.addConnector());
+      expect(await t.service.qrScanned(code)).toBe(started!.link);
+      expect(await t.service.qrScanned(code)).toBe(started!.link);
+      expect(t.events('telegram_bot_link_opened')).toEqual([
+        { event: 'telegram_bot_link_opened', userId: 'u1', organizationId: 'org-1', metadata: { adapterSlug: 'telegram-bot', device: 'desktop', via: 'qr' } },
+      ]);
+      // A click reported after the scan is the same opening, not a second one.
+      await t.service.status({ organizationId: 'org-1', userId: 'u1', opened: true, device: 'desktop' });
+      expect(t.events('telegram_bot_link_opened')).toHaveLength(1);
+    });
+
+    it('sends a scan of an unknown code on to Telegram without noting anything, and refuses what is not a code', async () => {
+      const t = setup();
+      await t.service.register();
+      await t.begin(t.addConnector());
+      expect(await t.service.qrScanned('0f0f0f0f')).toMatch(/^https:\/\/t\.me\/newbot\/[^/]+\/amcp_0f0f0f0f_bot\?name=/);
+      expect(t.events('telegram_bot_link_opened')).toHaveLength(0);
+      for (const bad of ['', 'ZZZZZZZZ', '1a2b3c4', '1a2b3c4d5', '../admin', 42, null, undefined]) {
+        expect(await t.service.qrScanned(bad)).toBeNull();
+      }
+    });
+
+    it('answers nothing for a scan while the feature is off', async () => {
+      const t = setup({ TELEGRAM_MANAGER_BOT_TOKEN: undefined });
+      expect(await t.service.qrScanned('1a2b3c4d')).toBeNull();
     });
   });
 
