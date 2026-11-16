@@ -42,11 +42,16 @@ import {
   readManagedBotState,
   suggestedUsername,
   welcomeText,
+  SETUP_CODE_PATTERN,
+  claimWebLink,
+  creationWebLink,
+  qrPath,
   type ManagedBotSettings,
   type ManagedBotState,
   type TelegramOneTap,
   type TelegramOneTapStatus,
   type TelegramTokenAnswer,
+  type TelegramOneTapStart,
 } from './telegram-managed-bot';
 
 const TELEGRAM_TIMEOUT_MS = 10_000;
@@ -295,7 +300,7 @@ export class TelegramManagedBotService implements TelegramOneTap, OnApplicationB
     organizationId: string;
     userId: string;
     client?: { name: string; claude: boolean };
-  }): Promise<{ link: string; username: string; claimLink: string } | null> {
+  }): Promise<TelegramOneTapStart | null> {
     const settings = this.settings();
     const manager = this.managerUsername;
     if (!settings || !manager || !this.isEnabledFor(input.organizationId)) return null;
@@ -323,7 +328,48 @@ export class TelegramManagedBotService implements TelegramOneTap, OnApplicationB
       link: creationLink(manager, code),
       username: suggestedUsername(code),
       claimLink: claimLink(manager, code, settings.webhookSecret),
+      webLink: creationWebLink(manager, code),
+      claimWebLink: claimWebLink(manager, code, settings.webhookSecret),
+      qrPath: qrPath(code),
     };
+  }
+
+  /**
+   * The QR code of a creation link was scanned (GET on its own address, by
+   * a phone that has no session here). Always answers with the Telegram link
+   * of that code, so a scan works even when nothing can be noted; the click
+   * is noted once per setup, like a click on the button, as `via: qr`.
+   *
+   * The second lookup by code hash without a workspace (the first is the
+   * new bot's own announcement): a scan knows nothing but the code. It only
+   * reads, and writes the one "opened" mark on the connector it found.
+   */
+  async qrScanned(code: unknown): Promise<string | null> {
+    const settings = this.settings();
+    const manager = this.managerUsername;
+    if (!settings || !manager || typeof code !== 'string' || !SETUP_CODE_PATTERN.test(code)) return null;
+    try {
+      const row = await this.prisma.connector.findFirst({
+        where: { config: { path: [MANAGED_BOT_CONFIG_KEY, 'codeHash'], equals: hashSetupCode(code, settings.webhookSecret) } },
+        select: ROW_SELECT,
+      });
+      const state = row ? readManagedBotState(row.config) : null;
+      if (row && state && isTelegram(row) && !state.openedAt && !state.connectedAt) {
+        const openedAt = new Date(this.now()).toISOString();
+        if ((await this.patchState(row, { openedAt }, 'openedAt')) === 1) {
+          await this.productEvents.log({
+            event: ProductEvents.TELEGRAM_BOT_LINK_OPENED,
+            userId: state.userId ?? null,
+            organizationId: row.organizationId,
+            // The page was on a computer; the phone only followed its code.
+            metadata: { adapterSlug: TELEGRAM_SLUG, device: 'desktop', via: 'qr' },
+          });
+        }
+      }
+    } catch {
+      // The scan goes on to Telegram regardless.
+    }
+    return creationLink(manager, code);
   }
 
   /**
@@ -336,6 +382,7 @@ export class TelegramManagedBotService implements TelegramOneTap, OnApplicationB
     organizationId: string;
     userId: string;
     opened?: boolean;
+    openedVia?: 'app' | 'web';
     claimOffered?: boolean;
     device?: 'mobile' | 'desktop';
   }): Promise<TelegramOneTapStatus> {
@@ -351,7 +398,12 @@ export class TelegramManagedBotService implements TelegramOneTap, OnApplicationB
           event: ProductEvents.TELEGRAM_BOT_LINK_OPENED,
           userId: input.userId,
           organizationId: row.organizationId,
-          metadata: { adapterSlug: TELEGRAM_SLUG, ...(input.device ? { device: input.device } : {}) },
+          metadata: {
+            adapterSlug: TELEGRAM_SLUG,
+            ...(input.device ? { device: input.device } : {}),
+            // Which way in: the Telegram app, or Telegram in the browser.
+            via: input.openedVia === 'web' ? 'web' : 'app',
+          },
         });
       }
       state = { ...state, openedAt };

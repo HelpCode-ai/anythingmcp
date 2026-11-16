@@ -314,6 +314,15 @@ describe('ProductEventService.log — server-written metadata', () => {
     ]);
   });
 
+  it('keeps which way a Telegram creation link was opened', async () => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    for (const via of ['app', 'web', 'qr']) {
+      await service.log({ event: 'telegram_bot_link_opened', userId: 'u1', organizationId: 'org-1', metadata: { adapterSlug: 'telegram-bot', device: 'desktop', via } });
+    }
+    expect(create.mock.calls.map((c) => c[0].data.metadata.via)).toEqual(['app', 'web', 'qr']);
+  });
+
   it('keeps why an install from the chat added nothing', async () => {
     const create = jest.fn().mockResolvedValue({});
     const service = new ProductEventService({ productEvent: { create } } as any);
