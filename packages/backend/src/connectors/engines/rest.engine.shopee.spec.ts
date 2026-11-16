@@ -217,7 +217,8 @@ describe('opt-in: adapters signed before query signing keep the original path', 
     // SHEIN signs a header with a nonce in the key (nonceLength,
     // headerTemplate, hex-base64) and gets the shop's keys from its token
     // provider (tokenProvider "shein"): opt-in fields too, though not query signing.
-    const querySigned = ['aliexpress-affiliate', 'aliexpress-dropshipping', 'aliexpress-seller', 'falabella-seller-center', 'lazada', 'miravia', 'shein', 'shopee', 'temu', 'tiktok-shop'];
+    // Apaczka signs a form body (placement "form").
+    const querySigned = ['aliexpress-affiliate', 'apaczka', 'aliexpress-dropshipping', 'aliexpress-seller', 'falabella-seller-center', 'lazada', 'miravia', 'shein', 'shopee', 'temu', 'tiktok-shop'];
     // Ghost signs a JWT per request (signature.jwt) and never reaches the
     // canonical-string path these fields belong to.
     const hmac = listAdapters()
