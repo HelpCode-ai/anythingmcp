@@ -147,6 +147,8 @@ function context(row, source) {
   const hosts = row.hosts.map((h) => h.value);
   return {
     R: row.retailer,
+    // "the BUT seller back office", but "The Range seller back office", not "the The Range".
+    theR: /^the\s/i.test(row.retailer) ? row.retailer : `the ${row.retailer}`,
     prefix,
     KEY: `${upper}_API_KEY`,
     SHOP: `${upper}_SHOP_ID`,
@@ -318,7 +320,7 @@ function instructionsFor(row, c, usage) {
   lines.push(
     `Run your shop on ${inSentence(row)} from an AI agent: orders, acceptance, tracking and shipping, incidents, offers with prices and stock, ` +
       `offer and product imports, messages with customers and ${c.R}, returns, order documents, invoices and transactions. ` +
-      `The connector calls the ${c.R} seller platform ${c.multi ? 'of the country you choose' : `at \`${c.hosts[0]}\``} with the API key of your shop, ` +
+      `The connector calls ${c.theR} seller platform ${c.multi ? 'of the country you choose' : `at \`${c.hosts[0]}\``} with the API key of your shop, ` +
       'so it can see and do what your seller user can.',
   );
   lines.push('');
@@ -338,9 +340,9 @@ function instructionsFor(row, c, usage) {
       `Choose your country in \`${c.URL}\`: ${choices.join(', ')}. ${c.R} runs one seller platform per country, each with its own account and key; ` +
         'if you sell in several, install the connector once per country.',
     );
-    steps.push(`Sign in to the ${c.R} seller back office of that country: the address above followed by \`/login\`.`);
+    steps.push(`Sign in to ${c.theR} seller back office of that country: the address above followed by \`/login\`.`);
   } else {
-    steps.push(`Sign in to the ${c.R} seller back office: \`${loginUrl(c.hosts[0])}\`.`);
+    steps.push(`Sign in to ${c.theR} seller back office: \`${loginUrl(c.hosts[0])}\`.`);
   }
   steps.push(
     `In the back office open ${keyPathMarkdown(row)} and click **${keyButton(row)}** (or copy the existing key). Paste it into \`${c.KEY}\`. ` +
@@ -352,7 +354,7 @@ function instructionsFor(row, c, usage) {
   lines.push('');
   // The one sentence that names the platform, so the AI recognises its codes and error formats.
   lines.push(
-    `**Platform**: the ${c.R} seller back office runs on ${PLATFORM} software, so the operation codes in the tool descriptions (OR11, OF24 and so on) and the error names are those of that software.`,
+    `**Platform**: ${c.theR} seller back office runs on ${PLATFORM} software, so the operation codes in the tool descriptions (OR11, OF24 and so on) and the error names are those of that software.`,
   );
   lines.push('');
   lines.push(
@@ -362,7 +364,7 @@ function instructionsFor(row, c, usage) {
   );
   lines.push('');
   lines.push(
-    `**Products and competing offers**: \`${c.prefix}_get_products\` looks products up in the ${c.R} catalog by EAN or another reference and returns the marketplace product SKU; ` +
+    `**Products and competing offers**: \`${c.prefix}_get_products\` looks products up in ${c.theR} catalog by EAN or another reference and returns the marketplace product SKU; ` +
       `\`${c.prefix}_list_product_offers\` lists the offers of every shop for given products, best price first, at about 5 calls a minute.`,
   );
   lines.push('');
@@ -430,8 +432,8 @@ function setupGuideFor(row, c, docsUrl) {
   const openStep = {
     id: 'open-account',
     title: `Open your ${c.R} seller account`,
-    body: `Sign in to the ${c.R} seller back office. Then open the menu below and create a key, or copy the one that is already there.`,
-    action: { label: `Open the ${c.R} seller back office`, url: c.multi ? `{{${c.URL}}}/login` : loginUrl(c.hosts[0]) },
+    body: `Sign in to ${c.theR} seller back office. Then open the menu below and create a key, or copy the one that is already there.`,
+    action: { label: `Open ${c.theR} seller back office`, url: c.multi ? `{{${c.URL}}}/login` : loginUrl(c.hosts[0]) },
     values: [
       { label: 'Menu', value: capitalize(row.keyPath), pick: true },
       { label: 'Button', value: keyButton(row), pick: true, note: 'Replaces the previous key: anything else that uses the old key stops working.' },
@@ -447,7 +449,7 @@ function setupGuideFor(row, c, docsUrl) {
       },
       {
         q: 'I do not have a seller account yet',
-        a: `${sentence(row.access)}${row.sellerHelpUrl ? ` See [the ${c.R} seller page](${docsUrl}).` : ''}`,
+        a: `${sentence(row.access)}${row.sellerHelpUrl ? ` See [${c.theR} seller page](${docsUrl}).` : ''}`,
       },
     ],
   };
