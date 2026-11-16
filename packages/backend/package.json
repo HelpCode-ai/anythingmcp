@@ -52,7 +52,7 @@
     "@rekog/mcp-nest-auth": "^2.0.8",
     "@sentry/nestjs": "^11.9.0",
     "@sentry/profiling-node": "^11.9.0",
-    "@smithy/node-http-handler": "4.14.1",
+    "@smithy/node-http-handler": "4.14.2",
     "axios": "^1.20.0",
     "basic-ftp": "6.2.4",
     "bcrypt": "^6.0.0",
