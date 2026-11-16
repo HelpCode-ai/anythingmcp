@@ -174,6 +174,7 @@ import * as bubble from './intl/bubble.json';
 import * as buffer from './intl/buffer.json';
 import * as bugsnag from './intl/bugsnag.json';
 import * as buildkite from './intl/buildkite.json';
+import * as bunnings from './intl/bunnings.json';
 import * as bzzoiro from './intl/bzzoiro.json';
 import * as cafe24 from './intl/cafe24.json';
 import * as calcom from './intl/calcom.json';
@@ -213,6 +214,7 @@ import * as connecteam from './intl/connecteam.json';
 import * as constantContact from './intl/constant-contact.json';
 import * as contentful from './intl/contentful.json';
 import * as convertkit from './intl/convertkit.json';
+import * as coppel from './intl/coppel.json';
 import * as copper from './intl/copper.json';
 import * as crisp from './intl/crisp.json';
 import * as criteo from './intl/criteo.json';
@@ -396,6 +398,7 @@ import * as keycrm from './intl/keycrm.json';
 import * as kieAi from './intl/kie-ai.json';
 import * as kittl from './intl/kittl.json';
 import * as klaviyo from './intl/klaviyo.json';
+import * as kohls from './intl/kohls.json';
 import * as kommo from './intl/kommo.json';
 import * as koreaInvestment from './intl/korea-investment.json';
 import * as koreaLaw from './intl/korea-law.json';
@@ -587,6 +590,7 @@ import * as reverbListings from './intl/reverb-listings.json';
 import * as revolutBusiness from './intl/revolut-business.json';
 import * as ringcentral from './intl/ringcentral.json';
 import * as ringostat from './intl/ringostat.json';
+import * as ripley from './intl/ripley.json';
 import * as rippling from './intl/rippling.json';
 import * as rivile from './intl/rivile.json';
 import * as rocketreach from './intl/rocketreach.json';
@@ -805,12 +809,14 @@ import * as openapiCompany from './it/openapi-company.json';
 import * as teamsystem from './it/teamsystem.json';
 import * as zucchetti from './it/zucchetti.json';
 import * as borme from './es/borme.json';
+import * as bricoDepot from './es/brico-depot.json';
 import * as elCorteIngles from './es/el-corte-ingles.json';
 import * as holded from './es/holded.json';
 import * as miravia from './es/miravia.json';
 import * as pccomponentes from './es/pccomponentes.json';
 import * as quipu from './es/quipu.json';
 import * as sprinter from './es/sprinter.json';
+import * as atlasForMen from './fr/atlas-for-men.json';
 import * as auchan from './fr/auchan.json';
 import * as axonaut from './fr/axonaut.json';
 import * as boulanger from './fr/boulanger.json';
@@ -818,17 +824,25 @@ import * as bricomarche from './fr/bricomarche.json';
 import * as but from './fr/but.json';
 import * as cultura from './fr/cultura.json';
 import * as dolibarr from './fr/dolibarr.json';
+import * as eLeclerc from './fr/e-leclerc.json';
 import * as fnac from './fr/fnac.json';
 import * as frCompanyData from './fr/fr-company-data.json';
+import * as greenweez from './fr/greenweez.json';
+import * as jardilandGammVert from './fr/jardiland-gamm-vert.json';
+import * as kiabi from './fr/kiabi.json';
+import * as laPoste from './fr/la-poste.json';
 import * as laRedoute from './fr/la-redoute.json';
+import * as ldlc from './fr/ldlc.json';
 import * as manomano from './fr/manomano.json';
 import * as natureEtDecouvertes from './fr/nature-et-decouvertes.json';
 import * as octopia from './fr/octopia.json';
 import * as pennylane from './fr/pennylane.json';
+import * as privateSportShop from './fr/private-sport-shop.json';
 import * as qonto from './fr/qonto.json';
 import * as rueDuCommerce from './fr/rue-du-commerce.json';
 import * as sarenza from './fr/sarenza.json';
 import * as sellsy from './fr/sellsy.json';
+import * as ubaldi from './fr/ubaldi.json';
 import * as afasProfit from './nl/afas-profit.json';
 import * as bolCom from './nl/bol-com.json';
 import * as droppery from './nl/droppery.json';
@@ -836,8 +850,10 @@ import * as exactOnline from './nl/exact-online.json';
 import * as leenBakker from './nl/leen-bakker.json';
 import * as marktplaats from './nl/marktplaats.json';
 import * as moneybird from './nl/moneybird.json';
+import * as praxis from './nl/praxis.json';
 import * as qls from './nl/qls.json';
 import * as topdesk from './nl/topdesk.json';
+import * as vtWonen from './nl/vt-wonen.json';
 import * as falco from './be/falco.json';
 import * as inno from './be/inno.json';
 import * as nbbCbso from './be/nbb-cbso.json';
@@ -846,6 +862,7 @@ import * as tidely from './be/tidely.json';
 import * as bexio from './ch/bexio.json';
 import * as shab from './ch/shab.json';
 import * as fortnox from './se/fortnox.json';
+import * as stadium from './se/stadium.json';
 import * as vismaEaccounting from './se/visma-eaccounting.json';
 import * as eConomic from './dk/e-conomic.json';
 import * as brreg from './no/brreg.json';
@@ -1339,6 +1356,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   buffer as unknown as AdapterDefinition,
   bugsnag as unknown as AdapterDefinition,
   buildkite as unknown as AdapterDefinition,
+  bunnings as unknown as AdapterDefinition,
   bzzoiro as unknown as AdapterDefinition,
   cafe24 as unknown as AdapterDefinition,
   calcom as unknown as AdapterDefinition,
@@ -1378,6 +1396,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   constantContact as unknown as AdapterDefinition,
   contentful as unknown as AdapterDefinition,
   convertkit as unknown as AdapterDefinition,
+  coppel as unknown as AdapterDefinition,
   copper as unknown as AdapterDefinition,
   crisp as unknown as AdapterDefinition,
   criteo as unknown as AdapterDefinition,
@@ -1561,6 +1580,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   kieAi as unknown as AdapterDefinition,
   kittl as unknown as AdapterDefinition,
   klaviyo as unknown as AdapterDefinition,
+  kohls as unknown as AdapterDefinition,
   kommo as unknown as AdapterDefinition,
   koreaInvestment as unknown as AdapterDefinition,
   koreaLaw as unknown as AdapterDefinition,
@@ -1752,6 +1772,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   revolutBusiness as unknown as AdapterDefinition,
   ringcentral as unknown as AdapterDefinition,
   ringostat as unknown as AdapterDefinition,
+  ripley as unknown as AdapterDefinition,
   rippling as unknown as AdapterDefinition,
   rivile as unknown as AdapterDefinition,
   rocketreach as unknown as AdapterDefinition,
@@ -1970,12 +1991,14 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   teamsystem as unknown as AdapterDefinition,
   zucchetti as unknown as AdapterDefinition,
   borme as unknown as AdapterDefinition,
+  bricoDepot as unknown as AdapterDefinition,
   elCorteIngles as unknown as AdapterDefinition,
   holded as unknown as AdapterDefinition,
   miravia as unknown as AdapterDefinition,
   pccomponentes as unknown as AdapterDefinition,
   quipu as unknown as AdapterDefinition,
   sprinter as unknown as AdapterDefinition,
+  atlasForMen as unknown as AdapterDefinition,
   auchan as unknown as AdapterDefinition,
   axonaut as unknown as AdapterDefinition,
   boulanger as unknown as AdapterDefinition,
@@ -1983,17 +2006,25 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   but as unknown as AdapterDefinition,
   cultura as unknown as AdapterDefinition,
   dolibarr as unknown as AdapterDefinition,
+  eLeclerc as unknown as AdapterDefinition,
   fnac as unknown as AdapterDefinition,
   frCompanyData as unknown as AdapterDefinition,
+  greenweez as unknown as AdapterDefinition,
+  jardilandGammVert as unknown as AdapterDefinition,
+  kiabi as unknown as AdapterDefinition,
+  laPoste as unknown as AdapterDefinition,
   laRedoute as unknown as AdapterDefinition,
+  ldlc as unknown as AdapterDefinition,
   manomano as unknown as AdapterDefinition,
   natureEtDecouvertes as unknown as AdapterDefinition,
   octopia as unknown as AdapterDefinition,
   pennylane as unknown as AdapterDefinition,
+  privateSportShop as unknown as AdapterDefinition,
   qonto as unknown as AdapterDefinition,
   rueDuCommerce as unknown as AdapterDefinition,
   sarenza as unknown as AdapterDefinition,
   sellsy as unknown as AdapterDefinition,
+  ubaldi as unknown as AdapterDefinition,
   afasProfit as unknown as AdapterDefinition,
   bolCom as unknown as AdapterDefinition,
   droppery as unknown as AdapterDefinition,
@@ -2001,8 +2032,10 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   leenBakker as unknown as AdapterDefinition,
   marktplaats as unknown as AdapterDefinition,
   moneybird as unknown as AdapterDefinition,
+  praxis as unknown as AdapterDefinition,
   qls as unknown as AdapterDefinition,
   topdesk as unknown as AdapterDefinition,
+  vtWonen as unknown as AdapterDefinition,
   falco as unknown as AdapterDefinition,
   inno as unknown as AdapterDefinition,
   nbbCbso as unknown as AdapterDefinition,
@@ -2011,6 +2044,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bexio as unknown as AdapterDefinition,
   shab as unknown as AdapterDefinition,
   fortnox as unknown as AdapterDefinition,
+  stadium as unknown as AdapterDefinition,
   vismaEaccounting as unknown as AdapterDefinition,
   eConomic as unknown as AdapterDefinition,
   brreg as unknown as AdapterDefinition,
