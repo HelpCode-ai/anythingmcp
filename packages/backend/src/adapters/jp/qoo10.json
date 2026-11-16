@@ -1,0 +1,918 @@
+{
+  "slug": "qoo10",
+  "name": "Qoo10",
+  "description": "Qoo10 Japan seller API (QAPI) for shops on qoo10.jp: orders by shipping status, confirmation and tracking numbers, cancellation, return and exchange claims, buyer inquiries and replies, items with price, stock and option stock, shipping groups, categories and brands. Seller Authorization Key.",
+  "instructions": "## Qoo10\nThis connector works with **QAPI**, the seller API of Qoo10 Japan (`https://api.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi`), for shops that sell on qoo10.jp: orders and shipping, claims (cancellations, returns, exchanges), buyer inquiries, items with price, stock and options, shipping groups, categories and brands. Qoo10 Singapore closed in 2024 (court-ordered winding up), so only Japan is covered.\n\n**Setup (about 10 minutes, plus Qoo10's issuing time)**\n1. Log in to QSM (Qoo10 Sales Manager) and open the developer page at `https://developer.qoo10.jp/GMKT.INC.Gsm.Web/APIDev/APIDevelopPage.aspx`. Request an **API ID** (API key) under step 1. Qoo10 issues it to the seller, which can take some time; ask through the QSM chat or your Qoo10 manager if it does not appear.\n2. Create the **Seller Authorization Key** with the API ID: on the developer page, or by calling `CertificationAPI.CreateCertificationKey` with the API ID as `key` and your QSM login id and password. The answer's ResultObject is the key.\n3. Paste that key into `QOO10_SELLER_AUTH_KEY`. AnythingMCP never asks for the QSM password.\n\nThe key is sent as the `GiosisCertificationKey` header with the method's `QAPIVersion` on every call. It expires (integrators report one year) and a change of the QSM password can invalidate it: create a new one then.\n\n**Where to start**: `qoo10_list_shipping_orders` without a status lists the orders to confirm and ship; `qoo10_get_order` reads one with its claims.\n\n**Orders and shipping**: `qoo10_list_shipping_orders` (status 1 preparing, 2 requested, 3 confirmed, 4 in delivery, 5 delivered; date windows of at most 90 days in yyyyMMdd, Japan time), `qoo10_get_order`, `qoo10_confirm_order` (seller check, optional estimated shipping date and delay reason), `qoo10_set_shipping_info` (carrier name and tracking number: the order becomes shipped). `qoo10_list_claims` lists cancellations, returns and exchanges. `qoo10_cancel_order` is installed switched off: it cannot be undone and refunds the buyer.\n\n**Inquiries**: `qoo10_list_inquiries` (S1 unanswered), `qoo10_get_inquiry` for the whole thread, `qoo10_reply_inquiry` to answer (sent to the buyer).\n\n**Items**: `qoo10_list_items` (500 per page, by status: S2 on sale), `qoo10_get_item`, `qoo10_get_item_options`, `qoo10_set_price_qty` (price in yen, stock, tax rate, sales period; fields left out keep their value), `qoo10_update_option_qty` (stock of one variation, with the name, value and code from get_item_options). `qoo10_set_item_status` is switched off, because status 3 takes the item off sale. Item tools take the Qoo10 `item_code` or your own `seller_code`. Changes can take up to 10 minutes to show on the item page. `qoo10_list_shipping_groups`, `qoo10_list_categories` and `qoo10_search_brands` give the reference data. Creating items and bulk changes are not included.\n\n**Answers and errors**: every answer is HTTP 200 with `ResultCode` (0 = success), `ResultMsg` and `ResultObject`. Negative codes are errors: -10000 and -90002 to -90005 mean the key is wrong or expired, -10001 a missing item or order or a bad argument, -10101 a processing error. A platform error comes as `ErrorCode` and `ErrorMsg` instead (-90001 also for an unknown key). The connector reports both as failed calls.\n\n**Limits**: Qoo10 publishes no general rate limit; keep calls sequential. Order, claim and inquiry searches cover at most 90 days per call.",
+  "aliases": [
+    "Qoo10 Japan",
+    "QSM",
+    "QAPI",
+    "キューテン"
+  ],
+  "region": "jp",
+  "category": "e-commerce",
+  "icon": "qoo10",
+  "docsUrl": "https://api.qoo10.jp/GMKT.INC.Front.QAPIService/Document/QAPIGuideIndex.aspx",
+  "requiredEnvVars": [
+    "QOO10_SELLER_AUTH_KEY"
+  ],
+  "envVarMeta": {
+    "QOO10_SELLER_AUTH_KEY": {
+      "label": "Seller Authorization Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Created from your QAPI API ID on the QSM developer page (or with CertificationAPI.CreateCertificationKey). Paste the key itself, not the API ID.",
+      "link": "https://developer.qoo10.jp/GMKT.INC.Gsm.Web/APIDev/APIDevelopPage.aspx",
+      "pattern": "^\\S{16,500}$",
+      "patternMessage": "Paste the Seller Authorization Key only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Qoo10 refused the Seller Authorization Key (ResultCode -10000 or -9000x): it is wrong or expired. Create a new key from your API ID on the QSM developer page.",
+      "field": "QOO10_SELLER_AUTH_KEY"
+    },
+    "403": "Qoo10 says this key may not use this method. Check on the QSM developer page that the API ID is active for your shop.",
+    "404": "Qoo10 found no order, item or inquiry with that number (ResultCode -10001).",
+    "rate_limited": "Qoo10 is throttling the calls. Wait a moment and send them one after another.",
+    "unreachable": "api.qoo10.jp did not answer. Try again later."
+  },
+  "probe": {
+    "tool": "qoo10_list_shipping_groups",
+    "params": {}
+  },
+  "prerequisites": "A Qoo10 Japan seller account (QSM) and a QAPI API ID issued by Qoo10, from which you create the Seller Authorization Key. Qoo10 issues API IDs to sellers on request, which can take some time.",
+  "connector": {
+    "name": "Qoo10 QAPI",
+    "type": "REST",
+    "baseUrl": "https://api.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "GiosisCertificationKey",
+      "apiKey": "{{QOO10_SELLER_AUTH_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "ResultCode",
+          "in": [
+            -10000,
+            -90002,
+            -90003,
+            -90004,
+            -90005
+          ],
+          "messagePath": "ResultMsg",
+          "status": 401
+        },
+        {
+          "path": "ErrorCode",
+          "in": [
+            -10000,
+            -90001,
+            -90002,
+            -90003,
+            -90004,
+            -90005
+          ],
+          "messagePath": "ErrorMsg",
+          "status": 401
+        },
+        {
+          "path": "ResultCode",
+          "matches": "^-",
+          "messagePath": "ResultMsg",
+          "status": 400
+        },
+        {
+          "path": "ErrorCode",
+          "messagePath": "ErrorMsg",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "qoo10_list_shipping_orders",
+      "description": "List orders by shipping status within a date window of at most 90 days: OrderNo, PackNo, ShippingStatus, order, payment, estimated shipping, shipping and delivered dates, buyer and receiver (name, kana, phone, address), ItemNo, SellerItemCode, ItemTitle, Option, OptionCode, OrderQty, OrderPrice, Discount, Total, SettlePrice, DeliveryCompany, TrackingNo and Currency. Without a status: orders in preparation and requested (1 and 2). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipping_status": {
+            "type": "string",
+            "description": "1 preparing delivery, 2 delivery requested, 3 delivery confirmed (shipped), 4 in delivery, 5 delivered. Empty or 0: 1 and 2.",
+            "enum": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ]
+          },
+          "search_start_date": {
+            "type": "string",
+            "description": "Start of the window: yyyyMMdd or yyyyMMddHHmmss, Japan time, e.g. 20261101 or 20261101153000.",
+            "pattern": "^[0-9]{8}([0-9]{6})?$"
+          },
+          "search_end_date": {
+            "type": "string",
+            "description": "End of the window, at most 90 days after the start: yyyyMMdd or yyyyMMddHHmmss, Japan time, e.g. 20261101 or 20261101153000.",
+            "pattern": "^[0-9]{8}([0-9]{6})?$"
+          },
+          "search_condition": {
+            "type": "string",
+            "description": "Which date the window applies to: 1 order date, 2 payment date (default in the examples), 3 shipping start date, 4 delivered date.",
+            "enum": [
+              "1",
+              "2",
+              "3",
+              "4"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ShippingBasic.GetShippingInfo_v3",
+        "bodyMapping": {
+          "ShippingStatus": "$shipping_status",
+          "SearchStartDate": "$search_start_date",
+          "SearchEndDate": "$search_end_date",
+          "SearchCondition": "$search_condition",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_get_order",
+      "description": "Read one order with its delivery and claim state: shippingStatus, packNo, dates, buyer and receiver details, item (itemCode, sellerItemCode, itemTitle, option, optionCode, orderPrice, orderQty, discount, total), sender, delivery company, tracking number and any cancel, return or exchange claim. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_no": {
+            "type": "string",
+            "description": "Qoo10 order number (OrderNo), e.g. 1062428737.",
+            "pattern": "^[0-9]{6,12}$"
+          }
+        },
+        "required": [
+          "order_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ShippingBasic.GetShippingAndClaimInfoByOrderNo_V2",
+        "bodyMapping": {
+          "OrderNo": "$order_no",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_list_claims",
+      "description": "List cancellation, return and exchange claims within a date window of at most 90 days: claimStatus, reason, request and cancel or refund dates, orderNo, packNo, itemCode, sellerItemCode, itemTitle, orderQty, paymentAmount, currency, delivery company and tracking numbers (also of the return), pickup address and buyer and receiver contact. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claim_status": {
+            "type": "string",
+            "description": "1 cancel requested, 2 cancelling, 3 cancelled, 4 return requested, 5 returning, 6 returned, 11 exchange requested, 12 exchange approved, 13 re-delivering, 14 to 16 non-receipt claims. Empty: all.",
+            "enum": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "11",
+              "12",
+              "13",
+              "14",
+              "15",
+              "16"
+            ]
+          },
+          "search_start_date": {
+            "type": "string",
+            "description": "Start of the window: yyyyMMdd or yyyyMMddHHmmss, Japan time, e.g. 20261101 or 20261101153000.",
+            "pattern": "^[0-9]{8}([0-9]{6})?$"
+          },
+          "search_end_date": {
+            "type": "string",
+            "description": "End of the window, at most 90 days after the start: yyyyMMdd or yyyyMMddHHmmss, Japan time, e.g. 20261101 or 20261101153000.",
+            "pattern": "^[0-9]{8}([0-9]{6})?$"
+          },
+          "search_condition": {
+            "type": "string",
+            "description": "Which date the window applies to: 1 order date, 2 request date, 3 cancel or refund completed date.",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          }
+        },
+        "required": [
+          "search_start_date",
+          "search_end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ShippingBasic.GetClaimInfo_V3",
+        "bodyMapping": {
+          "ClaimStat": "$claim_status",
+          "search_Sdate": "$search_start_date",
+          "search_Edate": "$search_end_date",
+          "search_condition": "$search_condition",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_confirm_order",
+      "description": "Confirm an order (seller check), optionally with an estimated shipping date and a delay reason that the buyer sees. Moves the order from preparing to delivery confirmed waiting for shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_no": {
+            "type": "string",
+            "description": "Qoo10 order number (OrderNo), e.g. 1062428737.",
+            "pattern": "^[0-9]{6,12}$"
+          },
+          "estimated_ship_date": {
+            "type": "string",
+            "description": "Estimated shipping date, yyyyMMdd.",
+            "pattern": "^[0-9]{8}$"
+          },
+          "delay_type": {
+            "type": "string",
+            "description": "Reason for a later shipping date: 1 preparing the product, 2 made to order, 3 waiting for the customer, 4 other.",
+            "enum": [
+              "1",
+              "2",
+              "3",
+              "4"
+            ]
+          },
+          "delay_memo": {
+            "type": "string",
+            "description": "Note to the buyer about the delay, up to 1000 characters.",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "order_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ShippingBasic.SetSellerCheckYN_V2",
+        "bodyMapping": {
+          "OrderNo": "$order_no",
+          "EstShipDt": "$estimated_ship_date",
+          "DelayType": "$delay_type",
+          "DelayMemo": "$delay_memo",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      }
+    },
+    {
+      "name": "qoo10_set_shipping_info",
+      "description": "Register the shipment of an order: carrier name and tracking number. The order becomes shipped (delivery started) and the buyer can track it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_no": {
+            "type": "string",
+            "description": "Qoo10 order number (OrderNo), e.g. 1062428737.",
+            "pattern": "^[0-9]{6,12}$"
+          },
+          "shipping_corp": {
+            "type": "string",
+            "description": "Carrier name as Qoo10 lists it, e.g. ヤマト運輸, 佐川急便, ゆうパック, 日本郵便.",
+            "maxLength": 200
+          },
+          "tracking_no": {
+            "type": "string",
+            "description": "Tracking number, up to 50 characters.",
+            "maxLength": 50
+          }
+        },
+        "required": [
+          "order_no",
+          "shipping_corp",
+          "tracking_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ShippingBasic.SetSendingInfo",
+        "bodyMapping": {
+          "OrderNo": "$order_no",
+          "ShippingCorp": "$shipping_corp",
+          "TrackingNo": "$tracking_no",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      }
+    },
+    {
+      "name": "qoo10_list_inquiries",
+      "description": "List buyer inquiries (messages, item questions and Qoo10 help requests) within a date window: INQ_TYPE, SEQ_NO, QUESTION_NO, INQ_DT, CUST_NM, TITLE, CONTENTS, GD_NO (item), CONTR_NO (order), CLAIM_YN and STATUS. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_start_date": {
+            "type": "string",
+            "description": "Start of the window: yyyyMMdd or yyyyMMddHHmmss, Japan time, e.g. 20261101 or 20261101153000.",
+            "pattern": "^[0-9]{8}([0-9]{6})?$"
+          },
+          "search_end_date": {
+            "type": "string",
+            "description": "End of the window: yyyyMMdd or yyyyMMddHHmmss, Japan time, e.g. 20261101 or 20261101153000.",
+            "pattern": "^[0-9]{8}([0-9]{6})?$"
+          },
+          "status": {
+            "type": "string",
+            "description": "S1 unanswered, S2 in progress, S3 completed. Empty: all.",
+            "enum": [
+              "S1",
+              "S2",
+              "S3"
+            ]
+          }
+        },
+        "required": [
+          "search_start_date",
+          "search_end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/CSCenter.GetInquiryMessage",
+        "bodyMapping": {
+          "search_start_dt": "$search_start_date",
+          "search_end_dt": "$search_end_date",
+          "proc_status": "$status",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_get_inquiry",
+      "description": "Read the whole conversation of one inquiry: every message (SeqNo, Sender, ReqDate, Title, Contents, Status) with up to four attachment names and links. HELP inquiries are not supported here. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_type": {
+            "type": "string",
+            "description": "MSG (message about an order) or ITEM (question about an item).",
+            "enum": [
+              "MSG",
+              "ITEM"
+            ]
+          },
+          "question_no": {
+            "type": "string",
+            "description": "QUESTION_NO from qoo10_list_inquiries.",
+            "pattern": "^[0-9]{1,12}$"
+          }
+        },
+        "required": [
+          "inquiry_type",
+          "question_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/CSCenter.GetInquiryMessageByQuestionNo",
+        "bodyMapping": {
+          "InqType": "$inquiry_type",
+          "QuestionNo": "$question_no",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_reply_inquiry",
+      "description": "Answer a buyer inquiry. The reply is sent to the buyer and the inquiry is marked as answered. Answers the SEQ_NO of the reply.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_type": {
+            "type": "string",
+            "description": "MSG, HELP or ITEM, as INQ_TYPE in qoo10_list_inquiries.",
+            "enum": [
+              "MSG",
+              "HELP",
+              "ITEM"
+            ]
+          },
+          "question_no": {
+            "type": "string",
+            "description": "QUESTION_NO from qoo10_list_inquiries.",
+            "pattern": "^[0-9]{1,12}$"
+          },
+          "seq_no": {
+            "type": "string",
+            "description": "SEQ_NO of the message you answer, from qoo10_list_inquiries.",
+            "pattern": "^[0-9]{1,12}$"
+          },
+          "contents": {
+            "type": "string",
+            "description": "Reply text, up to 4000 characters.",
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "inquiry_type",
+          "question_no",
+          "seq_no",
+          "contents"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/CSCenter.SetInquiryMessage",
+        "bodyMapping": {
+          "inq_type": "$inquiry_type",
+          "question_no": "$question_no",
+          "seq_no": "$seq_no",
+          "contents": "$contents",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      }
+    },
+    {
+      "name": "qoo10_list_items",
+      "description": "List the seller items in one status, 500 per page: TotalItems, TotalPages, PresentPage and per item ItemCode, SellerCode and ItemStatus. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_status": {
+            "type": "string",
+            "description": "S2 on sale (default), S1 in preparation, S3 suspended, S0 waiting for review, S5 restricted, S8 not approved.",
+            "enum": [
+              "S0",
+              "S1",
+              "S2",
+              "S3",
+              "S5",
+              "S8"
+            ],
+            "default": "S2"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        "required": [
+          "item_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemsLookup.GetAllGoodsInfo",
+        "bodyMapping": {
+          "ItemStatus": "$item_status",
+          "Page": "$page",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_get_item",
+      "description": "Read one item: ItemCode, ItemStatus, ItemTitle, categories, SellerCode, brand, RetailPrice, ItemPrice, TaxRate, SettlePrice, ItemQty, ExpireDate, shipping group (ShippingNo), available shipping date and more. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_code": {
+            "type": "string",
+            "description": "Qoo10 item code (ItemCode of qoo10_list_items), e.g. 1234567890. Give this or seller_code.",
+            "pattern": "^[0-9]{6,12}$"
+          },
+          "seller_code": {
+            "type": "string",
+            "description": "Your own item code (SellerCode), used when item_code is not given."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemsLookup.GetItemDetailInfo",
+        "bodyMapping": {
+          "ItemCode": "$item_code",
+          "SellerCode": "$seller_code",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.2"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_get_item_options",
+      "description": "Combined options (variations) of one item with their stock: Name1 to Name5 and Value1 to Value5, Price (surcharge), Qty and the option code. Use these values with qoo10_update_option_qty. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_code": {
+            "type": "string",
+            "description": "Qoo10 item code (ItemCode of qoo10_list_items), e.g. 1234567890. Give this or seller_code.",
+            "pattern": "^[0-9]{6,12}$"
+          },
+          "seller_code": {
+            "type": "string",
+            "description": "Your own item code (SellerCode), used when item_code is not given."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemsLookup.GetGoodsInventoryInfo",
+        "bodyMapping": {
+          "ItemCode": "$item_code",
+          "SellerCode": "$seller_code",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_list_shipping_groups",
+      "description": "The seller shipping fee groups: ShippingNo, ShippingFee, ShippingType, FreeCondition (free shipping threshold), Region, Oversea and carrier name. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemsLookup.GetSellerDeliveryGroupInfo",
+        "bodyMapping": {
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_list_categories",
+      "description": "The whole Qoo10 category list: large, middle and small category codes and names (CATE_L_CD, CATE_M_CD, CATE_S_CD). Large answer: fetch once. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "description": "Language of the names: JA (default), EN, KO or ZH-CN.",
+            "enum": [
+              "JA",
+              "EN",
+              "KO",
+              "ZH-CN"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/CommonInfoLookup.GetCatagoryListAll",
+        "bodyMapping": {
+          "lang_cd": "$language",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_search_brands",
+      "description": "Search Qoo10 brands by keyword: M_B_NO (brand number), M_B_NM and M_B_NM_EN. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Brand name or part of it, up to 50 characters.",
+            "maxLength": 50
+          }
+        },
+        "required": [
+          "keyword"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/CommonInfoLookup.SearchBrand",
+        "bodyMapping": {
+          "keyword": "$keyword",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "qoo10_set_price_qty",
+      "description": "Change the price, stock quantity, tax rate or sales period of one item. Fields left out keep their value. The item page can take up to 10 minutes to show the change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_code": {
+            "type": "string",
+            "description": "Qoo10 item code (ItemCode of qoo10_list_items), e.g. 1234567890. Give this or seller_code.",
+            "pattern": "^[0-9]{6,12}$"
+          },
+          "seller_code": {
+            "type": "string",
+            "description": "Your own item code (SellerCode), used when item_code is not given."
+          },
+          "price": {
+            "type": "string",
+            "description": "New selling price in yen, digits only, e.g. 1980.",
+            "pattern": "^[0-9]{1,9}$"
+          },
+          "qty": {
+            "type": "string",
+            "description": "New stock quantity, digits only.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "tax_rate": {
+            "type": "string",
+            "description": "Consumption tax rate: S (default rate), 10, 8 or 0.",
+            "enum": [
+              "S",
+              "10",
+              "8",
+              "0"
+            ]
+          },
+          "expire_date": {
+            "type": "string",
+            "description": "Last day of sale, yyyy-mm-dd.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start of sale, yyyy-mm-dd or yyyy-mm-dd hh:mm in 30-minute steps."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemsOrder.SetGoodsPriceQty",
+        "bodyMapping": {
+          "ItemCode": "$item_code",
+          "SellerCode": "$seller_code",
+          "Price": "$price",
+          "Qty": "$qty",
+          "TaxRate": "$tax_rate",
+          "ExpireDate": "$expire_date",
+          "StartDate": "$start_date",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.1"
+        }
+      }
+    },
+    {
+      "name": "qoo10_update_option_qty",
+      "description": "Set the stock quantity of one combined option (variation) of an item, identified by its option name, value and code as qoo10_get_item_options shows them. The item page can take up to 10 minutes to show the change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_code": {
+            "type": "string",
+            "description": "Qoo10 item code (ItemCode of qoo10_list_items), e.g. 1234567890. Give this or seller_code.",
+            "pattern": "^[0-9]{6,12}$"
+          },
+          "seller_code": {
+            "type": "string",
+            "description": "Your own item code (SellerCode), used when item_code is not given."
+          },
+          "option_name": {
+            "type": "string",
+            "description": "Option name, e.g. カラー."
+          },
+          "option_value": {
+            "type": "string",
+            "description": "Option value, e.g. RED."
+          },
+          "option_code": {
+            "type": "string",
+            "description": "Seller option code, e.g. Red_S."
+          },
+          "qty": {
+            "type": "integer",
+            "description": "New stock quantity of the option.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "option_name",
+          "option_value",
+          "option_code",
+          "qty"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemsOptions.UpdateInventoryQtyUnit",
+        "bodyMapping": {
+          "ItemCode": "$item_code",
+          "SellerCode": "$seller_code",
+          "OptionName": "$option_name",
+          "OptionValue": "$option_value",
+          "OptionCode": "$option_code",
+          "Qty": "$qty",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      }
+    },
+    {
+      "name": "qoo10_set_item_status",
+      "description": "Change the trading status of one item: 1 on queue (hidden), 2 available, 3 discontinued (deleted from sale). Taking an item off sale affects buyers immediately.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_code": {
+            "type": "string",
+            "description": "Qoo10 item code (ItemCode of qoo10_list_items), e.g. 1234567890. Give this or seller_code.",
+            "pattern": "^[0-9]{6,12}$"
+          },
+          "seller_code": {
+            "type": "string",
+            "description": "Your own item code (SellerCode), used when item_code is not given."
+          },
+          "status": {
+            "type": "string",
+            "description": "1 on queue, 2 available, 3 discontinued.",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ItemsBasic.EditGoodsStatus",
+        "bodyMapping": {
+          "ItemCode": "$item_code",
+          "SellerCode": "$seller_code",
+          "Status": "$status",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      }
+    },
+    {
+      "name": "qoo10_cancel_order",
+      "description": "Cancel an order as the seller. Cannot be undone; the buyer is refunded and the cancellation counts against the shop.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_no": {
+            "type": "string",
+            "description": "Qoo10 order number (OrderNo), e.g. 1062428737.",
+            "pattern": "^[0-9]{6,12}$"
+          },
+          "cancel_reason": {
+            "type": "string",
+            "description": "Empty: out of stock; 1 order edited; 2 undeliverable region; 3 shipping delay.",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "seller_memo": {
+            "type": "string",
+            "description": "Message to the buyer, up to 1000 characters.",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "order_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Claim.SetCancelProcess",
+        "bodyMapping": {
+          "ContrNo": "$order_no",
+          "CancelReason": "$cancel_reason",
+          "SellerMemo": "$seller_memo",
+          "returnType": "application/json"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "headers": {
+          "QAPIVersion": "1.0"
+        }
+      }
+    }
+  ]
+}
