@@ -1,4 +1,11 @@
 import { APP_VERSION } from '../common/app-version';
+import { FileUploadService } from '../file-uploads/file-upload.service';
+import {
+  FILE_PUBLIC_URL_TOOL,
+  FILE_UPLOAD_LINK_TOOL,
+  fileParamNames,
+  withFileRefHints,
+} from '../file-uploads/file-upload-params';
 import {
   Controller,
   Post,
@@ -347,6 +354,7 @@ export class McpEndpointController {
     @Optional() private readonly refusals?: CrossWorkspaceRefusalStore,
     @Optional() private readonly learning?: LearningService,
     @Optional() private readonly clientSeen?: McpClientSeenRegistry,
+    @Optional() private readonly fileUploads?: FileUploadService,
   ) {
     this.sharedCalls = productEvents && prisma ? new SharedToolCallRecorder(prisma, productEvents) : null;
     this.toolsListed = productEvents && prisma ? new ToolsListedRecorder(prisma, productEvents) : null;
@@ -2063,6 +2071,90 @@ export class McpEndpointController {
   }
 
   /**
+   * file_upload_link and file_public_url: how an AI client hands a file it
+   * created (in its code sandbox) to a connector tool. The workspace and the
+   * user come from the MCP session, never from the arguments.
+   */
+  private fileUploadEntries(invocationContext: InvocationContext, registeredNames: Set<string>): ToolEntry[] {
+    const uploads = this.fileUploads;
+    const orgId = invocationContext.organizationId;
+    if (!uploads || !orgId) return [];
+    const asText = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
+    const asError = (err: unknown) => ({
+      content: [{ type: 'text' as const, text: (err as { message?: string })?.message ?? String(err) }],
+      isError: true,
+    });
+    const out: ToolEntry[] = [];
+    if (!registeredNames.has(FILE_UPLOAD_LINK_TOOL)) {
+      const description =
+        'Upload a file you created (in your code sandbox) so a connector tool can use it, when the tool asks for a file URL and the file ' +
+        'has no public link: a listing photo, a ZIP for a digital product, a PDF, a video. Returns a one-time upload URL, the curl command to ' +
+        'run in your sandbox, and a file_ref ("amcp-file:<id>"). Pass file_ref as the tool\'s file parameter (e.g. file_url, image_url). ' +
+        'Files are deleted a few hours after upload. Program files are refused.';
+      out.push({
+        name: FILE_UPLOAD_LINK_TOOL,
+        sig: `${FILE_UPLOAD_LINK_TOOL}|${description}`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            FILE_UPLOAD_LINK_TOOL,
+            {
+              description,
+              inputSchema: {
+                filename: z.string().describe('File name with its extension, e.g. "mug-front.png" or "planner-pages.zip".'),
+                size_bytes: z.number().int().positive().optional().describe('The file size in bytes, if known: refused early when over the limit.'),
+              },
+              annotations: { title: 'Upload a file', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+            },
+            async (args: { filename: string; size_bytes?: number }) => {
+              try {
+                return asText(
+                  await uploads.createLink({
+                    organizationId: orgId,
+                    userId: invocationContext.userId ?? null,
+                    mcpServerId: invocationContext.mcpServerId ?? null,
+                    filename: args.filename,
+                    sizeBytes: args.size_bytes ?? null,
+                  }),
+                );
+              } catch (err) {
+                return asError(err);
+              }
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+    if (!registeredNames.has(FILE_PUBLIC_URL_TOOL)) {
+      const description =
+        'A public download link (valid one hour) for a file uploaded with file_upload_link, for tools where the app fetches the file ' +
+        'itself from a URL (e.g. a product image src). Images (JPG, PNG, GIF, WebP), videos (MP4, MOV) and PDFs only. Anyone with the link ' +
+        'can download the file until it expires, so prefer passing file_ref directly when the tool takes a file.';
+      out.push({
+        name: FILE_PUBLIC_URL_TOOL,
+        sig: `${FILE_PUBLIC_URL_TOOL}|${description}`,
+        register: (mcpServer: McpServer) =>
+          mcpServer.registerTool(
+            FILE_PUBLIC_URL_TOOL,
+            {
+              description,
+              inputSchema: {
+                file_ref: z.string().describe('The "amcp-file:<id>" reference from file_upload_link.'),
+              },
+              annotations: { title: 'Public link to an uploaded file', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+            },
+            async (args: { file_ref: string }) => {
+              try {
+                return asText(await uploads.publicUrl(args.file_ref, orgId));
+              } catch (err) {
+                return asError(err);
+              }
+            },
+          ) as unknown as ToolHandle,
+      });
+    }
+    return out;
+  }
+
+  /**
    * Compute the ordered set of tool registrations for a server, plus a content
    * signature used to detect when the set has actually changed. Pure: builds
    * registration thunks but does not touch any McpServer.
@@ -2079,6 +2171,7 @@ export class McpEndpointController {
     const registeredNames = new Set<string>();
     // The connector that holds each bare name.
     const bareOwner = new Map<string, string>();
+    const uploadsOn = !!(this.fileUploads?.enabled() && invocationContext.organizationId);
     const listed = serverTools.filter(
       (tool) =>
         // A connector that is not set up yet would only produce errors.
@@ -2119,10 +2212,14 @@ export class McpEndpointController {
       if (registeredNames.has(exposedName)) continue;
       registeredNames.add(exposedName);
 
-      const schema = this.stripEnvVarParams(
+      const stripped = this.stripEnvVarParams(
         tool.parameters,
         tool.connectorConfig.envVars,
       );
+      // A file parameter also takes an uploaded file's reference (amcp-file:).
+      const schema = uploadsOn
+        ? withFileRefHints(stripped, tool.endpointMapping?.bodyMapping)
+        : stripped;
       const zodShape = this.jsonSchemaToZodShape(schema);
       if (captureIntent) {
         zodShape._intent = z.string().optional().describe(INTENT_DESCRIPTION);
@@ -2259,6 +2356,14 @@ export class McpEndpointController {
           ) as unknown as ToolHandle;
         },
       });
+    }
+
+    // Agent file uploads: only on servers with a tool that sends a file.
+    if (uploadsOn && listed.some((t) => fileParamNames(t.endpointMapping?.bodyMapping).length > 0)) {
+      for (const entry of this.fileUploadEntries(invocationContext, registeredNames)) {
+        registeredNames.add(entry.name);
+        entries.push(entry);
+      }
     }
 
     // Inject the org-level Knowledge Graph helper tool. Lets the agent ask

@@ -1075,6 +1075,14 @@ instead of a text field containing the URL. Declare the parameter with `"type": 
 "format": "uri"` so the model knows to pass a link. `__file` in a `form-urlencoded` body is a
 configuration error — that encoding cannot carry a file at all.
 
+The same parameter also accepts an uploaded file's reference, `amcp-file:<id>`. An AI client
+that created the file in its own code sandbox calls the built-in `file_upload_link` tool, sends
+the file to the one-time URL it returns with `curl`, and passes the reference instead of a URL.
+The engine then reads the file from AnythingMCP's own storage, only for a tool of the workspace
+that uploaded it. Nothing to declare in the tool: every `__file` parameter gets this, and the
+MCP endpoint adds a sentence about it to the parameter's description. See
+[File uploads from AI clients](connectors/file-uploads.md).
+
 ### JSON-encoded fields (`__json`)
 
 Some APIs take a method's arguments as one field holding JSON text, e.g. a form body

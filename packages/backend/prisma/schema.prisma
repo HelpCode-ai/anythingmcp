@@ -2161,3 +2161,36 @@ model FileAccessRule {
   @@index([organizationId])
   @@map("file_access_rules")
 }
+
+/// Files an AI client uploads through a one-time link (file_upload_link), so a
+/// connector tool can send them (`amcp-file:<id>` in a __file parameter) or a
+/// provider can fetch them through a short-lived public URL. Kept a few hours,
+/// then deleted by FileUploadService's sweep. No foreign keys on purpose: the
+/// rows outlive a deleted workspace or user until the sweep has removed the
+/// stored file, which a cascade would orphan.
+model FileUpload {
+  id              String    @id
+  organizationId  String    @map("organization_id")
+  createdByUserId String?   @map("created_by_user_id")
+  mcpServerId     String?   @map("mcp_server_id")
+  filename        String
+  mimeType        String?   @map("mime_type")
+  maxBytes        Int       @map("max_bytes")
+  bytes           Int?
+  sha256          String?
+  storageKey      String    @map("storage_key")
+  tokenHash       String    @unique @map("token_hash")
+  /// pending | uploading | ready | failed | purged
+  state           String    @default("pending")
+  uploadBy        DateTime  @map("upload_by")
+  expiresAt       DateTime? @map("expires_at")
+  useCount        Int       @default(0) @map("use_count")
+  publicDownloads Int       @default(0) @map("public_downloads")
+  purgedAt        DateTime? @map("purged_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([organizationId, createdAt])
+  @@index([state, expiresAt])
+  @@index([createdAt])
+  @@map("file_uploads")
+}

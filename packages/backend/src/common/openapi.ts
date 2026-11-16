@@ -128,6 +128,11 @@ export const OPENAPI_TAGS: ReadonlyArray<{ name: string; description: string }> 
       'Temporary download links for files from your folders or written by the AI, internal or public, with limits and revoke.',
   },
   {
+    name: 'File uploads',
+    description:
+      'One-time upload links an AI client uses to hand a file it created to a connector tool, and short-lived public links to those files.',
+  },
+  {
     name: 'MCP OAuth',
     description:
       'OAuth redirect targets for connectors that sign in at the provider, shared or per user.',

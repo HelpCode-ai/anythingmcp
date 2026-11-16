@@ -1996,6 +1996,65 @@ describe('RestEngine', () => {
       appendSpy.mockRestore();
     });
 
+    it('reads an amcp-file reference from the uploads store for the connector workspace, without downloading anything', async () => {
+      const fileUploads = {
+        resolveForEngine: jest.fn().mockResolvedValue({
+          buffer: Buffer.from('zip-bytes'),
+          filename: 'planner pages.zip',
+          contentType: 'application/zip',
+        }),
+      };
+      const withUploads = new RestEngine(
+        mockOAuth2TokenService,
+        mockLoginTokenService,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        fileUploads as any,
+      );
+      mockedAxios.mockResolvedValueOnce({ data: { listing_file_id: 9 } });
+      const appendSpy = jest.spyOn(FormData.prototype, 'append');
+
+      const result = await withUploads.execute(
+        { baseUrl: 'https://openapi.etsy.com', authType: 'NONE', organizationId: 'org-1' },
+        {
+          method: 'POST',
+          path: '/v3/application/shops/1/listings/2/files',
+          bodyEncoding: 'form-data',
+          bodyMapping: { file: { __file: '$file_url' }, name: '$name' },
+        },
+        { file_url: ' amcp-file:0123456789abcdef01234567 ', name: 'Planner' },
+      );
+
+      expect(result).toEqual({ listing_file_id: 9 });
+      expect(fileUploads.resolveForEngine).toHaveBeenCalledWith('amcp-file:0123456789abcdef01234567', 'org-1');
+      expect(mockedFetchOutbound).not.toHaveBeenCalled();
+      expect(appendSpy).toHaveBeenCalledWith(
+        'file',
+        expect.any(Buffer),
+        expect.objectContaining({ filename: 'planner_pages.zip', contentType: 'application/zip' }),
+      );
+      appendSpy.mockRestore();
+    });
+
+    it('refuses an amcp-file reference when the uploads store is not available', async () => {
+      await expect(
+        engine.execute(
+          { baseUrl: 'https://openapi.etsy.com', authType: 'NONE', organizationId: 'org-1' },
+          {
+            method: 'POST',
+            path: '/v3/application/shops/1/listings/2/files',
+            bodyEncoding: 'form-data',
+            bodyMapping: { file: { __file: '$file_url' } },
+          },
+          { file_url: 'amcp-file:0123456789abcdef01234567' },
+        ),
+      ).rejects.toThrow(/not available on this server/);
+      expect(mockedFetchOutbound).not.toHaveBeenCalled();
+    });
+
     it('names the part after the redirected finalUrl, not the original short link', async () => {
       mockedFetchOutbound.mockResolvedValueOnce(
         fetchResult({

@@ -21,6 +21,7 @@ import { MemberVisibilityModule } from './settings/member-visibility.module';
 import { RolesModule } from './roles/roles.module';
 import { KgModule } from './knowledge-graph/kg.module';
 import { MemoryModule } from './memory/memory.module';
+import { FileUploadsModule } from './file-uploads/file-uploads.module';
 import { KnowledgeFoldersModule } from './knowledge-folders/knowledge-folders.module';
 import { McpServersModule } from './mcp-servers/mcp-servers.module';
 import { FileSearchModule } from './file-search/file-search.module';
@@ -182,6 +183,7 @@ if (useOAuth) {
     RolesModule,
     KgModule,
     MemoryModule,
+    FileUploadsModule,
     KnowledgeFoldersModule,
     McpServersModule,
     FileSearchModule,
