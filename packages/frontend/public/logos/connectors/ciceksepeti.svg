@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Çiçeksepeti connector">
+  <rect width="128" height="128" rx="24" fill="#2DB34A"/>
+  <path d="M86 44c-5-7-12-11-22-11-18 0-30 13-30 31s12 31 30 31c10 0 17-4 22-11l-10-8c-3 4-7 7-12 7-10 0-17-8-17-19s7-19 17-19c5 0 9 3 12 7Z" fill="#fff"/>
+  <path d="M62 98h8l-2 10h-6Z" fill="#fff"/>
+</svg>

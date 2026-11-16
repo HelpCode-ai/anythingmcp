@@ -1,0 +1,1644 @@
+{
+  "slug": "cafe24",
+  "name": "Cafe24",
+  "description": "Cafe24 Admin API for shops built on Cafe24 in Korea and Japan: orders, items and receivers, shipments with tracking numbers, cancellation, return and exchange claims, products, variants and stock, categories, carriers, customers, product boards and the dashboard. OAuth app per mall.",
+  "instructions": "## Cafe24\nThis connector works with the **Cafe24 Admin API** (`https://<mall_id>.cafe24api.com/api/v2/admin`, version 2026-09-01), for shops built on Cafe24 in Korea and Japan: orders, items, receivers, shipments with tracking numbers, cancellation, return and exchange claims, products, variants and stock, categories, carriers, customers, boards (product questions and reviews) and the dashboard.\n\n**Setup (about 15 minutes)**\n1. Sign in at `https://developers.cafe24.com` with a Cafe24 account and add an app (**Apps, App management**). Under the app's development information copy the **Client ID** into `CAFE24_CLIENT_ID` and the **Client Secret** into `CAFE24_CLIENT_SECRET`.\n2. Set the app's **Redirect URI** to `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud (or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself). Cafe24 accepts https addresses with a domain only.\n3. Under **Permissions** tick: store read, order read and write, product read and write, category read, shipping read, personal information read, community read and write (the scopes `mall.read_store, mall.read_order, mall.write_order, mall.read_product, mall.write_product, mall.read_category, mall.read_shipping, mall.read_privacy, mall.read_community, mall.write_community`).\n4. Enter your mall id (the first part of `<mall_id>.cafe24.com`) in `CAFE24_MALL_ID` and install the connector.\n5. Click **Authorize with Provider** on the connector page and sign in as the mall's **representative operator** (대표 운영자): sub-operators get access_denied. An app that has not been through Cafe24's App Store review can be installed on up to 5 malls, which is enough for your own shop.\n\nTokens: the access token lasts 2 hours and the refresh token 2 weeks; each refresh returns a new refresh token, which the connector stores. Cafe24 allows only 15 token requests per 2 hours per mall, so the connector renews only near expiry. If the connector is idle for more than 2 weeks, authorize again.\n\n**Where to start**: `cafe24_get_dashboard` for today's figures, then `cafe24_list_orders` with start_date, end_date and order_status N20,N21 (to ship), embed items,receivers.\n\n**Orders**: `cafe24_list_orders` (start_date and end_date together, at most 3 months), `cafe24_count_orders`, `cafe24_get_order`, `cafe24_list_order_items`, `cafe24_get_order_receivers`, `cafe24_get_claim` (cancellation, return or exchange by claim code). Status codes: N00 awaiting payment, N10 in progress, N20 preparing, N21 awaiting shipment, N22 on hold, N30 in transit, N40 delivered, N50 purchase confirmed; C cancellation, R return and E exchange codes. Formats: order_id `20260710-0000013`, order_item_code `20260710-0000013-01`, shipping_code `D-20260710-0000013-00`.\n\n**Shipping**: `cafe24_list_carriers` gives the 4-digit carrier codes (0006 CJ Korea Express, 0019 Lotte, 0018 Hanjin, 0083 Sagawa, 0084 Yamato). `cafe24_update_order_status` moves an order to prepare or hold; `cafe24_create_shipment` registers the tracking number (standby or shipping); `cafe24_update_shipment` changes the status to shipped, or corrects the tracking number; `cafe24_list_order_shipments` lists them. Cancelling, returns, exchanges and refunds are not included, because they return money.\n\n**Products and stock**: `cafe24_list_products`, `cafe24_count_products`, `cafe24_get_product`, `cafe24_update_product` (prices, name, codes, summary), `cafe24_list_variants`, `cafe24_update_variant`, `cafe24_get_inventory` and `cafe24_update_inventory` (quantity is the available stock). `cafe24_set_product_display` is switched off at install: F hides the product or takes it off sale. `cafe24_list_categories` lists the categories.\n\n**Customers and boards**: `cafe24_search_customers` reads personal data (permission mall.read_privacy). `cafe24_list_boards` and `cafe24_list_board_articles` (Korean and Japanese stores only) show product questions and reviews with their reply status; `cafe24_add_board_comment` answers publicly. `cafe24_get_store` and `cafe24_list_shops` describe the mall; every tool takes `shop_no` (default 1) for multi-shop malls.\n\n**Paging and limits**: lists take `limit` and `offset` (orders up to 1000 per page and offset 15000, products 100 and 5000, then since_product_no). Cafe24 allows bursts of 40 calls draining at 2 per second per mall (header X-Api-Call-Limit) and 3,000 calls per 10 minutes per token; above that it answers 429. Errors are `error` with `code` and `message`; 422 names the invalid field.",
+  "aliases": [
+    "카페24",
+    "Cafe24 Shop",
+    "Cafe24 Admin API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "cafe24",
+  "docsUrl": "https://apidocs.cafe24.com/en/docs/guide/intro",
+  "requiredEnvVars": [
+    "CAFE24_MALL_ID",
+    "CAFE24_CLIENT_ID",
+    "CAFE24_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "CAFE24_MALL_ID": {
+      "label": "Mall ID",
+      "kind": "setting",
+      "help": "The first part of your Cafe24 address: for myshop.cafe24.com enter myshop.",
+      "example": "myshop",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,31}$",
+      "patternMessage": "Enter only the mall id in lower case, e.g. myshop, without https:// and without .cafe24.com."
+    },
+    "CAFE24_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Cafe24 Developers, your app, development information: Client ID.",
+      "link": "https://developers.cafe24.com",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$",
+      "patternMessage": "Paste the Client ID only, without spaces."
+    },
+    "CAFE24_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Cafe24 Developers, your app, development information: Client Secret.",
+      "link": "https://developers.cafe24.com",
+      "pattern": "^\\S{8,128}$",
+      "patternMessage": "Paste the Client Secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Cafe24 refused the access token. Click Authorize with Provider again; the refresh token lasts 2 weeks.",
+    "403": "The app lacks the permission (scope) for this call, or the shop blocks it. Tick the permission in Cafe24 Developers and authorize again.",
+    "404": {
+      "hint": "Cafe24 found no mall, order or product here. Check the mall id and the order id or product number.",
+      "field": "CAFE24_MALL_ID"
+    },
+    "rate_limited": "Cafe24 allows bursts of 40 calls draining at 2 per second per mall. Wait a few seconds and try again.",
+    "access_denied": "Only the representative operator of the mall can authorize an app. Sign in with that account.",
+    "invalid_scope": "A requested scope is not ticked under the app permissions in Cafe24 Developers. Tick all the scopes listed in the setup and authorize again.",
+    "unreachable": {
+      "hint": "No Cafe24 mall answers at this mall id. Check the first part of your cafe24.com address.",
+      "field": "CAFE24_MALL_ID"
+    }
+  },
+  "probe": {
+    "tool": "cafe24_get_store",
+    "params": {}
+  },
+  "prerequisites": "A Cafe24 mall (Korea or Japan) where you are the representative operator, and a free Cafe24 Developers account to create the app. About 15 minutes.",
+  "connector": {
+    "name": "Cafe24 Admin API",
+    "type": "REST",
+    "baseUrl": "https://{{CAFE24_MALL_ID}}.cafe24api.com/api/v2/admin",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{CAFE24_CLIENT_ID}}",
+      "clientSecret": "{{CAFE24_CLIENT_SECRET}}",
+      "authorizationUrl": "https://{{CAFE24_MALL_ID}}.cafe24api.com/api/v2/oauth/authorize",
+      "tokenUrl": "https://{{CAFE24_MALL_ID}}.cafe24api.com/api/v2/oauth/token",
+      "tokenAuthMethod": "client_secret_basic",
+      "scopes": "mall.read_store,mall.read_order,mall.write_order,mall.read_product,mall.write_product,mall.read_category,mall.read_shipping,mall.read_privacy,mall.read_community,mall.write_community"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "X-Cafe24-Api-Version": "2026-09-01",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "cafe24_get_store",
+      "description": "The mall: shop_name, mall_id, base and primary domain, company name, country, email, phone, customer service details and mall URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/store",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_shops",
+      "description": "The shops of the mall (up to 6, for different languages or currencies): shop_no, default, shop_name, language_code, currency_code, timezone, active and primary domain. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shops"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_get_dashboard",
+      "description": "Store dashboard: daily, weekly and monthly sales figures, sold-out product count, new members and recent board posts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dashboard",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_orders",
+      "description": "List orders: order_id, order_date, payment_date, paid, canceled, payment_method, payment_amount, currency, member_id, billing_name, shipping_status and amounts; with embed also items (order_item_code, product, option, quantity, status), receivers and buyer. start_date and end_date go together, at most 3 months. Up to 1000 per page, offset up to 15000. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period (send with end_date; at most 3 months per call): YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, store time (KST for Korean malls).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, store time (KST for Korean malls).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "date_type": {
+            "type": "string",
+            "description": "Which date the period applies to: order_date (default), pay_date, shipbegin_date, shipend_date, cancel_date, purchaseconfirmation_date, updatereceiver_date.",
+            "enum": [
+              "order_date",
+              "pay_date",
+              "shipbegin_date",
+              "shipend_date",
+              "cancel_date",
+              "place_date",
+              "purchaseconfirmation_date",
+              "updatereceiver_date",
+              "cancel_request_date",
+              "return_request_date",
+              "exchange_request_date",
+              "accept_date",
+              "complete_date"
+            ]
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Order ids, comma-separated, up to 100."
+          },
+          "order_status": {
+            "type": "string",
+            "description": "Order item status codes, comma-separated: N00 awaiting payment, N10 order in progress, N20 preparing shipment, N21 awaiting shipment, N22 shipment on hold, N30 in transit, N40 delivered, N50 purchase confirmed; C00 cancel requested and other C codes; R00 return requested and other R codes; E00 exchange requested and other E codes."
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "F unpaid, M partly paid, T paid, A awaiting deposit, P partly refunded.",
+            "enum": [
+              "F",
+              "M",
+              "T",
+              "A",
+              "P"
+            ]
+          },
+          "member_id": {
+            "type": "string",
+            "description": "Customer member id."
+          },
+          "buyer_name": {
+            "type": "string",
+            "description": "Buyer name."
+          },
+          "product_no": {
+            "type": "string",
+            "description": "Product number contained in the order.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "embed": {
+            "type": "string",
+            "description": "Sub-resources to include, comma-separated: items, receivers, buyer, return, cancellation, exchange."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Orders to skip, at most 15000.",
+            "minimum": 0,
+            "maximum": 15000,
+            "default": 0
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "date_type": "$date_type",
+          "order_id": "$order_id",
+          "order_status": "$order_status",
+          "payment_status": "$payment_status",
+          "member_id": "$member_id",
+          "buyer_name": "$buyer_name",
+          "product_no": "$product_no",
+          "shop_no": "$shop_no",
+          "embed": "$embed",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_count_orders",
+      "description": "Count the orders that match the same filters as cafe24_list_orders: count.count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start of the period (send with end_date; at most 3 months per call): YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, store time (KST for Korean malls).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End of the period: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, store time (KST for Korean malls).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "date_type": {
+            "type": "string",
+            "description": "Which date the period applies to: order_date (default), pay_date, shipbegin_date, shipend_date, cancel_date, purchaseconfirmation_date, updatereceiver_date.",
+            "enum": [
+              "order_date",
+              "pay_date",
+              "shipbegin_date",
+              "shipend_date",
+              "cancel_date",
+              "place_date",
+              "purchaseconfirmation_date",
+              "updatereceiver_date",
+              "cancel_request_date",
+              "return_request_date",
+              "exchange_request_date",
+              "accept_date",
+              "complete_date"
+            ]
+          },
+          "order_id": {
+            "type": "string",
+            "description": "Order ids, comma-separated, up to 100."
+          },
+          "order_status": {
+            "type": "string",
+            "description": "Order item status codes, comma-separated: N00 awaiting payment, N10 order in progress, N20 preparing shipment, N21 awaiting shipment, N22 shipment on hold, N30 in transit, N40 delivered, N50 purchase confirmed; C00 cancel requested and other C codes; R00 return requested and other R codes; E00 exchange requested and other E codes."
+          },
+          "payment_status": {
+            "type": "string",
+            "description": "F unpaid, M partly paid, T paid, A awaiting deposit, P partly refunded.",
+            "enum": [
+              "F",
+              "M",
+              "T",
+              "A",
+              "P"
+            ]
+          },
+          "member_id": {
+            "type": "string",
+            "description": "Customer member id."
+          },
+          "buyer_name": {
+            "type": "string",
+            "description": "Buyer name."
+          },
+          "product_no": {
+            "type": "string",
+            "description": "Product number contained in the order.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/count",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "date_type": "$date_type",
+          "order_id": "$order_id",
+          "order_status": "$order_status",
+          "payment_status": "$payment_status",
+          "member_id": "$member_id",
+          "buyer_name": "$buyer_name",
+          "product_no": "$product_no",
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_get_order",
+      "description": "Read one order with its amounts, payment, shipping status and, through embed, items, receivers, buyer and any cancellation, return or exchange. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 20260710-0000013.",
+            "pattern": "^[0-9]{8}-[0-9]{7}$"
+          },
+          "embed": {
+            "type": "string",
+            "description": "Sub-resources, comma-separated: items, receivers, buyer, benefits, coupons, return, cancellation, exchange, refunds."
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}",
+        "queryParams": {
+          "embed": "$embed",
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_order_items",
+      "description": "Items of one order: order_item_code, variant_code, product_no, product_name, option_value, quantity, product_price, payment_amount, order_status (status code), status_text, shipping_code, tracking_no, shipping company, claim_code and claim reason, shipped and delivered dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 20260710-0000013.",
+            "pattern": "^[0-9]{8}-[0-9]{7}$"
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/items",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_get_order_receivers",
+      "description": "Recipients of one order: name (and furigana for Japanese shops), phone, cellphone, zipcode, address, country, shipping message and shipping_code. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 20260710-0000013.",
+            "pattern": "^[0-9]{8}-[0-9]{7}$"
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/receivers",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_order_shipments",
+      "description": "Shipments of one order: shipping_code, tracking_no, shipping_company_code, tracking number update time and the order items with their status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 20260710-0000013.",
+            "pattern": "^[0-9]{8}-[0-9]{7}$"
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/shipments",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_get_claim",
+      "description": "Read one cancellation, return or exchange by its claim code (claim_code of cafe24_list_order_items): reason type and text, items, refund amounts, return tracking and pickup, exchange receiver. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "claim_type": {
+            "type": "string",
+            "description": "cancellation, return or exchange.",
+            "enum": [
+              "cancellation",
+              "return",
+              "exchange"
+            ]
+          },
+          "claim_code": {
+            "type": "string",
+            "description": "Claim code, e.g. C20260627-0000017 or R20260627-0000017.",
+            "pattern": "^[A-Za-z0-9-]{6,40}$"
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "claim_type",
+          "claim_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{claim_type}/{claim_code}",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_products",
+      "description": "List products: product_no, product_code, custom_product_code, product_name, price, retail_price, supply_price, display, selling, sold_out, created_date, updated_date; with embed variants also the variants. Up to 100 per page, offset up to 5000 (beyond that use since_product_no). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product numbers, comma-separated, up to 100."
+          },
+          "product_code": {
+            "type": "string",
+            "description": "Product codes (8 characters), comma-separated."
+          },
+          "custom_product_code": {
+            "type": "string",
+            "description": "Your own product codes, comma-separated."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Product name or part of it."
+          },
+          "display": {
+            "type": "string",
+            "description": "T displayed in the store, F hidden.",
+            "enum": [
+              "T",
+              "F"
+            ]
+          },
+          "selling": {
+            "type": "string",
+            "description": "T on sale, F not on sale.",
+            "enum": [
+              "T",
+              "F"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "description": "Category number.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "updated_start_date": {
+            "type": "string",
+            "description": "Updated on or after (send with updated_end_date): YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, store time (KST for Korean malls).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "updated_end_date": {
+            "type": "string",
+            "description": "Updated on or before: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, store time (KST for Korean malls).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "embed": {
+            "type": "string",
+            "description": "Sub-resources, comma-separated: variants, options, discountprice."
+          },
+          "since_product_no": {
+            "type": "string",
+            "description": "Cursor: only products with a higher product_no (for more than 5000 products; not with offset or sort).",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "created_date",
+              "updated_date",
+              "product_name"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Products per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Products to skip, at most 5000.",
+            "minimum": 0,
+            "maximum": 5000,
+            "default": 0
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "product_no": "$product_no",
+          "product_code": "$product_code",
+          "custom_product_code": "$custom_product_code",
+          "product_name": "$product_name",
+          "display": "$display",
+          "selling": "$selling",
+          "category": "$category",
+          "updated_start_date": "$updated_start_date",
+          "updated_end_date": "$updated_end_date",
+          "shop_no": "$shop_no",
+          "embed": "$embed",
+          "since_product_no": "$since_product_no",
+          "sort": "$sort",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_count_products",
+      "description": "Count the products that match the same filters as cafe24_list_products: count.count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product numbers, comma-separated, up to 100."
+          },
+          "product_code": {
+            "type": "string",
+            "description": "Product codes (8 characters), comma-separated."
+          },
+          "custom_product_code": {
+            "type": "string",
+            "description": "Your own product codes, comma-separated."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Product name or part of it."
+          },
+          "display": {
+            "type": "string",
+            "description": "T displayed in the store, F hidden.",
+            "enum": [
+              "T",
+              "F"
+            ]
+          },
+          "selling": {
+            "type": "string",
+            "description": "T on sale, F not on sale.",
+            "enum": [
+              "T",
+              "F"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "description": "Category number.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "updated_start_date": {
+            "type": "string",
+            "description": "Updated on or after (send with updated_end_date): YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, store time (KST for Korean malls).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "updated_end_date": {
+            "type": "string",
+            "description": "Updated on or before: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS, store time (KST for Korean malls).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/count",
+        "queryParams": {
+          "product_no": "$product_no",
+          "product_code": "$product_code",
+          "custom_product_code": "$custom_product_code",
+          "product_name": "$product_name",
+          "display": "$display",
+          "selling": "$selling",
+          "category": "$category",
+          "updated_start_date": "$updated_start_date",
+          "updated_end_date": "$updated_end_date",
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_get_product",
+      "description": "Read one product: names, codes, prices, display and selling flags, description, categories, shipping and tax settings; with embed also variants, options, SEO, tags and discount price. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product number (product_no), e.g. 23.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "embed": {
+            "type": "string",
+            "description": "Sub-resources, comma-separated: variants, memos, hits, seo, tags, options, discountprice."
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "product_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_no}",
+        "queryParams": {
+          "embed": "$embed",
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_variants",
+      "description": "Variants of one product: variant_code, options (name and value), custom_variant_code, display, selling, additional_amount and, with embed inventories, quantity, safety_inventory and use_inventory. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product number (product_no), e.g. 23.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "embed": {
+            "type": "string",
+            "description": "inventories: add the stock of each variant.",
+            "enum": [
+              "inventories"
+            ]
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "product_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_no}/variants",
+        "queryParams": {
+          "embed": "$embed",
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_get_inventory",
+      "description": "Stock settings of one variant: use_inventory, important_inventory, inventory_control_type, display_soldout, quantity and safety_inventory. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product number (product_no), e.g. 23.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "variant_code": {
+            "type": "string",
+            "description": "Variant code, 12 characters, e.g. P000000R000A (variant_code of cafe24_list_variants).",
+            "pattern": "^[A-Za-z0-9]{12}$"
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "product_no",
+          "variant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_no}/variants/{variant_code}/inventories",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_categories",
+      "description": "Product categories: category_no, category_depth (1 to 4), parent_category_no, category_name, full_category_name and use_display. Up to 100 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_depth": {
+            "type": "integer",
+            "description": "Only this depth, 1 to 4.",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "parent_category_no": {
+            "type": "string",
+            "description": "Only children of this category.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "category_name": {
+            "type": "string",
+            "description": "Category name or part of it."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Categories per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Categories to skip, at most 8000.",
+            "minimum": 0,
+            "maximum": 8000,
+            "default": 0
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "category_depth": "$category_depth",
+          "parent_category_no": "$parent_category_no",
+          "category_name": "$category_name",
+          "limit": "$limit",
+          "offset": "$offset",
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_carriers",
+      "description": "Carriers set up in the store: carrier_id, shipping_carrier_code (the shipping_company_code for shipments, e.g. 0006 CJ Korea Express, 0019 Lotte, 0084 Yamato), shipping_carrier, tracking URL and default carrier. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/carriers",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_search_customers",
+      "description": "Search customers with their personal data (needs the mall.read_privacy permission): member_id, name, email, cellphone, phone, address, group_no, created_date and points. Search by member id, name, phone, email or sign-up date. Up to 1000 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_type": {
+            "type": "string",
+            "description": "customer_info (search_field and keyword), created_date (with start_date and end_date) or member_id.",
+            "enum": [
+              "customer_info",
+              "created_date",
+              "member_id"
+            ],
+            "default": "customer_info"
+          },
+          "search_field": {
+            "type": "string",
+            "description": "With customer_info: id, name, hp (mobile), tel or mail.",
+            "enum": [
+              "id",
+              "name",
+              "hp",
+              "tel",
+              "mail"
+            ]
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Search value for search_field, or the member id."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Signed up on or after (with search_type created_date), YYYY-MM-DD HH:MM:SS."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Signed up on or before, YYYY-MM-DD HH:MM:SS."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Customers per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 30
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Customers to skip, at most 8000.",
+            "minimum": 0,
+            "maximum": 8000,
+            "default": 0
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customersprivacy",
+        "queryParams": {
+          "search_type": "$search_type",
+          "search_field": "$search_field",
+          "keyword": "$keyword",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit",
+          "offset": "$offset",
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_boards",
+      "description": "Boards of the store (Korean and Japanese stores only): board_no, board_type (5 product reviews or Q&A boards, 7 my inquiries, 1 admin notices, 2 general) and board_name. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards",
+        "queryParams": {
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_list_board_articles",
+      "description": "Posts of one board, such as product questions and reviews: article_no, parent_article_no, product_no, order_id, title, content, writer, member_id, rating, reply_status (N unanswered, P in progress, C answered) and created_date. Period at most one year; up to 100 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_no": {
+            "type": "string",
+            "description": "Board number from cafe24_list_boards.",
+            "pattern": "^[0-9]{1,6}$"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Posted on or after, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Posted on or before, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "reply_status": {
+            "type": "string",
+            "description": "N unanswered, P in progress, C answered.",
+            "enum": [
+              "N",
+              "P",
+              "C"
+            ]
+          },
+          "product_no": {
+            "type": "string",
+            "description": "Only posts about this product.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Search text in subject, content or writer."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Posts per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Posts to skip, at most 8000.",
+            "minimum": 0,
+            "maximum": 8000,
+            "default": 0
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "board_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_no}/articles",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "reply_status": "$reply_status",
+          "product_no": "$product_no",
+          "keyword": "$keyword",
+          "limit": "$limit",
+          "offset": "$offset",
+          "shop_no": "$shop_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cafe24_create_shipment",
+      "description": "Register the shipment of an order (or some of its items) with a tracking number and carrier code, as standby (prepared) or shipping (sent). The customer sees the tracking number. Answers the shipment with its shipping_code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 20260710-0000013.",
+            "pattern": "^[0-9]{8}-[0-9]{7}$"
+          },
+          "tracking_no": {
+            "type": "string",
+            "description": "Tracking number, up to 40 characters.",
+            "maxLength": 40
+          },
+          "shipping_company_code": {
+            "type": "string",
+            "description": "Carrier code, 4 digits, e.g. 0006 (shipping_carrier_code of cafe24_list_carriers).",
+            "pattern": "^[0-9]{4}$"
+          },
+          "status": {
+            "type": "string",
+            "description": "standby (ready, not sent yet) or shipping (handed to the carrier).",
+            "enum": [
+              "standby",
+              "shipping"
+            ]
+          },
+          "order_item_codes": {
+            "type": "array",
+            "description": "Only these order items (order_item_code, e.g. 20260627-0000017-01). Leave out for the whole order.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "order_id",
+          "tracking_no",
+          "shipping_company_code",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/shipments",
+        "bodyMapping": {
+          "shop_no": "$shop_no",
+          "request": {
+            "tracking_no": "$tracking_no",
+            "shipping_company_code": "$shipping_company_code",
+            "status": "$status",
+            "order_item_code": "$order_item_codes"
+          }
+        }
+      }
+    },
+    {
+      "name": "cafe24_update_shipment",
+      "description": "Update one shipment of an order: either its status (standby, shipping, shipped) or its tracking number and carrier, not both in one call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 20260710-0000013.",
+            "pattern": "^[0-9]{8}-[0-9]{7}$"
+          },
+          "shipping_code": {
+            "type": "string",
+            "description": "Shipping code, e.g. D-20260627-0000017-00 (from cafe24_list_order_shipments).",
+            "pattern": "^[A-Za-z0-9-]{6,40}$"
+          },
+          "status": {
+            "type": "string",
+            "description": "New status: standby, shipping or shipped (delivered).",
+            "enum": [
+              "standby",
+              "shipping",
+              "shipped"
+            ]
+          },
+          "status_additional_info": {
+            "type": "string",
+            "description": "Extra note for the status change."
+          },
+          "tracking_no": {
+            "type": "string",
+            "description": "New tracking number (without status).",
+            "maxLength": 40
+          },
+          "shipping_company_code": {
+            "type": "string",
+            "description": "New carrier code (with tracking_no).",
+            "pattern": "^[0-9]{4}$"
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "order_id",
+          "shipping_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/shipments/{shipping_code}",
+        "bodyMapping": {
+          "shop_no": "$shop_no",
+          "request": {
+            "status": "$status",
+            "status_additional_info": "$status_additional_info",
+            "tracking_no": "$tracking_no",
+            "shipping_company_code": "$shipping_company_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "cafe24_update_order_status",
+      "description": "Move an order (or some items) in the fulfilment flow: prepare (preparing shipment), prepareproduct (preparing the product), hold or unhold. Shipping itself is done with cafe24_create_shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Order id, e.g. 20260710-0000013.",
+            "pattern": "^[0-9]{8}-[0-9]{7}$"
+          },
+          "process_status": {
+            "type": "string",
+            "description": "prepare, prepareproduct, hold or unhold.",
+            "enum": [
+              "prepare",
+              "prepareproduct",
+              "hold",
+              "unhold"
+            ]
+          },
+          "order_item_codes": {
+            "type": "array",
+            "description": "Only these order items.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "order_id",
+          "process_status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}",
+        "bodyMapping": {
+          "shop_no": "$shop_no",
+          "request": {
+            "process_status": "$process_status",
+            "order_item_code": "$order_item_codes"
+          }
+        }
+      }
+    },
+    {
+      "name": "cafe24_update_product",
+      "description": "Change the price, retail price, supply price, name, own product code or summary description of one product. Fields left out keep their value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product number (product_no), e.g. 23.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "price": {
+            "type": "number",
+            "description": "Selling price in the shop currency.",
+            "minimum": 0
+          },
+          "retail_price": {
+            "type": "number",
+            "description": "Retail (list) price.",
+            "minimum": 0
+          },
+          "supply_price": {
+            "type": "number",
+            "description": "Supply (cost) price.",
+            "minimum": 0
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Product name, up to 250 characters.",
+            "maxLength": 250
+          },
+          "custom_product_code": {
+            "type": "string",
+            "description": "Your own product code."
+          },
+          "summary_description": {
+            "type": "string",
+            "description": "Short description, up to 255 characters.",
+            "maxLength": 255
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "product_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_no}",
+        "bodyMapping": {
+          "shop_no": "$shop_no",
+          "request": {
+            "price": "$price",
+            "retail_price": "$retail_price",
+            "supply_price": "$supply_price",
+            "product_name": "$product_name",
+            "custom_product_code": "$custom_product_code",
+            "summary_description": "$summary_description"
+          }
+        }
+      }
+    },
+    {
+      "name": "cafe24_update_variant",
+      "description": "Change the surcharge (additional_amount) or your own code of one variant.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product number (product_no), e.g. 23.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "variant_code": {
+            "type": "string",
+            "description": "Variant code, 12 characters, e.g. P000000R000A (variant_code of cafe24_list_variants).",
+            "pattern": "^[A-Za-z0-9]{12}$"
+          },
+          "additional_amount": {
+            "type": "number",
+            "description": "Surcharge on the product price for this variant (may be negative)."
+          },
+          "custom_variant_code": {
+            "type": "string",
+            "description": "Your own variant code."
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "product_no",
+          "variant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_no}/variants/{variant_code}",
+        "bodyMapping": {
+          "shop_no": "$shop_no",
+          "request": {
+            "additional_amount": "$additional_amount",
+            "custom_variant_code": "$custom_variant_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "cafe24_update_inventory",
+      "description": "Set the stock of one variant: quantity (available stock), safety_inventory, whether stock is managed (use_inventory) and whether it shows as sold out at 0 (display_soldout).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product number (product_no), e.g. 23.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "variant_code": {
+            "type": "string",
+            "description": "Variant code, 12 characters, e.g. P000000R000A (variant_code of cafe24_list_variants).",
+            "pattern": "^[A-Za-z0-9]{12}$"
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Available stock quantity.",
+            "minimum": 0
+          },
+          "safety_inventory": {
+            "type": "integer",
+            "description": "Safety stock level.",
+            "minimum": 0
+          },
+          "use_inventory": {
+            "type": "string",
+            "description": "T manage stock for this variant, F do not.",
+            "enum": [
+              "T",
+              "F"
+            ]
+          },
+          "display_soldout": {
+            "type": "string",
+            "description": "T show sold out when the stock is 0.",
+            "enum": [
+              "T",
+              "F"
+            ]
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "product_no",
+          "variant_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_no}/variants/{variant_code}/inventories",
+        "bodyMapping": {
+          "shop_no": "$shop_no",
+          "request": {
+            "quantity": "$quantity",
+            "safety_inventory": "$safety_inventory",
+            "use_inventory": "$use_inventory",
+            "display_soldout": "$display_soldout"
+          }
+        }
+      }
+    },
+    {
+      "name": "cafe24_add_board_comment",
+      "description": "Post a comment under a board post, for example to answer a product question or a review. The comment is public on the store.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_no": {
+            "type": "string",
+            "description": "Board number from cafe24_list_boards.",
+            "pattern": "^[0-9]{1,6}$"
+          },
+          "article_no": {
+            "type": "string",
+            "description": "Post number (article_no of cafe24_list_board_articles).",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "content": {
+            "type": "string",
+            "description": "Comment text."
+          },
+          "writer": {
+            "type": "string",
+            "description": "Name shown as the writer, up to 100 characters.",
+            "maxLength": 100,
+            "default": "Shop"
+          },
+          "password": {
+            "type": "string",
+            "description": "Password of the comment (Cafe24 requires one, up to 20 characters); needed to edit it in the store.",
+            "maxLength": 20
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "board_no",
+          "article_no",
+          "content",
+          "writer",
+          "password"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards/{board_no}/articles/{article_no}/comments",
+        "bodyMapping": {
+          "shop_no": "$shop_no",
+          "request": {
+            "content": "$content",
+            "writer": "$writer",
+            "password": "$password"
+          }
+        }
+      }
+    },
+    {
+      "name": "cafe24_set_product_display",
+      "description": "Show or hide one product in the store (display) and put it on or off sale (selling). F takes it off sale for customers.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_no": {
+            "type": "string",
+            "description": "Product number (product_no), e.g. 23.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "display": {
+            "type": "string",
+            "description": "T displayed, F hidden.",
+            "enum": [
+              "T",
+              "F"
+            ]
+          },
+          "selling": {
+            "type": "string",
+            "description": "T on sale, F not on sale.",
+            "enum": [
+              "T",
+              "F"
+            ]
+          },
+          "shop_no": {
+            "type": "integer",
+            "description": "Shop number inside the mall (1 is the default shop; a mall can have up to 6 shops, see cafe24_list_shops).",
+            "minimum": 1,
+            "maximum": 99,
+            "default": 1
+          }
+        },
+        "required": [
+          "product_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_no}",
+        "bodyMapping": {
+          "shop_no": "$shop_no",
+          "request": {
+            "display": "$display",
+            "selling": "$selling"
+          }
+        }
+      }
+    }
+  ]
+}

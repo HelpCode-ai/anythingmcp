@@ -1,0 +1,1215 @@
+{
+  "slug": "blibli",
+  "name": "Blibli",
+  "description": "Blibli Seller API for sellers on the Indonesian marketplace: order packages and items, packing, fulfilment, airway bills and shipping labels, returns, products and variants with stock and price per pickup point, pickup points, logistics, brands and categories. API client ID and key plus the store's seller key.",
+  "instructions": "## Blibli\nThis connector works with the **Blibli Seller API** (`https://api.blibli.com/v2/proxy/...`), for sellers on Blibli, the Indonesian marketplace: order packages and order items, packing, fulfilment and airway bills, shipping labels, returns, products and variants with stock and price per pickup point, pickup points, logistics, brands and categories.\n\n**Setup (Blibli reviews the API registration, about 2 working days)**\n1. Register at `https://seller-api.blibli.com/account/register` with your company details (as a seller building your own integration: an active store; individual sellers also need 80 orders and 50 active products). Blibli reviews the registration.\n2. After approval open the **API Console, API Client ID** and generate the **API Client Key** (confirmed by an email code). Copy the **API Client ID** into `BLIBLI_CLIENT_ID` and the key into `BLIBLI_CLIENT_KEY`.\n3. Bind your store: in Blibli Seller Center open **Profile, Seller API Manager, Manual Bind** and generate the **API Seller Key** for your API Client ID. Copy it into `BLIBLI_SELLER_KEY`.\n4. Enter your seller code (store code, e.g. `TOQ-15126`, shown in Seller Center store info) in `BLIBLI_STORE_CODE`, your Seller Center login email in `BLIBLI_USERNAME`, and the platform name you registered in `BLIBLI_CHANNEL_ID`.\n5. Do not set a **Signature Key** (Kata Sandi Khusus) in Seller API Manager: once one is set Blibli wants a signed header on every call, which this connector does not send. If one is set, revoke it.\n\nEvery call carries `Authorization: Basic` with the client id and key, the `Api-Seller-Key` header, and the query parameters Blibli requires (requestId, storeId 10001, channelId, username, storeCode, businessPartnerCode).\n\n**Where to start**: `blibli_list_orders` with statuses FP (new orders waiting for you); each package lists its order items with product, price and logistic data.\n\n**Order flow**: FP (new) items are packed with `blibli_create_package` (check `blibli_get_combine_shipping` first to ship several items together), then `blibli_fulfill_regular` hands the package to Blibli logistics, or registers your own airway bill number for dropship. `blibli_update_dropship_awb` corrects it, `blibli_get_shipping_label` returns the label as base64 PDF. `blibli_get_order_item` reads one item with the recipient address. Statuses: FP new, PU waiting for pickup, CX in delivery by you, BP ready for your delivery, D delivered, X cancelled, CR customer asked to cancel, OS out of stock.\n\n**Returns**: `blibli_list_returns` and `blibli_get_return` (read-only).\n\n**Products**: a product SKU (`TOQ-15126-00411`) is the main product; each variant has a Blibli SKU (`TOQ-15126-00411-00001`) and is sold per pickup point. `blibli_list_products`, `blibli_get_product`, `blibli_list_product_variants` (price, stock, buyable per pickup point), `blibli_update_stock` (exact available stock), `blibli_update_price` (regular and sale price in IDR). `blibli_list_pickup_points`, `blibli_get_store`, `blibli_list_logistics`, `blibli_list_brands` and `blibli_get_category_tree` give the reference data.\n\n**Switched off at install**: `blibli_cancel_order_item` (cannot be undone, refunds the customer; reasons from `blibli_list_cancellation_reasons`), `blibli_set_buyable` (false takes a variant off sale) and `blibli_archive_products`. Product creation, promotions, vouchers and ads are not included.\n\n**Rate limits are per endpoint and tight**: order list 100 per 30 minutes per store, order item detail 5 per 30 minutes per item, product list 25 per minute, product detail 5 per 30 minutes per SKU, price update 5 per hour per SKU, stock update 60 per minute, fulfilment and labels 5 per day per package, category tree 5 per day. Prefer the list tools and keep ids you already have. A refusal is 429 with errorCode LIMIT_EXCEEDED and the waiting time.\n\n**Ids and formats**: dates are epoch milliseconds (Asia/Jakarta), prices IDR. Paging starts at page 0. Errors carry errorCode (ERR-PA..., ERR-MA...) and errorMessage; ERR-MA4033009 or ERR-PA403006 mean the store is not bound to your API Client ID. Every call sends the same fixed requestId per tool; Blibli asks for a unique id per call for tracing.",
+  "aliases": [
+    "Blibli.com",
+    "Blibli Seller Center"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "blibli",
+  "docsUrl": "https://seller-api.blibli.com/",
+  "requiredEnvVars": [
+    "BLIBLI_CLIENT_ID",
+    "BLIBLI_CLIENT_KEY",
+    "BLIBLI_SELLER_KEY",
+    "BLIBLI_STORE_CODE",
+    "BLIBLI_USERNAME",
+    "BLIBLI_CHANNEL_ID"
+  ],
+  "envVarMeta": {
+    "BLIBLI_CLIENT_ID": {
+      "label": "API Client ID",
+      "kind": "credential",
+      "help": "Blibli Seller API portal, API Console, API Client ID (after Blibli approved your registration).",
+      "link": "https://seller-api.blibli.com/",
+      "pattern": "^\\S{3,200}$",
+      "patternMessage": "Paste the API Client ID only, without spaces."
+    },
+    "BLIBLI_CLIENT_KEY": {
+      "label": "API Client Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Generated in the API Console next to the API Client ID, confirmed with an email code.",
+      "link": "https://seller-api.blibli.com/",
+      "pattern": "^\\S{6,500}$",
+      "patternMessage": "Paste the API Client Key without spaces."
+    },
+    "BLIBLI_SELLER_KEY": {
+      "label": "API Seller Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Blibli Seller Center, Profile, Seller API Manager, Manual Bind: generate the key for your API Client ID.",
+      "link": "https://seller.blibli.com/",
+      "pattern": "^\\S{6,500}$",
+      "patternMessage": "Paste the API Seller Key without spaces."
+    },
+    "BLIBLI_STORE_CODE": {
+      "label": "Seller code",
+      "kind": "setting",
+      "help": "Your store code (business partner code) as shown in Seller Center store info, e.g. TOQ-15126.",
+      "example": "TOQ-15126",
+      "pattern": "^[A-Za-z0-9]{2,6}-[0-9]{3,8}$",
+      "patternMessage": "Enter the seller code like TOQ-15126."
+    },
+    "BLIBLI_USERNAME": {
+      "label": "Seller Center login email",
+      "kind": "setting",
+      "help": "The email address you log in to Blibli Seller Center with. Blibli wants it on every call.",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "patternMessage": "Enter an email address."
+    },
+    "BLIBLI_CHANNEL_ID": {
+      "label": "Channel ID (platform name)",
+      "kind": "setting",
+      "help": "The platform or company name you registered on the Blibli Seller API portal. Blibli wants it on every call.",
+      "pattern": "^[A-Za-z0-9 ._-]{2,100}$",
+      "patternMessage": "Use letters, digits, spaces, dots, dashes or underscores."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Blibli refused the API client (ERR-PG401004 API client unauthenticated). Check the API Client ID and Client Key from the API Console.",
+      "field": "BLIBLI_CLIENT_KEY"
+    },
+    "403": {
+      "hint": "Blibli refused the store: the API Seller Key is wrong, the store is not bound to your API Client ID (ERR-MA4033009, ERR-PA403006), or a Signature Key is set in Seller API Manager. Generate the seller key again with Manual Bind and revoke any Signature Key.",
+      "field": "BLIBLI_SELLER_KEY"
+    },
+    "404": "Blibli found no order item, package, product or return with that id.",
+    "rate_limited": "Blibli limits each endpoint separately (order list 100 per 30 minutes, detail lookups 5 per 30 minutes per item). Wait the time named in the answer and prefer the list tools.",
+    "400": "Blibli refused a parameter. Check the seller code, the login email and the channel id: Blibli wants all three on every call."
+  },
+  "probe": {
+    "tool": "blibli_get_store",
+    "params": {}
+  },
+  "prerequisites": "An active Blibli seller account and an approved registration on the Blibli Seller API portal (company details, reviewed by Blibli in about 2 working days; individual sellers need 80 orders and 50 active products), then a store bind in Seller Center.",
+  "connector": {
+    "name": "Blibli Seller API",
+    "type": "REST",
+    "baseUrl": "https://api.blibli.com/v2",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{BLIBLI_CLIENT_ID}}",
+      "password": "{{BLIBLI_CLIENT_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Api-Seller-Key": "{{BLIBLI_SELLER_KEY}}",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": "errorMessage",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "blibli_list_orders",
+      "description": "List order packages, newest status change first: packageId, and per item the order (id, itemId, itemStatus, quantity, date, autoCancelTimestamp), product (blibliSku, sellerSku, itemName, price, finalPrice), logistic (awbNumber, productCode) and pickup point, with `paging` (pageNumber, pageSize, totalPage, totalRecord). Data goes back one year. Read-only; at most 100 calls per 30 minutes per store.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "description": "Item statuses: FP new order waiting for you, PU packed and waiting for pickup, PF partly fulfilled, CR customer asked to cancel, CX in delivery by you, OS out of stock, BP ready for your own delivery, D delivered, X cancelled.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "FP",
+                "PU",
+                "PF",
+                "CR",
+                "CX",
+                "OS",
+                "BP",
+                "D",
+                "X"
+              ]
+            },
+            "maxItems": 9
+          },
+          "order_ids": {
+            "type": "array",
+            "description": "Order numbers or order item numbers.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "package_created": {
+            "type": "boolean",
+            "description": "true: only items already packed into a package; false: only items still without a package."
+          },
+          "package_id": {
+            "type": "string",
+            "description": "Only this package id.",
+            "pattern": "^[0-9]{3,20}$"
+          },
+          "seller_sku": {
+            "type": "string",
+            "description": "Only items with this seller SKU."
+          },
+          "pickup_point_code": {
+            "type": "string",
+            "description": "Only items of this pickup point, e.g. PP-3000175."
+          },
+          "fp_date_range": {
+            "type": "object",
+            "description": "Only items that became FP (new) in this window: start and end as epoch milliseconds.",
+            "properties": {
+              "start": {
+                "type": "integer",
+                "description": "Start, epoch milliseconds."
+              },
+              "end": {
+                "type": "integer",
+                "description": "End, epoch milliseconds."
+              }
+            }
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "statusFPUpdatedTimestamp",
+              "autoCancelTimestamp"
+            ],
+            "default": "statusFPUpdatedTimestamp"
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Packages per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/proxy/seller/v1/orders/packages/filter",
+        "queryParams": {
+          "requestId": "anythingmcp-list-orders",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "filter": {
+            "orderItemStatuses": "$statuses",
+            "orderOrOrderItemIds": "$order_ids",
+            "packageCreated": "$package_created",
+            "packageId": "$package_id",
+            "sellerSku": "$seller_sku",
+            "pickupPointCode": "$pickup_point_code",
+            "statusFPDateRange": "$fp_date_range"
+          },
+          "sorting": {
+            "by": "$sort_by",
+            "direction": "$sort_direction"
+          },
+          "paging": {
+            "page": "$page",
+            "size": "$size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_get_order_item",
+      "description": "Read one order item in full: order and item id, package id, amounts (price, shipping, discounts, total), product, quantity, recipient name, phone and address, shipment (airway bill, courier, delivered), status history, settlement and adjustments. Read-only; at most 5 calls per 30 minutes per order item, so prefer blibli_list_orders.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "description": "Order item number, e.g. 25000025999 (orderItems[].order.itemId of blibli_list_orders).",
+            "pattern": "^[0-9]{5,20}$"
+          }
+        },
+        "required": [
+          "order_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/seller/v1/orders/items/{order_item_id}",
+        "queryParams": {
+          "requestId": "anythingmcp-get-order-item",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_get_combine_shipping",
+      "description": "Which other order items can share a package with this one: alreadyCombined, combineShipping (the order items) and maxCombinedWeight. Check this before blibli_create_package. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "description": "Order item number, e.g. 25000025999 (orderItems[].order.itemId of blibli_list_orders).",
+            "pattern": "^[0-9]{5,20}$"
+          }
+        },
+        "required": [
+          "order_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/mta/api/businesspartner/v1/order/getCombineShipping",
+        "queryParams": {
+          "requestId": "anythingmcp-get-combine-shipping",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}",
+          "orderItemNo": "$order_item_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_get_shipping_label",
+      "description": "Shipping label of a package as a base64 PDF (`content.shippingLabel`). Read-only; at most 5 calls per day per package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "Package id, e.g. 10025702 (packageId of blibli_list_orders or blibli_create_package).",
+            "pattern": "^[0-9]{3,20}$"
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/seller/v1/orders/{package_id}/shippingLabel",
+        "queryParams": {
+          "requestId": "anythingmcp-get-shipping-label",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_list_cancellation_reasons",
+      "description": "Reasons accepted by blibli_cancel_order_item (for example OUT-OF-STOCK). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/seller/v1/orders/items/cancellations/reasons",
+        "queryParams": {
+          "requestId": "anythingmcp-list-cancellation-reasons",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_list_returns",
+      "description": "List return requests (RMA): returnId, returnNo, orderNo, orderItemNo, gdnSku, product, quantity, reason, returnStatusCode and resolution, with `pageMetaData`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Only this order number or order item number.",
+            "pattern": "^[0-9]{5,20}$"
+          },
+          "return_date": {
+            "type": "string",
+            "description": "Only returns created on this date, DD-MM-YYYY (e.g. 27-07-2026).",
+            "pattern": "^[0-9]{2}-[0-9]{2}-[0-9]{4}$"
+          },
+          "resolution": {
+            "type": "string",
+            "description": "Only this resolution.",
+            "enum": [
+              "NONE",
+              "CASH_REFUND",
+              "VOUCHER_REFUND",
+              "PRODUCT_REPLACEMENT",
+              "MANUAL"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Only this status: RMA_REQUEST_APPROVAL waiting for approval, RMA_REQUEST_APPROVED, RMA_REQUEST_CANCELLED (rejected), RMA_PROCESS_STARTED, RMA_PROCESS_FINISHED, RMA_PROCESS_CANCELLED.",
+            "enum": [
+              "RMA_REQUEST_APPROVAL",
+              "RMA_REQUEST_APPROVED",
+              "RMA_REQUEST_CANCELLED",
+              "RMA_PROCESS_STARTED",
+              "RMA_PROCESS_FINISHED",
+              "RMA_PROCESS_CANCELLED"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Returns per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/mta/api/businesspartner/v1/order/getReturnedOrderSummary",
+        "queryParams": {
+          "requestId": "anythingmcp-list-returns",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}",
+          "orderIdOrItemId": "$order_id",
+          "returDate": "$return_date",
+          "rmaResolution": "$resolution",
+          "status": "$status",
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_get_return",
+      "description": "Read one return request in detail: status, reason, resolution, customer note, product, quantity and the return shipment. Read-only; at most 5 calls per hour.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "return_id": {
+            "type": "string",
+            "description": "returnId from blibli_list_returns.",
+            "pattern": "^[A-Za-z0-9-]{4,40}$"
+          },
+          "order_no": {
+            "type": "string",
+            "description": "Order number of the return.",
+            "pattern": "^[0-9]{5,20}$"
+          },
+          "order_item_no": {
+            "type": "string",
+            "description": "Order item number of the return.",
+            "pattern": "^[0-9]{5,20}$"
+          }
+        },
+        "required": [
+          "return_id",
+          "order_no",
+          "order_item_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/mta/api/businesspartner/v1/order/getReturnedOrderDetail",
+        "queryParams": {
+          "requestId": "anythingmcp-get-return",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}",
+          "rmaId": "$return_id",
+          "orderNo": "$order_no",
+          "orderItemNo": "$order_item_no"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_list_products",
+      "description": "List main products (not variants): productSku, name, state, category, brand, images, and price and stock ranges, with `paging`. Filter by state, product SKU, name, categories or pickup points. Read-only; at most 25 calls per minute per store.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "ACTIVE, OOS (out of stock), ARCHIVED, SUSPENDED, IN_PROGRESS (under review), NEED_CORRECTION or REJECTED.",
+            "enum": [
+              "ACTIVE",
+              "OOS",
+              "ARCHIVED",
+              "SUSPENDED",
+              "IN_PROGRESS",
+              "NEED_CORRECTION",
+              "REJECTED"
+            ],
+            "default": "ACTIVE"
+          },
+          "product_sku": {
+            "type": "string",
+            "description": "Only this product SKU."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Product name or part of it."
+          },
+          "category_codes": {
+            "type": "array",
+            "description": "Category codes, e.g. PH-00001.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "pickup_point_codes": {
+            "type": "array",
+            "description": "Pickup point codes, e.g. PP-3000391.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "createdDate",
+              "updatedDate",
+              "normalPrice",
+              "salePrice",
+              "submittedDate",
+              "expectedActivationDate"
+            ],
+            "default": "updatedDate"
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "Sort direction.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "DESC"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/proxy/seller/v1/products/filter",
+        "queryParams": {
+          "requestId": "anythingmcp-list-products",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "filter": {
+            "state": "$state",
+            "productSku": "$product_sku",
+            "productName": "$product_name",
+            "categoryCodes": "$category_codes",
+            "pickupPointCodes": "$pickup_point_codes"
+          },
+          "sorting": {
+            "by": "$sort_by",
+            "direction": "$sort_direction"
+          },
+          "paging": {
+            "page": "$page",
+            "size": "$size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_get_product",
+      "description": "Read one main product: name, brand, category, attributes, description, dimensions and weight, flags and its variants (blibliSkus). Read-only; at most 5 calls per 30 minutes per product SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_sku": {
+            "type": "string",
+            "description": "Blibli product SKU of the main product, e.g. TOQ-15126-00411 (store code plus a number).",
+            "pattern": "^[A-Za-z0-9]{2,6}-[0-9]{3,8}-[0-9]{3,8}$"
+          }
+        },
+        "required": [
+          "product_sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/seller/v1/products/{product_sku}",
+        "queryParams": {
+          "requestId": "anythingmcp-get-product",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_list_product_variants",
+      "description": "Variants of one product per pickup point: blibliSku, sellerSku, attributes, pickupPointCode, price (regular and sale), stock (available and reserved), buyable and displayable flags, with `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_sku": {
+            "type": "string",
+            "description": "Blibli product SKU of the main product, e.g. TOQ-15126-00411 (store code plus a number).",
+            "pattern": "^[A-Za-z0-9]{2,6}-[0-9]{3,8}-[0-9]{3,8}$"
+          },
+          "blibli_sku": {
+            "type": "string",
+            "description": "Only this variant, e.g. TOQ-15130-00001-00001."
+          },
+          "pickup_point_code": {
+            "type": "string",
+            "description": "Only this pickup point, e.g. PP-0000001."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        },
+        "required": [
+          "product_sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/proxy/seller/v1/products/{product_sku}/variants/filter",
+        "queryParams": {
+          "requestId": "anythingmcp-list-product-variants",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "filter": {
+            "blibliSku": "$blibli_sku",
+            "pickupPointCode": "$pickup_point_code"
+          },
+          "paging": {
+            "page": "$page",
+            "size": "$size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_get_store",
+      "description": "The store behind the seller key: store code, name, type, status, address, rating and settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/seller/v1/stores",
+        "queryParams": {
+          "requestId": "anythingmcp-get-store",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_list_pickup_points",
+      "description": "Pickup points (warehouses and stores) of the seller: code, name, address, zip code, fulfilledByBlibli and opening hours, with `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Name or part of it."
+          },
+          "codes": {
+            "type": "array",
+            "description": "Pickup point codes.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/proxy/seller/v1/stores/pickup-points/filter",
+        "queryParams": {
+          "requestId": "anythingmcp-list-pickup-points",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "filter": {
+            "keyword": "$keyword",
+            "codes": "$codes"
+          },
+          "paging": {
+            "page": "$page",
+            "size": "$size"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_list_logistics",
+      "description": "Logistic services available to the seller (couriers and delivery products, with their codes). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/seller/v1/logistics",
+        "queryParams": {
+          "requestId": "anythingmcp-list-logistics",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_list_brands",
+      "description": "Brands: code, name and approval state, with `pageMetaData`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand_name": {
+            "type": "string",
+            "description": "Brand name or part of it."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Brands per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/mta/api/businesspartner/v2/product/getBrands",
+        "queryParams": {
+          "requestId": "anythingmcp-list-brands",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}",
+          "brandName": "$brand_name",
+          "page": "$page",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_get_category_tree",
+      "description": "The whole category tree: code and names in Indonesian and English, nested children and required supporting documents. Read-only; Blibli allows only 5 calls per day per store, so keep the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/proxy/mta/api/businesspartner/v1/product/getCategory",
+        "queryParams": {
+          "requestId": "anythingmcp-get-category-tree",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "blibli_create_package",
+      "description": "Pack new (FP) order items into one package (accept them for processing). Items that may be combined come from blibli_get_combine_shipping. Answers the packageId.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "description": "Order item numbers to pack together.",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{5,20}$"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/proxy/mta/api/businesspartner/v1/order/createPackage",
+        "queryParams": {
+          "requestId": "anythingmcp-create-package",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "orderItemIds": "$order_item_ids"
+        }
+      }
+    },
+    {
+      "name": "blibli_fulfill_regular",
+      "description": "Fulfil a packed regular order: Blibli logistics picks it up, or, for dropship sellers, you give the airway bill number of your own courier. Answers 204 with no body. At most 5 calls per day per package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "Package id, e.g. 10025702 (packageId of blibli_list_orders or blibli_create_package).",
+            "pattern": "^[0-9]{3,20}$"
+          },
+          "awb_no": {
+            "type": "string",
+            "description": "Airway bill (tracking) number; required for dropship sellers, otherwise leave it out."
+          }
+        },
+        "required": [
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/proxy/seller/v1/orders/regular/{package_id}/fulfill",
+        "queryParams": {
+          "requestId": "anythingmcp-fulfill-regular",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "awbNo": "$awb_no"
+        }
+      }
+    },
+    {
+      "name": "blibli_update_dropship_awb",
+      "description": "Correct the airway bill (tracking) number of a dropship package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "package_id": {
+            "type": "string",
+            "description": "Package id, e.g. 10025702 (packageId of blibli_list_orders or blibli_create_package).",
+            "pattern": "^[0-9]{3,20}$"
+          },
+          "awb_no": {
+            "type": "string",
+            "description": "New airway bill number."
+          }
+        },
+        "required": [
+          "package_id",
+          "awb_no"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/proxy/seller/v1/orders/dropship/{package_id}",
+        "queryParams": {
+          "requestId": "anythingmcp-update-dropship-awb",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "awbNo": "$awb_no"
+        }
+      }
+    },
+    {
+      "name": "blibli_update_stock",
+      "description": "Set the available stock of one variant at one pickup point to an exact number, synchronously. At most 60 calls per minute per store.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blibli_sku": {
+            "type": "string",
+            "description": "Blibli SKU of one variant, e.g. TOQ-15130-00001-00001 (blibliSku of blibli_list_product_variants).",
+            "pattern": "^[A-Za-z0-9]{2,6}-[0-9]{3,8}-[0-9]{3,8}-[0-9]{3,8}$"
+          },
+          "pickup_point_code": {
+            "type": "string",
+            "description": "Pickup point code of the variant, e.g. PP-3000175 (from blibli_list_pickup_points).",
+            "pattern": "^[A-Za-z]{2,4}-[0-9]{3,10}$"
+          },
+          "available_stock": {
+            "type": "integer",
+            "description": "New available stock.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "blibli_sku",
+          "pickup_point_code",
+          "available_stock"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/proxy/seller/v1/products/{blibli_sku}/stock",
+        "queryParams": {
+          "requestId": "anythingmcp-update-stock",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}",
+          "pickupPointCode": "$pickup_point_code"
+        },
+        "bodyMapping": {
+          "availableStock": "$available_stock"
+        }
+      }
+    },
+    {
+      "name": "blibli_update_price",
+      "description": "Change the regular and sale price (IDR) of one variant at one pickup point, and optionally its seller SKU. Answers warnings when a value was adjusted. At most 5 calls per hour per Blibli SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blibli_sku": {
+            "type": "string",
+            "description": "Blibli SKU of one variant, e.g. TOQ-15130-00001-00001 (blibliSku of blibli_list_product_variants).",
+            "pattern": "^[A-Za-z0-9]{2,6}-[0-9]{3,8}-[0-9]{3,8}-[0-9]{3,8}$"
+          },
+          "pickup_point_code": {
+            "type": "string",
+            "description": "Pickup point code of the variant, e.g. PP-3000175 (from blibli_list_pickup_points).",
+            "pattern": "^[A-Za-z]{2,4}-[0-9]{3,10}$"
+          },
+          "regular_price": {
+            "type": "number",
+            "description": "Regular price in IDR.",
+            "minimum": 0
+          },
+          "sale_price": {
+            "type": "number",
+            "description": "Sale (selling) price in IDR, not above the regular price.",
+            "minimum": 0
+          },
+          "seller_sku": {
+            "type": "string",
+            "description": "New seller SKU for the variant."
+          }
+        },
+        "required": [
+          "blibli_sku",
+          "pickup_point_code",
+          "regular_price",
+          "sale_price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/proxy/seller/v1/products/{blibli_sku}",
+        "queryParams": {
+          "requestId": "anythingmcp-update-price",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}",
+          "pickupPointCode": "$pickup_point_code"
+        },
+        "bodyMapping": {
+          "price": {
+            "regular": "$regular_price",
+            "sale": "$sale_price"
+          },
+          "sellerSku": "$seller_sku"
+        }
+      }
+    },
+    {
+      "name": "blibli_set_buyable",
+      "description": "Make one variant at one pickup point buyable or not. false takes it off sale for customers.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "blibli_sku": {
+            "type": "string",
+            "description": "Blibli SKU of one variant, e.g. TOQ-15130-00001-00001 (blibliSku of blibli_list_product_variants).",
+            "pattern": "^[A-Za-z0-9]{2,6}-[0-9]{3,8}-[0-9]{3,8}-[0-9]{3,8}$"
+          },
+          "pickup_point_code": {
+            "type": "string",
+            "description": "Pickup point code of the variant, e.g. PP-3000175 (from blibli_list_pickup_points).",
+            "pattern": "^[A-Za-z]{2,4}-[0-9]{3,10}$"
+          },
+          "buyable": {
+            "type": "boolean",
+            "description": "true: customers can buy it; false: not buyable."
+          }
+        },
+        "required": [
+          "blibli_sku",
+          "pickup_point_code",
+          "buyable"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/proxy/seller/v1/products/{blibli_sku}",
+        "queryParams": {
+          "requestId": "anythingmcp-set-buyable",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}",
+          "pickupPointCode": "$pickup_point_code"
+        },
+        "bodyMapping": {
+          "buyable": "$buyable"
+        }
+      }
+    },
+    {
+      "name": "blibli_cancel_order_item",
+      "description": "Cancel an order item fully or partly with a reason from blibli_list_cancellation_reasons. Cannot be undone; the customer is refunded and it counts against the store.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "description": "Order item number, e.g. 25000025999 (orderItems[].order.itemId of blibli_list_orders).",
+            "pattern": "^[0-9]{5,20}$"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason code, e.g. OUT-OF-STOCK."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "How many units to cancel.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_item_id",
+          "reason",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/proxy/seller/v1/orders/items/{order_item_id}/cancellations",
+        "queryParams": {
+          "requestId": "anythingmcp-cancel-order-item",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "reason": "$reason",
+          "cancellationQuantity": "$quantity"
+        }
+      }
+    },
+    {
+      "name": "blibli_archive_products",
+      "description": "Archive up to 100 main products with all their variants (takes them off sale; archived products cannot be deleted). Runs in a queue and answers a queueId.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_skus": {
+            "type": "array",
+            "description": "Product SKUs, e.g. TOQ-15126-00411.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "product_skus"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/proxy/seller/v1/products/statuses/archive",
+        "queryParams": {
+          "requestId": "anythingmcp-archive-products",
+          "storeId": "10001",
+          "channelId": "{{BLIBLI_CHANNEL_ID}}",
+          "username": "{{BLIBLI_USERNAME}}",
+          "storeCode": "{{BLIBLI_STORE_CODE}}",
+          "businessPartnerCode": "{{BLIBLI_STORE_CODE}}"
+        },
+        "bodyMapping": {
+          "productSkus": "$product_skus"
+        }
+      }
+    }
+  ]
+}
