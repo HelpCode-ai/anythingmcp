@@ -1022,6 +1022,7 @@
       "choose": "Choose…",
       "chooseOne": "Choose one of the options",
       "optional": "(optional)",
+      "lookedUp": "(found for you if left empty)",
       "stored": "Stored. Leave empty to keep it",
       "hide": "Hide",
       "show": "Show",

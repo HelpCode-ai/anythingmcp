@@ -49,7 +49,7 @@ export class SetupLinksController {
     @Body() body: { token?: string; from?: string },
   ): Promise<{ redirect: string; session?: RecentSignInSession }> {
     // `from` only picks the setup page's way back, from a fixed list.
-    const out = await this.setup.resolveLink(String(body?.token ?? ''), req.user.sub, body?.from);
+    const out = await this.setup.resolveLink(String(body?.token ?? ''), req.user.sub, body?.from, { signedIn: true });
     if ('error' in out) throw new GoneException(out.error);
     // The session is on another workspace than the connector: switch, as the
     // workspace menu would, or the setup page could not save anything.

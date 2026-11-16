@@ -363,6 +363,41 @@ describe('an app waiting for its setup (picked on the post-approve page)', () =>
     expect(list.body.needsSetupHint).toContain('Before anything else, give the user the finishSetupUrl');
     expect(list.body.hint).toBeUndefined();
   });
+
+  it('gets a one-time link straight to its setup form when one can be made, once per request', async () => {
+    const finishSetupLink = jest.fn(async (id: string) => `https://cloud.example.com/s/once-${id}`);
+    const client = await connect([TELEGRAM_PENDING, { ...TELEGRAM_PENDING, id: 'tg2', name: 'telegram_bot_get_me' }], withSetup(jest.fn(), { finishSetupLink }));
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.needsSetup).toEqual([
+      expect.objectContaining({ name: 'Telegram Bot', finishSetupUrl: 'https://cloud.example.com/s/once-c-telegram' }),
+    ]);
+    expect(finishSetupLink).toHaveBeenCalledTimes(1);
+    expect(finishSetupLink).toHaveBeenCalledWith('c-telegram', TELEGRAM_PENDING.organizationId);
+
+    const blocked = await call(client, 'anythingmcp_run_write_tool', { tool: 'telegram_bot_send_message', arguments: {} });
+    expect(blocked.body.error).toContain('https://cloud.example.com/s/once-c-telegram');
+  });
+
+  it("falls back to the connector's page when no link can be made there", async () => {
+    const failing = await connect([TELEGRAM_PENDING], withSetup(jest.fn(), { finishSetupLink: jest.fn().mockRejectedValue(new Error('db down')) }));
+    expect((await call(failing, 'anythingmcp_list_connectors')).body.needsSetup[0].finishSetupUrl).toBe(
+      'https://cloud.example.com/connectors/c-telegram',
+    );
+    const otherWorkspace = await connect([TELEGRAM_PENDING], withSetup(jest.fn(), { finishSetupLink: jest.fn(async () => undefined) }));
+    expect((await call(otherWorkspace, 'anythingmcp_list_connectors')).body.needsSetup[0].finishSetupUrl).toBe(
+      'https://cloud.example.com/connectors/c-telegram',
+    );
+  });
+
+  it('makes at most five links in one answer', async () => {
+    const finishSetupLink = jest.fn(async (id: string) => `https://cloud.example.com/s/once-${id}`);
+    const pending = Array.from({ length: 7 }, (_, i) => ({ ...TELEGRAM_PENDING, id: `p${i}`, name: `tool_${i}`, connectorId: `c-${i}` }));
+    const client = await connect(pending, withSetup(jest.fn(), { finishSetupLink }));
+    const urls = (await call(client, 'anythingmcp_list_connectors')).body.needsSetup.map((c: any) => c.finishSetupUrl);
+    expect(finishSetupLink).toHaveBeenCalledTimes(5);
+    expect(urls.filter((u: string) => u.includes('/s/'))).toHaveLength(5);
+    expect(urls.filter((u: string) => u.includes('/connectors/'))).toHaveLength(2);
+  });
 });
 
 describe('calls are reported for measurement', () => {
