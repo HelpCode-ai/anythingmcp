@@ -1,0 +1,612 @@
+{
+  "slug": "base-jp",
+  "name": "BASE",
+  "description": "BASE API v2 for shops on BASE (thebase.com, Japan): order search with status filters, dispatch with carrier and tracking number, shop memos, items with variations, stock and price, categories and carriers. Personal Access Token.",
+  "instructions": "## BASE\nThis connector works with the new **BASE API** (v2, beta since October 2026, `https://apiv2.thebase.com/api`), for shops on BASE (thebase.com, Japan): orders with search and status filters, dispatch with carrier and tracking number, shop memos, items with variations, stock and price, categories and carriers.\n\n**Setup (about 3 minutes, no review by BASE)**\n1. Log in to BASE and open **BASE Developers** at `https://developers.thebase.com/apiv2`.\n2. Issue a **Personal Access Token** for your shop with the scopes `user.read`, `items.read`, `items.update`, `orders.read`, `orders.update` and `orders.dispatch`. Add `items.publish` or `orders.cancel` only if you will turn on the switched-off tools below. Pick the expiry date: it cannot be changed later.\n3. Paste the token into `BASE_ACCESS_TOKEN`.\n\nThe token is sent as a bearer token. When it expires every call answers 401: issue a new one and replace it before the date. BASE meant Personal Access Tokens for a shop managing its own store and will add OAuth to v2 before the general release; this connector then may switch to sign-in.\n\n**Where to start**: `base_jp_search_orders` with statuses ordered (orders to ship), then `base_jp_get_order` for the lines, the address and the delivery wishes.\n\n**Orders**: `base_jp_search_orders` (keyword, order dates in Japan time, statuses, payment methods, order types; last 3 months by default, at most one year), `base_jp_get_order`, `base_jp_dispatch_order` (all or some lines, with carrier id from `base_jp_list_delivery_companies`, tracking number and a message; BASE emails the buyer), `base_jp_update_shop_memo`. `base_jp_cancel_order` is installed switched off: it cannot be undone and refunds the buyer. The order key is `unique_key` (16 characters); dispatch and cancel take the line ids from `lines[].id`.\n\n**Items**: `base_jp_list_items` (public and hidden; no total count, fewer rows than limit means the last page), `base_jp_get_item`, `base_jp_list_item_variations`, `base_jp_list_item_categories`, `base_jp_update_item` (name, price, item code, description, tax type, purchase limit; a new price ends a running sale), `base_jp_set_stock` (absolute stock, per variation when the item has variations). `base_jp_set_item_visibility` is switched off, because false hides the item from buyers. Creating and deleting items, images and categories are not included. New or changed items can take a while to appear in lists.\n\n**Shop**: `base_jp_get_user` shows the shop, its public URL and whether it is open.\n\n**Formats and errors**: prices in yen including tax; times in answers are UTC (RFC 3339). Errors are `application/problem+json` with `type` (for example `/errors/items/not-found`), `title`, `status`, `detail` and `errors` naming the field; 401 means the token is missing or expired, 403 a missing scope. BASE has announced a rate limit for later in the beta; none applies yet. The older BASE API v1 (api.thebase.in, OAuth with an app reviewed by BASE) is not used here.",
+  "aliases": [
+    "BASE (thebase.com)",
+    "thebase.in",
+    "BASE ネットショップ",
+    "BASE EC"
+  ],
+  "region": "jp",
+  "category": "e-commerce",
+  "icon": "base-jp",
+  "docsUrl": "https://apiv2.thebase.com/docs/",
+  "requiredEnvVars": [
+    "BASE_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "BASE_ACCESS_TOKEN": {
+      "label": "Personal Access Token",
+      "kind": "credential",
+      "secret": true,
+      "help": "BASE Developers, API v2: issue a Personal Access Token for your shop with the scopes user.read, items.read, items.update, orders.read, orders.update and orders.dispatch.",
+      "link": "https://developers.thebase.com/apiv2",
+      "pattern": "^\\S{16,1000}$",
+      "patternMessage": "Paste the token only, without Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "BASE refused the token: it is wrong or past its expiry date. Issue a new Personal Access Token in BASE Developers and paste it.",
+      "field": "BASE_ACCESS_TOKEN"
+    },
+    "403": "The token lacks the scope for this call (for example orders.dispatch or items.update). Issue a new token with the scopes listed in the setup.",
+    "404": "BASE found no order or item with that key or id.",
+    "rate_limited": "BASE is limiting the calls. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "base_jp_get_user",
+    "params": {}
+  },
+  "prerequisites": "A BASE shop (thebase.com) and its owner login for BASE Developers, where you issue a Personal Access Token. No review by BASE; about 3 minutes.",
+  "connector": {
+    "name": "BASE API v2",
+    "type": "REST",
+    "baseUrl": "https://apiv2.thebase.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{BASE_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "base_jp_get_user",
+      "description": "The account and shop behind the token: shop_id, shop_url, shop_name, introduction, category, able_to_business (shop is public), using_only_cart, default tax type and login email. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/user"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "base_jp_list_items",
+      "description": "List the shop items, public and hidden: id, type, name, price (yen, tax included), proper_price (price before a sale), stock (sum of the variations), visible, sales_status, item_tax_type, identifier (item code), images and variations (id, name, stock, identifier, barcode). No total count: fewer rows than limit means the last page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "visible": {
+            "type": "string",
+            "description": "true: only public items; false: only hidden items. Leave out for both.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Only items in this category or its sub-categories.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort by list_order (shop display order, default), created or modified.",
+            "enum": [
+              "list_order",
+              "created",
+              "modified"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "asc (default) or desc.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Items to skip.",
+            "minimum": 0,
+            "maximum": 1000000,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/items",
+        "queryParams": {
+          "visible": "$visible",
+          "category_id": "$category_id",
+          "order": "$order",
+          "sort": "$sort",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "base_jp_get_item",
+      "description": "Read one item: name, detail, price, proper_price, stock, visible, sales_status, tax type, identifier, quantity limit, images, variations, options and categories. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "BASE item id (id of base_jp_list_items), e.g. 123456.",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/items/{item_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "base_jp_list_item_variations",
+      "description": "Variations (kinds such as colour or size) of one item: id, name, stock, identifier and barcode, in display order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "BASE item id (id of base_jp_list_items), e.g. 123456.",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/items/{item_id}/variations"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "base_jp_list_item_categories",
+      "description": "Item categories of the shop: id, number, name and parent (up to three levels). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/item_categories"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "base_jp_search_orders",
+      "description": "Search orders: unique_key, status (ordered = waiting for shipment, unpaid, unshippable, dispatched, cancelled, shipping, arrived), ordered_at, cancelled_at, modified_at, remark, shop memo, customer and shipping summary, totals, with `pagination` (page, limit, total_count, total_pages, has_next). Without dates the last 3 months; at most one year per search. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Order number, buyer details, item name or memo text, up to 255 characters.",
+            "maxLength": 255
+          },
+          "ordered_from_date": {
+            "type": "string",
+            "description": "Ordered on or after, YYYY-MM-DD, Japan time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "ordered_to_date": {
+            "type": "string",
+            "description": "Ordered on or before, YYYY-MM-DD, Japan time; less than one year after the start.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "statuses": {
+            "type": "array",
+            "description": "ordered (to ship), dispatched or cancelled.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ordered",
+                "dispatched",
+                "cancelled"
+              ]
+            },
+            "maxItems": 3
+          },
+          "payments": {
+            "type": "array",
+            "description": "Payment methods.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "creditcard",
+                "cvs",
+                "base_bt",
+                "atobarai",
+                "bnpl",
+                "bt",
+                "cod",
+                "carrier",
+                "paypal",
+                "amazon_pay",
+                "paypay"
+              ]
+            },
+            "maxItems": 11
+          },
+          "order_types": {
+            "type": "array",
+            "description": "Order types.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "normal",
+                "pre",
+                "subscription",
+                "digital",
+                "lottery",
+                "takeout"
+              ]
+            },
+            "maxItems": 6
+          },
+          "sort": {
+            "type": "string",
+            "description": "ordered_desc (newest first), ordered_asc, scheduled_date_asc, delivery_date_asc or payment_date_asc.",
+            "enum": [
+              "ordered_desc",
+              "ordered_asc",
+              "scheduled_date_asc",
+              "delivery_date_asc",
+              "payment_date_asc"
+            ],
+            "default": "ordered_desc"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Orders per page, 1 to 200.",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page from 1, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/search",
+        "bodyMapping": {
+          "keyword": "$keyword",
+          "ordered_from_date": "$ordered_from_date",
+          "ordered_to_date": "$ordered_to_date",
+          "statuses": "$statuses",
+          "payments": "$payments",
+          "order_types": "$order_types",
+          "sort": "$sort",
+          "limit": "$limit",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "base_jp_get_order",
+      "description": "Read one order in full: status, dates, customer (name, kana, email, address, phone), shipping address, delivery wishes and dispatch history (carrier, tracking number, comment), payment, totals, shop memo and the order lines (id, item, variation, title, price, amount, status). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unique_key": {
+            "type": "string",
+            "description": "Order unique key, 16 letters and digits (unique_key of base_jp_search_orders), e.g. 8A1B2C3D4E5F6A7B.",
+            "pattern": "^[A-Za-z0-9]{16}$"
+          }
+        },
+        "required": [
+          "unique_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders/{unique_key}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "base_jp_list_delivery_companies",
+      "description": "Carriers that can be given when dispatching: id (delivery_company_id) and name, in display order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/delivery_companies"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "base_jp_dispatch_order",
+      "description": "Mark order lines as dispatched (shipped), all or some of them, with an optional carrier, tracking number and message. BASE emails the buyer a dispatch notice and settles deferred payments. A 204 answer also means success: do not send it again; a 5xx answer leaves the result open, so read the order before retrying.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unique_key": {
+            "type": "string",
+            "description": "Order unique key, 16 letters and digits (unique_key of base_jp_search_orders), e.g. 8A1B2C3D4E5F6A7B.",
+            "pattern": "^[A-Za-z0-9]{16}$"
+          },
+          "order_line_ids": {
+            "type": "array",
+            "description": "Order line ids (lines[].id of base_jp_get_order).",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 200
+          },
+          "delivery_company_id": {
+            "type": "integer",
+            "description": "Carrier id from base_jp_list_delivery_companies.",
+            "minimum": 0
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number, up to 1000 characters.",
+            "maxLength": 1000
+          },
+          "comment": {
+            "type": "string",
+            "description": "Message to the buyer in the dispatch email, up to 1000 characters.",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "unique_key",
+          "order_line_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/{unique_key}/dispatch",
+        "bodyMapping": {
+          "order_line_ids": "$order_line_ids",
+          "delivery_company_id": "$delivery_company_id",
+          "tracking_number": "$tracking_number",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "base_jp_update_shop_memo",
+      "description": "Replace the internal shop memo of an order (not shown to the buyer). An empty string deletes it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unique_key": {
+            "type": "string",
+            "description": "Order unique key, 16 letters and digits (unique_key of base_jp_search_orders), e.g. 8A1B2C3D4E5F6A7B.",
+            "pattern": "^[A-Za-z0-9]{16}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Memo text, up to 1000 characters.",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "unique_key",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/orders/{unique_key}/shop_memo",
+        "bodyMapping": {
+          "text": "$text"
+        }
+      }
+    },
+    {
+      "name": "base_jp_set_stock",
+      "description": "Set the stock of one item, or of one variation, to an absolute number (0 to 100000). An item with variations needs variation_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "BASE item id (id of base_jp_list_items), e.g. 123456.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "variation_id": {
+            "type": "integer",
+            "description": "Variation id from base_jp_list_item_variations; leave out for an item without variations.",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "New stock quantity.",
+            "minimum": 0,
+            "maximum": 100000
+          }
+        },
+        "required": [
+          "item_id",
+          "count"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/items/{item_id}/stock",
+        "bodyMapping": {
+          "variation_id": "$variation_id",
+          "count": "$count"
+        }
+      }
+    },
+    {
+      "name": "base_jp_update_item",
+      "description": "Change the name, price (yen, tax included, 50 or more), item code, description, tax type or purchase limit of one item. Only the fields sent change. Sending a price ends a running sale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "BASE item id (id of base_jp_list_items), e.g. 123456.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "name": {
+            "type": "string",
+            "description": "Item name, 1 to 255 characters, no emoji.",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "price": {
+            "type": "integer",
+            "description": "Selling price in yen including tax, 50 to 100000000.",
+            "minimum": 50,
+            "maximum": 100000000
+          },
+          "identifier": {
+            "type": "string",
+            "description": "Item code: letters, digits, _ and -, up to 50 characters.",
+            "pattern": "^[a-zA-Z0-9_-]{1,50}$"
+          },
+          "detail": {
+            "type": "string",
+            "description": "Item description, up to 65535 characters, no emoji.",
+            "maxLength": 65535
+          },
+          "item_tax_type": {
+            "type": "string",
+            "description": "standard or reduced tax rate.",
+            "enum": [
+              "standard",
+              "reduced"
+            ]
+          },
+          "quantity_limit": {
+            "type": "integer",
+            "description": "Maximum quantity per purchase, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/items/{item_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "price": "$price",
+          "identifier": "$identifier",
+          "detail": "$detail",
+          "item_tax_type": "$item_tax_type",
+          "quantity_limit": "$quantity_limit"
+        }
+      }
+    },
+    {
+      "name": "base_jp_set_item_visibility",
+      "description": "Make one item public (true) or hidden (false). Hidden items are not shown and cannot be bought. Needs the items.publish scope.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "BASE item id (id of base_jp_list_items), e.g. 123456.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "visible": {
+            "type": "boolean",
+            "description": "true public, false hidden."
+          }
+        },
+        "required": [
+          "item_id",
+          "visible"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/items/{item_id}/visibility",
+        "bodyMapping": {
+          "visible": "$visible"
+        }
+      }
+    },
+    {
+      "name": "base_jp_cancel_order",
+      "description": "Cancel order lines. Cannot be undone; the buyer is refunded. Partial cancellation works only for some payment methods such as cash on delivery; otherwise list every unshipped line. Needs the orders.cancel scope.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unique_key": {
+            "type": "string",
+            "description": "Order unique key, 16 letters and digits (unique_key of base_jp_search_orders), e.g. 8A1B2C3D4E5F6A7B.",
+            "pattern": "^[A-Za-z0-9]{16}$"
+          },
+          "order_line_ids": {
+            "type": "array",
+            "description": "Order line ids (lines[].id of base_jp_get_order).",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 200
+          }
+        },
+        "required": [
+          "unique_key",
+          "order_line_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/{unique_key}/cancel",
+        "bodyMapping": {
+          "order_line_ids": "$order_line_ids"
+        }
+      }
+    }
+  ]
+}

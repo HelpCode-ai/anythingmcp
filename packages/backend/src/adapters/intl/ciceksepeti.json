@@ -1,0 +1,1240 @@
+{
+  "slug": "ciceksepeti",
+  "name": "Çiçeksepeti",
+  "description": "Çiçeksepeti seller API for the Turkish marketplace: orders with Çiçeksepeti or own-carrier shipping, status updates and tracking, invoices, products with asynchronous price and stock updates, categories and attributes, customer questions, order conversations and returns. API key and Seller ID from the seller panel.",
+  "instructions": "## Çiçeksepeti\nThis connector works with the **Çiçeksepeti seller API** (documentation at ciceksepeti.dev) on `https://apis.ciceksepeti.com/api/v1`, for sellers on Çiçeksepeti, the Turkish marketplace for flowers, gifts and general goods: orders and their two shipping models, invoices, products with price and stock, categories and attributes, customer questions, order conversations and returns.\n\n**Setup (about 5 minutes)**\n1. Sign in to the seller panel (seller.ciceksepeti.com) and open **Hesap Yönetimi > Entegrasyon Bilgilerim**. Copy the **API key** into `CICEKSEPETI_API_KEY` and the **Seller ID** into `CICEKSEPETI_SELLER_ID`.\n2. No key yet: in the panel open **Çiçeksepeti Destek Ekibi > Konuşma Başlat** with the topic **API Entegrasyon Süreçleri**; support creates the key and sends it in that conversation.\n3. Keep `CICEKSEPETI_API_URL` on production. The sandbox (`sandbox-apis.ciceksepeti.com`) needs separate test keys, requested the same way.\n4. Install and run `ciceksepeti_list_categories`.\n\n**How requests are signed**: the key goes in the `x-api-key` header; there is no secret. Çiçeksepeti also asks for a `User-Agent` with your Seller ID (or `SellerId-IntegratorName` when an integrator works for you); the connector sends `CICEKSEPETI_SELLER_ID`. A wrong key answers 401 `Unauthorized`. The API sits behind Cloudflare: from our test machine every call was stopped by Cloudflare before reaching the API, so the exact answer to a wrong key from AnythingMCP Cloud is not confirmed yet.\n\n**Where to start**: `ciceksepeti_list_orders` with status 1 (new) and a window of at most 14 days, then ship with the model your store uses.\n\n**Shipping models** (set per store by Çiçeksepeti): model 1, Çiçeksepeti's cargo integration: `ciceksepeti_ready_for_cargo` returns the cargo code (partialNumber) for new sub-orders and Çiçeksepeti follows the delivery. Model 2, your own carrier: `ciceksepeti_update_order_status` moves sub-orders yourself (status 5 needs the carrier, tracking number and link; same-day vehicle orders use 3). Before shipping: `ciceksepeti_change_cargo_company` and `ciceksepeti_send_cargo_measurement` for new sub-orders. Digital goods: `ciceksepeti_mark_digital_delivered`. Jewellery labour cost: `ciceksepeti_update_labor_cost`. Invoice: `ciceksepeti_send_invoice` with a PDF link (to the address in invoiceEmail).\n\n**Order statuses**: 1 new, 2 preparing, 3 handed to delivery vehicle, 5 shipped, 11 ready to ship, 7 delivered, 18 returned to seller. Orders are listed per sub-order (orderItemId); several sub-orders can share one orderId. Cancelled orders: `is_order_status_active` false, or `ciceksepeti_list_returns`. Orders in status 11 or 5 can no longer be cancelled.\n\n**Products**: `ciceksepeti_list_products`, `ciceksepeti_create_products`, `ciceksepeti_update_products` and `ciceksepeti_update_price_and_stock` (by stockCode). Every product write is **asynchronous**: it answers a `batchId`, and `ciceksepeti_get_batch_status` shows each item as Pending, Processing, Success, Failed or Warning. Creates and updates finish within 24 hours, price and stock within 4 hours. A Failed item must be sent again. To create a product take a lowest-level category from `ciceksepeti_list_categories` and its attributes from `ciceksepeti_get_category_attributes`. The crossed-out listPrice must be the lowest price of the last 30 days and 1 to 80 percent above salesPrice; a price cannot drop below half the current one in one step.\n\n**Questions and conversations**: `ciceksepeti_list_questions`, `ciceksepeti_list_question_actions` and `ciceksepeti_answer_question` (at most 500 characters, within the action rules); order conversations with `ciceksepeti_list_chats` and `ciceksepeti_send_chat_message`.\n\n**Returns**: `ciceksepeti_list_returns` (20 return started, 21 in cargo, 22 at seller, 23 awaiting your approval), `ciceksepeti_mark_return_received` when a return reached you outside the cargo integration, and `ciceksepeti_evaluate_return` (switched off: approving a refund makes Çiçeksepeti refund the customer, rejecting escalates to Çiçeksepeti).\n\n**Rate limits** (strict, per endpoint, counted per request body):\n\n| Call | Same body | Different body | Items per call |\n|---|---|---|---|\n| list orders | 1 per minute | 1 per 5 s | 100 per page |\n| create products | | 1 per 5 s | 1000 |\n| update products | | 1 per second | 200 |\n| price and stock | 1 per 30 minutes | 1 per second | 200 |\n| batch status | 1 per minute | 5 per second | |\n| list products | 1 per 10 minutes | 1 per 5 s | 60 per page |\n| shipping, status, returns writes | | 1 per 5 s | |\n| questions, chats | 1 per 10 s | 1 per 5 s | |\n\nDo not repeat an identical call: wait or change the filter.\n\n**Dates and money**: send ISO 8601 (`2026-11-01T00:00:00Z`); return dates take `YYYY-MM-DD`. Answers mix formats (`orderCreateDate` as dd/MM/yyyy with a separate time, `deliveryDate` as dd-MM-yyyy HH:mm, timestamps without zone) in Turkey time (UTC+3). Prices are TL with a dot as decimal separator.\n\n**Writes: confirm first.** Status updates, cargo codes, prices, stock, product data, answers and messages act on the live store. Before each call show the user what changes and wait for a yes.",
+  "aliases": [
+    "Çiçek Sepeti",
+    "Cicek Sepeti",
+    "ciceksepeti.com"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "ciceksepeti",
+  "docsUrl": "https://ciceksepeti.dev",
+  "requiredEnvVars": [
+    "CICEKSEPETI_API_URL",
+    "CICEKSEPETI_API_KEY",
+    "CICEKSEPETI_SELLER_ID"
+  ],
+  "envVarMeta": {
+    "CICEKSEPETI_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "Production for your live store. The sandbox needs separate test keys from Çiçeksepeti support.",
+      "link": "https://ciceksepeti.dev",
+      "options": [
+        {
+          "value": "https://apis.ciceksepeti.com/api/v1",
+          "label": "Production (apis.ciceksepeti.com)"
+        },
+        {
+          "value": "https://sandbox-apis.ciceksepeti.com/api/v1",
+          "label": "Sandbox (sandbox-apis.ciceksepeti.com)"
+        }
+      ]
+    },
+    "CICEKSEPETI_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Seller panel (seller.ciceksepeti.com) > Hesap Yönetimi > Entegrasyon Bilgilerim. No key yet: Çiçeksepeti Destek Ekibi > Konuşma Başlat, topic API Entegrasyon Süreçleri.",
+      "link": "https://seller.ciceksepeti.com",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the API key alone, without spaces."
+    },
+    "CICEKSEPETI_SELLER_ID": {
+      "label": "Seller ID",
+      "kind": "setting",
+      "help": "Same page (Entegrasyon Bilgilerim): your Seller ID. It is sent as the User-Agent, as Çiçeksepeti asks.",
+      "link": "https://seller.ciceksepeti.com",
+      "example": "123456",
+      "pattern": "^[0-9]{1,15}$",
+      "patternMessage": "The Seller ID is a number, e.g. 123456."
+    }
+  },
+  "verifyHints": {
+    "401": "Çiçeksepeti refused the API key. Copy it again from Hesap Yönetimi > Entegrasyon Bilgilerim, and check the environment: sandbox and production keys differ.",
+    "403": "The request was blocked before reaching the API (Cloudflare) or the key has no access. Check the key and the Seller ID; if it persists, ask Çiçeksepeti support (API Entegrasyon Süreçleri) whether calls from this address are allowed.",
+    "404": "Çiçeksepeti found no order, product, batch or question with that id.",
+    "429": "Çiçeksepeti limits each endpoint per request body: an identical call is allowed only once a minute (orders), every 10 minutes (product list) or every 30 minutes (price and stock). Wait or change the filter.",
+    "rate_limited": "Çiçeksepeti limits each endpoint per request body (for example orders once a minute with the same body, once every 5 seconds with another). Wait and try again."
+  },
+  "probe": {
+    "tool": "ciceksepeti_list_categories",
+    "params": {}
+  },
+  "prerequisites": "A Çiçeksepeti marketplace seller account with an API key (seller panel > Hesap Yönetimi > Entegrasyon Bilgilerim, or requested from support) and its Seller ID. The shipping model (Çiçeksepeti cargo integration or own carrier) is set per store by Çiçeksepeti.",
+  "connector": {
+    "name": "Çiçeksepeti Seller API",
+    "type": "REST",
+    "baseUrl": "{{CICEKSEPETI_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{CICEKSEPETI_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "{{CICEKSEPETI_SELLER_ID}}"
+    }
+  },
+  "tools": [
+    {
+      "name": "ciceksepeti_list_orders",
+      "description": "List marketplace orders, one row per sub-order (orderItemId): orderId, orderItemStatusId and orderProductStatus, product (productId, productCode, code, name, quantity), prices (totalPrice, itemPrice, invoicePrice, discount, tax, cargoPrice), receiver and sender with tax details, invoiceEmail, cargoCompany, cargoNumber, shipmentTrackingUrl, partialNumber, cargoModelType, delivery dates, card message, cancellationResult and status history. Window at most 14 days; pages from 0, up to 100 rows. Rate limit: the same body once a minute, a different body once every 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Orders after this time, ISO 8601, e.g. 2026-11-01T00:00:00Z. Required unless order_no or order_item_no is given; at most 14 days before end_date."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Orders before this time, ISO 8601."
+          },
+          "status_id": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              5,
+              11,
+              7
+            ],
+            "description": "Status: 1 new, 2 preparing, 5 shipped, 11 ready to ship, 7 delivered."
+          },
+          "order_no": {
+            "type": "integer",
+            "description": "Main order number (orderId); returns all its sub-orders."
+          },
+          "order_item_no": {
+            "type": "integer",
+            "description": "Sub-order number (orderItemId)."
+          },
+          "is_order_status_active": {
+            "type": "boolean",
+            "description": "false: list cancelled (passive) orders; true: active ones."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page, starting at 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Order/GetOrders",
+        "bodyMapping": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "statusId": "$status_id",
+          "orderNo": "$order_no",
+          "orderItemNo": "$order_item_no",
+          "isOrderStatusActive": "$is_order_status_active",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_ready_for_cargo",
+      "description": "Model 1 (Çiçeksepeti cargo integration): get Çiçeksepeti's cargo code (partialNumber) for sub-orders packed in one parcel; they move to ready to ship and Çiçeksepeti follows the delivery. Sub-orders must be new (status 1), of the same main order and receiver. Answers per item partialNumber, cargoCompany, isSuccess and message. One call per 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "description": "orderItemId."
+            },
+            "minItems": 1,
+            "description": "Sub-order numbers that go into the same parcel."
+          }
+        },
+        "required": [
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Order/readyforcargowithcsintegration",
+        "bodyMapping": {
+          "orderItemsGroup": [
+            {
+              "orderItemIds": "$order_item_ids"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_update_order_status",
+      "description": "Model 2 (your own carrier): update the status of sub-orders. Status 5 (shipped) needs cargoBusinessId, shipmentNumber and shipmentTrackingUrl; with Yurtiçi and status 11 Çiçeksepeti creates the barcode and returns a partialNumber; same-day vehicle deliveries use status 3; status 7 can carry receiverName and deliveryTime. Answers per item isSuccess and message. Sellers on model 1 get an error. One call per 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderItemId": {
+                  "type": "integer",
+                  "description": "Sub-order number."
+                },
+                "orderItemStatusId": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2,
+                    3,
+                    5,
+                    11,
+                    7,
+                    18
+                  ],
+                  "description": "New status: 1 new, 2 preparing, 3 handed to delivery vehicle, 5 shipped, 11 ready to ship, 7 delivered, 18 returned to seller."
+                },
+                "cargoBusinessId": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2,
+                    25,
+                    43,
+                    44,
+                    45,
+                    46,
+                    55,
+                    59,
+                    116,
+                    117,
+                    118
+                  ],
+                  "description": "Carrier for status 5: 1 MNG, 2 Yurtiçi, 25 Sürat, 43 Aras, 44 PTT, 45 UPS, 46 Horoz, 55 Ceva, 59 Sendeo, 116 kargomSENDE, 117 Kolay Gelsin, 118 Arvato."
+                },
+                "shipmentNumber": {
+                  "type": "string",
+                  "description": "Tracking number of the carrier (required for status 5)."
+                },
+                "shipmentTrackingUrl": {
+                  "type": "string",
+                  "description": "Tracking link of the carrier (required for status 5)."
+                },
+                "receiverName": {
+                  "type": "string",
+                  "description": "Who received the parcel (status 7; default the receiver of the order)."
+                },
+                "deliveryTime": {
+                  "type": "string",
+                  "description": "When it was delivered, ISO 8601 (status 7; default now)."
+                }
+              },
+              "required": [
+                "orderItemId",
+                "orderItemStatusId"
+              ]
+            },
+            "minItems": 1,
+            "description": "Updates: `[{\"orderItemId\": 12345, \"orderItemStatusId\": 5, \"cargoBusinessId\": 2, \"shipmentNumber\": \"1700000004567\", \"shipmentTrackingUrl\": \"https://...\"}]`."
+          }
+        },
+        "required": [
+          "order_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Order/statusupdatewithsupplierintegration",
+        "bodyMapping": {
+          "orderItems": "$order_items"
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_change_cargo_company",
+      "description": "Switch a new (status 1) sub-order to another carrier defined for your store. Answers 200 or an error message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sub-order number (orderItemId of ciceksepeti_list_orders). One order (orderId) can hold several sub-orders."
+          },
+          "cargo_id": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              25,
+              43,
+              44,
+              45,
+              46,
+              49
+            ],
+            "description": "Carrier: 1 MNG, 2 Yurtiçi, 25 Sürat, 43 Aras, 44 PTT, 45 UPS, 46 Horoz, 49 Borusan."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "cargo_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Order/CargoCompany",
+        "bodyMapping": {
+          "items": [
+            {
+              "orderProductId": "$order_item_id",
+              "cargoId": "$cargo_id"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_send_cargo_measurement",
+      "description": "Send the volumetric weight (desi) and number of parcels of a bulky new (status 1) sub-order assigned to a logistics company, before moving it on. Answers 200 or an error message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sub-order number (orderItemId of ciceksepeti_list_orders). One order (orderId) can hold several sub-orders."
+          },
+          "desi": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Volumetric weight (desi)."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of parcels the item ships in."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "desi",
+          "quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Order/CargoMeasurement",
+        "bodyMapping": {
+          "items": [
+            {
+              "orderProductId": "$order_item_id",
+              "desi": "$desi",
+              "quantity": "$quantity"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_mark_digital_delivered",
+      "description": "Mark a digital sub-order (codes, e-vouchers; the store and products must be set up as digital) as delivered, with the receiver name and delivery time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sub-order number (orderItemId of ciceksepeti_list_orders). One order (orderId) can hold several sub-orders."
+          },
+          "receiver_name": {
+            "type": "string",
+            "description": "Name of the receiver."
+          },
+          "delivery_time": {
+            "type": "string",
+            "description": "Delivery time, ISO 8601, e.g. 2026-11-16T10:00:00Z."
+          }
+        },
+        "required": [
+          "order_item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Order/digital-order-status-update",
+        "bodyMapping": {
+          "items": [
+            {
+              "orderProductId": "$order_item_id",
+              "receiverName": "$receiver_name",
+              "deliveryTime": "$delivery_time"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_update_labor_cost",
+      "description": "Send the labour cost of a jewellery or gold sub-order (VAT included, above 0 and below the item price), before it is delivered. Only for the gold, silver, diamond and pearl jewellery categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sub-order number (orderItemId of ciceksepeti_list_orders). One order (orderId) can hold several sub-orders."
+          },
+          "labor_cost": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Labour cost in TL including VAT."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "labor_cost"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Order/UpdateLaborCost",
+        "bodyMapping": {
+          "items": [
+            {
+              "orderProductId": "$order_item_id",
+              "laborCost": "$labor_cost"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_send_invoice",
+      "description": "Send the invoice of a sub-order to the customer: Çiçeksepeti queues it and emails the PDF found at document_url.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sub-order number (orderItemId of ciceksepeti_list_orders). One order (orderId) can hold several sub-orders."
+          },
+          "document_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public link to the invoice PDF."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "document_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Branch/SendInvoiceMail",
+        "bodyMapping": {
+          "items": [
+            {
+              "orderItemId": "$order_item_id",
+              "documentUrl": "$document_url"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_list_products",
+      "description": "List your products: productName, productCode (kc...), categoryId and name, stockCode, mainProductCode, productStatusType, link, deliveryType, deliveryMessageType, stock quantity, salesPrice, listPrice, barcode, isActive, images, attributes and passiveDescription, plus totalCount. Pages from 1, up to 60 rows. Rate limit: the same request once every 10 minutes, a different one once every 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_status": {
+            "type": "integer",
+            "enum": [
+              2,
+              3,
+              4,
+              5,
+              7,
+              8
+            ],
+            "description": "Status: 2 awaiting approval, 3 on sale, 4 rejected, 5 closed for sale, 7 out of stock, 8 locked."
+          },
+          "stock_code": {
+            "type": "string",
+            "description": "Only this variant code (stockCode)."
+          },
+          "variant_name": {
+            "type": "string",
+            "description": "Only variants with this name."
+          },
+          "sort_method": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
+            "description": "Sort: 1 name ascending, 2 name descending, 3 stock ascending, 4 stock descending, 5 price ascending, 6 price descending, 7 created ascending, 8 created descending."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "default": 60,
+            "description": "Rows per page, at most 60."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Products",
+        "queryParams": {
+          "ProductStatus": "$product_status",
+          "StockCode": "$stock_code",
+          "variantName": "$variant_name",
+          "SortMethod": "$sort_method",
+          "Page": "$page",
+          "PageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_create_products",
+      "description": "Create products (up to 1000 variants per call). Asynchronous: the answer is a batchId, products go into a queue and approval, and the result is read with ciceksepeti_get_batch_status (up to 24 hours). One call per 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productName": {
+                  "type": "string",
+                  "description": "Product name, at most 255 characters, no banned words."
+                },
+                "mainProductCode": {
+                  "type": "string",
+                  "description": "Your product code (SupplierCode), shared by all variants of a product."
+                },
+                "stockCode": {
+                  "type": "string",
+                  "description": "Your variant code (SupplierProductCode), unique per variant."
+                },
+                "categoryId": {
+                  "type": "integer",
+                  "description": "Lowest-level category id from ciceksepeti_list_categories."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description, at least 30 characters of plain text, HTML allowed up to 20000 characters; no outside links except ciceksepeti.com."
+                },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "Image URL."
+                  },
+                  "description": "Image URLs (JPG or PNG, 500x500 to 2000x2000 px, multiples of 10x11 look best)."
+                },
+                "deliveryType": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "description": "1 own delivery vehicle, 2 cargo, 3 cargo and vehicle."
+                },
+                "deliveryMessageType": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    4,
+                    5,
+                    6,
+                    7,
+                    13,
+                    18,
+                    19
+                  ],
+                  "description": "Delivery window: 1 flower service, 4 gift cargo same day, 5 gift cargo 1-3 working days, 18 gift cargo 1-2, 19 gift cargo 1-10, 6 gift cargo 1-5, 7 gift cargo 1-7, 13 gift cargo 3-5."
+                },
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode, 3 to 50 characters (optional; cannot be changed once set)."
+                },
+                "Attributes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "Variant and product attributes from ciceksepeti_get_category_attributes: objects with `id` (attributeId), `ValueId` (attribute value id) and `TextLength` (only for personalisable attributes, otherwise 0)."
+                },
+                "operatorContacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "Economic operators (GPSR): objects with `type` (1 manufacturer, 2 importer, 3 authorised representative, 4 fulfilment provider), `name`, `address`, `email`."
+                },
+                "safetyInfo": {
+                  "type": "object",
+                  "description": "Product safety: `warningDescription`, `ceSymbolValueId` (1 shown on the image, 2 not shown), `origin`, `frontImage`, `backImage`."
+                },
+                "stockQuantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units in stock."
+                },
+                "salesPrice": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Sales price in TL (the category may have a minimum)."
+                },
+                "listPrice": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Crossed-out price in TL: by law the lowest price of the last 30 days, 1 to 80 percent above salesPrice."
+                }
+              },
+              "required": [
+                "productName",
+                "mainProductCode",
+                "stockCode",
+                "categoryId",
+                "stockQuantity",
+                "salesPrice",
+                "description",
+                "images",
+                "deliveryType",
+                "deliveryMessageType"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 1000,
+            "description": "Variants to create; variants of one product share mainProductCode."
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Products",
+        "bodyMapping": {
+          "products": "$products"
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_update_products",
+      "description": "Update product data (up to 200 variants per call): name, description, images, delivery, isActive per variant, personalisable attribute lengths. Barcodes and variant attributes cannot be changed through the API. Leaving out operatorContacts or safetyInfo deletes the stored values, so send them in full. Asynchronous: answers a batchId (up to 24 hours). One call per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productName": {
+                  "type": "string",
+                  "description": "Product name, at most 255 characters, no banned words."
+                },
+                "mainProductCode": {
+                  "type": "string",
+                  "description": "Your product code (SupplierCode), shared by all variants of a product."
+                },
+                "stockCode": {
+                  "type": "string",
+                  "description": "Your variant code (SupplierProductCode), unique per variant."
+                },
+                "categoryId": {
+                  "type": "integer",
+                  "description": "Lowest-level category id from ciceksepeti_list_categories."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description, at least 30 characters of plain text, HTML allowed up to 20000 characters; no outside links except ciceksepeti.com."
+                },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "Image URL."
+                  },
+                  "description": "Image URLs (JPG or PNG, 500x500 to 2000x2000 px, multiples of 10x11 look best)."
+                },
+                "deliveryType": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2,
+                    3
+                  ],
+                  "description": "1 own delivery vehicle, 2 cargo, 3 cargo and vehicle."
+                },
+                "deliveryMessageType": {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    4,
+                    5,
+                    6,
+                    7,
+                    13,
+                    18,
+                    19
+                  ],
+                  "description": "Delivery window: 1 flower service, 4 gift cargo same day, 5 gift cargo 1-3 working days, 18 gift cargo 1-2, 19 gift cargo 1-10, 6 gift cargo 1-5, 7 gift cargo 1-7, 13 gift cargo 3-5."
+                },
+                "barcode": {
+                  "type": "string",
+                  "description": "Barcode, 3 to 50 characters (optional; cannot be changed once set)."
+                },
+                "Attributes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "Variant and product attributes from ciceksepeti_get_category_attributes: objects with `id` (attributeId), `ValueId` (attribute value id) and `TextLength` (only for personalisable attributes, otherwise 0)."
+                },
+                "operatorContacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "description": "Economic operators (GPSR): objects with `type` (1 manufacturer, 2 importer, 3 authorised representative, 4 fulfilment provider), `name`, `address`, `email`."
+                },
+                "safetyInfo": {
+                  "type": "object",
+                  "description": "Product safety: `warningDescription`, `ceSymbolValueId` (1 shown on the image, 2 not shown), `origin`, `frontImage`, `backImage`."
+                },
+                "isActive": {
+                  "type": "boolean",
+                  "description": "true: variant on sale, false: variant passive. The product itself cannot be made passive through the API."
+                }
+              },
+              "required": [
+                "productName",
+                "mainProductCode",
+                "stockCode",
+                "isActive",
+                "description",
+                "images",
+                "deliveryType",
+                "deliveryMessageType"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Variants to update, identified by mainProductCode and stockCode."
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Products",
+        "bodyMapping": {
+          "products": "$products"
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_update_price_and_stock",
+      "description": "Update stock and prices by stockCode (up to 200 variants per call). Each item needs stockQuantity or salesPrice; listPrice only together with salesPrice; a new price cannot be below half the current one. Asynchronous: answers a batchId, done within 4 hours. Rate limit: the same body once every 30 minutes, a different body once a second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stockCode": {
+                  "type": "string",
+                  "description": "Variant code."
+                },
+                "stockQuantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New stock."
+                },
+                "salesPrice": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "New sales price in TL."
+                },
+                "listPrice": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "New crossed-out price in TL (only with salesPrice)."
+                }
+              },
+              "required": [
+                "stockCode"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 200,
+            "description": "Changes: `[{\"stockCode\": \"SKU-1\", \"stockQuantity\": 5, \"salesPrice\": 49.99, \"listPrice\": 59.99}]`."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Products/price-and-stock",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_get_batch_status",
+      "description": "Read the result of a product create, update or price and stock call: itemCount and per item the data sent, status (Pending, Processing, Success, Failed, Warning), failureReasons (message, code) and lastModificationDate. Rate limit: the same batch once a minute, up to 5 different batches a second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "description": "batchId returned by the write, a GUID."
+          }
+        },
+        "required": [
+          "batch_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Products/batch-status/{batch_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_list_categories",
+      "description": "List the Çiçeksepeti category tree: id, name, parentCategoryId and subCategories. Products go into a lowest-level category.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Categories"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_get_category_attributes",
+      "description": "List the attributes of a lowest-level category: attributeId, attributeName, required, varianter, type (variant attribute, product attribute or personalisable attribute) and attributeValues (id, name).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Lowest-level category id from ciceksepeti_list_categories."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Categories/{category_id}/attributes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_list_questions",
+      "description": "List product questions from customers: id, product (code, name, url, imageUrl), question, answer, questionDate, answered, branchActionId and approve, plus hasNextPage. Dates are required unless id is given, at most 32 days apart. Rate limit: the same request once every 10 seconds, a different one once every 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Only this question id."
+          },
+          "product_code": {
+            "type": "string",
+            "description": "Only questions about this product code."
+          },
+          "answered": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ],
+            "description": "true answered, false unanswered; leave out for all."
+          },
+          "create_start_date": {
+            "type": "string",
+            "description": "Questions after this date, e.g. 2026-11-01 (the docs also mention millisecond timestamps)."
+          },
+          "create_end_date": {
+            "type": "string",
+            "description": "Questions before this date."
+          },
+          "approve": {
+            "type": "boolean",
+            "description": "true: published on the site, false: not published."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellerquestions",
+        "queryParams": {
+          "Id": "$id",
+          "ProductCode": "$product_code",
+          "Answered": "$answered",
+          "CreateStartDate": "$create_start_date",
+          "CreateEndDate": "$create_end_date",
+          "Approve": "$approve",
+          "Page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_list_question_actions",
+      "description": "List the answer actions (branchActionId) and their details (branchActionDetailId) accepted by ciceksepeti_answer_question.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellerquestions/actions"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_answer_question",
+      "description": "Answer or handle a product question. branch_action_id 1 publishes question and answer (answer only), 2 answers only the customer (answer and branch_action_detail_id: 1 already answered, 2 order related, 3 other), 3 reports inappropriate content (branch_description only), 4 says the question belongs to another seller (nothing else). Answers at most 500 characters.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "description": "Question id from ciceksepeti_list_questions."
+          },
+          "branch_action_id": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "Action: 1, 2, 3 or 4 as above."
+          },
+          "answer": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Answer text, at most 500 characters."
+          },
+          "branch_action_detail_id": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "description": "Detail for action 2: 1 already answered, 2 order related, 3 other."
+          },
+          "branch_description": {
+            "type": "string",
+            "description": "Note to the call centre for action 3."
+          }
+        },
+        "required": [
+          "question_id",
+          "branch_action_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sellerquestions/{question_id}",
+        "bodyMapping": {
+          "answer": "$answer",
+          "branchActionId": "$branch_action_id",
+          "branchActionDetailId": "$branch_action_detail_id",
+          "branchDescription": "$branch_description"
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_list_chats",
+      "description": "List order conversations (ask the seller after purchase): chatId, orderItemId, chatType (1 customer, 2 customer service), isActive, isRead, canSendMessage, order item, product and shipment details, and messages (senderType, message, createdOn, files), plus hasNextPage. Date range at most 32 days. Rate limit: the same request once every 10 seconds, a different one once every 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page, starting at 1."
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Only this chat (GUID)."
+          },
+          "chat_type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 customer and seller, 2 customer service and seller."
+          },
+          "order_item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only chats about this sub-order."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "From this date, ISO 8601 (with end_date)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Until this date, at most 32 days after start_date."
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats",
+        "queryParams": {
+          "Page": "$page",
+          "ChatId": "$chat_id",
+          "ChatType": "$chat_type",
+          "OrderItemId": "$order_item_id",
+          "StartDate": "$start_date",
+          "EndDate": "$end_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_send_chat_message",
+      "description": "Send a text reply in an order conversation (at most 500 characters). Answers the message with senderType, isRead and createdOn. 400 Invalid chatId when the id is not a GUID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "chatId from ciceksepeti_list_chats (a GUID)."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Message text, at most 500 characters."
+          }
+        },
+        "required": [
+          "chat_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chats/{chat_id}/messages",
+        "bodyMapping": {
+          "message": "$message"
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_list_returns",
+      "description": "List cancelled orders and return or exchange requests: orderId, orderItemId, customerName, price, orderItemStatus, cancelReason and subCancelReason, orderItemCancelStatus, cancelType (1 cancellation, 2 return, 3 return sent back to the customer), cargoCompany, partialNumber, product codes and texts. Without dates the last month; at most one month. Pages from 0. One call per 5 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_status_id": {
+            "type": "integer",
+            "enum": [
+              1,
+              20,
+              21,
+              22,
+              23
+            ],
+            "description": "Return status: 20 return started, 21 return in cargo, 22 return at seller, 23 awaiting seller approval; 1 with the cancellation dates lists returns going back to the customer."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Order date from, YYYY-MM-DD (do not combine with the cancellation dates)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Order date to, YYYY-MM-DD."
+          },
+          "cancellation_start_date": {
+            "type": "string",
+            "description": "Cancellation or return date from, YYYY-MM-DD."
+          },
+          "cancellation_end_date": {
+            "type": "string",
+            "description": "Cancellation or return date to, YYYY-MM-DD."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page, starting at 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50,
+            "description": "Rows per page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Order/getcanceledorders",
+        "bodyMapping": {
+          "orderItemStatusId": "$order_item_status_id",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "cancellationStartDate": "$cancellation_start_date",
+          "cancellationEndDate": "$cancellation_end_date",
+          "page": "$page",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ciceksepeti_mark_return_received",
+      "description": "Confirm that returned sub-orders reached you when the return did not travel through Çiçeksepeti's cargo integration. Only for status 20 (return started); moves them to 22 (return at seller). Answers per item isSuccess and validation messages.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "description": "orderItemId."
+            },
+            "minItems": 1,
+            "description": "Sub-order numbers of the returns received."
+          }
+        },
+        "required": [
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Order/refundprocessstartreceivedprocess",
+        "bodyMapping": {
+          "orderItemIds": "$order_item_ids"
+        }
+      }
+    },
+    {
+      "name": "ciceksepeti_evaluate_return",
+      "description": "Approve or reject a return or exchange at the seller (status 22). Approving an exchange puts the order back to new; approving a refund deactivates the order and Çiçeksepeti refunds the customer; rejecting sends it to Çiçeksepeti for review. Cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sub-order number (orderItemId of ciceksepeti_list_orders). One order (orderId) can hold several sub-orders."
+          },
+          "process": {
+            "type": "integer",
+            "enum": [
+              1,
+              3
+            ],
+            "description": "1 approve, 3 reject."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "process"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Order/cancelevaluation",
+        "bodyMapping": {
+          "orderItemId": "$order_item_id",
+          "process": "$process"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

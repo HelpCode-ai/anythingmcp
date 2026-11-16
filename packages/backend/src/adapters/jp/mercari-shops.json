@@ -1,0 +1,1106 @@
+{
+  "slug": "mercari-shops",
+  "name": "Mercari Shops",
+  "description": "mercari shops API (GraphQL) for shops on Mercari Shops in Japan: products and variant stock, orders, shipping with tracking codes, cancellations and buyer inquiries. Personal API access token; needs a Mercari agreement and a registered Japanese IP address, so self-hosted only.",
+  "instructions": "## Mercari Shops\nThis connector works with the **mercari shops API** (GraphQL, `https://api.mercari-shops.com/v1/graphql`) for shops on メルカリShops, Mercari's storefront service in Japan: shop, products and variants with stock, orders (order transactions), shipping and tracking codes, cancellations and buyer inquiries.\n\n**Self-hosted only, and a contract with Mercari**: Mercari answers only requests from fixed IP addresses in Japan that the company has registered with Mercari in advance (others get 404, sandbox and production separately), and API use needs an agreement with Mercari, which assigns the API client name used in the User-Agent. AnythingMCP Cloud cannot meet the Japanese IP requirement, so the connector is offered on self-hosted installations whose outbound address is registered.\n\n**Setup**\n1. Agree API use with Mercari (inquiry form for Mercari Shops partners) and register the fixed Japanese IP address of your AnythingMCP server. Mercari sends your API client name.\n2. In the shop administration page of Mercari Shops, issue a **Personal API Access Token** (up to 10 per shop, no expiry; sandbox and production tokens are separate). Paste it into `MERCARI_SHOPS_API_TOKEN`.\n3. Put your client name and version into `MERCARI_SHOPS_USER_AGENT`, in the form `CLIENTNAME/1.0.0` (use `0.0.0` when you have no version).\n\n**Where to start**: `mercari_shops_get_shop` checks the token. `mercari_shops_list_order_transactions` with statuses WAITING_FOR_SHIPPING lists orders to ship; `mercari_shops_list_inquiries` with status AWAITING_SELLER lists buyer messages to answer.\n\n**Shipping an order**: 1) `mercari_shops_get_order_transaction` (products[].unshippedQuantity is what can still ship), 2) `mercari_shops_create_order_shipping` with product, variant and quantity lines and an idempotency key, 3) `mercari_shops_update_shipping_tracking_code`, 4) `mercari_shops_complete_order_shipping` once handed to the carrier. `mercari_shops_list_order_shippings` and `mercari_shops_list_order_cancellations` read the state. `mercari_shops_cancel_order_transaction` refunds the buyer and is installed switched off.\n\n**Products and stock**: `mercari_shops_list_products` (keyword on name or SKU prefix), `mercari_shops_get_product`, `mercari_shops_get_product_variant` (exact SKU), `mercari_shops_create_product`, `mercari_shops_update_product`, and `mercari_shops_update_variants` for stock of up to 20 variants per call. Allowed values: `mercari_shops_get_listing_options`, `mercari_shops_list_product_categories` (leaf categories only), `mercari_shops_list_shipping_configurations`. `mercari_shops_delete_product` is installed switched off; set status UNOPENED to hide a product.\n\n**Buyer inquiries**: `mercari_shops_list_inquiries`, `mercari_shops_list_inquiry_messages`, `mercari_shops_reply_to_inquiry`, `mercari_shops_update_inquiry_status`. New data can take 2 to 3 seconds to appear. The older transaction message API is being retired in favour of inquiries.\n\n**Generic GraphQL**: the connector also offers `mercari_shops_graphql_query` for other read queries from the reference; the generic mutation tool is installed switched off.\n\n**Formats and pitfalls**: prices and fees are integers in yen; prices go from 300 to 9,999,999 and stock up to 9,999. Lists are Relay connections: read `edges[].node`, and pass `pageInfo.endCursor` as `after` while `hasNextPage` is true. Errors come with HTTP 200 in `errors` (FAILED_PRECONDITION, BAD_USER_INPUT, PRODUCT_DIFFERENCE_FOUND for a parallel change: read again and retry); 401 is a wrong token or environment, 404 an unregistered IP address. Rate limits are counted per shop across all tokens. Mercari plans a cart feature with breaking changes to some order APIs and an auction sales format (December 2026); check the reference's release schedule.",
+  "aliases": [
+    "メルカリShops",
+    "メルカリショップス",
+    "Mercari Shops API"
+  ],
+  "region": "jp",
+  "category": "e-commerce",
+  "icon": "mercari-shops",
+  "docsUrl": "https://api.mercari-shops.com/docs/index.html",
+  "selfHostOnly": true,
+  "requiredEnvVars": [
+    "MERCARI_SHOPS_API_TOKEN",
+    "MERCARI_SHOPS_USER_AGENT"
+  ],
+  "envVarMeta": {
+    "MERCARI_SHOPS_API_TOKEN": {
+      "label": "Personal API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Issued in the Mercari Shops shop administration page. Production and sandbox tokens are separate. Requests only work from the Japanese IP address registered with Mercari.",
+      "link": "https://api.mercari-shops.com/docs/index.html",
+      "pattern": "^\\S{16,512}$",
+      "patternMessage": "Paste the token only, without Bearer and without spaces."
+    },
+    "MERCARI_SHOPS_USER_AGENT": {
+      "label": "User-Agent (API client name and version)",
+      "kind": "setting",
+      "help": "The API client name Mercari assigned at contract, a slash and your version, e.g. EXAMPLE_SHOP/1.0.0 (0.0.0 if you have none). It is not the shop name.",
+      "link": "https://api.mercari-shops.com/docs/index.html",
+      "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
+      "patternMessage": "Use CLIENTNAME/VERSION, e.g. EXAMPLE_SHOP/1.0.0."
+    }
+  },
+  "verifyHints": {
+    "401": "Mercari Shops did not accept the token. Check that it is a production token (sandbox tokens do not work in production) and that the account that issued it still exists.",
+    "403": "Mercari Shops refused the call (FORBIDDEN): the shop or token may not be allowed to use this feature.",
+    "404": "Mercari Shops answers 404 to requests from IP addresses that are not registered: register this server's fixed Japanese IP address with Mercari. Otherwise the id does not exist.",
+    "rate_limited": "Mercari Shops counts the rate limit per shop across all its tokens. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "mercari_shops_get_shop",
+    "params": {}
+  },
+  "prerequisites": "A Mercari Shops shop, an API agreement with Mercari (API client name) and a fixed IP address in Japan registered with Mercari for the AnythingMCP server. Self-hosted installations only.",
+  "connector": {
+    "name": "mercari shops API",
+    "type": "GRAPHQL",
+    "baseUrl": "https://api.mercari-shops.com/v1/graphql",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MERCARI_SHOPS_API_TOKEN}}"
+    },
+    "headers": {
+      "User-Agent": "{{MERCARI_SHOPS_USER_AGENT}}"
+    },
+    "schemaUrl": "https://api.mercari-shops.com/docs/index.html",
+    "config": {
+      "graphqlBuiltinsOff": [
+        "mutation",
+        "subscription"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "mercari_shops_get_shop",
+      "description": "The shop behind the token: id, name, description, shopStatus, businessKind (person, sole proprietorship, corporation), enableMultiplePurchase (cart) and createdAt. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Shop { shop { id name description shopStatus businessKind enableMultiplePurchase createdAt } }"
+      }
+    },
+    {
+      "name": "mercari_shops_list_products",
+      "description": "The shop's products: id, name, description, price (yen), status (OPENED public, UNOPENED private), condition, images, shipping method, payer, duration and origin prefecture, categories, brand and variants (id, name, skuCode, janCode, stockQuantity). keyword matches the name (partial) or SKU (prefix). Cursor paging, default 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Part of the product name, or the start of a SKU code."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Items per page (default 100)."
+          },
+          "after": {
+            "type": "string",
+            "description": "pageInfo.endCursor of the previous page; leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Products($first: Int, $after: String, $keyword: String) { products(first: $first, after: $after, keyword: $keyword) { edges { node { id name description price status condition orderType imageUrls shippingMethod shippingPayer shippingDuration shippingFromState { id name } shippingConfiguration { id title } categories { id name parentId } brand { id name } variants { id name skuCode janCode stockQuantity maxQuantityPerOrder } createdAt updatedAt } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "keyword": "$keyword"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_get_product",
+      "description": "One product by id with price, status, condition, images, shipping settings, categories and variants with stock.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Product($id: String!) { product(id: $id) { id name description price status condition orderType imageUrls shippingMethod shippingPayer shippingDuration shippingFromState { id name } shippingConfiguration { id title } categories { id name parentId } brand { id name } variants { id name skuCode janCode stockQuantity maxQuantityPerOrder } createdAt updatedAt } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_get_product_variant",
+      "description": "One variant by id or exact SKU code: id, name, skuCode, janCode, stockQuantity and its product id and name. Faster than searching products by SKU.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "by": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Variant id."
+              },
+              "skuCode": {
+                "type": "string",
+                "description": "Exact SKU code."
+              }
+            },
+            "description": "Either id or skuCode of the variant."
+          }
+        },
+        "required": [
+          "by"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ProductVariant($by: ProductVariantBy!) { productVariant(by: $by) { id name skuCode janCode stockQuantity maxQuantityPerOrder product { id name status price } } }",
+        "queryParams": {
+          "by": "$by"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_get_listing_options",
+      "description": "Values allowed when creating or updating products, in one call: product conditions, shipping methods (depend on the shop's business kind), shipping durations, shipping payers and prefectures (states with id and name) for shippingFromStateId.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ListingOptions { availableProductConditionOptions { name type } availableShippingMethodOptions { name type } availableShippingDurationOptions { name type } availableShippingPayerOptions { name type } states { id name } }"
+      }
+    },
+    {
+      "name": "mercari_shops_list_product_categories",
+      "description": "All product categories: id, name, parentId, hasChild. Only categories with hasChild false can be set on a product. The list is long; search it for the right leaf.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ProductCategories { productCategories { id name parentId hasChild } }"
+      }
+    },
+    {
+      "name": "mercari_shops_list_shipping_configurations",
+      "description": "The shop's shipping fee configurations (needed when the buyer pays shipping): id, displayId, title, type and per-destination details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Items per page (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "pageInfo.endCursor of the previous page; leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ShippingConfigurations($first: Int, $after: String) { productShippingConfigurations(first: $first, after: $after) { edges { node { id displayId title type createdAt updatedAt } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_list_order_transactions",
+      "description": "Orders (order transactions): id, status (WAITING_FOR_PAYMENT, WAITING_FOR_SHIPPING, COMPLETING, COMPLETED, CANCELING, CANCELED), orderType, salesChannel, payment method, paid and deadline times, total price, sales fee and shipping fees (yen), buyer nickname, shipping address and products with unit price, purchased, unshipped and shipped quantities. Filter by status and by order or update time. Cursor paging, default 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "WAITING_FOR_PAYMENT",
+                "WAITING_FOR_SHIPPING",
+                "COMPLETING",
+                "COMPLETED",
+                "CANCELING",
+                "CANCELED"
+              ]
+            },
+            "description": "Only these statuses, e.g. WAITING_FOR_SHIPPING."
+          },
+          "ordered_from": {
+            "type": "string",
+            "description": "Ordered at or after. ISO 8601 date-time, e.g. 2026-11-01T00:00:00+09:00."
+          },
+          "ordered_before": {
+            "type": "string",
+            "description": "Ordered before. ISO 8601 date-time, e.g. 2026-11-01T00:00:00+09:00."
+          },
+          "updated_from": {
+            "type": "string",
+            "description": "Updated at or after. ISO 8601 date-time, e.g. 2026-11-01T00:00:00+09:00."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated before. ISO 8601 date-time, e.g. 2026-11-01T00:00:00+09:00."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Items per page (default 100)."
+          },
+          "after": {
+            "type": "string",
+            "description": "pageInfo.endCursor of the previous page; leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query OrderTransactions($first: Int, $after: String, $statuses: [OrderTransactionStatusFilter!], $orderedDateGte: DateTime, $orderedDateLt: DateTime, $updatedDateGte: DateTime, $updatedDateLt: DateTime) { orderTransactions(first: $first, after: $after, statuses: $statuses, orderedDateGte: $orderedDateGte, orderedDateLt: $orderedDateLt, updatedDateGte: $updatedDateGte, updatedDateLt: $updatedDateLt) { edges { node { id status orderType salesChannel cancelable isPartialCancelable createdAt updatedAt paidAt paymentDeadline completedAt canceledAt paymentMethod totalPrice salesFee unifiedShippingFee refundableUnifiedShippingFee preOrderStatus userInfo { nickname } shippingAddress { firstName lastName firstNameKana lastNameKana postalCode state { id name } city address1 address2 country phoneNumber } products { productId name unitPrice purchasedQuantity buyerShippingFee shippingMethod unshippedQuantity shippingCreatedQuantity shippingCompletedQuantity unshippedCanceledQuantity shippedCanceledQuantity variant { id name skuCode janCode } } } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "statuses": "$statuses",
+          "orderedDateGte": "$ordered_from",
+          "orderedDateLt": "$ordered_before",
+          "updatedDateGte": "$updated_from",
+          "updatedDateLt": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_get_order_transaction",
+      "description": "One order transaction by id with status, buyer, shipping address, amounts and products with shipped and unshipped quantities. While WAITING_FOR_SHIPPING, products[].unshippedQuantity says what can still be shipped.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Order transaction id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query OrderTransaction($id: ID!) { orderTransaction(id: $id) { id status orderType salesChannel cancelable isPartialCancelable createdAt updatedAt paidAt paymentDeadline completedAt canceledAt paymentMethod totalPrice salesFee unifiedShippingFee refundableUnifiedShippingFee preOrderStatus userInfo { nickname } shippingAddress { firstName lastName firstNameKana lastNameKana postalCode state { id name } city address1 address2 country phoneNumber } products { productId name unitPrice purchasedQuantity buyerShippingFee shippingMethod unshippedQuantity shippingCreatedQuantity shippingCompletedQuantity unshippedCanceledQuantity shippedCanceledQuantity variant { id name skuCode janCode } } } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_list_order_shippings",
+      "description": "Shippings created for an order transaction: id, status (CREATED, WAITING_FOR_SIZING, COMPLETING, COMPLETED, CANCELED), shipping method, tracking code, seller shipping fee, shipped and completed times and products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_transaction_id": {
+            "type": "string",
+            "description": "Order transaction id."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Items per page (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "pageInfo.endCursor of the previous page; leave out for the first page."
+          }
+        },
+        "required": [
+          "order_transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query OrderShippings($orderTransactionId: ID, $first: Int, $after: String) { orderShippings(orderTransactionId: $orderTransactionId, first: $first, after: $after) { edges { node { id status shippingMethod trackingCode sellerShippingFee createdAt shippedAt completedAt updatedAt products { productId quantity shippingQuantity shippedQuantity canceledQuantity buyerShippingFee variant { id name skuCode } } } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "orderTransactionId": "$order_transaction_id",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_list_order_cancellations",
+      "description": "Cancellations of an order transaction: id, status, cancelReasonType, refund amounts for products, shipping and payment fee, canceled products and times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_transaction_id": {
+            "type": "string",
+            "description": "Order transaction id."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 20,
+            "description": "Items per page (default 20)."
+          },
+          "after": {
+            "type": "string",
+            "description": "pageInfo.endCursor of the previous page; leave out for the first page."
+          }
+        },
+        "required": [
+          "order_transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query OrderCancellations($orderTransactionId: ID!, $first: Int, $after: String) { orderCancellations(orderTransactionId: $orderTransactionId, first: $first, after: $after) { edges { node { id status cancelReasonType productRefundAmount shippingFeeRefundAmount paymentFeeRefundAmount createdAt canceledAt products { productId quantity orderShippingId variant { id skuCode } } } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "orderTransactionId": "$order_transaction_id",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_create_order_shipping",
+      "description": "Start shipping products of an order transaction: creates an order shipping for the given product, variant and quantity lines. Give a unique idempotency_key and reuse it on retry. Then add the tracking code with mercari_shops_update_shipping_tracking_code and finish with mercari_shops_complete_order_shipping.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "orderTransactionId": {
+                "type": "string",
+                "description": "Order transaction id."
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "description": "Any unique string for this shipping (e.g. a UUID); reuse it when retrying."
+              },
+              "products": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "productId": {
+                      "type": "string",
+                      "description": "Product id."
+                    },
+                    "variantId": {
+                      "type": "string",
+                      "description": "Variant id."
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "description": "Quantity to ship."
+                    }
+                  },
+                  "required": [
+                    "productId",
+                    "variantId",
+                    "quantity"
+                  ]
+                },
+                "description": "Lines to ship."
+              }
+            },
+            "required": [
+              "orderTransactionId",
+              "idempotencyKey",
+              "products"
+            ],
+            "description": "CreateOrderShippingInput: orderTransactionId, idempotencyKey and products (productId, variantId, quantity)."
+          }
+        },
+        "required": [
+          "input"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateOrderShipping($input: CreateOrderShippingInput!) { createOrderShipping(input: $input) { orderShipping { id status shippingMethod trackingCode sellerShippingFee createdAt shippedAt completedAt updatedAt products { productId quantity shippingQuantity shippedQuantity canceledQuantity buyerShippingFee variant { id name skuCode } } } } }",
+        "queryParams": {
+          "input": "$input"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_update_shipping_tracking_code",
+      "description": "Set the tracking code of an order shipping so the buyer can follow the parcel (optional for Mercari shipping, recommended otherwise).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_transaction_id": {
+            "type": "string",
+            "description": "Order transaction id."
+          },
+          "order_shipping_id": {
+            "type": "string",
+            "description": "Order shipping id from mercari_shops_list_order_shippings."
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Carrier tracking code."
+          }
+        },
+        "required": [
+          "order_transaction_id",
+          "order_shipping_id",
+          "tracking_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation UpdateOrderShippingTrackingCode($orderTransactionId: String!, $orderShippingId: String!, $trackingCode: String!) { updateOrderShippingTrackingCode(input: { orderTransactionId: $orderTransactionId, orderShippingId: $orderShippingId, trackingCode: $trackingCode }) { orderShipping { id status trackingCode } } }",
+        "queryParams": {
+          "orderTransactionId": "$order_transaction_id",
+          "orderShippingId": "$order_shipping_id",
+          "trackingCode": "$tracking_code"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_complete_order_shipping",
+      "description": "Mark an order shipping as shipped (completes it); the buyer is notified. Do it after the parcel has been handed to the carrier.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_transaction_id": {
+            "type": "string",
+            "description": "Order transaction id."
+          },
+          "order_shipping_id": {
+            "type": "string",
+            "description": "Order shipping id."
+          }
+        },
+        "required": [
+          "order_transaction_id",
+          "order_shipping_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CompleteOrderShipping($orderTransactionId: ID!, $orderShippingId: ID!) { completeOrderShipping(input: { orderTransactionId: $orderTransactionId, orderShippingId: $orderShippingId }) { orderShippingId } }",
+        "queryParams": {
+          "orderTransactionId": "$order_transaction_id",
+          "orderShippingId": "$order_shipping_id"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_cancel_order_transaction",
+      "description": "Cancel a whole order transaction with a reason; the buyer is refunded. Asynchronous, not allowed after 365 days. It cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_transaction_id": {
+            "type": "string",
+            "description": "Order transaction id."
+          },
+          "cancel_reason_type": {
+            "type": "string",
+            "description": "Reason.",
+            "enum": [
+              "NO_PRODUCT_STOCK",
+              "DEFECTIVE_PRODUCT",
+              "REQUEST_FROM_BUYER",
+              "WRONG_DELIVERY_ADDRESS",
+              "TROUBLE_BY_DELIVERY_COMPANY",
+              "OTHERS_BY_SELLER"
+            ]
+          }
+        },
+        "required": [
+          "order_transaction_id",
+          "cancel_reason_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CancelOrderTransaction($orderTransactionId: ID!, $cancelReasonType: CancelReasonType!) { cancelOrderTransaction(input: { orderTransactionId: $orderTransactionId, cancelReasonType: $cancelReasonType }) { orderCancellation { id status cancelReasonType } orderTransaction { id status } } }",
+        "queryParams": {
+          "orderTransactionId": "$order_transaction_id",
+          "cancelReasonType": "$cancel_reason_type"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "mercari_shops_create_product",
+      "description": "Create a product: name (max 130), description (max 3,000), leaf categoryId, condition, https image URLs (max 20), price in yen (300 to 9,999,999), shipping method, payer, duration, origin prefecture, status and variants (skuCode, stockQuantity up to 9,999). Values come from mercari_shops_get_listing_options.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 130,
+                "description": "Product name."
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 3000,
+                "description": "Description."
+              },
+              "categoryId": {
+                "type": "string",
+                "description": "Leaf category id (hasChild false)."
+              },
+              "condition": {
+                "type": "string",
+                "enum": [
+                  "BRAND_NEW",
+                  "ALMOST_NEW",
+                  "CLEAN",
+                  "LITTLE_DIRTY",
+                  "DIRTY",
+                  "BAD"
+                ],
+                "description": "Condition."
+              },
+              "imageUrls": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "type": "string"
+                },
+                "description": "https image URLs."
+              },
+              "price": {
+                "type": "integer",
+                "minimum": 300,
+                "maximum": 9999999,
+                "description": "Price in yen."
+              },
+              "shippingMethod": {
+                "type": "string",
+                "enum": [
+                  "MERCARI_SHIPPING_YAMATO",
+                  "MERCARI_SHIPPING_YAMATO_FOR_BUSINESS",
+                  "MERCARI_SHIPPING_YAMATO_COOL_REFRIGERATED",
+                  "MERCARI_SHIPPING_YAMATO_COOL_FROZEN",
+                  "COOL",
+                  "UNDECIDED"
+                ],
+                "description": "Shipping method (available ones depend on the business kind)."
+              },
+              "shippingPayer": {
+                "type": "string",
+                "enum": [
+                  "SELLER",
+                  "BUYER"
+                ],
+                "description": "SELLER (shipping included) or BUYER (needs shippingConfigurationId)."
+              },
+              "shippingDuration": {
+                "type": "string",
+                "enum": [
+                  "ONE_TO_TWO_DAYS",
+                  "TWO_TO_THREE_DAYS",
+                  "FOUR_TO_SEVEN_DAYS",
+                  "EIGHT_TO_FOURTEEN_DAYS",
+                  "EIGHT_DAYS_OR_MORE_OR_UNDECIDED"
+                ],
+                "description": "Days until shipping."
+              },
+              "shippingFromStateId": {
+                "type": "string",
+                "description": "Prefecture id from the states list of mercari_shops_get_listing_options."
+              },
+              "shippingConfigurationId": {
+                "type": "string",
+                "description": "Shipping configuration id when the buyer pays."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "OPENED",
+                  "UNOPENED"
+                ],
+                "description": "OPENED public, UNOPENED private."
+              },
+              "variants": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "maxLength": 16,
+                      "description": "Variant name (max 16)."
+                    },
+                    "skuCode": {
+                      "type": "string",
+                      "maxLength": 50,
+                      "description": "SKU, unique in the shop."
+                    },
+                    "janCode": {
+                      "type": "string",
+                      "maxLength": 14,
+                      "description": "JAN code."
+                    },
+                    "stockQuantity": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999,
+                      "description": "Stock."
+                    }
+                  }
+                },
+                "description": "Variants."
+              },
+              "brandId": {
+                "type": "string",
+                "description": "Brand id."
+              }
+            },
+            "required": [
+              "name",
+              "categoryId",
+              "condition",
+              "imageUrls",
+              "price",
+              "shippingMethod",
+              "shippingPayer",
+              "shippingDuration",
+              "shippingFromStateId",
+              "status",
+              "variants"
+            ],
+            "description": "CreateProductInput fields as named by Mercari Shops."
+          }
+        },
+        "required": [
+          "input"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateProduct($input: CreateProductInput!) { createProduct(input: $input) { product { id name description price status condition orderType imageUrls shippingMethod shippingPayer shippingDuration shippingFromState { id name } shippingConfiguration { id title } categories { id name parentId } brand { id name } variants { id name skuCode janCode stockQuantity maxQuantityPerOrder } createdAt updatedAt } } }",
+        "queryParams": {
+          "input": "$input"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_update_product",
+      "description": "Update a product: any of name, description, price (yen), status (OPENED or UNOPENED), condition, images, category, shipping settings. Fields left out stay unchanged. PRODUCT_DIFFERENCE_FOUND means a parallel change: read the product again and retry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Product id."
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 130,
+                "description": "New name."
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 3000,
+                "description": "New description."
+              },
+              "price": {
+                "type": "integer",
+                "minimum": 300,
+                "maximum": 9999999,
+                "description": "New price in yen."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "OPENED",
+                  "UNOPENED"
+                ],
+                "description": "OPENED public, UNOPENED private."
+              },
+              "condition": {
+                "type": "string",
+                "enum": [
+                  "BRAND_NEW",
+                  "ALMOST_NEW",
+                  "CLEAN",
+                  "LITTLE_DIRTY",
+                  "DIRTY",
+                  "BAD"
+                ],
+                "description": "Condition."
+              },
+              "imageUrls": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Replaces the images (https)."
+              },
+              "categoryId": {
+                "type": "string",
+                "description": "Leaf category id."
+              },
+              "shippingMethod": {
+                "type": "string",
+                "enum": [
+                  "MERCARI_SHIPPING_YAMATO",
+                  "MERCARI_SHIPPING_YAMATO_FOR_BUSINESS",
+                  "MERCARI_SHIPPING_YAMATO_COOL_REFRIGERATED",
+                  "MERCARI_SHIPPING_YAMATO_COOL_FROZEN",
+                  "COOL",
+                  "UNDECIDED"
+                ],
+                "description": "Shipping method."
+              },
+              "shippingPayer": {
+                "type": "string",
+                "enum": [
+                  "SELLER",
+                  "BUYER"
+                ],
+                "description": "Who pays shipping."
+              },
+              "shippingDuration": {
+                "type": "string",
+                "enum": [
+                  "ONE_TO_TWO_DAYS",
+                  "TWO_TO_THREE_DAYS",
+                  "FOUR_TO_SEVEN_DAYS",
+                  "EIGHT_TO_FOURTEEN_DAYS",
+                  "EIGHT_DAYS_OR_MORE_OR_UNDECIDED"
+                ],
+                "description": "Days until shipping."
+              },
+              "shippingFromStateId": {
+                "type": "string",
+                "description": "Prefecture id."
+              },
+              "shippingConfigurationId": {
+                "type": "string",
+                "description": "Shipping configuration id; empty string unsets it."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "UpdateProductInput: id plus the fields to change."
+          }
+        },
+        "required": [
+          "input"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation UpdateProduct($input: UpdateProductInput!) { updateProduct(input: $input) { product { id name description price status condition orderType imageUrls shippingMethod shippingPayer shippingDuration shippingFromState { id name } shippingConfiguration { id title } categories { id name parentId } brand { id name } variants { id name skuCode janCode stockQuantity maxQuantityPerOrder } createdAt updatedAt } } }",
+        "queryParams": {
+          "input": "$input"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_update_variants",
+      "description": "Update up to 20 variants at once, each found by id or skuCode: stockQuantity (overwrites, max 9,999), name, janCode or maxQuantityPerOrder. PRODUCT_DIFFERENCE_FOUND means a parallel stock change: read again and retry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "by": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Variant id."
+                    },
+                    "skuCode": {
+                      "type": "string",
+                      "description": "SKU code."
+                    }
+                  },
+                  "description": "Variant id or skuCode."
+                },
+                "input": {
+                  "type": "object",
+                  "properties": {
+                    "stockQuantity": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9999,
+                      "description": "New stock."
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 16,
+                      "description": "New name."
+                    },
+                    "janCode": {
+                      "type": "string",
+                      "maxLength": 14,
+                      "description": "New JAN code."
+                    },
+                    "maxQuantityPerOrder": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9999,
+                      "description": "Max per order."
+                    }
+                  },
+                  "description": "Changes."
+                }
+              },
+              "required": [
+                "by",
+                "input"
+              ]
+            },
+            "description": "List of by (id or skuCode) and input (e.g. stockQuantity 5)."
+          }
+        },
+        "required": [
+          "inputs"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation UpdateProductVariants($inputs: [UpdateProductVariantsInput!]!) { updateProductVariants(inputs: $inputs) { productVariants { id name skuCode janCode stockQuantity maxQuantityPerOrder } } }",
+        "queryParams": {
+          "inputs": "$inputs"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_delete_product",
+      "description": "Delete a product. It cannot be undone; set status UNOPENED with mercari_shops_update_product to hide it instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation DeleteProduct($id: ID!) { deleteProduct(input: { id: $id }) { id } }",
+        "queryParams": {
+          "id": "$id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "mercari_shops_list_inquiries",
+      "description": "Buyer inquiries (the message inbox): id, status (OPENED_BY_BUYER, AWAITING_SELLER, HANDLING_BY_SELLER, AWAITING_BUYER, RESOLVED), salesChannel, buyer nickname, first opened and last activity, and the target (order transaction, product or shop). Updates can take 2 to 3 seconds to show. Up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "object",
+            "properties": {
+              "statuses": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "OPENED_BY_BUYER",
+                    "AWAITING_SELLER",
+                    "HANDLING_BY_SELLER",
+                    "AWAITING_BUYER",
+                    "RESOLVED"
+                  ]
+                },
+                "description": "Statuses."
+              }
+            },
+            "description": "Filter, e.g. statuses AWAITING_SELLER."
+          },
+          "sort": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "FIRST_OPENED_AT",
+                  "LAST_ACTIVITY_AT"
+                ],
+                "description": "Sort field."
+              },
+              "order": {
+                "type": "string",
+                "enum": [
+                  "ASC",
+                  "DESC"
+                ],
+                "description": "Order."
+              }
+            },
+            "required": [
+              "field",
+              "order"
+            ],
+            "description": "Sort, e.g. field LAST_ACTIVITY_AT, order DESC."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 50,
+            "description": "Items per page (default 50, max 50)."
+          },
+          "after": {
+            "type": "string",
+            "description": "pageInfo.endCursor of the previous page; leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Inquiries($first: Int, $after: String, $filter: ListInquiriesFilterInput, $sort: ListInquiriesSortInput) { inquiries(first: $first, after: $after, filter: $filter, sort: $sort) { edges { node { id status salesChannel firstOpenedAt lastActivityAt userInfo { nickname } target { __typename ... on InquiryOrderTransactionTarget { orderTransaction { id status } } ... on InquiryProductTarget { productId productVariantId } ... on InquiryShopTarget { shopId } } } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "first": "$first",
+          "after": "$after",
+          "filter": "$filter",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_list_inquiry_messages",
+      "description": "Messages of one inquiry, newest first: id, body (empty when blocked or deleted), from (BUYER or SELLER), sentAt, status. Up to 200 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_id": {
+            "type": "string",
+            "description": "Inquiry id."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 100,
+            "description": "Items per page (default 100, max 200)."
+          },
+          "after": {
+            "type": "string",
+            "description": "pageInfo.endCursor of the previous page; leave out for the first page."
+          }
+        },
+        "required": [
+          "inquiry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query InquiryMessages($inquiryId: ID!, $first: Int, $after: String) { inquiryMessages(inquiryId: $inquiryId, first: $first, after: $after) { edges { node { id inquiryId body from sentAt status } } pageInfo { endCursor hasNextPage } } }",
+        "queryParams": {
+          "inquiryId": "$inquiry_id",
+          "first": "$first",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_reply_to_inquiry",
+      "description": "Send a message to the buyer in an inquiry (max 1,000 characters). Give a unique idempotency_key and reuse it on retry; ALREADY_EXISTS means it was already sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_id": {
+            "type": "string",
+            "description": "Inquiry id."
+          },
+          "body": {
+            "type": "string",
+            "description": "Message text, up to 1,000 characters.",
+            "maxLength": 1000
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Unique key for this message, e.g. a UUID."
+          }
+        },
+        "required": [
+          "inquiry_id",
+          "body",
+          "idempotency_key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation AddInquiryMessage($inquiryId: ID!, $body: String!, $idempotencyKey: String!) { addInquiryMessage(input: { inquiryId: $inquiryId, body: $body, idempotencyKey: $idempotencyKey }) { inquiryMessage { id body from sentAt status } } }",
+        "queryParams": {
+          "inquiryId": "$inquiry_id",
+          "body": "$body",
+          "idempotencyKey": "$idempotency_key"
+        }
+      }
+    },
+    {
+      "name": "mercari_shops_update_inquiry_status",
+      "description": "Set an inquiry to HANDLING_BY_SELLER (you are on it) or RESOLVED.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_id": {
+            "type": "string",
+            "description": "Inquiry id."
+          },
+          "status": {
+            "type": "string",
+            "description": "New status.",
+            "enum": [
+              "HANDLING_BY_SELLER",
+              "RESOLVED"
+            ]
+          }
+        },
+        "required": [
+          "inquiry_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation UpdateInquiryStatus($inquiryId: ID!, $status: UpdatableInquiryStatus!) { updateInquiryStatus(input: { inquiryId: $inquiryId, status: $status }) { inquiry { id status lastActivityAt } } }",
+        "queryParams": {
+          "inquiryId": "$inquiry_id",
+          "status": "$status"
+        }
+      }
+    }
+  ]
+}

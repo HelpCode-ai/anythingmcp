@@ -1,0 +1,2094 @@
+{
+  "slug": "ideasoft",
+  "name": "IdeaSoft",
+  "description": "IdeaSoft Admin API for your own IdeaSoft shop: orders with lines, notes and shipments, products with stock, prices and descriptions, categories, brands, customers, refund requests, payment types and currencies. OAuth2 sign-in with the shop's own API client.",
+  "instructions": "## IdeaSoft\nThis connector works with the **IdeaSoft Admin API** of your own IdeaSoft shop (the Turkish e-commerce platform), at `https://<your shop domain>/admin-api`: orders with their lines, notes and shipments, products with stock, prices and descriptions, categories, brands, customers, refund requests, payment types and currencies.\n\n**Setup (about 5 minutes, account owner only)**\n1. Sign in to the IdeaSoft admin panel as the account owner (only the first admin user sees the API section; your package must include API access).\n2. Open **Entegrasyonlar > API** and click **API Ekle**. Enter a name and, as **Redirect URL**, exactly `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud (self-hosted: `<your AnythingMCP URL>/api/mcp-oauth/callback`). Save: IdeaSoft creates the **Client ID** and **Client Secret**.\n3. On that row open **İzin Yönetimi > İzin ekle** and give the areas you need Okuma (read) or Okuma/Yazma (read and write): orders, products, categories, brands, members, shipping, payments. Without permissions the client does not work.\n4. Put your shop's host into `IDEASOFT_SHOP_DOMAIN` (e.g. `magaza.myideasoft.com` or your own domain, without https://), and the client id and secret into `IDEASOFT_CLIENT_ID` and `IDEASOFT_CLIENT_SECRET`.\n5. Install, click **Authorize with Provider**, approve the app in the IdeaSoft panel, then run `ideasoft_list_products`.\n\nThe access token lasts 24 hours and is renewed automatically; the refresh token lasts about two months and changes at every renewal. After two months without any use, authorize again.\n\n**Where to start**: `ideasoft_list_orders` with `sort` -id for the newest orders (status waiting_for_approval or approved for the ones to handle), then `ideasoft_get_order`. `ideasoft_list_products` and `ideasoft_get_product` for the catalogue.\n\n**Orders**: `ideasoft_list_orders`, `ideasoft_count_orders`, `ideasoft_get_order`, `ideasoft_list_order_items`, `ideasoft_list_order_details` (custom checkout fields), `ideasoft_list_order_notes` and `ideasoft_add_order_note` (admin notes). Move an order on with `ideasoft_update_order` (being_prepared, fulfilled for shipped, delivered). Writing the tracking code through it is in IdeaSoft's schema but not documented as writable: check the order afterwards. `ideasoft_cancel_order` (cancelled or refunded) is installed switched off.\n\n**Shipping**: `ideasoft_list_shipments` and `ideasoft_get_shipment` read tracking codes, barcodes and waybills; `ideasoft_list_shipping_providers` and `ideasoft_list_shipping_companies` list the carriers. Creating shipments and generating carrier tracking codes through the admin API is not included: IdeaSoft documents those actions without a body or meaning.\n\n**Products**: `ideasoft_list_products` (filters for stock, status, brand, category, price), `ideasoft_count_products`, `ideasoft_get_product`, `ideasoft_create_product` and `ideasoft_update_product` (stock_amount for stock, price1 for the main price). Variants are child products (filter by parent). Extra price lists 2 to 6: `ideasoft_list_product_prices` and `ideasoft_update_product_price`. Long HTML descriptions: `ideasoft_list_product_details` and `ideasoft_update_product_details`. `ideasoft_delete_product` is switched off; set status 0 to hide a product. Lookups: `ideasoft_list_categories`, `ideasoft_get_category`, `ideasoft_list_brands`, `ideasoft_get_brand`, `ideasoft_list_currencies` (ids for currency) and `ideasoft_list_payment_types`.\n\n**Customers and refunds**: `ideasoft_list_members` and `ideasoft_get_member` (the answer includes a hashed password field: never repeat it). `ideasoft_list_refund_requests`, `ideasoft_count_refund_requests` and `ideasoft_get_refund_request`; `ideasoft_update_refund_request` approves or cancels a request and is switched off, because approving can pay the customer back.\n\n**Reading the data**: lists answer a bare JSON array; page with `page` and `limit` (at most 100, more answers 400) and stop when a page is empty. `since_id` with sort `id` is the safest incremental sync. Date filters take YYYY-MM-DD; answers carry Turkey time (`+03:00`). Prices are decimals in the product currency. IdeaSoft's write schemas list read-only fields as required; this connector sends only the fields you give, which IdeaSoft's documentation does not confirm for every resource: on a 400 or 422 read the record and send the fields named in the error.\n\n**Limits and errors**: the rate limit is dynamic; a 429 means wait briefly and retry. 401 means the token is missing or expired (authorize again), 403 that the API entry lacks the permission for this area, 422 a validation error.\n\n**Writes: confirm first.** Stock, prices, order status, notes and product data act on the live shop. Before each call show the user what changes and wait for a yes.",
+  "aliases": [
+    "IdeaSoft Admin API",
+    "Ideasoft E-Ticaret",
+    "myideasoft"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "ideasoft",
+  "docsUrl": "https://apidoc.ideasoft.dev/docs/admin-api",
+  "requiredEnvVars": [
+    "IDEASOFT_SHOP_DOMAIN",
+    "IDEASOFT_CLIENT_ID",
+    "IDEASOFT_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "IDEASOFT_SHOP_DOMAIN": {
+      "label": "Shop domain",
+      "kind": "address",
+      "help": "The host of your IdeaSoft shop without https:// and without a path: the magaza.myideasoft.com address or your own domain.",
+      "example": "magaza.myideasoft.com",
+      "pattern": "^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$",
+      "patternMessage": "Only the host, e.g. magaza.myideasoft.com or www.example.com.tr, without https:// or a path."
+    },
+    "IDEASOFT_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Admin panel > Entegrasyonlar > API: the Client ID of the API entry you created with the AnythingMCP redirect URL.",
+      "link": "https://apidoc.ideasoft.dev/docs/admin-api",
+      "pattern": "^\\S{4,}$",
+      "patternMessage": "Paste the Client ID alone, without spaces."
+    },
+    "IDEASOFT_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same row: the Client Secret. Give the entry permissions under İzin Yönetimi, or it will not work.",
+      "link": "https://apidoc.ideasoft.dev/docs/admin-api",
+      "pattern": "^\\S{4,}$",
+      "patternMessage": "Paste the Client Secret alone, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "IdeaSoft refused the token. Authorize again with Authorize with Provider; after two months without use the refresh token expires. Check that the client id and secret belong to this shop.",
+    "403": "The API entry has no permission for this area. In the IdeaSoft panel open Entegrasyonlar > API > İzin Yönetimi and add Okuma or Okuma/Yazma for it, then authorize again.",
+    "404": "IdeaSoft found no record with that id, or IDEASOFT_SHOP_DOMAIN is not the shop's host.",
+    "rate_limited": "IdeaSoft limits requests dynamically. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "ideasoft_list_products",
+    "params": {
+      "limit": 1
+    }
+  },
+  "prerequisites": "An IdeaSoft shop whose package includes API access, signed in as the account owner, and an API entry under Entegrasyonlar > API with the AnythingMCP redirect URL and permissions. About 5 minutes.",
+  "connector": {
+    "name": "IdeaSoft Admin API",
+    "type": "REST",
+    "baseUrl": "https://{{IDEASOFT_SHOP_DOMAIN}}/admin-api",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{IDEASOFT_CLIENT_ID}}",
+      "clientSecret": "{{IDEASOFT_CLIENT_SECRET}}",
+      "authorizationUrl": "https://{{IDEASOFT_SHOP_DOMAIN}}/panel/auth",
+      "tokenUrl": "https://{{IDEASOFT_SHOP_DOMAIN}}/oauth/v2/token",
+      "pkce": false
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "ideasoft_list_orders",
+      "description": "List orders, newest first with sort -id: id, transactionId, status, paymentStatus, paymentTypeName, customer name, email and phone, amounts (amount, taxAmount, shippingAmount, finalAmount, currency), shipping provider, company and tracking code, createdAt and updatedAt. Read-only, up to 100 per page (a bare array).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting_for_approval",
+              "approved",
+              "fulfilled",
+              "cancelled",
+              "delivered",
+              "on_accumulation",
+              "waiting_for_payment",
+              "being_prepared",
+              "refunded",
+              "personal_status_1",
+              "personal_status_2",
+              "personal_status_3"
+            ],
+            "description": "Order status."
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "in_transaction",
+              "failed"
+            ],
+            "description": "Payment status: success, in_transaction or failed."
+          },
+          "start_created_at": {
+            "type": "string",
+            "format": "date",
+            "description": "Created on or after this date, YYYY-MM-DD."
+          },
+          "end_created_at": {
+            "type": "string",
+            "format": "date",
+            "description": "Created on or before this date, YYYY-MM-DD."
+          },
+          "start_shipping_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Shipped on or after this date, YYYY-MM-DD."
+          },
+          "end_shipping_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Shipped on or before this date, YYYY-MM-DD."
+          },
+          "member": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only orders of this member (customer) id."
+          },
+          "customer_fullname": {
+            "type": "string",
+            "description": "Customer name contains."
+          },
+          "product_sku": {
+            "type": "string",
+            "description": "Orders containing this product SKU."
+          },
+          "shipping_provider_code": {
+            "type": "string",
+            "description": "Shipping provider code (ideasoft_list_shipping_providers)."
+          },
+          "cargo_tracking_code_non_existing": {
+            "type": "string",
+            "enum": [
+              "yurtici",
+              "mng",
+              "jetizz",
+              "aras"
+            ],
+            "description": "Only orders of this carrier without a tracking code yet."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids, e.g. 12,13,14."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "status": "$status",
+          "paymentStatus": "$payment_status",
+          "startCreatedAt": "$start_created_at",
+          "endCreatedAt": "$end_created_at",
+          "startShippingDate": "$start_shipping_date",
+          "endShippingDate": "$end_shipping_date",
+          "member": "$member",
+          "customerFullname": "$customer_fullname",
+          "productSku": "$product_sku",
+          "shippingProviderCode": "$shipping_provider_code",
+          "cargoTrackingCodeNonExisting": "$cargo_tracking_code_non_existing",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sinceId": "$since_id",
+          "ids": "$ids",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_count_orders",
+      "description": "Count the orders that match the filters (same filters as ideasoft_list_orders). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting_for_approval",
+              "approved",
+              "fulfilled",
+              "cancelled",
+              "delivered",
+              "on_accumulation",
+              "waiting_for_payment",
+              "being_prepared",
+              "refunded",
+              "personal_status_1",
+              "personal_status_2",
+              "personal_status_3"
+            ],
+            "description": "Order status."
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": [
+              "success",
+              "in_transaction",
+              "failed"
+            ],
+            "description": "Payment status: success, in_transaction or failed."
+          },
+          "start_created_at": {
+            "type": "string",
+            "format": "date",
+            "description": "Created on or after this date, YYYY-MM-DD."
+          },
+          "end_created_at": {
+            "type": "string",
+            "format": "date",
+            "description": "Created on or before this date, YYYY-MM-DD."
+          },
+          "start_shipping_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Shipped on or after this date, YYYY-MM-DD."
+          },
+          "end_shipping_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Shipped on or before this date, YYYY-MM-DD."
+          },
+          "member": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only orders of this member (customer) id."
+          },
+          "customer_fullname": {
+            "type": "string",
+            "description": "Customer name contains."
+          },
+          "product_sku": {
+            "type": "string",
+            "description": "Orders containing this product SKU."
+          },
+          "shipping_provider_code": {
+            "type": "string",
+            "description": "Shipping provider code (ideasoft_list_shipping_providers)."
+          },
+          "cargo_tracking_code_non_existing": {
+            "type": "string",
+            "enum": [
+              "yurtici",
+              "mng",
+              "jetizz",
+              "aras"
+            ],
+            "description": "Only orders of this carrier without a tracking code yet."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/count",
+        "queryParams": {
+          "status": "$status",
+          "paymentStatus": "$payment_status",
+          "startCreatedAt": "$start_created_at",
+          "endCreatedAt": "$end_created_at",
+          "startShippingDate": "$start_shipping_date",
+          "endShippingDate": "$end_shipping_date",
+          "member": "$member",
+          "customerFullname": "$customer_fullname",
+          "productSku": "$product_sku",
+          "shippingProviderCode": "$shipping_provider_code",
+          "cargoTrackingCodeNonExisting": "$cargo_tracking_code_non_existing"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_get_order",
+      "description": "Read one order: customer, status and payment status, amounts and discounts, installments, shipping provider, company, payment type and tracking code, orderItems (productName, productSku, productBarcode, productPrice, productQuantity, productTax), shippingAddress and billingAddress (invoice type, tax number and office), member and dates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_update_order",
+      "description": "Change an order: its status (being_prepared, fulfilled for shipped, delivered and so on) and, not confirmed by IdeaSoft's documentation, its shippingTrackingCode. Cancelling and refunding have their own switched-off tool, ideasoft_cancel_order. Only the fields given are sent.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "waiting_for_approval",
+              "approved",
+              "being_prepared",
+              "fulfilled",
+              "delivered",
+              "on_accumulation",
+              "waiting_for_payment",
+              "personal_status_1",
+              "personal_status_2",
+              "personal_status_3"
+            ],
+            "description": "New order status."
+          },
+          "shipping_tracking_code": {
+            "type": "string",
+            "description": "Carrier tracking code. Whether IdeaSoft stores it through this call is not documented; check with ideasoft_get_order afterwards."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}",
+        "bodyMapping": {
+          "status": "$status",
+          "shippingTrackingCode": "$shipping_tracking_code"
+        }
+      }
+    },
+    {
+      "name": "ideasoft_cancel_order",
+      "description": "Set an order to cancelled or refunded. Cannot be undone from here and may trigger the refund of the payment and customer emails. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "refunded"
+            ],
+            "description": "cancelled or refunded."
+          }
+        },
+        "required": [
+          "order_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ideasoft_list_order_items",
+      "description": "List order lines: id, productName, productSku, productBarcode, productPrice, productCurrency, productQuantity, productTax, productDiscount and the product. Filter by order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids, e.g. 12,13,14."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_items",
+        "queryParams": {
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sinceId": "$since_id",
+          "ids": "$ids",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_order_details",
+      "description": "List the extra key-value details of an order (varKey, varValue), such as custom checkout fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids, e.g. 12,13,14."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_details",
+        "queryParams": {
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sinceId": "$since_id",
+          "ids": "$ids",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_order_notes",
+      "description": "List admin notes on orders: note, the admin user (name, email) and dates. Filter by order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_user_notes",
+        "queryParams": {
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_add_order_note",
+      "description": "Add an admin note to an order, visible to the shop's admins in the panel (not to the customer). The minimal body (note and order) is our reading of the schema, which also lists admin user fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note text."
+          }
+        },
+        "required": [
+          "order_id",
+          "note"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order_user_notes",
+        "bodyMapping": {
+          "note": "$note",
+          "order": {
+            "id": "$order_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "ideasoft_list_shipments",
+      "description": "List shipments of orders: id, code (tracking code), barcode, waybillNo, cargoOffice, deliveryType, payAtDoorAmount, status, trackingUrl, the order and createdAt. Filter by order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "order": "$order",
+          "page": "$page",
+          "limit": "$limit",
+          "sinceId": "$since_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_get_shipment",
+      "description": "Read one shipment: tracking code, barcode, waybill number, carrier office, delivery type, cash on delivery amount, status, tracking URL and the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Shipment id."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_shipping_providers",
+      "description": "List the shop's shipping providers (carrier integrations): id, code, name and tracking URL. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping_providers",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_shipping_companies",
+      "description": "List shipping companies set up in the shop: id, name, status (active or passive) and whether they ship abroad. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "passive"
+            ],
+            "description": "active or passive."
+          },
+          "is_abroad": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: companies that ship abroad, 0: domestic."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping_companies",
+        "queryParams": {
+          "status": "$status",
+          "is_abroad": "$is_abroad",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_products",
+      "description": "List products: id, name, fullName, sku, barcode, stockAmount, price1 and currency, discount, tax, status (1 active), hasOption, parent (variants are child products), brand, categories, images (originalUrl, protocol-relative) and dates. Read-only, up to 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "1 active, 0 passive."
+          },
+          "brand": {
+            "type": "integer",
+            "description": "Brand id (ideasoft_list_brands)."
+          },
+          "category": {
+            "type": "integer",
+            "description": "Category id (ideasoft_list_categories)."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent product id: lists the variants of that product."
+          },
+          "stock_amount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Stock amount to compare with stock_expr."
+          },
+          "stock_expr": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "gte",
+              "lte"
+            ],
+            "description": "Comparison for stock_amount: eq, gte or lte."
+          },
+          "critical_stock": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "1: only products at or below their critical stock."
+          },
+          "start_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Updated on or after this date-time, e.g. 2026-11-01T00:00:00+03:00 (IdeaSoft may ignore it; sort by -id or use since_id to be sure)."
+          },
+          "start_created_at": {
+            "type": "string",
+            "format": "date",
+            "description": "Created on or after this date, YYYY-MM-DD."
+          },
+          "min_price": {
+            "type": "string",
+            "description": "Minimum price."
+          },
+          "max_price": {
+            "type": "string",
+            "description": "Maximum price."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids, e.g. 12,13,14."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "status": "$status",
+          "brand": "$brand",
+          "category": "$category",
+          "parent": "$parent",
+          "stockAmount": "$stock_amount",
+          "stockExpr": "$stock_expr",
+          "criticalStock": "$critical_stock",
+          "startUpdatedAt": "$start_updated_at",
+          "startCreatedAt": "$start_created_at",
+          "minPrice": "$min_price",
+          "maxPrice": "$max_price",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sinceId": "$since_id",
+          "ids": "$ids",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_count_products",
+      "description": "Count the products that match the filters (same filters as ideasoft_list_products). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "1 active, 0 passive."
+          },
+          "brand": {
+            "type": "integer",
+            "description": "Brand id (ideasoft_list_brands)."
+          },
+          "category": {
+            "type": "integer",
+            "description": "Category id (ideasoft_list_categories)."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent product id: lists the variants of that product."
+          },
+          "stock_amount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Stock amount to compare with stock_expr."
+          },
+          "stock_expr": {
+            "type": "string",
+            "enum": [
+              "eq",
+              "gte",
+              "lte"
+            ],
+            "description": "Comparison for stock_amount: eq, gte or lte."
+          },
+          "critical_stock": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "1: only products at or below their critical stock."
+          },
+          "start_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Updated on or after this date-time, e.g. 2026-11-01T00:00:00+03:00 (IdeaSoft may ignore it; sort by -id or use since_id to be sure)."
+          },
+          "start_created_at": {
+            "type": "string",
+            "format": "date",
+            "description": "Created on or after this date, YYYY-MM-DD."
+          },
+          "min_price": {
+            "type": "string",
+            "description": "Minimum price."
+          },
+          "max_price": {
+            "type": "string",
+            "description": "Maximum price."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/count",
+        "queryParams": {
+          "status": "$status",
+          "brand": "$brand",
+          "category": "$category",
+          "parent": "$parent",
+          "stockAmount": "$stock_amount",
+          "stockExpr": "$stock_expr",
+          "criticalStock": "$critical_stock",
+          "startUpdatedAt": "$start_updated_at",
+          "startCreatedAt": "$start_created_at",
+          "minPrice": "$min_price",
+          "maxPrice": "$max_price"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_get_product",
+      "description": "Read one product with all fields: name, sku, barcode, stockAmount, price1, currency, discount, buyingPrice, tax, status, variants (children), brand, categories, prices, images, detail and SEO fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_create_product",
+      "description": "Create a product. IdeaSoft's schema marks many fields as required; the defaults here fill the switches (status 1, VAT included, discount type percent, unit Piece, no gift, shop shipping rules). Answers 201 with the product. Variants, images and long details are separate resources.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Stock code (SKU), unique like an id."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Barcode."
+          },
+          "stock_amount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Stock amount."
+          },
+          "price1": {
+            "type": "number",
+            "description": "Main sales price (price1), in the product currency."
+          },
+          "currency": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Currency id."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Currency of the price: `{\"id\": 1}` with an id from ideasoft_list_currencies (1 is usually TL)."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 active (visible in the shop), 0 passive.",
+            "default": 1
+          },
+          "tax": {
+            "type": "integer",
+            "description": "VAT rate in percent, e.g. 20."
+          },
+          "tax_included": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: price1 includes VAT, 0: VAT is added.",
+            "default": 1
+          },
+          "discount": {
+            "type": "number",
+            "description": "Discount value: a percentage when discount_type is 1, an amount when 0."
+          },
+          "discount_type": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 percentage, 0 amount.",
+            "default": 1
+          },
+          "buying_price": {
+            "type": "number",
+            "description": "Purchase price."
+          },
+          "stock_type_label": {
+            "type": "string",
+            "enum": [
+              "Piece",
+              "cm",
+              "Dozen",
+              "gram",
+              "kg",
+              "Person",
+              "Package",
+              "metre",
+              "m2",
+              "pair"
+            ],
+            "description": "Stock unit.",
+            "default": "Piece"
+          },
+          "volumetric_weight": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Volumetric weight (desi)."
+          },
+          "short_details": {
+            "type": "string",
+            "description": "Short description."
+          },
+          "search_keywords": {
+            "type": "string",
+            "description": "Search keywords, comma-separated."
+          },
+          "brand": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Brand id."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Brand: `{\"id\": 5}` with an id from ideasoft_list_brands."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Category id."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Categories: `[{\"id\": 12}]`."
+          },
+          "money_order_discount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Bank transfer (havale) discount in percent; 0 for none.",
+            "default": 0
+          },
+          "custom_shipping_disabled": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: use the shop's shipping rules, 0: use custom_shipping_cost.",
+            "default": 1
+          },
+          "has_gift": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: the product comes with a gift.",
+            "default": 0
+          },
+          "category_showcase_status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "Category showcase display, 0 or 1.",
+            "default": 0
+          }
+        },
+        "required": [
+          "name",
+          "sku",
+          "stock_amount",
+          "price1",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "name": "$name",
+          "sku": "$sku",
+          "barcode": "$barcode",
+          "stockAmount": "$stock_amount",
+          "price1": "$price1",
+          "currency": "$currency",
+          "status": "$status",
+          "tax": "$tax",
+          "taxIncluded": "$tax_included",
+          "discount": "$discount",
+          "discountType": "$discount_type",
+          "buyingPrice": "$buying_price",
+          "stockTypeLabel": "$stock_type_label",
+          "volumetricWeight": "$volumetric_weight",
+          "shortDetails": "$short_details",
+          "searchKeywords": "$search_keywords",
+          "brand": "$brand",
+          "categories": "$categories",
+          "moneyOrderDiscount": "$money_order_discount",
+          "customShippingDisabled": "$custom_shipping_disabled",
+          "hasGift": "$has_gift",
+          "categoryShowcaseStatus": "$category_showcase_status"
+        }
+      }
+    },
+    {
+      "name": "ideasoft_update_product",
+      "description": "Change a product: stock (stock_amount), price (price1), status, name, VAT, discount and the other fields given; only those are sent. Whether IdeaSoft accepts a partial body is not documented: if it answers 400 or 422, read the product with ideasoft_get_product and send the fields it names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Stock code (SKU), unique like an id."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Barcode."
+          },
+          "stock_amount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Stock amount."
+          },
+          "price1": {
+            "type": "number",
+            "description": "Main sales price (price1), in the product currency."
+          },
+          "currency": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Currency id."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Currency of the price: `{\"id\": 1}` with an id from ideasoft_list_currencies (1 is usually TL)."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 active (visible in the shop), 0 passive."
+          },
+          "tax": {
+            "type": "integer",
+            "description": "VAT rate in percent, e.g. 20."
+          },
+          "tax_included": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: price1 includes VAT, 0: VAT is added."
+          },
+          "discount": {
+            "type": "number",
+            "description": "Discount value: a percentage when discount_type is 1, an amount when 0."
+          },
+          "discount_type": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 percentage, 0 amount."
+          },
+          "buying_price": {
+            "type": "number",
+            "description": "Purchase price."
+          },
+          "stock_type_label": {
+            "type": "string",
+            "enum": [
+              "Piece",
+              "cm",
+              "Dozen",
+              "gram",
+              "kg",
+              "Person",
+              "Package",
+              "metre",
+              "m2",
+              "pair"
+            ],
+            "description": "Stock unit."
+          },
+          "volumetric_weight": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Volumetric weight (desi)."
+          },
+          "short_details": {
+            "type": "string",
+            "description": "Short description."
+          },
+          "search_keywords": {
+            "type": "string",
+            "description": "Search keywords, comma-separated."
+          },
+          "brand": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Brand id."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "Brand: `{\"id\": 5}` with an id from ideasoft_list_brands."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Category id."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Categories: `[{\"id\": 12}]`."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "sku": "$sku",
+          "barcode": "$barcode",
+          "stockAmount": "$stock_amount",
+          "price1": "$price1",
+          "currency": "$currency",
+          "status": "$status",
+          "tax": "$tax",
+          "taxIncluded": "$tax_included",
+          "discount": "$discount",
+          "discountType": "$discount_type",
+          "buyingPrice": "$buying_price",
+          "stockTypeLabel": "$stock_type_label",
+          "volumetricWeight": "$volumetric_weight",
+          "shortDetails": "$short_details",
+          "searchKeywords": "$search_keywords",
+          "brand": "$brand",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "ideasoft_delete_product",
+      "description": "Delete a product with its variants and images. Cannot be undone; set status 0 with ideasoft_update_product to hide it instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/{product_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "ideasoft_list_product_prices",
+      "description": "List the extra price lists of products (price 2 to 6 next to the main price1): id, type, value and the product. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_prices",
+        "queryParams": {
+          "product": "$product",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_update_product_price",
+      "description": "Change one extra price of a product (types 2 to 6; the main price is price1 of ideasoft_update_product). Get the price id from ideasoft_list_product_prices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "price_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product price id."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "description": "Price list number, 2 to 6."
+          },
+          "value": {
+            "type": "number",
+            "description": "New price."
+          },
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "price_id",
+          "type",
+          "value",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/product_prices/{price_id}",
+        "bodyMapping": {
+          "type": "$type",
+          "value": "$value",
+          "product": {
+            "id": "$product_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "ideasoft_list_product_details",
+      "description": "List product details (the long HTML description and extra details) with sku and the product. Filter by product. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product_details",
+        "queryParams": {
+          "product": "$product",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_update_product_details",
+      "description": "Replace the long description (HTML) and extra details of a product. Get the detail id from ideasoft_list_product_details.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "detail_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product detail id."
+          },
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product id."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Product SKU."
+          },
+          "details": {
+            "type": "string",
+            "description": "Description as HTML."
+          },
+          "extra_details": {
+            "type": "string",
+            "description": "Extra details text."
+          }
+        },
+        "required": [
+          "detail_id",
+          "product_id",
+          "sku",
+          "details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/product_details/{detail_id}",
+        "bodyMapping": {
+          "sku": "$sku",
+          "details": "$details",
+          "extraDetails": "$extra_details",
+          "product": {
+            "id": "$product_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "ideasoft_list_categories",
+      "description": "List categories: id, name, slug, parent, status, sortOrder and dates. Filter by parent for one level of the tree. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": "string",
+            "description": "Parent category id; 0 or empty for top level."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "1 active, 0 passive."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids, e.g. 12,13,14."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories",
+        "queryParams": {
+          "parent": "$parent",
+          "status": "$status",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sinceId": "$since_id",
+          "ids": "$ids",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_get_category",
+      "description": "Read one category: name, slug, parent, status, sort order, showcase content and SEO fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Category id."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/categories/{category_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_brands",
+      "description": "List brands: id, name, slug, status (1 active), sortOrder and imageUrl; the id is what brand of a product takes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "1 active, 0 passive."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids, e.g. 12,13,14."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brands",
+        "queryParams": {
+          "status": "$status",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sinceId": "$since_id",
+          "ids": "$ids",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_get_brand",
+      "description": "Read one brand: name, slug, status, sort order, distributor, image and SEO fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "brand_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Brand id."
+          }
+        },
+        "required": [
+          "brand_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/brands/{brand_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_members",
+      "description": "List customers (members): id, firstname, surname, email, mobilePhoneNumber, status, memberGroup, company name and tax number, consent flags and dates. The answer also carries a hashed password field: never show it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "passive",
+              "queue",
+              "suspended"
+            ],
+            "description": "active, passive, queue or suspended."
+          },
+          "member_group": {
+            "type": "integer",
+            "description": "Member group id."
+          },
+          "allowed_to_campaigns": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ],
+            "description": "1: only members who accept campaign messages."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids, e.g. 12,13,14."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members",
+        "queryParams": {
+          "status": "$status",
+          "memberGroup": "$member_group",
+          "allowedToCampaigns": "$allowed_to_campaigns",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sinceId": "$since_id",
+          "ids": "$ids",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_get_member",
+      "description": "Read one customer: name, email, phone, status, member group, company and tax details, address, consent flags and dates (never show the hashed password field).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Member id."
+          }
+        },
+        "required": [
+          "member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members/{member_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_refund_requests",
+      "description": "List order refund (return or cancellation) requests: id, code, status (waiting_for_approval, approved, cancelled), fee, shippingFee, cancellationReason, refundRequestItems (amount, reason, details), the order and dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "waiting_for_approval",
+              "cancelled"
+            ],
+            "description": "Request status."
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          },
+          "member": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Member id."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort: `id` ascending, `-id` descending (any sortable field, minus sign for descending)."
+          },
+          "since_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only records with an id above this one (incremental sync)."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Comma-separated ids, e.g. 12,13,14."
+          },
+          "search": {
+            "type": "string",
+            "description": "Keyword search over the searchable fields (s)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_refund_requests",
+        "queryParams": {
+          "status": "$status",
+          "order": "$order",
+          "member": "$member",
+          "page": "$page",
+          "limit": "$limit",
+          "sort": "$sort",
+          "sinceId": "$since_id",
+          "ids": "$ids",
+          "s": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_count_refund_requests",
+      "description": "Count refund requests that match a status or order, e.g. those still waiting for approval. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "waiting_for_approval",
+              "cancelled"
+            ],
+            "description": "Request status."
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_refund_requests/count",
+        "queryParams": {
+          "status": "$status",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_get_refund_request",
+      "description": "Read one refund request with its items, reasons, amounts, the order and its status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_request_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Refund request id."
+          }
+        },
+        "required": [
+          "refund_request_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order_refund_requests/{refund_request_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_update_refund_request",
+      "description": "Approve or cancel a refund request. Approving can pay the money back to the customer (autoPayback 1 does it automatically). Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "refund_request_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Refund request id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "waiting_for_approval",
+              "cancelled"
+            ],
+            "description": "approved or cancelled (or back to waiting_for_approval)."
+          },
+          "auto_payback": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "1: IdeaSoft pays back automatically, 0: you pay back yourself."
+          }
+        },
+        "required": [
+          "refund_request_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/order_refund_requests/{refund_request_id}",
+        "bodyMapping": {
+          "status": "$status",
+          "autoPayback": "$auto_payback"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ideasoft_list_payment_types",
+      "description": "List the shop's payment types (id, name, sort order), the values of paymentTypeName on orders. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment_types",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ideasoft_list_currencies",
+      "description": "List the shop's currencies: id, label, abbr (TL, USD, EUR and so on) and rate. The id is what currency of a product takes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, from 1 (default 1)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, 1 to 100 (default 20). More than 100 answers 400."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/currencies",
+        "queryParams": {
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

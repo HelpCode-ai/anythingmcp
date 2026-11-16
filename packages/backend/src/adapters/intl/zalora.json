@@ -1,0 +1,1383 @@
+{
+  "slug": "zalora",
+  "name": "ZALORA",
+  "description": "ZALORA Seller Center API v2 for sellers on the fashion marketplace of Singapore, Malaysia, Indonesia, the Philippines and Hong Kong: orders and order items, packing, tracking and shipping documents, products and product sets, stock, prices per country, brands and categories. OAuth application ID and secret.",
+  "instructions": "## ZALORA\nThis connector works with the **ZALORA Seller Center API v2** (`https://sellercenter-api.<country domain>/v2`), for sellers on ZALORA, the fashion marketplace of Singapore, Malaysia, Indonesia, the Philippines and Hong Kong: orders and order items, packing and shipping, documents, products and product sets, stock, prices per country, brands and categories.\n\n**Setup (about 5 minutes)**\n1. Log in to ZALORA Seller Center with a user that has the **Seller Full Access** role.\n2. Open **Settings, Integration Management, OAuth Applications** and create an application. Copy the **Application ID** into `ZALORA_CLIENT_ID` and the **Application Secret** into `ZALORA_CLIENT_SECRET`. The secret is shown only once.\n3. Pick your Seller Center country in `ZALORA_DOMAIN`: Singapore `zalora.sg`, Malaysia `zalora.com.my`, Indonesia `zalora.co.id`, Philippines `zalora.com.ph`, Hong Kong `zalora.com.hk`.\n\nThe connector exchanges the two values at `https://sellercenter.<country domain>/oauth/client-credentials` (client credentials, HTTP Basic) for a bearer token that lasts one hour, and renews it when it expires. There are no scopes: the application can do what its creator's role allows.\n\n**Where to start**: `zalora_get_order_counters` for an overview, then `zalora_list_orders` with section status_pending (orders to pack) and `zalora_get_order` for the items, addresses and prices.\n\n**Orders**: `zalora_list_orders`, `zalora_get_order`, `zalora_list_order_items`, `zalora_get_order_history`, `zalora_get_order_item_returns`. The order `id` is numeric and is what the tools take; `number` is what the customer sees. Statuses live on the items: pending, ready_to_ship, shipped, delivered, failed, canceled, returned and the return states.\n\n**Packing and shipping**: check `zalora_list_shipment_providers` first. `zalora_set_ready_to_ship` packs pending items of one order into a package with a tracking number (optional only for providers with apiIntegrationAvailable true); `zalora_set_packed_by_marketplace` hands the shipment to ZALORA's logistics. Dropship sellers then use `zalora_set_shipped` and `zalora_set_delivered`. `zalora_update_tracking_code` and `zalora_update_shipping_provider` correct a ready-to-ship package. `zalora_print_document` returns the shipping label, invoice or picklist as base64 PDF (202 while the label is still being made). Note the item key: `id` in set_ready_to_ship, `orderItemId` in set_packed_by_marketplace.\n\n**Switched off at install**: `zalora_cancel_order_items` (cannot be undone, the customer is refunded), `zalora_set_delivery_failed`, `zalora_approve_return` (leads to a refund) and `zalora_set_price_status` (inactive takes a product off sale). Reasons for cancellations and failed deliveries come from `zalora_list_failure_reasons`. Turn a tool on in the connector only when the workspace wants the AI to do that.\n\n**Catalog**: a product set is the catalog item; its products are the variations (sizes, colours), each with its own numeric product id used for stock and prices. `zalora_list_products` (search by seller SKU), `zalora_list_product_sets`, `zalora_list_product_set_products`, `zalora_list_brands`, `zalora_get_category_tree` (large: fetch once), `zalora_get_category_attributes`, `zalora_get_seller`.\n\n**Stock and prices**: `zalora_get_product_stock`, `zalora_get_product_set_stock` and `zalora_update_stock` (absolute quantities, up to 100 products per call, only when the stock really changed; not for products fulfilled by ZALORA). `zalora_get_product_set_prices` shows prices per country; `zalora_update_price` changes price, sale price and sale dates of one product in one country (only the fields you send). Creating products, bulk imports and feeds are not included.\n\n**Paging**: lists take `limit` and `offset`; the answer has `pagination` with hasNext (orders, order items) or totalCount (products, brands). Product sets and brands return at most 100 rows.\n\n**Rate limit**: 30 requests per second per seller, shared by every application and token; above that ZALORA answers 429. Errors carry a real HTTP status with `title` and `detail` (422 is a validation error naming the field, 503 maintenance mode).",
+  "aliases": [
+    "ZALORA Seller Center",
+    "Zalora Seller API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "zalora",
+  "docsUrl": "https://sellercenter-api.zalora.com.ph/doc",
+  "requiredEnvVars": [
+    "ZALORA_DOMAIN",
+    "ZALORA_CLIENT_ID",
+    "ZALORA_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "ZALORA_DOMAIN": {
+      "label": "Country",
+      "kind": "address",
+      "help": "The country of your ZALORA Seller Center account. Each country has its own Seller Center and API address.",
+      "link": "https://sellercenter-api.zalora.com.ph/doc/authorization",
+      "pattern": "^zalora\\.(sg|com\\.my|co\\.id|com\\.ph|com\\.hk)$",
+      "patternMessage": "Pick one of the five ZALORA countries, for example zalora.sg.",
+      "options": [
+        {
+          "value": "zalora.sg",
+          "label": "Singapore"
+        },
+        {
+          "value": "zalora.com.my",
+          "label": "Malaysia"
+        },
+        {
+          "value": "zalora.co.id",
+          "label": "Indonesia"
+        },
+        {
+          "value": "zalora.com.ph",
+          "label": "Philippines"
+        },
+        {
+          "value": "zalora.com.hk",
+          "label": "Hong Kong"
+        }
+      ]
+    },
+    "ZALORA_CLIENT_ID": {
+      "label": "Application ID",
+      "kind": "credential",
+      "help": "Seller Center, Settings, Integration Management, OAuth Applications: create an application (as a user with Seller Full Access) and copy its Application ID.",
+      "link": "https://sellercenter-api.zalora.com.ph/doc/authorization",
+      "pattern": "^\\S{4,200}$",
+      "patternMessage": "Paste the Application ID only, without spaces."
+    },
+    "ZALORA_CLIENT_SECRET": {
+      "label": "Application secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the OAuth application is created. If it was lost, create a new application.",
+      "link": "https://sellercenter-api.zalora.com.ph/doc/authorization",
+      "pattern": "^\\S{8,500}$",
+      "patternMessage": "Paste the Application Secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": {
+      "hint": "ZALORA did not issue a token (invalid_app_id or invalid_client): check the Application ID and secret, and that they belong to the Seller Center of the country you picked.",
+      "field": "ZALORA_CLIENT_ID"
+    },
+    "401": {
+      "hint": "ZALORA refused the token. Copy the Application ID and secret again from Settings, Integration Management, OAuth Applications, or create a new application.",
+      "field": "ZALORA_CLIENT_SECRET"
+    },
+    "403": "The application works but its creator lacks the permission for this call. Create the OAuth application with a user that has the Seller Full Access role.",
+    "404": "ZALORA found no order, item, product or product set with that id. Use the numeric ids from the list tools.",
+    "rate_limited": "ZALORA allows 30 requests per second per seller, shared by all applications. Wait a moment and try again.",
+    "unreachable": {
+      "hint": "No ZALORA Seller Center answers for this country. Check the country you picked.",
+      "field": "ZALORA_DOMAIN"
+    }
+  },
+  "probe": {
+    "tool": "zalora_get_order_counters",
+    "params": {}
+  },
+  "prerequisites": "A ZALORA seller account (Seller Center) in Singapore, Malaysia, Indonesia, the Philippines or Hong Kong, and a user with the Seller Full Access role to create an OAuth application. About 5 minutes.",
+  "connector": {
+    "name": "ZALORA Seller Center API",
+    "type": "REST",
+    "baseUrl": "https://sellercenter-api.{{ZALORA_DOMAIN}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{ZALORA_CLIENT_ID}}",
+      "clientSecret": "{{ZALORA_CLIENT_SECRET}}",
+      "tokenUrl": "https://sellercenter.{{ZALORA_DOMAIN}}/oauth/client-credentials",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "zalora_list_orders",
+      "description": "List orders, oldest first unless sorted: id (numeric, used by every other order tool), number (order number the customer sees) and status, with `pagination` (limit, offset, hasNext). Filter by section (status of the items), creation or update dates, order numbers or seller SKUs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "description": "Only orders whose items are in this state, e.g. status_pending (to pack), status_ready_to_ship, status_shipped, status_return_waiting_for_approval.",
+            "enum": [
+              "status_pending",
+              "status_pending_all",
+              "status_ready_to_ship",
+              "status_shipped",
+              "status_delivered",
+              "status_failed",
+              "status_canceled",
+              "status_payment_pending",
+              "status_shipment_information_pending",
+              "status_returned",
+              "status_return_waiting_for_approval",
+              "status_return_shipped_by_customer",
+              "status_return_delivered",
+              "status_return_rejected",
+              "group_ready_to_ship_manifested",
+              "group_ready_to_ship_nonmanifested"
+            ]
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Created on or after: YYYY-MM-DD, optionally with a time (YYYY-MM-DD HH:MM:SS); a date alone starts at 00:00:00 (start) or ends at 23:59:59 (end)."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Created on or before: YYYY-MM-DD, optionally with a time (YYYY-MM-DD HH:MM:SS); a date alone starts at 00:00:00 (start) or ends at 23:59:59 (end)."
+          },
+          "update_date_start": {
+            "type": "string",
+            "description": "At least one item updated on or after: YYYY-MM-DD, optionally with a time (YYYY-MM-DD HH:MM:SS); a date alone starts at 00:00:00 (start) or ends at 23:59:59 (end)."
+          },
+          "update_date_end": {
+            "type": "string",
+            "description": "At least one item updated on or before: YYYY-MM-DD, optionally with a time (YYYY-MM-DD HH:MM:SS); a date alone starts at 00:00:00 (start) or ends at 23:59:59 (end)."
+          },
+          "order_numbers": {
+            "type": "array",
+            "description": "Order numbers as the customer sees them.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "product_skus": {
+            "type": "array",
+            "description": "Product SKUs contained in the order.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "createdAt",
+              "updatedAt"
+            ]
+          },
+          "sort_dir": {
+            "type": "string",
+            "description": "Sort direction, ascending by default.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "include_voucher_details": {
+            "type": "boolean",
+            "description": "true: add voucher details (orders with a voucher only)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, from 0. The answer says in `pagination.hasNext` whether there are more.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders",
+        "queryParams": {
+          "section": "$section",
+          "dateStart": "$date_start",
+          "dateEnd": "$date_end",
+          "updateDateStart": "$update_date_start",
+          "updateDateEnd": "$update_date_end",
+          "orderNumbers[]": "$order_numbers",
+          "productSku[]": "$product_skus",
+          "sort": "$sort",
+          "sortDir": "$sort_dir",
+          "includeVoucherDetails": "$include_voucher_details",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_order",
+      "description": "Read one order: number, status, dates, customer and shipping and billing address, payment method, totals and currency, and its items (id, status, shopSku, sellerSku, name, unitPrice, paidPrice, shipment provider, tracking code, warehouseId). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Numeric order id: `id` of zalora_list_orders, not the order number the customer sees.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "include_product_set": {
+            "type": "boolean",
+            "description": "true: add the product set of each item."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders/{order_id}",
+        "queryParams": {
+          "includeProductSet": "$include_product_set"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_order_counters",
+      "description": "Approximate number of orders per state (pending, ready to ship, shipped, delivered, canceled and so on), and of returns on request. Eventually consistent, for a quick overview. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_return_counters": {
+            "type": "boolean",
+            "description": "true: also count returns."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders-counters",
+        "queryParams": {
+          "includeReturnCounters": "$include_return_counters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_list_order_items",
+      "description": "List order items across orders: id, orderId, status, shopSku, sellerSku, name, unitPrice, paidPrice, shipment provider and tracking code, createdAt, updatedAt, with `pagination`. Filter by order ids, order numbers, item status, dates or seller SKUs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "description": "Numeric order ids.",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100
+          },
+          "order_item_ids": {
+            "type": "array",
+            "description": "Numeric order item ids.",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100
+          },
+          "order_numbers": {
+            "type": "array",
+            "description": "Order numbers as the customer sees them.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "status": {
+            "type": "array",
+            "description": "Item statuses.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "ready_to_ship",
+                "shipped",
+                "delivered",
+                "failed",
+                "canceled",
+                "returned",
+                "return_waiting_for_approval",
+                "return_shipped_by_customer",
+                "return_delivered",
+                "return_rejected",
+                "payment_pending",
+                "shipment_information_pending"
+              ]
+            },
+            "maxItems": 13
+          },
+          "created_at_start": {
+            "type": "string",
+            "description": "Created on or after, ISO 8601 date or date and time."
+          },
+          "created_at_end": {
+            "type": "string",
+            "description": "Created on or before, ISO 8601 date or date and time."
+          },
+          "updated_at_start": {
+            "type": "string",
+            "description": "Updated on or after, ISO 8601 date or date and time."
+          },
+          "updated_at_end": {
+            "type": "string",
+            "description": "Updated on or before, ISO 8601 date or date and time."
+          },
+          "product_skus": {
+            "type": "array",
+            "description": "Seller SKUs (exact match).",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, from 0. The answer says in `pagination.hasNext` whether there are more.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/order-items",
+        "queryParams": {
+          "orderIds[]": "$order_ids",
+          "orderItemIds[]": "$order_item_ids",
+          "orderNumbers[]": "$order_numbers",
+          "status[]": "$status",
+          "createdAtStart": "$created_at_start",
+          "createdAtEnd": "$created_at_end",
+          "updatedAtStart": "$updated_at_start",
+          "updatedAtEnd": "$updated_at_end",
+          "productSkus[]": "$product_skus",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_order_history",
+      "description": "Status history of the items of one order: orderItemId, shopSku, status, note, createdAt and who made the change. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Numeric order id: `id` of zalora_list_orders, not the order number the customer sees.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "order_item_ids": {
+            "type": "array",
+            "description": "Only these order item ids.",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/order/{order_id}/history",
+        "queryParams": {
+          "orderItemIds[]": "$order_item_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_order_item_returns",
+      "description": "Return details of order items: return package, reason, comment and return shipment provider. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "description": "Numeric order item ids.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/order-items/returns",
+        "queryParams": {
+          "orderItemIds[]": "$order_item_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_list_shipment_providers",
+      "description": "Shipment providers the seller can ship with: id, name, default, apiIntegrationAvailable (true: the tracking number may be left out), cashOnDelivery, status and tracking url. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "boolean",
+            "description": "true: only active providers."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders-shipment-providers",
+        "queryParams": {
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_list_failure_reasons",
+      "description": "Reasons accepted when cancelling an item or marking a delivery as failed: id, type, name, description and outOfStock. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders-failure-reasons"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_print_document",
+      "description": "Generate an order document as base64 PDF: shipping label, invoice, picklist, checklist, carrier manifest and others, depending on the order state. Answers 202 while an asynchronous shipping label is still being made: try again a little later. Does not buy a label.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_ids": {
+            "type": "array",
+            "description": "Numeric order ids.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "order_item_ids": {
+            "type": "array",
+            "description": "Only these order item ids.",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100
+          },
+          "document_type": {
+            "type": "string",
+            "description": "Document to generate.",
+            "enum": [
+              "shippingLabel",
+              "shippingParcel",
+              "invoice",
+              "exportInvoice",
+              "picklist",
+              "checklist",
+              "carrierManifest",
+              "serialNumber",
+              "creditNote",
+              "manifest",
+              "all_documents"
+            ]
+          }
+        },
+        "required": [
+          "order_ids",
+          "document_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/print-preview-document",
+        "bodyMapping": {
+          "orderIds": "$order_ids",
+          "orderItemIds": "$order_item_ids",
+          "documentType": "$document_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_list_products",
+      "description": "List products (variations): id, uuid, shopSku, sellerSku, productSetId, status and variation, ordered by id, with `pagination` (limit, offset, totalCount). Filter by SKU, seller SKU, name or ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_sku": {
+            "type": "string",
+            "description": "Seller SKU."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Shop SKU assigned by ZALORA."
+          },
+          "name": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "product_ids": {
+            "type": "array",
+            "description": "Numeric product ids.",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, from 0.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/products",
+        "queryParams": {
+          "sellerSku": "$seller_sku",
+          "sku": "$sku",
+          "name": "$name",
+          "productIds[]": "$product_ids",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_list_product_sets",
+      "description": "List product sets (the catalog item that groups the sizes or colours): id, name, parent SKU, brand, category, status and quality-control state. Filter by section, keyword or dates. Up to 100 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Section: all (default), active, inactive-all, deleted-all, image-missing, pending (waiting for quality control), rejected, price-rejected, sold-out, not-authorized.",
+            "enum": [
+              "all",
+              "active",
+              "inactive-all",
+              "deleted-all",
+              "deleted-partial",
+              "image-missing",
+              "pending",
+              "rejected",
+              "disapproved",
+              "sold-out",
+              "not-authorized",
+              "price-rejected"
+            ]
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Starts-with search over product name, SKU, seller SKU or parent SKU, at least 3 characters."
+          },
+          "create_date_start": {
+            "type": "string",
+            "description": "Created on or after, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "create_date_end": {
+            "type": "string",
+            "description": "Created on or before, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "update_date_start": {
+            "type": "string",
+            "description": "Updated on or after, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "update_date_end": {
+            "type": "string",
+            "description": "Updated on or before, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "in_stock": {
+            "type": "boolean",
+            "description": "true: only product sets with stock."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, from 0.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/product-sets",
+        "queryParams": {
+          "status": "$status",
+          "keyword": "$keyword",
+          "createDateStart": "$create_date_start",
+          "createDateEnd": "$create_date_end",
+          "updateDateStart": "$update_date_start",
+          "updateDateEnd": "$update_date_end",
+          "inStock": "$in_stock",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_list_product_set_products",
+      "description": "The products (variations) of one product set: id (the product id used for stock and prices), sellerSku, shopSku, variation, status, productIdentifier (EAN) and approval state. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_set_id": {
+            "type": "string",
+            "description": "Numeric product set id (`productSetId` of zalora_list_products, or `id` of zalora_list_product_sets).",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "product_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/product-set/{product_set_id}/products"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_product_stock",
+      "description": "Stock of one product (variation): quantity (sellable in your warehouse), reservedStock, available, consignment stock at ZALORA when fulfilled by ZALORA, and per warehouse when several warehouses are used. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Numeric product id of one variation (size or colour): `id` of zalora_list_product_set_products or zalora_list_products.",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/stock/product/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_product_set_stock",
+      "description": "Stock of every product (variation) of one product set: shopSku, sellerSku, quantity, reservedStock, available, consignments and warehouses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_set_id": {
+            "type": "string",
+            "description": "Numeric product set id (`productSetId` of zalora_list_products, or `id` of zalora_list_product_sets).",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "product_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/stock/product-set/{product_set_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_product_set_prices",
+      "description": "Prices of every product of one product set per country: price, salePrice, saleStartDate, saleEndDate and status, for the countries where a price is set. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_set_id": {
+            "type": "string",
+            "description": "Numeric product set id (`productSetId` of zalora_list_products, or `id` of zalora_list_product_sets).",
+            "pattern": "^[0-9]{1,15}$"
+          }
+        },
+        "required": [
+          "product_set_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/product-set/{product_set_id}/prices"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_list_brands",
+      "description": "Brands: id, uuid, name, isRestricted and isAccessible (whether you may sell it), with `pagination` (totalCount). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Brand name or part of it."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip, from 0.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/brands",
+        "queryParams": {
+          "name": "$name",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_category_tree",
+      "description": "The whole category tree: id, parentId, name, attributeSetId, path and children. Large answer: fetch it once and keep the ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/category/tree"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_category_attributes",
+      "description": "Attributes of one category: id, name, label, isMandatory, inputType, attributeType and the allowed options. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Numeric category id from zalora_get_category_tree.",
+            "pattern": "^[0-9]{1,10}$"
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/category/{category_id}/attributes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_get_seller",
+      "description": "The seller account behind the credentials: id, name, short code, status, delist reasons (holiday mode, order limits) and contact details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/seller"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "zalora_set_ready_to_ship",
+      "description": "Pack pending items of one order into a package and set them to ready to ship, with the tracking number and the shipment provider. Every item must be pending and from the same order. Answers the order item ids changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_items": {
+            "type": "array",
+            "description": "Items to pack: `id` is the order item id; `serialNumber` only where the category asks for one.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Order item id."
+                },
+                "serialNumber": {
+                  "type": "string",
+                  "description": "Serial number, 26 letters or digits."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the package, unique. May be left out only for a provider with apiIntegrationAvailable true."
+          },
+          "delivery_type": {
+            "type": "string",
+            "description": "dropship (you send it yourself), pickup (ZALORA collects it) or send_to_warehouse.",
+            "enum": [
+              "dropship",
+              "pickup",
+              "send_to_warehouse"
+            ]
+          },
+          "shipping_provider": {
+            "type": "string",
+            "description": "Name of the shipment provider as listed by zalora_list_shipment_providers."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Invoice number for all the items (optional; generated when auto-generation is on)."
+          }
+        },
+        "required": [
+          "order_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/statuses/set-to-ready-to-ship",
+        "bodyMapping": {
+          "orderItems": "$order_items",
+          "trackingNumber": "$tracking_number",
+          "deliveryType": "$delivery_type",
+          "shippingProvider": "$shipping_provider",
+          "invoiceNumber": "$invoice_number"
+        }
+      }
+    },
+    {
+      "name": "zalora_set_packed_by_marketplace",
+      "description": "Mark pending items as packed so that ZALORA arranges the shipment (marketplace logistics). Every item must be from the same order. Answers the order item ids changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_items": {
+            "type": "array",
+            "description": "Items to pack: `orderItemId` is the order item id.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderItemId": {
+                  "type": "integer",
+                  "description": "Order item id."
+                },
+                "serialNumber": {
+                  "type": "string",
+                  "description": "Serial number where the category asks for one."
+                }
+              },
+              "required": [
+                "orderItemId"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "delivery_type": {
+            "type": "string",
+            "description": "dropship, pickup or send_to_warehouse.",
+            "enum": [
+              "dropship",
+              "pickup",
+              "send_to_warehouse"
+            ]
+          },
+          "shipping_provider": {
+            "type": "string",
+            "description": "Name of the shipment provider."
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number, when you have one."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Invoice number for all the items."
+          }
+        },
+        "required": [
+          "order_items",
+          "delivery_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/statuses/set-to-packed-by-marketplace",
+        "bodyMapping": {
+          "orderItems": "$order_items",
+          "deliveryType": "$delivery_type",
+          "shippingProvider": "$shipping_provider",
+          "trackingNumber": "$tracking_number",
+          "invoiceNumber": "$invoice_number"
+        }
+      }
+    },
+    {
+      "name": "zalora_set_shipped",
+      "description": "Set ready-to-ship items of one order to shipped (dropship only; not possible for cross-docking or where manifests are required). Answers the order item ids changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "description": "Order item ids (numbers) of one order.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/statuses/set-to-shipped",
+        "bodyMapping": {
+          "orderItemIds": "$order_item_ids"
+        }
+      }
+    },
+    {
+      "name": "zalora_set_delivered",
+      "description": "Set shipped items of one order to delivered (dropship only). Answers the order item ids changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "description": "Order item ids (numbers) of one order.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/statuses/set-to-delivered",
+        "bodyMapping": {
+          "orderItemIds": "$order_item_ids"
+        }
+      }
+    },
+    {
+      "name": "zalora_update_tracking_code",
+      "description": "Change the tracking number of a ready-to-ship item; it applies to every item in the same package. Send an empty string to let ZALORA generate one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "description": "Numeric order item id: `id` of an item in zalora_get_order or zalora_list_order_items.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "New tracking number, unique, or an empty string to generate one."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "tracking_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/order-item/{order_item_id}/tracking-code",
+        "bodyMapping": {
+          "trackingCode": "$tracking_code"
+        }
+      }
+    },
+    {
+      "name": "zalora_update_shipping_provider",
+      "description": "Change the shipment provider (and optionally the tracking number) of a ready-to-ship item; it applies to every item in the same package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_id": {
+            "type": "string",
+            "description": "Numeric order item id: `id` of an item in zalora_get_order or zalora_list_order_items.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "shipping_provider": {
+            "type": "string",
+            "description": "Name of the shipment provider from zalora_list_shipment_providers."
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Tracking number with that provider."
+          }
+        },
+        "required": [
+          "order_item_id",
+          "shipping_provider"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/order-item/{order_item_id}/shipping-provider",
+        "bodyMapping": {
+          "shippingProvider": "$shipping_provider",
+          "trackingCode": "$tracking_code"
+        }
+      }
+    },
+    {
+      "name": "zalora_update_stock",
+      "description": "Set the stock quantity of up to 100 products (variations) in one call, as absolute numbers. Not possible for products fulfilled by ZALORA. Answers the updated rows; products that could not be updated are listed separately.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "One entry per product: productId (variation id) and quantity (new absolute stock).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": {
+                  "type": "integer",
+                  "description": "Product (variation) id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New stock quantity."
+                }
+              },
+              "required": [
+                "productId",
+                "quantity"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/stock/product",
+        "bodyMapping": {
+          "__raw": "$items"
+        }
+      }
+    },
+    {
+      "name": "zalora_update_price",
+      "description": "Change the price of one product (variation) in one country. Only the fields you send change: price (list price), salePrice with saleStartDate and saleEndDate. Prices are in the currency of that country. Answers the updated row and any warnings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Numeric product id of one variation (size or colour): `id` of zalora_list_product_set_products or zalora_list_products.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code of the price: SG, MY, ID, PH, HK (one where you sell).",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "price": {
+            "type": "number",
+            "description": "New list price.",
+            "minimum": 0
+          },
+          "sale_price": {
+            "type": "number",
+            "description": "Sale price, below the list price.",
+            "minimum": 0
+          },
+          "sale_start_date": {
+            "type": "string",
+            "description": "Sale start, ISO 8601 date and time, e.g. 2026-12-01T00:00:00+08:00."
+          },
+          "sale_end_date": {
+            "type": "string",
+            "description": "Sale end, ISO 8601 date and time."
+          }
+        },
+        "required": [
+          "product_id",
+          "country"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/product/{product_id}/prices/{country}",
+        "bodyMapping": {
+          "price": "$price",
+          "salePrice": "$sale_price",
+          "saleStartDate": "$sale_start_date",
+          "saleEndDate": "$sale_end_date"
+        }
+      }
+    },
+    {
+      "name": "zalora_set_price_status",
+      "description": "Switch the price row of one product in one country to active or inactive. inactive takes the product off sale in that country.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Numeric product id of one variation (size or colour): `id` of zalora_list_product_set_products or zalora_list_products.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code: SG, MY, ID, PH, HK.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "status": {
+            "type": "string",
+            "description": "active or inactive.",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          }
+        },
+        "required": [
+          "product_id",
+          "country",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v2/product/{product_id}/prices/{country}/status",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "zalora_cancel_order_items",
+      "description": "Cancel items of one order with a reason from zalora_list_failure_reasons. Cannot be undone; the customer is refunded and the cancellation counts against the seller.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "description": "Order item ids (numbers) of one order.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason name or id from zalora_list_failure_reasons (type canceled)."
+          },
+          "reason_detail": {
+            "type": "string",
+            "description": "Free text detail."
+          }
+        },
+        "required": [
+          "order_item_ids",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/statuses/set-to-cancelled",
+        "bodyMapping": {
+          "orderItemIds": "$order_item_ids",
+          "reason": "$reason",
+          "reasonDetail": "$reason_detail"
+        }
+      }
+    },
+    {
+      "name": "zalora_set_delivery_failed",
+      "description": "Mark items of one order as failed delivery with a reason from zalora_list_failure_reasons (dropship only).",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "description": "Order item ids (numbers) of one order.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason name or id from zalora_list_failure_reasons."
+          },
+          "reason_detail": {
+            "type": "string",
+            "description": "Free text detail."
+          }
+        },
+        "required": [
+          "order_item_ids",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/statuses/set-to-delivery-failed",
+        "bodyMapping": {
+          "orderItemIds": "$order_item_ids",
+          "reason": "$reason",
+          "reasonDetail": "$reason_detail"
+        }
+      }
+    },
+    {
+      "name": "zalora_approve_return",
+      "description": "Approve the return of items waiting for approval (only where the seller handles returns). Approving leads to the customer being refunded.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "description": "Order item ids (numbers) of one order.",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "order_item_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/orders/statuses/set-to-return-approved",
+        "bodyMapping": {
+          "orderItemIds": "$order_item_ids"
+        }
+      }
+    }
+  ]
+}
