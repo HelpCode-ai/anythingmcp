@@ -560,6 +560,61 @@ header is those characters followed by the Base64 of the hex digest).
 `digest` mode, `bodyParams` without `placement: "body"`, and `${nonce}`
 without `nonceLength` (rule `hmac-signature`).
 
+#### Form placement and expiry time (opt-in)
+
+Some platforms take every call as an `application/x-www-form-urlencoded` POST
+whose fields carry the signature, and sign an expiry time rather than the
+signing time (Apaczka.pl API v2: the fields `app_id`, `request` (the call's
+JSON as text), `expires` and `signature`, an HMAC over
+`app_id:route:request:expires`). These fields describe that; a signature
+without any of them is computed exactly as described above.
+
+| Field | Meaning |
+|-------|---------|
+| `placement` | Also `form`: the digest is written into the form body as the field `paramName` (default `sign`). The tool must be a `POST`, `PUT`, `PATCH` or `DELETE` with `bodyEncoding: "form-urlencoded"` and a `bodyMapping`, or no body of its own. |
+| `bodyParams` | With `placement: "form"`: static form fields of every call (an app id), signed like the tool's own fields. They replace a tool's field of the same name. Text, numbers or `true`/`false`. |
+| `timestampParam` | With `placement: "form"` the timestamp is written into the form as this field. |
+| `timestampOffsetSeconds` | A whole number of seconds, -86400 to 86400, added to the current time for `${timestamp}`, `timestampParam` and `timestampHeader`: an expiry time instead of the signing time. Works with every placement. |
+
+The template may also use:
+
+- `${form.NAME}`: the value of a form field as sent (decoded, before
+  percent-encoding), empty when absent. Only with `placement: "form"`; on any
+  other placement the text stays as written. It covers the tool's fields,
+  `bodyParams` and the timestamp; the signature field is not there yet.
+- `${apiPathNoSlash}`: `${apiPath}` without its leading slash
+  (`order_send/` for `https://www.apaczka.pl/api/v2/order_send/` under the
+  `baseUrl` `https://www.apaczka.pl/api/v2`). Path parameters are part of
+  it (`waybill/123456/`), and a trailing slash in the tool's `path` is kept.
+
+The JSON text of the call goes into its field with the [`__json`
+marker](#json-encoded-fields-__json), and `${form.request}` signs exactly that
+text. Apaczka (`pl/apaczka.json`):
+
+```json
+"signature": {
+  "algorithm": "sha256",
+  "encoding": "hex",
+  "secret": "{{APACZKA_APP_SECRET}}",
+  "placement": "form",
+  "paramName": "signature",
+  "bodyParams": { "app_id": "{{APACZKA_APP_ID}}" },
+  "timestampParam": "expires",
+  "timestampOffsetSeconds": 600,
+  "template": "${form.app_id}:${apiPathNoSlash}:${form.request}:${timestamp}"
+}
+```
+
+Each tool then sends its payload as one field:
+`"path": "/orders/", "bodyEncoding": "form-urlencoded", "bodyMapping": { "request": { "__json": { "page": "$page", "limit": "$limit" } } }`.
+Choose an offset that leaves room for clock drift and the engine's own
+retries, which resend the fields as signed: Apaczka accepts at most 15 minutes
+ahead, so the adapter uses 10. The validator
+also refuses `${form.NAME}` without `placement: "form"`, an offset that is not
+a whole number in range, and, on a connector with `placement: "form"`, a tool
+that is a `GET` or sends anything but a form-urlencoded `bodyMapping` (rule
+`hmac-signature`).
+
 #### Shop authorization (token providers)
 
 Some marketplaces authorize a shop with their own flow instead of OAuth 2, set
