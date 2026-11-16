@@ -41,6 +41,12 @@ export interface EnvVarMeta {
    * select, and every path that writes the variable refuses another value.
    */
   options?: EnvVarOption[];
+  /**
+   * Required, but the setup check finds it when the form leaves it empty
+   * (an Odoo database name, from the address): the form does not insist.
+   * Only for a variable the backend knows how to look up.
+   */
+  lookedUp?: boolean;
 }
 
 export interface EnvVarDescriptor extends Required<Pick<EnvVarMeta, 'label' | 'kind' | 'secret'>> {
@@ -53,6 +59,7 @@ export interface EnvVarDescriptor extends Required<Pick<EnvVarMeta, 'label' | 'k
   link?: string;
   advanced?: boolean;
   options?: EnvVarOption[];
+  lookedUp?: boolean;
 }
 
 /**

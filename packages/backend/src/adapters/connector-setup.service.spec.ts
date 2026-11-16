@@ -876,6 +876,22 @@ describe('ConnectorSetupService — links', () => {
     await expect(b.service.resolveLink(token, 'u1')).resolves.toEqual({ error: expect.stringContaining('expired') });
     await expect(b.service.resolveLink('made-up', 'u1')).resolves.toEqual({ error: expect.stringContaining('expired') });
   });
+
+  it('still leads a signed-in user to the setup after the 30 minutes, never anyone else', async () => {
+    // A chat may hand out a link it was given an hour earlier.
+    const b = build();
+    const token = await linkFor(b);
+    b.links[0].expiresAt = new Date(Date.now() - 60 * 60 * 1000);
+    await expect(b.service.resolveLink(token, 'u1', 'claude', { signedIn: true })).resolves.toMatchObject({
+      redirect: expect.stringContaining('/connectors/setup/'),
+    });
+    await expect(b.service.resolveLink(token, 'someone-else', 'claude', { signedIn: true })).resolves.toEqual({
+      error: expect.stringContaining('another account'),
+    });
+    await expect(b.service.resolveLink('made-up', 'u1', undefined, { signedIn: true })).resolves.toEqual({
+      error: expect.stringContaining('expired'),
+    });
+  });
 });
 
 describe('ConnectorSetupService — where a setup call comes from', () => {

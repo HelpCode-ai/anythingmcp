@@ -64,8 +64,10 @@ describe('SetupLinksController', () => {
     });
 
     it('keeps the session when it is already on that workspace', async () => {
-      const { controller, recent } = build();
+      const { controller, recent, setup } = build();
       const out = await controller.resolve({ user: { sub: 'u1', organizationId: 'org-test' } }, { token: 'tok' });
+      // Signed in: a link past its 30 minutes still opens (the sign-in cookie route keeps them).
+      expect(setup.resolveLink).toHaveBeenCalledWith('tok', 'u1', undefined, { signedIn: true });
       expect(out).toEqual({ redirect: '/connectors/setup/etsy?connector=c1&from=claude' });
       expect(recent.session).not.toHaveBeenCalled();
     });

@@ -73,6 +73,14 @@ one, and never combine `options` with `"secret": true`:
 }
 ```
 
+`envVarMeta.<VAR>.lookedUp: true` marks a required variable the setup check
+finds by itself when the form leaves it empty. The form then accepts it empty
+and labels it "found for you if left empty"; the check tries the value it
+found and hands it back to the page, which fills it in and saves it. Only
+`ODOO_DB` of `odoo` and `odoo-jsonrpc` has a lookup (the one database the
+address lists, or the Odoo Online subdomain; several databases are listed for
+the user to pick), and the validator refuses the flag anywhere else.
+
 `verifyHints` maps a status (`"401"`) or failure kind (`"auth_failed"`,
 `"unreachable"`) to what the setup check tells the user. For a provider that
 answers every refusal with the same status and says which one in the body, a

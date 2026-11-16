@@ -1348,6 +1348,58 @@ describe('AdaptersService.verifyCredentials: Odoo JSON-2 answering 404', () => {
     expect(out).toMatchObject({ ok: false, suggest: 'odoo-jsonrpc' });
     expect(out.message).toMatch(/older than 19, or the database name is wrong/);
   });
+
+  describe('a database name left empty', () => {
+    const noDb = { ODOO_URL: 'https://binikit.odoo.com', ODOO_API_KEY: 'k' };
+
+    it('uses the one database the address lists and returns it to fill in', async () => {
+      // 15-16 Nov 2026: 6 of 32 people who opened the Odoo setup were stopped by this field.
+      odooAnswers({ databases: ['binikit-main-12245208'] });
+      const { svc, execute } = buildAccepting('binikit-main-12245208', 'ok');
+      const out: any = await svc.verifyCredentials('odoo', 'org1', noDb);
+      expect(out).toMatchObject({ ok: true, corrected: { ODOO_DB: 'binikit-main-12245208' } });
+      expect(out.note).toContain('"binikit-main-12245208"');
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('tries the Odoo Online subdomain when the address lists no database', async () => {
+      odooAnswers({ databases: [] });
+      const { svc, execute } = buildAccepting('binikit', 'auth');
+      const out: any = await svc.verifyCredentials('odoo', 'org1', noDb);
+      expect(out).toMatchObject({ ok: false, kind: 'auth_failed', corrected: { ODOO_DB: 'binikit' } });
+      expect(out.message).toMatch(/^Your Odoo's database is called "binikit": it is filled in for you\./);
+      expect(execute.mock.calls[0][0].envVars.ODOO_DB).toBe('binikit');
+    });
+
+    it('asks which one when the address lists several, without calling Odoo with a guess', async () => {
+      odooAnswers({ databases: ['prod', 'staging'] });
+      const { svc, execute } = buildAccepting('prod', 'ok');
+      const out: any = await svc.verifyCredentials('odoo-jsonrpc', 'org1', { ...noDb, ODOO_UID: '2' });
+      expect(out).toMatchObject({ ok: false, kind: 'invalid_input' });
+      expect(out.fields.ODOO_DB).toContain('"prod", "staging"');
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('asks for it as before on a self-hosted Odoo that lists nothing', async () => {
+      odooAnswers({ databases: [] });
+      const { svc, execute } = buildAccepting('erp', 'ok');
+      const out: any = await svc.verifyCredentials('odoo', 'org1', { ODOO_URL: 'https://erp.example.com', ODOO_API_KEY: 'k' });
+      expect(out).toMatchObject({ ok: false, kind: 'invalid_input', missing: ['ODOO_DB'] });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('keeps a database name already stored on the connector being finished', async () => {
+      odooAnswers({ databases: ['other'] });
+      const { svc } = buildAccepting('stored-db', 'ok');
+      (svc as any).prisma.connector.findFirst = jest.fn().mockResolvedValue({
+        envVars: { ODOO_URL: 'https://binikit.odoo.com', ODOO_DB: 'stored-db', ODOO_API_KEY: 'k' },
+      });
+      const out: any = await svc.verifyCredentials('odoo', 'org1', { ODOO_URL: 'https://binikit.odoo.com', ODOO_DB: '' }, 'conn1');
+      expect(out.ok).toBe(true);
+      expect(out.corrected).toBeUndefined();
+      expect(outbound.mock.calls.some(([c]: any) => c.url.endsWith('/web/database/list'))).toBe(false);
+    });
+  });
 });
 
 describe('AdaptersService check — a server that only accepts approved IPs', () => {

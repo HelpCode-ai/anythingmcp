@@ -69,6 +69,12 @@ export interface SharedSetupProvider {
     opts?: SetupCallOptions,
   ): Promise<SetupCallResult>;
   status(ctx: SetupContext): Promise<SetupCallResult>;
+  /**
+   * A one-time link that opens the setup form of this connector, for this
+   * user (/s/<token>): the chat hands it out for a connector still waiting
+   * for its credentials, instead of the connector's page.
+   */
+  createLink?(ctx: SetupContext, connectorId: string): Promise<string>;
 }
 
 @Injectable()

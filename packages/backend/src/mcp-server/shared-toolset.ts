@@ -505,6 +505,13 @@ export interface SharedToolsetDeps {
    */
   signInUrl?(connectorId: string): string;
   /**
+   * For a caller who may set up connectors: a one-time link straight to the
+   * setup form of a connector still waiting for its credentials, in the
+   * workspace `organizationId`; undefined when it cannot be made there.
+   * Without it (or undefined), connectorUrl.
+   */
+  finishSetupLink?(connectorId: string, organizationId: string): Promise<string | undefined>;
+  /**
    * Connector setup from the chat, already bound to this caller; absent when
    * the caller may not install connectors (or the instance does not offer it).
    */
@@ -582,6 +589,8 @@ const FILE_UPLOAD_TOOL_SPECS: Record<string, { description: string; inputSchema:
 const SEARCH_DEFAULT_LIMIT = 20;
 /** Catalog apps offered when a search finds nothing in the workspace. */
 const CAN_BE_ADDED_LIMIT = 3;
+/** One-time setup links a single request makes at most (one per pending connector); the rest get the connector's page. */
+const FINISH_LINKS_PER_REQUEST = 5;
 const SEARCH_MAX_LIMIT = 50;
 const SHORT_DESCRIPTION = 240;
 const GUIDE_MAX_CHARS = 100_000;
@@ -724,12 +733,35 @@ export function registerSharedToolset(
       .map((t) => approvedApp(byId, t))
       .filter((a): a is ApprovedApp => !!a)
       .sort((a, b) => a.name.localeCompare(b.name));
+  /**
+   * Where the user finishes a pending connector: a one-time link to its setup
+   * form when one can be made, the connector's page otherwise. The page made
+   * people press one more button, after signing in to the dashboard: from
+   * 15 to 16 Nov 2026, 7 of 34 who reached it for Telegram and 3 of 19 for
+   * Odoo never opened the form. The link opens the form directly, with the
+   * sign-in the user just made to connect the AI client. At most
+   * FINISH_LINKS_PER_REQUEST are made per request, each connector once.
+   */
+  const finishLinks = new Map<string, Promise<string>>();
+  const finishSetupUrl = (t: RegisteredTool): Promise<string> => {
+    const fallback = deps.connectorUrl(t.connectorId);
+    if (!deps.finishSetupLink) return Promise.resolve(fallback);
+    let link = finishLinks.get(t.connectorId);
+    if (!link) {
+      if (finishLinks.size >= FINISH_LINKS_PER_REQUEST) return Promise.resolve(fallback);
+      link = deps
+        .finishSetupLink(t.connectorId, t.organizationId)
+        .then((url) => url ?? fallback, () => fallback);
+      finishLinks.set(t.connectorId, link);
+    }
+    return link;
+  };
   /** What a pending connector still needs and where the user finishes it. */
-  const whatIsLeft = (byId: Map<string, ConnectorSummary>, t: RegisteredTool) => {
+  const whatIsLeft = async (byId: Map<string, ConnectorSummary>, t: RegisteredTool) => {
     const approved = approvedApp(byId, t);
     return approved
       ? { whatIsMissing: `${approved.provider} approved the app; only the sign-in is left`, finishSetupUrl: approved.finishSignInUrl }
-      : { whatIsMissing: describeSetupStatus(t.setupStatus), finishSetupUrl: deps.connectorUrl(t.connectorId) };
+      : { whatIsMissing: describeSetupStatus(t.setupStatus), finishSetupUrl: await finishSetupUrl(t) };
   };
 
   // Measurement: which of these tools a connection calls at all. Never lets a
@@ -789,7 +821,7 @@ export function registerSharedToolset(
     const unfinished = pending.find((t) => t.name === name);
     if (unfinished) {
       const byId = await connectorsById();
-      const left = whatIsLeft(byId, unfinished);
+      const left = await whatIsLeft(byId, unfinished);
       return {
         error: json(
           {
@@ -852,10 +884,12 @@ export function registerSharedToolset(
     });
     if (waiting.length) {
       return {
-        notReadyYet: waiting.map((t) => ({
-          connector: connectorName(byId, t.connectorId),
-          ...whatIsLeft(byId, t),
-        })),
+        notReadyYet: await Promise.all(
+          waiting.map(async (t) => ({
+            connector: connectorName(byId, t.connectorId),
+            ...(await whatIsLeft(byId, t)),
+          })),
+        ),
         hint: waiting.some((t) => approvedApp(byId, t))
           ? "The provider approved the user's app; only the sign-in is left. Tell the user first and give them the finishSetupUrl as a clickable link: it starts the provider's sign-in."
           : 'This app is added but its setup is not finished. Give the user the finishSetupUrl as a clickable link first: they enter the credentials or sign in to the app there, never in the chat.',
@@ -1013,13 +1047,15 @@ export function registerSharedToolset(
       ]
         .filter((id) => servedIds.has(id))
         .map((id) => connectorName(byId, id));
-      const needsSetup = [...new Map(pending.map((t) => [t.connectorId, t])).values()]
-        .map((t) => ({
-          name: connectorName(byId, t.connectorId),
-          status: t.setupStatus,
-          ...whatIsLeft(byId, t),
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const needsSetup = (
+        await Promise.all(
+          [...new Map(pending.map((t) => [t.connectorId, t])).values()].map(async (t) => ({
+            name: connectorName(byId, t.connectorId),
+            status: t.setupStatus,
+            ...(await whatIsLeft(byId, t)),
+          })),
+        )
+      ).sort((a, b) => a.name.localeCompare(b.name));
       const paused = await deps.pausedByPlan?.().catch(() => null);
       return json({
         ...(await trialEndedBlock(deps)),

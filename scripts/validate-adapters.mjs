@@ -944,7 +944,7 @@ export function validateAdapter(adapter, file, region) {
     const meta = adapter.envVarMeta;
     const declared = [...(adapter.requiredEnvVars || []), ...(Array.isArray(adapter.optionalEnvVars) ? adapter.optionalEnvVars : [])];
     const KINDS = new Set(['address', 'credential', 'setting']);
-    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'patternMessage', 'link', 'advanced', 'options']);
+    const FIELDS = new Set(['label', 'kind', 'secret', 'help', 'example', 'pattern', 'patternMessage', 'link', 'advanced', 'options', 'lookedUp']);
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
       errors.push(error('env-meta-shape', 'envVarMeta', 'envVarMeta must map a variable name to its description', 'Use { "MY_VAR": { "label": "…", "help": "…" } }.', 'adapter-fields'));
     } else {
@@ -957,6 +957,8 @@ export function validateAdapter(adapter, file, region) {
         if (m.pattern !== undefined) { try { new RegExp(m.pattern); } catch { errors.push(error('env-meta-pattern', `${path}.pattern`, 'pattern is not a valid regular expression', 'Fix or remove the pattern.', 'adapter-fields')); } }
         if (m.link !== undefined && !/^https:\/\//.test(String(m.link))) errors.push(error('env-meta-link', `${path}.link`, 'link must be an https URL', 'Use the provider page where the value is created.', 'adapter-fields'));
         if (m.options !== undefined) errors.push(...envMetaOptionErrors(adapter, envVar, m, path));
+        // The backend looks the value up only for these (adapters.service.ts, odooDatabaseForSetup).
+        if (m.lookedUp !== undefined && !(m.lookedUp === true && ['odoo:ODOO_DB', 'odoo-jsonrpc:ODOO_DB'].includes(`${adapter.slug}:${envVar}`))) errors.push(error('env-meta-looked-up', `${path}.lookedUp`, 'lookedUp is only for a variable the backend looks up when it is left empty (ODOO_DB of the Odoo adapters)', 'Remove it, or add the lookup to the backend first and list the variable here.', 'adapter-fields'));
       }
     }
   }

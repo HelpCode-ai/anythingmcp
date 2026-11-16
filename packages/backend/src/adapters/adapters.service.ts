@@ -23,7 +23,7 @@ import { tiktokShopNeedsAuthorization } from '../connectors/engines/tiktok-shop-
 import { iopNeedsAuthorization } from '../connectors/engines/iop-token.service';
 import { sheinNeedsAuthorization } from '../connectors/engines/shein-token.service';
 import { metaLoginNeedsAuthorization } from '../connectors/engines/meta-login.util';
-import { odooCheckAdvice } from './odoo-database-hint';
+import { isOdooAdapter, odooCheckAdvice, odooDatabaseForEmptyField } from './odoo-database-hint';
 import {
   discoverWooCommerce,
   EgressContext,
@@ -485,6 +485,28 @@ export class AdaptersService {
     /** Finishing an existing connector: a field left empty uses what it stores (masked secrets come back empty). */
     existingConnectorId?: string,
   ): Promise<VerifyResult> {
+    // Odoo: a database name left empty is found from the address, and the
+    // check tries it; the page then puts it in the field and saves it.
+    const lookup = await this.odooDatabaseForSetup(slug, organizationId, credentials, existingConnectorId);
+    if (lookup?.several) {
+      const message = `This Odoo has several databases: ${lookup.several
+        .slice(0, 5)
+        .map((name) => `"${name}"`)
+        .join(', ')}. Enter the one you use as the database name.`;
+      return { ok: false, kind: 'invalid_input', fields: { ODOO_DB: message }, message };
+    }
+    if (lookup?.database) {
+      const found = lookup.database;
+      const checked = withoutRetryHint(
+        await this.checkCredentials(slug, organizationId, { ...(credentials ?? {}), ODOO_DB: found }, existingConnectorId),
+      );
+      const note = `Your Odoo's database is called "${found}": it is filled in for you.`;
+      if (checked.ok === null) return checked;
+      if (checked.ok === false && checked.kind !== 'auth_failed') return { ...checked, corrected: { ODOO_DB: found } };
+      return checked.ok === false
+        ? { ...checked, corrected: { ODOO_DB: found }, message: `${note} ${checked.message}` }
+        : { ...checked, corrected: { ODOO_DB: found }, note };
+    }
     const first = await this.checkCredentials(slug, organizationId, credentials, existingConnectorId);
     if (first.ok !== false || !first.odooDatabase) return withoutRetryHint(first);
     // Odoo: the database name is wrong and the address serves one database.
@@ -504,6 +526,35 @@ export class AdaptersService {
       return { ...retry, corrected: { ODOO_DB: database }, message: `${note} ${retry.message}` };
     }
     return withoutRetryHint(first);
+  }
+
+  /**
+   * Odoo: what to use for a database name left empty (the form no longer
+   * requires it), from the address typed or stored; undefined when a name is
+   * there, or there is no address to ask. Of 32 people who opened the Odoo
+   * setup on 15-16 Nov 2026, 6 were stopped by that empty field, and the name
+   * is one Odoo rarely shows.
+   */
+  private async odooDatabaseForSetup(
+    slug: string,
+    organizationId: string,
+    credentials: Record<string, string> | undefined,
+    existingConnectorId: string | undefined,
+  ): Promise<{ database?: string; several?: string[] } | undefined> {
+    if (!isOdooAdapter(slug)) return undefined;
+    let url = credentials?.ODOO_URL?.trim() ?? '';
+    let database = credentials?.ODOO_DB?.trim() ?? '';
+    if (existingConnectorId && (!url || !database)) {
+      const stored = await this.prisma.connector.findFirst({
+        where: { id: existingConnectorId, organizationId },
+        select: { envVars: true },
+      });
+      const env = (stored?.envVars ?? {}) as Record<string, unknown>;
+      if (!url && typeof env.ODOO_URL === 'string') url = env.ODOO_URL.trim();
+      if (!database && typeof env.ODOO_DB === 'string') database = env.ODOO_DB.trim();
+    }
+    if (database || !/^https?:\/\/[^\s/]+/i.test(url)) return undefined;
+    return odooDatabaseForEmptyField(url);
   }
 
   /** One setup check, as described on verifyCredentials. */

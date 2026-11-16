@@ -880,6 +880,8 @@ export interface EnvVarDescriptor {
   advanced?: boolean;
   /** A fixed list of choices: the form shows a select, and only these values are accepted. */
   options?: EnvVarOption[];
+  /** Required, but found by the setup check when left empty (an Odoo database name). */
+  lookedUp?: boolean;
 }
 
 export interface AdapterSetupInfo {

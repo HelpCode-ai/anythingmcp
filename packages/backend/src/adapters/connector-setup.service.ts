@@ -900,8 +900,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     connectorId: string,
   ): Promise<string> {
     const token = randomBytes(24).toString('base64url');
-    // Expired links stop working at once (resolveLink checks expiresAt); the
-    // rows are kept a week so the share of links that get opened can be read.
+    // Expired links stop working at once without a dashboard session (see
+    // resolveLink); the rows are kept a week, for a signed-in user's late
+    // click and to read the share of links that get opened.
     await this.prisma.connectorSetupLink
       .deleteMany({ where: { expiresAt: { lt: new Date(Date.now() - SETUP_LINK_RETENTION_MS) } } })
       .catch(() => undefined);
@@ -926,9 +927,17 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     token: string,
     userId: string,
     from?: unknown,
+    /**
+     * Opened with the user's own dashboard session: a link past its 30
+     * minutes still leads to the setup (it is kept a week). A chat may hand
+     * out a link it was given much earlier, and the link then gives the
+     * signed-in user nothing they could not open in the dashboard. Without a
+     * session (a sign-in cookie only) the 30 minutes hold.
+     */
+    opts: { signedIn?: boolean } = {},
   ): Promise<{ redirect: string; organizationId: string } | { error: string }> {
     const row = await this.prisma.connectorSetupLink.findUnique({ where: { tokenHash: this.hash(String(token || '')) } });
-    if (!row || row.expiresAt.getTime() < Date.now()) {
+    if (!row || (!opts.signedIn && row.expiresAt.getTime() < Date.now())) {
       return { error: 'This link has expired. Ask your AI client for a new one, or open the connector in the dashboard.' };
     }
     if (row.userId !== userId) {
