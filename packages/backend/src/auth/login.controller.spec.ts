@@ -1607,7 +1607,10 @@ describe('LoginController', () => {
         const PHONE_UA =
           'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
         const COOKIES = { first_app_csrf: 'pick-tok', login_user: LOGIN_USER };
-        let telegram: { isEnabledFor: jest.Mock; begin: jest.Mock; status: jest.Mock; saveToken: jest.Mock };
+        let telegram: { isEnabledFor: jest.Mock; begin: jest.Mock; status: jest.Mock; saveToken: jest.Mock; qrScanned: jest.Mock };
+        // The same two links for Telegram in the browser, as the service hands them out.
+        const WEB = 'https://web.telegram.org/a/#?tgaddr=tg%3A%2F%2Fnewbot%3Fmanager%3DAnythingMCPBot%26username%3Damcp_1a2b3c4d_bot';
+        const CLAIM_WEB = 'https://web.telegram.org/a/#?tgaddr=tg%3A%2F%2Fresolve%3Fdomain%3DAnythingMCPBot%26start%3D1a2b3c4d';
         let oneTap: LoginController;
 
         /** A controller whose instance has the Telegram service, found by its token. */
@@ -1630,7 +1633,15 @@ describe('LoginController', () => {
         beforeEach(() => {
           telegram = {
             isEnabledFor: jest.fn().mockReturnValue(true),
-            begin: jest.fn().mockResolvedValue({ link: LINK, username: 'amcp_1a2b3c4d_bot', claimLink: CLAIM }),
+            begin: jest.fn().mockResolvedValue({
+              link: LINK,
+              username: 'amcp_1a2b3c4d_bot',
+              claimLink: CLAIM,
+              webLink: WEB,
+              claimWebLink: CLAIM_WEB,
+              qrPath: '/auth/first-app/telegram/qr/1a2b3c4d',
+            }),
+            qrScanned: jest.fn().mockResolvedValue(LINK),
             status: jest.fn().mockResolvedValue({ state: 'waiting' }),
             saveToken: jest.fn().mockResolvedValue({ ok: true, bot: '@my_own_bot' }),
           };
@@ -1713,7 +1724,11 @@ describe('LoginController', () => {
               '<a class="tg-create" id="tg-create" href="https://t.me/" target="_blank" rel="noopener noreferrer">Create your Telegram bot</a>',
             );
             expect(page).toContain('<figure class="tg-qr" id="tg-qr" hidden>');
-            expect(page).toContain('<figcaption>Scan with your phone</figcaption>');
+            // Beside the QR code: the same link for Telegram in the browser, hidden until there is one.
+            expect(page).toContain(
+              '<figcaption>Scan with your phone<a class="tg-web" id="tg-web" href="https://web.telegram.org/a/" target="_blank" rel="noopener noreferrer" hidden>or open Telegram Web in this browser</a></figcaption>',
+            );
+            expect(page).toContain('id="tg-link-web"');
             expect(page).toContain('<p class="tg-status" id="tg-status" role="status" aria-live="polite"></p>');
             // Whose bot this is, and where someone who has one goes.
             expect(page).toContain(
@@ -1765,6 +1780,9 @@ describe('LoginController', () => {
               expect(page).toContain('Changed the username? Link your bot</a>');
               expect(page).toContain('<p class="tg-hint" id="tg-hint">Telegram opens our setup bot: press Start there, then come back here.</p>');
               expect(page).not.toContain('Scan the code');
+              // And no Telegram Web link: the button opens the app there.
+              expect(page).not.toContain('id="tg-web"');
+              expect(page).not.toContain('id="tg-link-web"');
               expect(page).not.toContain('<figure');
               expect(page).not.toContain('Scan with your phone');
               // Continue as it is on a phone: straight to the callback, no chat tab.
@@ -1813,6 +1831,9 @@ describe('LoginController', () => {
                 claim: CLAIM,
                 qr: expect.stringMatching(/^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/),
                 claimQr: expect.stringMatching(/^data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+$/),
+                // A computer also gets Telegram in the browser, for someone without the app.
+                web: WEB,
+                claimWeb: CLAIM_WEB,
               },
             });
             expect(res._json.telegram.claimQr).not.toBe(res._json.telegram.qr);
@@ -1827,6 +1848,36 @@ describe('LoginController', () => {
               organizationId: 'org-1',
               metadata: { adapterSlug: 'telegram-bot', client: 'Claude', device: 'desktop' },
             });
+          });
+
+          // The QR code holds this server's own address for the code, not the
+          // t.me link: the scan is then counted before it goes on to Telegram.
+          it('points the QR code of the creation link at its own address on this server', async () => {
+            arrange();
+            const res = makeRes();
+            await oneTap.pickFirstApp(request(COOKIES, DESKTOP_UA), { adapter: 'telegram-bot', csrf: 'pick-tok' }, res);
+            const expected = (await import('./first-app-telegram')).telegramQrDataUri('http://mcp.test/auth/first-app/telegram/qr/1a2b3c4d');
+            expect(res._json.telegram.qr).toBe(expected);
+            expect(res._json.telegram.qr).not.toBe((await import('./first-app-telegram')).telegramQrDataUri(LINK));
+          });
+
+          it('sends a scan on to Telegram, and answers 404 for a code that is not ours', async () => {
+            const scanned = makeRes() as any;
+            scanned.setHeader = jest.fn();
+            scanned.redirect = jest.fn();
+            await oneTap.telegramOneTapQr('1a2b3c4d', scanned);
+            expect(telegram.qrScanned).toHaveBeenCalledWith('1a2b3c4d');
+            expect(scanned.redirect).toHaveBeenCalledWith(302, LINK);
+            expect(scanned.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+
+            telegram.qrScanned.mockResolvedValue(null);
+            const refused = makeRes() as any;
+            refused.type = jest.fn().mockReturnValue(refused);
+            refused.send = jest.fn();
+            refused.redirect = jest.fn();
+            await oneTap.telegramOneTapQr('zzzzzzzz', refused);
+            expect(refused.redirect).not.toHaveBeenCalled();
+            expect(refused._status).toBe(404);
           });
 
           it('sends no QR code to a phone', async () => {
@@ -1878,6 +1929,7 @@ describe('LoginController', () => {
               organizationId: 'org-1',
               userId: 'u1',
               opened: false,
+              openedVia: 'app',
               claimOffered: false,
               device: 'desktop',
             });
@@ -1903,11 +1955,17 @@ describe('LoginController', () => {
               organizationId: 'org-1',
               userId: 'u1',
               opened: true,
+              openedVia: 'app',
               claimOffered: false,
               device: 'mobile',
             });
             await status({ csrf: 'pick-tok', opened: 'yes' });
             expect(telegram.status).toHaveBeenLastCalledWith(expect.objectContaining({ opened: false }));
+            // Which link it was: Telegram in the browser only when the page says exactly that.
+            await status({ csrf: 'pick-tok', opened: true, via: 'web' });
+            expect(telegram.status).toHaveBeenLastCalledWith(expect.objectContaining({ opened: true, openedVia: 'web' }));
+            await status({ csrf: 'pick-tok', opened: true, via: 'anything else' });
+            expect(telegram.status).toHaveBeenLastCalledWith(expect.objectContaining({ openedVia: 'app' }));
           });
 
           it('passes on that "Link your bot" is shown, and what the server knows about the wait', async () => {
@@ -2075,6 +2133,8 @@ describe('LoginController', () => {
               claim: CLAIM,
               qr: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
               claimQr: 'data:image/svg+xml;base64,PHN2Zz5jbGFpbTwvc3ZnPg==',
+              web: 'https://web.telegram.org/a/#?tgaddr=tg%3A%2F%2Fnewbot%3Fmanager%3DAnythingMCPBot',
+              claimWeb: 'https://web.telegram.org/a/#?tgaddr=tg%3A%2F%2Fresolve%3Fdomain%3DAnythingMCPBot',
             },
           };
 
@@ -2207,6 +2267,10 @@ describe('LoginController', () => {
             expect(t.nodes['tg-create'].attrs.href).toBe(LINK);
             expect(t.nodes['tg-qr'].hidden).toBe(false);
             expect(t.nodes['tg-qr-img'].attrs.src).toBe(PICKED.telegram.qr);
+            // Beside the QR code, for a computer without the Telegram app: Telegram in the browser.
+            expect(t.nodes['tg-web'].hidden).toBe(false);
+            expect(t.nodes['tg-web'].attrs.href).toBe(PICKED.telegram.web);
+            expect(t.nodes['tg-link-web'].attrs.href).toBe(PICKED.telegram.claimWeb);
             expect(t.nodes['tg-status'].textContent).toBe('Waiting for your bot…');
             expect(t.nodes['quick-status'].textContent).toBe('Telegram added. Create its bot now, or continue and finish it in Claude.');
             expect(t.nodes['quick-apps'].attrs['data-telegram']).toBe('on');
@@ -2245,6 +2309,19 @@ describe('LoginController', () => {
             expect(t.fetch).toHaveBeenLastCalledWith(STATUS, expect.objectContaining({ method: 'POST', credentials: 'same-origin' }));
             await t.advance(6_000);
             expect(t.requests(STATUS)).toHaveLength(4);
+          });
+
+          it('reports a click on "open Telegram Web" as the web way in, once', async () => {
+            const t = await run();
+            await t.pickTelegram();
+            const before = t.requests(STATUS).length;
+            t.nodes['tg-web'].listeners.click();
+            await flush();
+            expect(t.requests(STATUS)[before]).toEqual({ csrf: expect.any(String), opened: true, via: 'web' });
+            // A later click on the app's button does not change what was reported.
+            t.nodes['tg-create'].listeners.click();
+            await flush();
+            expect(t.requests(STATUS)[before + 1]).toEqual({ csrf: expect.any(String) });
           });
 
           it('does not ask while the page is in the background, and asks at once on coming back', async () => {
@@ -2399,7 +2476,7 @@ describe('LoginController', () => {
               await flush();
               // Sent at once, with the click.
               expect(t.requests(STATUS)).toHaveLength(before + 1);
-              expect(t.requests(STATUS)[before]).toEqual({ csrf: expect.any(String), opened: true });
+              expect(t.requests(STATUS)[before]).toEqual({ csrf: expect.any(String), opened: true, via: 'app' });
 
               // The click counts the wait anew: a bot with the suggested username arrives within seconds.
               await t.advance(18_000);
