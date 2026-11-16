@@ -16,6 +16,7 @@ import { MemberVisibilityService } from '../settings/member-visibility.service';
 import { OrgSettingsService } from '../settings/org-settings.service';
 import { SiteSettingsService } from '../settings/site-settings.service';
 import { CatalogResyncService } from './catalog-resync.service';
+import { MEMBER_CONNECTOR_FIELDS, MEMBER_TOOL_FIELDS } from './connector-member-view.util';
 import { ConnectorsController } from './connectors.controller';
 import { ConnectorsService } from './connectors.service';
 import { ToolsController } from './tools.controller';
@@ -26,6 +27,9 @@ import { WebhookEventsService } from './webhook-events.service';
  * Member visibility on the connectors, tools and File Search read routes,
  * end to end: HTTP, controllers, the real ConnectorsService queries, the real
  * RolesService and org_settings rows, against the migrated schema.
+ *
+ * A restricted member reads a connector they do not own in the reduced view
+ * (connector-member-view.util.ts), here over real rows with every column.
  *
  * Needs a migrated PostgreSQL in AUDIT_TEST_DATABASE_URL (as in CI). Every
  * row it creates belongs to fixture workspaces and users it deletes again.
@@ -218,6 +222,27 @@ const KEY = 'k'.repeat(48);
   const unknownBody = (id: string) => ({ statusCode: 404, message: `Connector ${id} not found`, error: 'Not Found' });
   const unknownFsBody = { statusCode: 404, message: 'File Search connector not found.', error: 'Not Found' };
 
+  const CONNECTOR_KEYS = [...MEMBER_CONNECTOR_FIELDS, 'memberView', 'tools'].sort();
+  const TOOL_KEYS = [...MEMBER_TOOL_FIELDS].sort();
+  /** The reduced view: the allowlisted keys of the real row, nothing about where it connects. */
+  const expectReduced = (row: any) => {
+    expect(Object.keys(row).sort()).toEqual(CONNECTOR_KEYS);
+    expect(row.memberView).toBe(true);
+    for (const tool of row.tools) expect(Object.keys(tool).sort()).toEqual(TOOL_KEYS);
+    for (const key of ['baseUrl', 'config', 'envVars', 'headers', 'instructions', 'mcpServers']) {
+      expect(row).not.toHaveProperty(key);
+    }
+    expect(JSON.stringify(row)).not.toContain('api.example.invalid');
+  };
+  /** The full view, as before the reduced one existed. */
+  const expectFull = (row: any) => {
+    expect(row).not.toHaveProperty('memberView');
+    expect(row.baseUrl).toBe('https://api.example.invalid');
+    expect(row).toHaveProperty('envVars');
+    expect(row).toHaveProperty('maskedEnvVars');
+    for (const tool of row.tools) expect(tool.endpointMapping).toEqual({ method: 'GET', path: '/x' });
+  };
+
   describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
     describe.each(['none', 'with tools', 'without tools'] as const)('whitelist: %s', (state) => {
       beforeAll(async () => {
@@ -235,6 +260,13 @@ const KEY = 'k'.repeat(48);
         expect(list.body.map((c: any) => name(c.id))).toEqual(expected);
         const sharedRow = list.body.find((c: any) => c.id === ids.shared);
         if (sharedRow) expect(sharedRow.tools.map((t: any) => t.name).sort()).toEqual(narrowed ? ['shared_s1'] : ['shared_s1', 'shared_s2']);
+        // Reduced exactly for the connectors a restricted member does not own.
+        const own = who === 'EDITOR' ? 'edMine' : who === 'VIEWER' ? 'vwMine' : null;
+        const reducedView = (c: string) => restricted && c !== own;
+        for (const row of list.body) {
+          if (reducedView(name(row.id)!)) expectReduced(row);
+          else expectFull(row);
+        }
 
         const health = await get(who, '/api/connectors/health-check');
         expect(health.body.connectors.map((c: any) => name(c.id))).toEqual(expected);
@@ -251,12 +283,22 @@ const KEY = 'k'.repeat(48);
             for (const r of [detail, toolList, oauth, cred]) expect(r).toEqual({ status: 404, body: unknownBody(ids[c]) });
             continue;
           }
-          expect([detail.status, toolList.status, oauth.status, cred.status]).toEqual([200, 200, 200, 200]);
+          expect([detail.status, toolList.status, cred.status]).toEqual([200, 200, 200]);
+          if (reducedView(c)) {
+            expectReduced(detail.body);
+            for (const tool of toolList.body) expect(Object.keys(tool).sort()).toEqual(TOOL_KEYS);
+            // The OAuth settings are settings: the 404 of a hidden connector.
+            expect(oauth).toEqual({ status: 404, body: unknownBody(ids[c]) });
+          } else {
+            expectFull(detail.body);
+            for (const tool of toolList.body) expect(tool.endpointMapping).toEqual({ method: 'GET', path: '/x' });
+            expect(oauth.status).toBe(200);
+          }
           if (c === 'shared') {
             const names = narrowed ? ['shared_s1'] : ['shared_s1', 'shared_s2'];
             expect(detail.body.tools.map((t: any) => t.name).sort()).toEqual(names);
             expect(toolList.body.map((t: any) => t.name).sort()).toEqual(names);
-            expect(detail.body.mcpServers).toEqual([{ mcpServerId: ids.server }]);
+            if (!reducedView(c)) expect(detail.body.mcpServers).toEqual([{ mcpServerId: ids.server }]);
           }
         }
 

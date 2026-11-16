@@ -1,4 +1,10 @@
-import { CatalogResyncService, diffBaseUrl, RESYNC_TRANSACTION } from './catalog-resync.service';
+import { Logger } from '@nestjs/common';
+import {
+  CatalogResyncService,
+  diffBaseUrl,
+  RESYNC_TRANSACTION,
+  toPublicCatalogDiff,
+} from './catalog-resync.service';
 import { getAdapter } from '../adapters/catalog';
 import {
   computeAdapterVersion,
@@ -277,12 +283,12 @@ describe('CatalogResyncService.resync — baseUrl is never applied unasked', () 
   const NINA = 'nina-warnung';
   const STALE = 'https://nina.api.proxy.bund.dev/api31';
 
-  function setup() {
+  function setup(baseUrl = STALE) {
     const adapter = getAdapter(NINA)!;
     const connector = {
       id: 'c-nina',
       name: adapter.connector.name,
-      baseUrl: STALE,
+      baseUrl,
       instructions: adapter.instructions ?? null,
       config: {
         adapterSlug: NINA,
@@ -345,6 +351,105 @@ describe('CatalogResyncService.resync — baseUrl is never applied unasked', () 
     const { service, connectorUpdate } = setup();
     await service.resync('c-nina', 'safe', { applyBaseUrl: true });
     expect(connectorUpdate).not.toHaveBeenCalled();
+  });
+
+  describe('the log line of an applied base URL', () => {
+    let lines: string[];
+
+    beforeEach(() => {
+      lines = [];
+      jest.spyOn(Logger.prototype, 'log').mockImplementation((message: unknown) => {
+        lines.push(String(message));
+      });
+    });
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('names both hosts', async () => {
+      const { service, adapter } = setup();
+      await service.resync('c-nina', 'full', { applyBaseUrl: true });
+
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain(`baseUrl → ${adapter.connector.baseUrl} (was ${STALE})`);
+    });
+
+    it.each([
+      [
+        'credentials and a key in the query',
+        'https://ops:s3cret-pw@nina.old.example/api31?apikey=s3cret-key',
+        '(was https://nina.old.example/api31?apikey=***)',
+      ],
+      [
+        'a connection string with an @ in the password',
+        'postgresql://ops:s3cret@pw@db.old.example:5432/nina',
+        '(was postgresql://db.old.example:5432/nina)',
+      ],
+      [
+        // `new URL` cannot read it: the password is masked, the hosts stay.
+        'a multi-host connection string',
+        'mongodb://ops:s3cret-pw@m1.old.example:27017,m2.old.example:27017/nina',
+        '(was mongodb://ops:********@m1.old.example:27017,m2.old.example:27017/nina)',
+      ],
+    ])('leaves out the password of the URL it replaces: %s', async (_label, stored, shown) => {
+      const { service } = setup(stored);
+      await service.resync('c-nina', 'full', { applyBaseUrl: true });
+
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain(shown);
+      expect(lines[0]).not.toContain('s3cret');
+    });
+  });
+});
+
+describe('toPublicCatalogDiff', () => {
+  const diff = (from: string, to: string) => ({
+    slug: 'x',
+    isUpToDate: false,
+    baseUrl: { from, to, provenance: 'user-edited' as const },
+  });
+
+  it('masks a password in the connector\'s base URL, as toPublicConnector does', () => {
+    const shown = toPublicCatalogDiff(
+      diff('postgresql://ops:s3cret@pw@db.example.com:5432/shop', 'postgresql://db.example.org:5432/shop'),
+    );
+
+    expect(shown.baseUrl).toEqual({
+      from: 'postgresql://ops:********@db.example.com:5432/shop',
+      to: 'postgresql://db.example.org:5432/shop',
+      provenance: 'user-edited',
+    });
+    expect(shown.slug).toBe('x');
+  });
+
+  it('masks the catalog side too, and a multi-host URL', () => {
+    const shown = toPublicCatalogDiff(
+      diff(
+        'mongodb://ops:s3cret@m1.example.com:27017,m2.example.com:27017/shop',
+        'mongodb://demo:s3cret@demo.example.org:27017/shop',
+      ),
+    );
+
+    expect(JSON.stringify(shown)).not.toContain('s3cret');
+    expect(shown.baseUrl!.from).toBe('mongodb://ops:********@m1.example.com:27017,m2.example.com:27017/shop');
+  });
+
+  it('keeps a {{VAR}} reference and a URL without a password as they are', () => {
+    const plain = diff('https://api.us3.example.com', 'https://ops:{{API_PASSWORD}}@api.example.com');
+    expect(toPublicCatalogDiff(plain)).toEqual(plain);
+  });
+
+  it('leaves the diff it was given untouched, so resync still applies the real URL', () => {
+    const original = diff('postgresql://ops:s3cret@db.example.com/shop', 'postgresql://db.example.org/shop');
+    const copy = JSON.parse(JSON.stringify(original));
+
+    toPublicCatalogDiff(original);
+
+    expect(original).toEqual(copy);
+  });
+
+  it('passes a diff without a base URL change through', () => {
+    const none = { slug: 'x', baseUrl: null };
+    expect(toPublicCatalogDiff(none)).toBe(none);
   });
 });
 

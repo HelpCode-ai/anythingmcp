@@ -20,6 +20,7 @@ import { ActionMenu } from '@/components/ui/action-menu';
 import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { useMemberVisibility } from '@/lib/use-member-visibility';
+import { canManageConnector } from '@/lib/can-manage-connector';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -266,7 +267,8 @@ export default function ConnectorsPage() {
   };
 
   const filtered = list.filter((c) => {
-    if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !c.baseUrl.toLowerCase().includes(search.toLowerCase())) return false;
+    // The reduced view of a connector shared with a restricted member has no address.
+    if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !(c.baseUrl ?? '').toLowerCase().includes(search.toLowerCase())) return false;
     if (typeFilter && c.type !== typeFilter) return false;
     return true;
   });
@@ -557,6 +559,11 @@ export default function ConnectorsPage() {
           <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((c) => {
               const tone: Tone = TYPE_TONE[c.type] ?? 'neutral';
+              // Owner or admin: the card's actions all write, and the API
+              // answers 403 to anyone else.
+              const canManage = canManageConnector(user, c);
+              const paused = !c.isActive && pausedByPlan.has(c.id);
+              const canImportSpec = c.type === 'REST' || c.type === 'GRAPHQL' || c.type === 'SOAP';
               return (
                 <Card
                   key={c.id}
@@ -569,7 +576,9 @@ export default function ConnectorsPage() {
                       <div className="flex items-center gap-2">
                         <span className="truncate text-[14.5px] font-semibold text-[var(--text)]">{c.name}</span>
                       </div>
-                      <div className="mt-0.5 truncate font-mono text-[12px] text-[var(--text-3)]">{c.baseUrl}</div>
+                      {c.baseUrl && (
+                        <div className="mt-0.5 truncate font-mono text-[12px] text-[var(--text-3)]">{c.baseUrl}</div>
+                      )}
                     </div>
                     <Badge tone={tone} className="flex-shrink-0">{typeLabel(c.type)}</Badge>
                   </div>
@@ -580,12 +589,15 @@ export default function ConnectorsPage() {
                         <div className="text-[11px] text-[var(--text-3)]">{t('card.tools')}</div>
                         <div className="text-[14px] font-semibold text-[var(--text)]">{c.tools?.length || 0}</div>
                       </div>
-                      <div className="min-w-0">
-                        <div className="text-[11px] text-[var(--text-3)]">{t('card.auth')}</div>
-                        <div className="truncate text-[14px] font-semibold text-[var(--text)]">{authTypeLabel(c.authType)}</div>
-                      </div>
+                      {/* Not part of the reduced view (memberView). */}
+                      {!c.memberView && (
+                        <div className="min-w-0">
+                          <div className="text-[11px] text-[var(--text-3)]">{t('card.auth')}</div>
+                          <div className="truncate text-[14px] font-semibold text-[var(--text)]">{authTypeLabel(c.authType)}</div>
+                        </div>
+                      )}
                     </div>
-                    {!c.isActive && pausedByPlan.has(c.id) ? (
+                    {paused ? (
                       <PausedByPlanBadge className="flex-shrink-0" />
                     ) : (
                       <StatusPill
@@ -599,13 +611,14 @@ export default function ConnectorsPage() {
                     <AuthStatusPill connector={c} />
                   </div>
                   {/* Hover actions (above the full-card link) */}
+                  {canManage && (
                   <div className="relative z-10 mt-[14px] flex gap-2 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                    {!c.isActive && pausedByPlan.has(c.id) && (
+                    {paused && (
                       <Button size="sm" onClick={() => handleActivate(c)} disabled={activating === c.id}>
                         {tSwap('activate')}
                       </Button>
                     )}
-                    {(c.type === 'REST' || c.type === 'GRAPHQL' || c.type === 'SOAP') && (
+                    {canImportSpec && (
                       <Button variant="secondary" size="sm" onClick={() => handleImportSpec(c.id)}>
                         {t('card.importSpec')}
                       </Button>
@@ -614,6 +627,7 @@ export default function ConnectorsPage() {
                       {t('card.delete')}
                     </Button>
                   </div>
+                  )}
                 </Card>
               );
             })}

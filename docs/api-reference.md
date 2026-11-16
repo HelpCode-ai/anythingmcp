@@ -490,8 +490,12 @@ call, so cached presence never replaces the caller's current role policy.
 
 In a workspace set to `restricted`, a member who is not an admin gets only
 their own calls from the audit endpoints, only the connectors and MCP servers
-their roles reach, and 404 for the others. Admins and `open` workspaces (the
-default) see everything. What each endpoint returns, how it combines with
+their roles reach, and 404 for the others. A connector they can see but do not
+own comes back in a reduced view marked `memberView: true`: `id`, `name`,
+`type`, `icon`, `isActive`, `credentialScope`, `setupStatus`, `authStatus`,
+`authStatusCode`, and of each allowed tool `id`, `name`, `description` and
+`isEnabled`; no address, variables, headers, instructions or endpoint
+mappings. Admins and `open` workspaces (the default) see everything. What each endpoint returns, how it combines with
 roles and SSO group mapping, and what stays visible:
 [member visibility](operations/member-visibility.md).
 

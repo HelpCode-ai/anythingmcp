@@ -75,6 +75,14 @@ You can type the username and password into the connection string, as above. Whe
 - No export contains a password that has moved, an admin export included, so a connector restored from a backup needs it typed in again.
 - A connection string the parser cannot read, such as a multi-host MongoDB URL typed with its credentials, keeps them in place; the password is shown as `********`.
 
+Connectors saved before v0.55.0 kept `user:password@` in the stored connection string. The backend moves those too: every start checks the stored database connection strings once and moves the credentials it still finds, the same way a save does. This needs no setting and works the same on AnythingMCP Cloud and self-hosted. The backend log shows the result with connector ids and counts, never a connection string:
+
+```
+Database connection strings: credentials of 2 connectors moved into the encrypted auth config (cm1…, cm2…); 1 left as is (cm3…); 0 failed
+```
+
+"Left as is" are connection strings that contain an `@` and that a save would not change either: no password in them, `{{VARIABLE}}` references, a string the parser cannot read, or a connector whose username or password is also set in its credentials. "Failed" names connectors whose stored credentials could not be read or written; they stay unchanged and the next start tries again.
+
 ---
 
 ## Auto-Generated Tools

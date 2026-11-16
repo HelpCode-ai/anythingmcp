@@ -27,6 +27,7 @@ function buildController(overrides: {
   mcpOAuthService?: any;
   serverUrl?: string;
   webhookEvents?: any;
+  catalogResync?: any;
 } = {}) {
   const connectorsService = overrides.connectorsService ?? {
     create: jest.fn().mockResolvedValue({ id: 'c1', type: 'REST' }),
@@ -70,7 +71,7 @@ function buildController(overrides: {
     {} as any, // harParser
     {} as any, // mcpClientEngine
     (overrides.mcpOAuthService ?? {}) as any, // mcpOAuthService
-    {} as any, // catalogResync
+    (overrides.catalogResync ?? {}) as any, // catalogResync
     prisma as any,
     mcpServer as any,
     configService as any,
@@ -1471,6 +1472,54 @@ describe('Connector secrets are never returned', () => {
 
     expect(result[0].envVars.WHATSAPP_ACCESS_TOKEN).toBe('');
     expect(JSON.stringify(result)).not.toContain(TOKEN);
+  });
+
+  describe('the catalog diff of a base URL that holds a password', () => {
+    const STORED = 'postgresql://ops:s3cret@pw@db.example.com:5432/shop';
+    const diff = {
+      slug: 'whatsapp',
+      isUpToDate: false,
+      baseUrl: { from: STORED, to: 'postgresql://db.example.org:5432/shop', provenance: 'user-edited' },
+    };
+    const MASKED = {
+      from: 'postgresql://ops:********@db.example.com:5432/shop',
+      to: 'postgresql://db.example.org:5432/shop',
+      provenance: 'user-edited',
+    };
+    const owner = { user: { sub: 'owner', organizationId: 'org1', role: 'EDITOR' } };
+
+    it('GET :id/catalog-diff masks it, as GET :id masks the connector\'s', async () => {
+      const { controller } = build(catalogConnector({ baseUrl: STORED }), {
+        catalogResync: { computeDiff: jest.fn().mockResolvedValue(diff) },
+      });
+
+      const result: any = await controller.catalogDiff(owner, 'c1');
+
+      expect(result).toEqual({ catalogManaged: true, slug: 'whatsapp', isUpToDate: false, baseUrl: MASKED });
+      expect(JSON.stringify(result)).not.toContain('s3cret');
+    });
+
+    it('POST :id/resync-catalog masks it in the diff it returns', async () => {
+      const resync = jest.fn().mockResolvedValue({ applied: true, diff, snapshot: null });
+      const { controller, mcpServer } = build(catalogConnector({ baseUrl: STORED }), {
+        catalogResync: { resync },
+      });
+
+      const result: any = await controller.resyncCatalog(owner, 'c1', 'true');
+
+      expect(resync).toHaveBeenCalledWith('c1', 'full', { applyBaseUrl: true });
+      expect(mcpServer.reloadConnectorTools).toHaveBeenCalledWith('c1');
+      expect(result.baseUrl).toEqual(MASKED);
+      expect(JSON.stringify(result)).not.toContain('s3cret');
+    });
+
+    it('GET :id/catalog-diff still answers for a connector that is not from the catalog', async () => {
+      const { controller } = build(catalogConnector(), {
+        catalogResync: { computeDiff: jest.fn().mockResolvedValue(null) },
+      });
+
+      await expect(controller.catalogDiff(owner, 'c1')).resolves.toEqual({ catalogManaged: false });
+    });
   });
 
   describe('GET export-all', () => {
