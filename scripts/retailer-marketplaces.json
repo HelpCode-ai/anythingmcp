@@ -1002,6 +1002,402 @@
         "https://www.roman.co.uk/help/delivery",
         "https://www.roman.co.uk/content/img/brand/roman-logo.svg"
       ]
+    },
+    {
+      "slug": "atlas-for-men",
+      "name": "Atlas For Men Marketplace",
+      "retailer": "Atlas For Men",
+      "region": "fr",
+      "brandColor": "#462C1E",
+      "monogram": "AF",
+      "hosts": [{ "value": "https://marketplace.atlasformen.com", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Atlas For Men selects its sellers; contact its marketplace team by e-mail (`vendeur.marketplace@atlasformen.com`) to find out whether your products are eligible.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Atlas for Men", "AtlasForMen", "Atlas For Men seller API", "Atlas For Men vendeur marketplace", "Atlas For Men Mirakl", "marketplace.atlasformen.com"],
+      "sources": [
+        "https://crt.sh/?q=%25.atlasformen.com",
+        "https://help.lengow.com/hc/en-us/articles/360012003352-Atlas-for-Men-Mirakl-Starting-with-Atlas-for-Men",
+        "https://help.lengow.com/hc/en-us/articles/23287134528284-Atlas-for-Men-Mirakl-Connection-settings"
+      ]
+    },
+    {
+      "slug": "brico-depot",
+      "name": "Brico Dépôt Marketplace",
+      "retailer": "Brico Dépôt",
+      "region": "es",
+      "brandColor": "#E30613",
+      "monogram": "BD",
+      "hosts": [{ "value": "https://marketplace.bricodepot.es", "label": "Spain and Portugal" }],
+      "countries": ["ES", "PT"],
+      "countriesNote": "This is the marketplace of the Spanish and Portuguese Brico Dépôt sites; the French Brico Dépôt site does not take marketplace sellers.",
+      "shopIdNeeded": true,
+      "shopIdNote": "Spain and Portugal are two separate shops of the same seller account",
+      "access": "Brico Dépôt takes applications through the form on its seller portal (Merchants Hub). The business needs a legal address in the EU and must handle invoicing, delivery, returns and customer service for consumers itself.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://merchanthub.kingfisher.com/es/",
+      "notes": [],
+      "aliases": ["Brico Depot", "Brico Depôt", "Brico Dépôt España", "Brico Dépôt Portugal", "Brico Dépôt seller API", "Brico Depot Mirakl", "bricodepot.es marketplace"],
+      "sources": [
+        "https://crt.sh/?q=%25.bricodepot.es",
+        "https://help.lengow.com/hc/en-us/articles/22367585914268",
+        "https://support.channelengine.com/hc/en-us/articles/17238058950045-Brico-D%C3%A9p%C3%B4t-marketplace-guide",
+        "https://merchanthub.kingfisher.com/es/"
+      ]
+    },
+    {
+      "slug": "praxis",
+      "name": "Praxis & Brico Marketplace",
+      "retailer": "Praxis and Brico",
+      "nameInSentence": "the Praxis (Netherlands) and Brico (Belgium) marketplaces",
+      "region": "nl",
+      "brandColor": "#E20019",
+      "monogram": "PB",
+      "hosts": [{ "value": "https://maxedanl-prod.mirakl.net", "label": "Netherlands (Praxis) and Belgium (Brico)" }],
+      "countries": ["NL", "BE"],
+      "countriesNote": "Praxis sells in the Netherlands and Brico in Belgium; product texts are needed in Dutch and in French.",
+      "shopIdNeeded": true,
+      "shopIdNote": "Praxis (Netherlands) and Brico (Belgium) are two shops of the same seller account: the NL shop sells on Praxis, the BE shop on Brico",
+      "access": "Praxis and Brico take applications through the join-our-marketplace form linked from their seller help centre. Sellers need a chamber of commerce registration, products in DIY, garden or home categories made under BSCI standards, and product texts in Dutch and French.",
+      "keyPath": "the profile icon (top right) > Personal settings > API key",
+      "sellerHelpUrl": "https://maxeda-marketplace.custhelp.com/",
+      "notes": [
+        "Only users with the Store Administration role see the API key tab."
+      ],
+      "aliases": ["Praxis", "Brico", "Brico Belgium", "Praxis NL", "Brico BE", "Maxeda", "Maxeda DIY Group", "Praxis seller API", "Brico seller API", "Praxis Mirakl", "Brico Mirakl"],
+      "sources": [
+        "https://maxeda-marketplace.custhelp.com/app/answers/detail/a_id/10662",
+        "https://maxeda-marketplace.custhelp.com/app/answers/detail/a_id/10768",
+        "https://maxeda-marketplace.custhelp.com/app/answers/detail/a_id/10749",
+        "https://maxeda-marketplace.custhelp.com/app/answers/detail/a_id/11144",
+        "https://help.lengow.com/hc/en-us/articles/24278220262684",
+        "https://support.channelengine.com/hc/en-us/articles/8759973892765-Praxis-Brico-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "private-sport-shop",
+      "name": "Private Sport Shop Marketplace",
+      "retailer": "Private Sport Shop",
+      "region": "fr",
+      "brandColor": "#CF2817",
+      "monogram": "PS",
+      "hosts": [{ "value": "https://mirakl.privatesportshop.com", "label": "Europe" }],
+      "countries": ["FR"],
+      "countriesNote": "Orders come from all EU countries and Switzerland; a seller must at least ship to France.",
+      "shopIdNeeded": false,
+      "access": "Private Sport Shop takes sellers on request: write to its onboarding team (`marketplace@privatesportshop.com`). Sellers must at least ship to France and send orders directly to customers.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["PrivateSportShop", "Private Sport Shop seller API", "Private Sport Shop Mirakl", "privatesportshop.fr marketplace"],
+      "sources": [
+        "https://crt.sh/?q=%25.privatesportshop.com",
+        "https://support.channelengine.com/hc/en-us/articles/27253021302173-Private-Sport-Shop-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "jardiland-gamm-vert",
+      "name": "Jardiland & Gamm vert Marketplace",
+      "retailer": "Jardiland and Gamm vert",
+      "nameInSentence": "the Jardiland and Gamm vert marketplace",
+      "region": "fr",
+      "brandColor": "#0A221C",
+      "monogram": "Te",
+      "hosts": [{ "value": "https://teractfr-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Teract, the group behind Jardiland and Gamm vert, selects its sellers; contact its marketplace team by e-mail (`marketplace@teract.com`). The business must have its headquarters in the EU, with an intra-community VAT number.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "One shop sells on both jardiland.com and gammvert.fr."
+      ],
+      "aliases": ["Jardiland", "Gamm vert", "Jardiland marketplace", "Gamm vert marketplace", "TERACT", "InVivo Teract", "Teract seller API", "Jardiland Mirakl"],
+      "sources": [
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/7235dd74ed43cf2559cc138a541d74b35fd676c5/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://help.lengow.com/hc/en-us/articles/14773066769180-Jardiland-Gamm-vert-Mirakl-Starting-with-Jardiland-Gamm-vert",
+        "https://support.channelengine.com/hc/en-us/articles/23963050265629-TERACT-marketplace-guide",
+        "https://e-tailize.com/integrations/selling-on-jardiland/"
+      ]
+    },
+    {
+      "slug": "ubaldi",
+      "name": "Ubaldi Marketplace",
+      "retailer": "Ubaldi",
+      "region": "fr",
+      "brandColor": "#0A1129",
+      "monogram": "Ub",
+      "hosts": [{ "value": "https://ubaldi-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Ubaldi selects its sellers; contact its marketplace team by e-mail (`marketplace@ubaldi.com`) to find out whether your products are eligible.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Ubaldi.com", "Ubaldi seller API", "Ubaldi place de marché", "Ubaldi Mirakl"],
+      "sources": [
+        "https://github.com/djimenezp/MpOrderCollector/blob/03d07417e249e9933b8f472ee1155c1859a698b0/marketplace/mirakl_api.py",
+        "https://help.lengow.com/hc/en-us/articles/360012222411-Ubaldi-Mirakl-Starting-with-Ubaldi"
+      ]
+    },
+    {
+      "slug": "vt-wonen",
+      "name": "vtwonen Marketplace",
+      "retailer": "vtwonen",
+      "region": "nl",
+      "brandColor": "#1A1719",
+      "monogram": "vt",
+      "hosts": [{ "value": "https://shop-partnerplatform.vtwonen.nl", "label": "Netherlands and Belgium" }],
+      "countries": ["NL", "BE"],
+      "countriesNote": "The shop is in Dutch; sellers must deliver free of charge to the Netherlands and Flanders.",
+      "shopIdNeeded": false,
+      "access": "vtwonen chooses its suppliers and products through an internal committee; apply by e-mail (`shop@vtwonen.nl`). Sellers ship from their own stock, offer free delivery and free returns, and answer customer questions within 24 hours.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["vt wonen", "vtwonen shop", "vtwonen partnerplatform", "vtwonen seller API", "vtwonen Mirakl"],
+      "sources": [
+        "https://crt.sh/?q=%25.vtwonen.nl",
+        "https://support.channelengine.com/hc/en-us/articles/22542925320349-vtwonen-marketplace-guide",
+        "https://e-tailize.com/integrations/vtwonen/"
+      ]
+    },
+    {
+      "slug": "greenweez",
+      "name": "Greenweez Marketplace",
+      "retailer": "Greenweez",
+      "region": "fr",
+      "brandColor": "#20614D",
+      "monogram": "Gw",
+      "hosts": [{ "value": "https://greenweezfr-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "Greenweez accepts sellers of organic and eco-responsible products that meet its specifications; apply through its seller page or by e-mail (`devenir_vendeur@greenweez.com`). An EU VAT number is required.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.greenweez.com/notre-marketplace/vendre-ses-produits",
+      "notes": [],
+      "aliases": ["Greenweez seller API", "Greenweez vendeur", "Greenweez place de marché", "Greenweez Mirakl"],
+      "sources": [
+        "https://github.com/invoice-collector/invoice-collector/blob/16fdaa64e5a9e7caac7f8052f3d193ae42be2acf/src/collectors/sketch/greenweez/greenweez.ts",
+        "https://help.lengow.com/hc/en-us/articles/4411823111826-Greenweez-Mirakl",
+        "https://support.channelengine.com/hc/en-us/articles/27614604720925-Greenweez-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "bunnings",
+      "name": "Bunnings Marketplace",
+      "retailer": "Bunnings",
+      "region": "intl",
+      "brandColor": "#DB291C",
+      "monogram": "Bu",
+      "hosts": [{ "value": "https://marketlink.bunnings.com.au", "label": "Australia" }],
+      "countries": ["AU"],
+      "shopIdNeeded": false,
+      "access": "Bunnings selects its sellers: register your interest through its seller interest form. Sellers must reply to customers within one business day, dispatch orders within two business days and keep cancellations below 2% and disputes below 3%.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.bunnings.com.au/marketplace-seller-interest",
+      "notes": [],
+      "aliases": ["Bunnings seller API", "Bunnings MarketLink", "Bunnings Warehouse Marketplace", "Bunnings Marketplace Australia", "Bunnings Mirakl"],
+      "sources": [
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://github.com/Varunflyit/laravel_sample/blob/HEAD/modules/platforms/mirakl/bunnings/config/mirakl.php",
+        "https://crt.sh/?q=%25.bunnings.com.au",
+        "https://support.channelengine.com/hc/en-us/articles/14858406321437-Bunnings-marketplace-guide",
+        "https://e-tailize.com/integrations/selling-on-bunnings-warehouse/",
+        "https://www.bunnings.com.au/marketplace-seller-interest"
+      ]
+    },
+    {
+      "slug": "coppel",
+      "name": "Coppel Marketplace",
+      "retailer": "Coppel",
+      "region": "intl",
+      "brandColor": "#1C42E8",
+      "monogram": "Co",
+      "hosts": [{ "value": "https://coppel.mirakl.net", "label": "Mexico" }],
+      "countries": ["MX"],
+      "shopIdNeeded": false,
+      "access": "Coppel reviews each seller: registration starts with an application, followed by a check of the business documents. Sellers need a Mexican tax id (RFC), electronic invoicing and stock in Mexico.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Coppel seller API", "Coppel vendedores", "Vende en Coppel", "Coppel Marketplace México", "Coppel Mirakl"],
+      "sources": [
+        "https://rackly.com.mx/integracion-coppel-erp",
+        "https://base.com/es-MX/blog/?p=18280",
+        "https://www.edesk.com/fr/appstore/coppel/"
+      ]
+    },
+    {
+      "slug": "kohls",
+      "name": "Kohl's Marketplace",
+      "retailer": "Kohl's",
+      "region": "intl",
+      "brandColor": "#800033",
+      "monogram": "Ko",
+      "hosts": [{ "value": "https://kohlsus-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "Kohl's takes applications through its marketplace application form; the business must be registered in the US, provide a W-9 and a certificate of liability insurance, and have a US address for returns.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.kohls.com/feature/certifiedpartners.jsp",
+      "notes": [],
+      "aliases": ["Kohls", "Kohl's seller API", "Kohls Marketplace", "Kohl's Mirakl"],
+      "sources": [
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://support.channelengine.com/hc/en-us/articles/13263814156573-Kohl-s-marketplace-guide",
+        "https://www.retailtouchpoints.com/news/kohls-expands-marketplace-new-categories-successful-pilot-third-party-online/129563/"
+      ]
+    },
+    {
+      "slug": "ripley",
+      "name": "Ripley Marketplace",
+      "retailer": "Ripley",
+      "region": "intl",
+      "brandColor": "#741472",
+      "monogram": "Ri",
+      "hosts": [{ "value": "https://ripley-prod.mirakl.net", "label": "Chile" }],
+      "countries": ["CL"],
+      "shopIdNeeded": false,
+      "access": "Ripley reviews seller applications; it charges a commission per category and no listing fee.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "Only the Chilean seller platform is known to this connector. Ripley Peru runs a separate seller platform on another address, which this connector does not reach."
+      ],
+      "aliases": ["Ripley seller API", "Mercado Ripley", "Ripley Chile", "simple.ripley.cl", "Ripley Mirakl"],
+      "sources": [
+        "https://github.com/carlosarizap/elizabethpeper/blob/HEAD/src/app/api/ripley/orders/route.ts",
+        "https://github.com/carlosarizap/elizabethpeper/blob/HEAD/src/app/lib/ripley/invoice-uploader.ts",
+        "https://e-tailize.com/integrations/selling-on-ripley/",
+        "https://www.mirakl.com/blogs/marketplace/ripley-a-chilean-retail-leader-transforms-from-department-store-to-marketplace/"
+      ]
+    },
+    {
+      "slug": "stadium",
+      "name": "Stadium Marketplace",
+      "retailer": "Stadium",
+      "region": "se",
+      "brandColor": "#1A1A1A",
+      "monogram": "St",
+      "hosts": [{ "value": "https://stadiumse-prod.mirakl.net", "label": "Sweden and Finland" }],
+      "countries": ["SE", "FI"],
+      "countriesNote": "Offers can appear on both Stadium and Stadium Outlet.",
+      "shopIdNeeded": true,
+      "shopIdNote": "Stadium opens one shop per country under the same user; the API key is the same, the shop id picks Sweden or Finland.",
+      "access": "Stadium selects its sellers: contact the Stadium Connect team by e-mail (`stadium.connect@stadium.com`); approved sellers receive a registration link. Office and warehouse must be in the EU.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Stadium Connect", "Stadium seller API", "Stadium Outlet", "stadium.se", "Stadium Mirakl"],
+      "sources": [
+        "https://support.sello.io/hc/en-us/articles/4407452882706-Connecting-to-Stadium",
+        "https://support.channelengine.com/hc/en-us/articles/14339427295517-Stadium-marketplace-guide",
+        "https://e-tailize.com/help/marketplaces/sell-on-stadium/",
+        "https://e-tailize.com/integrations/stadium-se/"
+      ]
+    },
+    {
+      "slug": "e-leclerc",
+      "name": "E.Leclerc Marketplace",
+      "retailer": "E.Leclerc",
+      "region": "fr",
+      "brandColor": "#0B70B5",
+      "monogram": "EL",
+      "hosts": [{ "value": "https://leclerc-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "E.Leclerc selects its sellers; contact its marketplace team by e-mail (`account.marketplace@e-leclerc.com`). The business must be based in the eurozone, hold a European bank account and ship only from the eurozone.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Leclerc", "E Leclerc", "E.Leclerc seller API", "E.Leclerc place de marché", "Leclerc marketplace", "E.Leclerc Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/4411823180434-E-Leclerc-Mirakl-Starting-with-E-Leclerc",
+        "https://support.channelengine.com/hc/en-us/articles/17363310630429-E-Leclerc-marketplace-guide",
+        "https://github.com/DavisGalla/products-api-push/blob/2ae855fe8c87c320a6b605b0dc17028ea0eb9092/leclerc_push.py"
+      ]
+    },
+    {
+      "slug": "kiabi",
+      "name": "Kiabi Marketplace",
+      "retailer": "Kiabi",
+      "region": "fr",
+      "brandColor": "#111532",
+      "monogram": "Ki",
+      "hosts": [{ "value": "https://kiabifr-prod.mirakl.net", "label": "All countries" }],
+      "countries": ["FR", "BE", "ES", "IT", "PT"],
+      "countriesNote": "One shop sells in all countries; each new country needs the approval of the Kiabi account manager, and Belgium needs titles and descriptions in French and Dutch.",
+      "shopIdNeeded": false,
+      "access": "Kiabi selects its sellers through the form on its Devenez marchand page; the business needs a legal entity in Europe, French-speaking customer service, valid EANs and its own stock (no drop-shipping).",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.kiabi.com/devenez-marchand_LP747960",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Kiabi seller API", "Kiabi devenez marchand", "Kiabi place de marché", "Kiabi Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/10909854721052-Kiabi-Mirakl-Starting-with-Kiabi",
+        "https://support.channelengine.com/hc/en-us/articles/13395551392541-Kiabi-marketplace-guide",
+        "https://www.kiabi.com/devenez-marchand_LP747960",
+        "https://github.com/STANDUP-SHOW/DropShipPro/blob/HEAD/backend/check-mirakl.ts"
+      ]
+    },
+    {
+      "slug": "la-poste",
+      "name": "La Poste Marketplace",
+      "retailer": "La Poste",
+      "region": "fr",
+      "brandColor": "#003DA5",
+      "monogram": "LP",
+      "hosts": [{ "value": "https://laposte-prod.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "countriesNote": "Offers appear on both laposte.fr shops, for consumers and for professionals.",
+      "shopIdNeeded": false,
+      "access": "La Poste selects its sellers through its marketplace page or by e-mail (`partenariat.marketplace@laposte.fr`); the business must be registered in the French trade register (RCS), keep its stock in the EU and ship with La Poste group services.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.laposte.fr/professionnel/recrutement-marketplace",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["La Poste seller API", "Marketplace La Poste", "laposte.fr marketplace", "La Poste vendeur partenaire", "La Poste Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/360009901860-La-Poste-Mirakl",
+        "https://support.channelengine.com/hc/en-us/articles/17493733465629-La-Poste-marketplace-guide",
+        "https://e-tailize.com/help/marketplaces/sell-on-la-poste/",
+        "https://www.laposte.fr/professionnel/recrutement-marketplace"
+      ]
+    },
+    {
+      "slug": "ldlc",
+      "name": "LDLC Marketplace",
+      "retailer": "LDLC",
+      "region": "fr",
+      "brandColor": "#0096C8",
+      "monogram": "LD",
+      "hosts": [{ "value": "https://ldlc-prod.mirakl.net", "label": "All countries" }],
+      "countries": ["FR", "BE", "LU", "CH", "ES", "IT"],
+      "countriesNote": "The shop is French; orders also come from Belgium, Luxembourg, Switzerland, Spain and Italy.",
+      "shopIdNeeded": false,
+      "access": "LDLC selects a small number of sellers per category through the form on its reseller page; head office and warehouse must be in the EU, the seller must own its stock (no dropshipping), use its own logistics and offer customer service in French.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.ldlc.com/aide/189-devenez-revendeur/",
+      "notes": [
+        "LDLC group's Materiel.net and Slood sites take offers through the same seller platform.",
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["LDLC seller API", "LDLC vendeur partenaire", "Materiel.net marketplace", "Slood", "LDLC Mirakl"],
+      "sources": [
+        "https://help.lengow.com/hc/en-us/articles/4411803362962-LDLC-Slood-Materiel-net-Mirakl",
+        "https://support.channelengine.com/hc/en-us/articles/35283957463709-LDLC-Slood-marketplace-guide",
+        "https://e-tailize.com/integrations/ldlc/",
+        "https://www.ldlc.com/aide/189-devenez-revendeur/"
+      ]
     }
   ]
 }
