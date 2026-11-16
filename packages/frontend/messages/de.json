@@ -4098,5 +4098,25 @@
       "stopped": "Beendet.",
       "failed": "Ihre Antwort konnte nicht gespeichert werden"
     }
+  },
+  "fileUpload": {
+    "page": {
+      "loading": "Wird geladen…",
+      "unavailable": "Dieser Upload-Link ist nicht verfügbar",
+      "notFound": "Diesen Upload-Link gibt es nicht.",
+      "title": "Datei für deine KI hochladen",
+      "intro": "Dein KI-Assistent hat diese Datei angefordert. Speichere die Datei aus dem Chat und wähle sie hier aus.",
+      "limit": "Bis {size} · der Link gilt bis {time}",
+      "choose": "Datei auswählen",
+      "drop": "oder hierher ziehen",
+      "uploading": "{name} wird hochgeladen…",
+      "done": "Hochgeladen. Geh zurück in den Chat und sag der KI, dass die Datei hochgeladen ist.",
+      "already": "Diese Datei ist schon hochgeladen. Geh zurück in den Chat.",
+      "expired": "Dieser Link ist abgelaufen oder wurde schon benutzt. Bitte die KI um einen neuen.",
+      "tooBig": "Diese Datei hat {size}; erlaubt sind {limit}.",
+      "failed": "Der Upload hat nicht geklappt: {error}",
+      "network": "Der Upload hat nicht geklappt. Prüfe die Verbindung und versuche es noch einmal.",
+      "note": "Die Datei wird einige Stunden aufbewahrt, damit die KI sie weitergeben kann, und dann gelöscht."
+    }
   }
 }
