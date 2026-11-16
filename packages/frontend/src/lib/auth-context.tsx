@@ -160,6 +160,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // /reactivate/<token>: the no-login page an AI client links to once the
       // trial ended; the token stands in for a session.
       !pathname.startsWith('/reactivate/') &&
+      // /upload/<token>: one-time upload link from an AI client; the token is the credential.
+      !pathname.startsWith('/upload/') &&
       pathname !== '/setup/file-search'
     ) {
       const currentUrl = typeof window !== 'undefined' ? window.location.pathname + window.location.search : pathname;

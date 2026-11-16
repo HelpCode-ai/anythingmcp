@@ -138,6 +138,22 @@ async function bootstrap() {
   // CORS_ORIGIN list is required. In development a sensible localhost default
   // is used when CORS_ORIGIN is not set.
   const corsOrigin = resolveCorsOrigin(configService, isProduction);
+  // One-time upload links are called from the upload box an AI app shows in
+  // its chat (an MCP App iframe on the app's own sandbox origin). The token is
+  // the credential and no cookie is involved, so any origin may call them;
+  // answered here, before the credentialed CORS policy below.
+  app.use('/api/uploads/u/', (req: any, res: any, next: () => void) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '600');
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    next();
+  });
   app.enableCors({
     origin: corsOrigin,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',

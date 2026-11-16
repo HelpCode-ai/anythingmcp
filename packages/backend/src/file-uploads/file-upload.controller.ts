@@ -15,6 +15,13 @@ import { FileUploadService } from './file-upload.service';
 export class FileUploadController {
   constructor(private readonly uploads: FileUploadService) {}
 
+  @Get('u/:token')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOperation({ summary: 'State of a one-time upload link: file name, size limit, waiting or uploaded (public)' })
+  status(@Param('token') token: string) {
+    return this.uploads.linkStatus(token);
+  }
+
   @Put('u/:token')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({ summary: 'Upload a file through a one-time link from file_upload_link (public)' })

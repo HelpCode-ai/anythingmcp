@@ -4098,5 +4098,25 @@
       "stopped": "Stopped.",
       "failed": "Could not save your answer"
     }
+  },
+  "fileUpload": {
+    "page": {
+      "loading": "Loading…",
+      "unavailable": "This upload link is not available",
+      "notFound": "This upload link does not exist.",
+      "title": "Upload a file for your AI",
+      "intro": "Your AI assistant asked for this file. Save the file from the chat, then choose it here.",
+      "limit": "Up to {size} · the link works until {time}",
+      "choose": "Choose file",
+      "drop": "or drop it here",
+      "uploading": "Uploading {name}…",
+      "done": "Uploaded. Go back to the chat and tell the AI it is uploaded.",
+      "already": "This file is already uploaded. Go back to the chat.",
+      "expired": "This link has expired or was already used. Ask the AI for a new one.",
+      "tooBig": "This file is {size}; the limit is {limit}.",
+      "failed": "The upload did not go through: {error}",
+      "network": "The upload did not go through. Check your connection and try again.",
+      "note": "The file is kept for a few hours so the AI can send it on, then deleted."
+    }
   }
 }

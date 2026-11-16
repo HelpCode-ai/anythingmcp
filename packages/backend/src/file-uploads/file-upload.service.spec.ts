@@ -107,6 +107,20 @@ describe('FileUploadService', () => {
     expect(prisma.fileUpload.rows[0].tokenHash).not.toContain(tokenOf(link.upload_url));
   });
 
+  it('offers a browser page with the same token and reports the link state', async () => {
+    process.env.FRONTEND_URL = 'https://cloud.example.com';
+    const link = await svc.createLink({ organizationId: ORG, filename: 'cover.png' });
+    const token = tokenOf(link.upload_url);
+    expect(link.browser_upload_url).toBe(`https://cloud.example.com/upload/${token}`);
+    expect(link.filename).toBe('cover.png');
+    await expect(svc.linkStatus(token)).resolves.toMatchObject({ filename: 'cover.png', state: 'waiting', bytes: null });
+    await svc.receive(token, Readable.from([PNG]), PNG.length);
+    await expect(svc.linkStatus(token)).resolves.toMatchObject({ state: 'uploaded', bytes: PNG.length });
+    prisma.fileUpload.rows[0].expiresAt = new Date(Date.now() - 1000);
+    await expect(svc.linkStatus(token)).resolves.toMatchObject({ state: 'expired' });
+    await expect(svc.linkStatus('x'.repeat(32))).rejects.toThrow(/does not exist/);
+  });
+
   it('refuses program files, missing extensions, oversize and a Cloud workspace without a plan', async () => {
     await expect(svc.createLink({ organizationId: ORG, filename: 'setup.exe' })).rejects.toThrow(/Program files/);
     await expect(svc.createLink({ organizationId: ORG, filename: 'noext' })).rejects.toThrow(/extension/);

@@ -1628,32 +1628,38 @@ Many connector tools send a file to the app: a listing photo or a digital downlo
 product image on a marketplace, a document to sign. Those tools take a **link** to the file,
 because an MCP tool call carries text and cannot carry the file itself.
 
-When the AI client created the file itself (for example Claude generated an image or a ZIP in
-its code sandbox), there is no public link. File uploads close that gap:
+When the AI client created the file itself (for example Claude generated an image or a ZIP),
+there is no public link. File uploads close that gap. The AI calls **`file_upload_link`** with the
+file name and gets a reference such as `amcp-file:3f9c…`, which it passes to the connector tool
+in place of the link (for example `file_url: "amcp-file:3f9c…"` on `etsy_upload_listing_file`).
+AnythingMCP reads the file from its own storage and sends it to the app. Before that, the file has
+to reach AnythingMCP, in one of three ways:
 
-1. The AI calls **`file_upload_link`** with the file name. It gets a one-time upload URL, the
-   `curl` command to run, and a reference such as `amcp-file:3f9c…`.
-2. The AI runs the command in its code sandbox. AnythingMCP stores the file.
-3. The AI passes the reference to the connector tool in place of the link (for example
-   `file_url: "amcp-file:3f9c…"` on `etsy_upload_listing_file`). AnythingMCP reads the file from
-   its own storage and sends it to the app.
+1. **From the AI's code sandbox**, with the `curl` command the tool returns. This only works when
+   the sandbox may reach your AnythingMCP address (see below).
+2. **In the upload box shown in the chat.** Apps that display MCP Apps (Claude on the web and on
+   desktop) show a small box with the tool result. The user saves the file the AI created, picks it
+   in the box, and the box tells the AI that the file is there.
+3. **On the upload page in a browser** (`browser_upload_url`, `/upload/<token>` on your AnythingMCP
+   address): the same thing outside the chat, for apps that do not show the box (ChatGPT, mobile
+   apps). No sign-in: the link itself is the credential.
 
 For tools where the app downloads the file itself from a URL (an image `src` in a product, for
-example), the AI calls **`file_public_url`** with the reference and gets a direct download link
-that works for one hour.
+example), the AI calls **`file_public_url`** with the reference after the upload and gets a direct
+download link that works for one hour.
 
 The two tools appear on an MCP server only when one of its tools sends a file.
 
-## What the user has to do once
+## Which AI clients can upload from their sandbox
 
-The AI client's sandbox must be allowed to reach your AnythingMCP address.
-
-- **Claude (claude.ai, desktop and mobile apps):** Settings → Capabilities → code execution:
-  turn network access on and add `cloud.anythingmcp.com` (or your own AnythingMCP host) to the
-  allowed domains, then start a **new** chat. If `curl` answers 403 or "blocked by allowlist",
-  the domain is not allowed yet.
+- **Claude Team and Enterprise:** the organization owner allows `cloud.anythingmcp.com` (or your
+  own AnythingMCP host) under Organization settings → Capabilities → code execution ("Package
+  managers and specific domains", or "All domains"). Then the AI uploads by itself.
+- **Claude Free, Pro and Max:** the sandbox reaches package managers only and there is no setting
+  to allow another domain; `curl` answers "CONNECT tunnel failed, response 403". Use the upload box
+  or the upload page.
+- **ChatGPT:** its code tool has no network access. Use the upload page.
 - **Claude Code, Cursor, n8n and your own agents** usually have network access already.
-- **ChatGPT**'s code tool has no network access: give a public link to the file instead.
 
 ## Limits
 
@@ -1665,7 +1671,7 @@ The AI client's sandbox must be allowed to reach your AnythingMCP address.
 | Cloud Enterprise | 200 MB | 5,000 | 50 GB |
 | Self-hosted (every edition) | 100 MB, `FILE_UPLOADS_MAX_FILE_BYTES` | no limit, `FILE_UPLOADS_PER_DAY` | no limit, `FILE_UPLOADS_MAX_STORED_BYTES` |
 
-- An upload link works **once**, for **15 minutes**.
+- An upload link works **once**, for **15 minutes**, whichever way the file is sent (sandbox, box or page).
 - A file is deleted **8 hours** after upload (`FILE_UPLOADS_TTL_HOURS` on self-hosted). Within
   that time the reference can be used again, for example for the same photo on several listings.
 - Program files (`.exe`, `.sh`, `.js`, …) are refused.

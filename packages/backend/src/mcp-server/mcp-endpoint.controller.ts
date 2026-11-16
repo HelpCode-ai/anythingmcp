@@ -1,5 +1,6 @@
 import { APP_VERSION } from '../common/app-version';
 import { FileUploadService } from '../file-uploads/file-upload.service';
+import { MCP_APP_MIME, UPLOAD_UI_HTML, UPLOAD_UI_URI, uploadUiMeta } from '../file-uploads/file-upload-ui';
 import {
   FILE_PUBLIC_URL_TOOL,
   FILE_UPLOAD_LINK_TOOL,
@@ -1611,6 +1612,7 @@ export class McpEndpointController {
     const handles = this.registerAll(mcpServer, entries, serverId);
     const signature = this.aggregateSig(entries);
     this.registerKgResource(mcpServer, params);
+    if (entries.some((e) => e.name === FILE_UPLOAD_LINK_TOOL)) this.registerUploadUiResource(mcpServer, serverId);
     if (skillsVisible) {
       await this.registerSkillPrompts(
         mcpServer,
@@ -2087,9 +2089,10 @@ export class McpEndpointController {
     const out: ToolEntry[] = [];
     if (!registeredNames.has(FILE_UPLOAD_LINK_TOOL)) {
       const description =
-        'Upload a file you created (in your code sandbox) so a connector tool can use it, when the tool asks for a file URL and the file ' +
-        'has no public link: a listing photo, a ZIP for a digital product, a PDF, a video. Returns a one-time upload URL, the curl command to ' +
-        'run in your sandbox, and a file_ref ("amcp-file:<id>"). Pass file_ref as the tool\'s file parameter (e.g. file_url, image_url). ' +
+        'Get a file you created to a connector tool that asks for a file URL when the file has no public link: a listing photo, a ZIP for a ' +
+        'digital product, a PDF, a video. Returns a file_ref ("amcp-file:<id>") to pass as the tool\'s file parameter (e.g. file_url, image_url), ' +
+        'plus two ways to deliver the file: a curl command for your code sandbox (only if it can reach this server; on Claude Free, Pro and Max ' +
+        'it cannot), or an upload box shown with this result where the user picks the file (also available as browser_upload_url). ' +
         'Files are deleted a few hours after upload. Program files are refused.';
       out.push({
         name: FILE_UPLOAD_LINK_TOOL,
@@ -2104,18 +2107,20 @@ export class McpEndpointController {
                 size_bytes: z.number().int().positive().optional().describe('The file size in bytes, if known: refused early when over the limit.'),
               },
               annotations: { title: 'Upload a file', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+              // MCP Apps: the upload box rendered with the result. The flat key
+              // is the older spelling some hosts still read.
+              _meta: { ui: { resourceUri: UPLOAD_UI_URI }, 'ui/resourceUri': UPLOAD_UI_URI },
             },
             async (args: { filename: string; size_bytes?: number }) => {
               try {
-                return asText(
-                  await uploads.createLink({
-                    organizationId: orgId,
-                    userId: invocationContext.userId ?? null,
-                    mcpServerId: invocationContext.mcpServerId ?? null,
-                    filename: args.filename,
-                    sizeBytes: args.size_bytes ?? null,
-                  }),
-                );
+                const link = await uploads.createLink({
+                  organizationId: orgId,
+                  userId: invocationContext.userId ?? null,
+                  mcpServerId: invocationContext.mcpServerId ?? null,
+                  filename: args.filename,
+                  sizeBytes: args.size_bytes ?? null,
+                });
+                return { ...asText(link), structuredContent: link as unknown as Record<string, unknown> };
               } catch (err) {
                 return asError(err);
               }
@@ -3137,6 +3142,28 @@ export class McpEndpointController {
       } catch (err: any) {
         this.logger.warn(`Skill prompt "${name}" not registered: ${err?.message ?? err}`);
       }
+    }
+  }
+
+  /** The MCP App (upload box) shown with file_upload_link results. */
+  private registerUploadUiResource(mcpServer: McpServer, serverId: string): void {
+    const base = (process.env.FILES_DOWNLOAD_BASE_URL || process.env.SERVER_URL || 'http://localhost:4000').replace(/\/+$/, '');
+    let origin: string;
+    try {
+      origin = new URL(base).origin;
+    } catch {
+      return;
+    }
+    const meta = uploadUiMeta(origin);
+    try {
+      mcpServer.registerResource(
+        'file-upload-box',
+        UPLOAD_UI_URI,
+        { title: 'Upload a file', description: 'The box where the user picks a file for file_upload_link.', mimeType: MCP_APP_MIME, _meta: meta } as any,
+        async () => ({ contents: [{ uri: UPLOAD_UI_URI, mimeType: MCP_APP_MIME, text: UPLOAD_UI_HTML, _meta: meta }] }),
+      );
+    } catch (err: any) {
+      this.logger.warn(`Failed to register the upload box on server ${serverId}: ${err.message}`);
     }
   }
 
