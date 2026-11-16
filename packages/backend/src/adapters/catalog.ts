@@ -849,6 +849,7 @@ import * as eConomic from './dk/e-conomic.json';
 import * as brreg from './no/brreg.json';
 import * as prhYtj from './fi/prh-ytj.json';
 import * as ares from './cz/ares.json';
+import * as apaczka from './pl/apaczka.json';
 import * as ceneo from './pl/ceneo.json';
 import * as ceneoOrders from './pl/ceneo-orders.json';
 import * as empik from './pl/empik.json';
@@ -2011,6 +2012,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   brreg as unknown as AdapterDefinition,
   prhYtj as unknown as AdapterDefinition,
   ares as unknown as AdapterDefinition,
+  apaczka as unknown as AdapterDefinition,
   ceneo as unknown as AdapterDefinition,
   ceneoOrders as unknown as AdapterDefinition,
   empik as unknown as AdapterDefinition,
