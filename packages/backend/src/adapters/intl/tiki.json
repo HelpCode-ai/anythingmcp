@@ -1,0 +1,905 @@
+{
+  "slug": "tiki",
+  "name": "Tiki",
+  "description": "Tiki Open API for sellers on the Vietnamese marketplace: orders, stock and dropship confirmation, shipping labels and seller delivery results, products with price and stock per warehouse, seller warehouses and inventories, categories, brands and product requests. In-house app ID and secret.",
+  "instructions": "## Tiki\nThis connector works with the **Tiki Open API** (`https://api.tiki.vn/integration`), for sellers on Tiki, the Vietnamese marketplace: orders with stock confirmation, dropship confirmation, labels and seller delivery results, products with price and stock per warehouse, seller warehouses and inventories, categories, brands and product requests.\n\n**Setup (about 10 minutes)**\n1. Log in to the Tiki Open Platform console at `https://open.tiki.vn` with your Tiki account and open **Application, Create** (`https://open.tiki.vn/web/console/apps/create`).\n2. Fill in the name, summary, description, homepage and icon. As **Token endpoint auth method** choose **basic header** (it cannot be changed later), and as application type **In-house**.\n3. Enter your store id (the number without the S prefix) and store name, and submit. Copy the **App ID** into `TIKI_CLIENT_ID` and the **App Secret** into `TIKI_CLIENT_SECRET`.\n4. Approve the connection in Tiki Seller Center: **Seller info, Detail, Store Setting and Contact Info, Manage, Integrated Applications**. Until then every call answers 401.\n\nThe connector gets a token at `https://api.tiki.vn/sc/oauth2/token` (client credentials, HTTP Basic) and renews it when it expires. An in-house app has every permission of the store, so there are no scopes to pick. Tiki has only a production environment.\n\n**Where to start**: `tiki_list_orders` with item_confirmation_status waiting (orders to confirm) and status `nin|processing,waiting_payment`, then `tiki_get_order`.\n\n**Confirming orders**: an order fulfilled from your stock (tiki_delivery, seller_delivery, cross_border) is confirmed with `tiki_confirm_available`, listing the items you can supply and a seller inventory from `tiki_list_seller_inventories` (pass the order's Tiki warehouse code). Items left out are cancelled. A dropship order is confirmed with `tiki_confirm_dropship`; `tiki_cancel_dropship` refuses one and is installed switched off. `tiki_get_shipping_label` returns the label link for the order's delivery model. Orders you deliver yourself get their result with `tiki_update_seller_delivery`. There is no return or cancellation API: returns show as `is_rma` orders and the returned status.\n\n**Products and stock**: `tiki_list_products` (include inventory for stock per warehouse), `tiki_get_product`, `tiki_find_product_by_sku` (your original_sku), `tiki_update_product` (price in VND and stock per seller warehouse from `tiki_list_seller_warehouses`; not for instock products stored at Tiki). `tiki_set_product_active` is switched off, because 0 takes the product off sale. `tiki_list_product_requests` and `tiki_get_tracking` follow product requests; `tiki_list_categories`, `tiki_get_category_attributes`, `tiki_list_brands` and `tiki_list_tiki_warehouses` give the reference data. `tiki_get_seller` shows the store and its operation models. Creating products is not included.\n\n**Formats**: dates are `yyyy-MM-dd HH:mm:ss` in Vietnam time (UTC+7); prices are VND. Set filters on orders are written `in|a,b` or `nin|a,b`. Lists take `page` from 1 and `limit`; the answer has `paging` (total, current_page, last_page). Errors are `errors` (a list of messages) with 400, 401 (token missing, expired or the app not connected to the store), 403, 422 or 429.\n\n**Rate limit**: 200 requests per second per seller; a 429 should be retried later, other 4xx answers not.",
+  "aliases": [
+    "Tiki.vn",
+    "Tiki Open Platform",
+    "Tiki Seller Center"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "tiki",
+  "docsUrl": "https://open.tiki.vn/docs/",
+  "requiredEnvVars": [
+    "TIKI_CLIENT_ID",
+    "TIKI_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "TIKI_CLIENT_ID": {
+      "label": "App ID",
+      "kind": "credential",
+      "help": "Tiki Open Platform console, Application: the App ID of your in-house application.",
+      "link": "https://open.tiki.vn/web/console/apps/create",
+      "pattern": "^[0-9A-Za-z]{6,64}$",
+      "patternMessage": "Paste the App ID only, e.g. 7590139168389961."
+    },
+    "TIKI_CLIENT_SECRET": {
+      "label": "App secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown with the App ID when the in-house application is created.",
+      "link": "https://open.tiki.vn/docs/docs/current/getting-started/register-an-application/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the App secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": {
+      "hint": "Tiki did not issue a token. Check the App ID and secret, and that the application was created with the basic header token auth method.",
+      "field": "TIKI_CLIENT_SECRET"
+    },
+    "401": "Tiki refused the token: the in-house app is not yet connected to your store. Approve it in Seller Center, Seller info, Store Setting and Contact Info, Integrated Applications.",
+    "403": "Tiki refused the call: the store is inactive or the app lacks the permission.",
+    "404": "Tiki found no order or product with that id.",
+    "rate_limited": "Tiki allows 200 requests per second per seller. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "tiki_get_seller",
+    "params": {}
+  },
+  "prerequisites": "A Tiki seller account (store id) and a Tiki account for the Open Platform console, where you create an in-house application and then approve it in Seller Center. About 10 minutes.",
+  "connector": {
+    "name": "Tiki Open API",
+    "type": "REST",
+    "baseUrl": "https://api.tiki.vn",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{TIKI_CLIENT_ID}}",
+      "clientSecret": "{{TIKI_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.tiki.vn/sc/oauth2/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "tiki_get_seller",
+      "description": "The seller behind the token: id, name, active, logo, operation_models (dropship, instock, backorder, seller_backorder, cross_border), can_update_product, registration_status and live_at. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/sellers/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_list_seller_warehouses",
+      "description": "Seller warehouses (pickup and return addresses): id, name, is_primary, status, type, street, ward, district, region, country and contact, with `paging`. The ids are used for stock per warehouse. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "1 active, 0 inactive.",
+            "enum": [
+              "1",
+              "0"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "1 pickup warehouse, 0 return warehouse.",
+            "enum": [
+              "1",
+              "0"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/sellers/me/warehouses",
+        "queryParams": {
+          "status": "$status",
+          "type": "$type",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_list_orders",
+      "description": "List orders, newest first: code, fulfillment_type, status, is_rma, created_at, updated_at, invoice (subtotal, grand_total, total_seller_income), items (product id, sku, name, seller_product_code, price, quantity, seller income, fees, confirmation status and SLA), shipping, payment and customer, with `paging` (total, current_page, last_page). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Order statuses as a set: `in|` or `nin|` followed by comma-separated statuses, e.g. `nin|processing,waiting_payment` (recommended to skip unpaid orders) or `in|queueing,picking`. Statuses: queueing, processing, waiting_payment, picking, packaging, finished_packing, ready_to_ship, shipping, handover_to_partner, successful_delivery, delivered, complete, closed, canceled, returned, holded, paid, payment_review."
+          },
+          "item_confirmation_status": {
+            "type": "string",
+            "description": "Item confirmation: waiting (to confirm), seller_confirmed, seller_canceled, confirmed, ready_to_pick.",
+            "enum": [
+              "waiting",
+              "seller_confirmed",
+              "seller_canceled",
+              "confirmed",
+              "ready_to_pick"
+            ]
+          },
+          "fulfillment_type": {
+            "type": "string",
+            "description": "Fulfillment types as a set, e.g. `in|dropship,seller_delivery`. Types: tiki_delivery, seller_delivery, cross_border, dropship, instant_delivery."
+          },
+          "code": {
+            "type": "string",
+            "description": "Order codes, comma-separated."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Product SKUs, comma-separated."
+          },
+          "is_rma": {
+            "type": "boolean",
+            "description": "true: only replacement (return) orders."
+          },
+          "filter_date_by": {
+            "type": "string",
+            "description": "Quick range: today, last7days or last30days.",
+            "enum": [
+              "today",
+              "last7days",
+              "last30days"
+            ]
+          },
+          "created_from_date": {
+            "type": "string",
+            "description": "Created on or after: yyyy-MM-dd HH:mm:ss, Vietnam time (UTC+7), e.g. 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?$"
+          },
+          "created_to_date": {
+            "type": "string",
+            "description": "Created on or before: yyyy-MM-dd HH:mm:ss, Vietnam time (UTC+7), e.g. 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?$"
+          },
+          "include": {
+            "type": "string",
+            "description": "Extra data, comma-separated: status_histories, item.fees, item.confirmation_histories."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort: `created_at|desc` (default), `created_at|asc`, `updated_at|desc` or `updated_at|asc`.",
+            "enum": [
+              "created_at|desc",
+              "created_at|asc",
+              "updated_at|desc",
+              "updated_at|asc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/orders",
+        "queryParams": {
+          "status": "$status",
+          "item_confirmation_status": "$item_confirmation_status",
+          "fulfillment_type": "$fulfillment_type",
+          "code": "$code",
+          "sku": "$sku",
+          "is_rma": "$is_rma",
+          "filter_date_by": "$filter_date_by",
+          "created_from_date": "$created_from_date",
+          "created_to_date": "$created_to_date",
+          "include": "$include",
+          "order_by": "$order_by",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_get_order",
+      "description": "Read one order: code, relation_code, fulfillment_type, status, invoice, Tiki warehouse, items with product, price, quantity, seller income, fees and confirmation (status, available_confirm_sla, pickup_confirm_sla), shipping (address, partner, tracking code), payment, customer, cancel_info, rma_info, seller warehouse and status histories. A code that does not exist answers 400. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Tiki order code, e.g. 105386919 (code of tiki_list_orders).",
+            "pattern": "^[A-Za-z0-9-]{4,30}$"
+          },
+          "include": {
+            "type": "string",
+            "description": "Extra data, comma-separated: status_histories, item.fees, item.confirmation_histories."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/orders/{code}",
+        "queryParams": {
+          "include": "$include"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_list_seller_inventories",
+      "description": "Seller inventories (stock locations) you can confirm orders from, with the Tiki warehouses they serve: seller_inventories and mappings (tiki_warehouse_code to seller_inventory_ids). Needed for tiki_confirm_available and tiki_confirm_dropship. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tiki_warehouse_codes": {
+            "type": "string",
+            "description": "Tiki warehouse codes, comma-separated, e.g. sgn,hn4 (tiki_warehouse.code of the order)."
+          }
+        },
+        "required": [
+          "tiki_warehouse_codes"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/seller-inventories",
+        "queryParams": {
+          "tiki_warehouse_codes": "$tiki_warehouse_codes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_get_shipping_label",
+      "description": "Link to the printable label of an order (HTML): shipping_label_url (tiki-delivery), shipping_label_url and shipping_stamp_url (dropship), invoice_label_url (seller-delivery) or crossborder_label_url (cross-border). Pick the delivery model of the order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Tiki order code, e.g. 105386919 (code of tiki_list_orders).",
+            "pattern": "^[A-Za-z0-9-]{4,30}$"
+          },
+          "delivery_model": {
+            "type": "string",
+            "description": "Delivery model of the order: tiki-delivery, dropship, seller-delivery or cross-border.",
+            "enum": [
+              "tiki-delivery",
+              "dropship",
+              "seller-delivery",
+              "cross-border"
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "delivery_model"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/orders/{code}/{delivery_model}/labels",
+        "queryParams": {
+          "format": "html"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_list_products",
+      "description": "List products, newest first: product_id, sku, original_sku (your SKU), name, price, market_price, entity_type, master_id, super_id, categories, images and, with include inventory, inventory (inventory_type, fulfillment_type, warehouse_stocks with quantity_available and quantity_sellable), with `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Product name (full-text search)."
+          },
+          "active": {
+            "type": "string",
+            "description": "1 active, 0 inactive.",
+            "enum": [
+              "1",
+              "0"
+            ]
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Primary category id.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "include": {
+            "type": "string",
+            "description": "inventory: add the stock per warehouse.",
+            "enum": [
+              "inventory"
+            ]
+          },
+          "created_from_date": {
+            "type": "string",
+            "description": "Created on or after: yyyy-MM-dd HH:mm:ss, Vietnam time (UTC+7), e.g. 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?$"
+          },
+          "created_to_date": {
+            "type": "string",
+            "description": "Created on or before: yyyy-MM-dd HH:mm:ss, Vietnam time (UTC+7), e.g. 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?$"
+          },
+          "updated_from_date": {
+            "type": "string",
+            "description": "Updated on or after: yyyy-MM-dd HH:mm:ss, Vietnam time (UTC+7), e.g. 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?$"
+          },
+          "updated_to_date": {
+            "type": "string",
+            "description": "Updated on or before: yyyy-MM-dd HH:mm:ss, Vietnam time (UTC+7), e.g. 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2.1/products",
+        "queryParams": {
+          "name": "$name",
+          "active": "$active",
+          "category_id": "$category_id",
+          "include": "$include",
+          "created_from_date": "$created_from_date",
+          "created_to_date": "$created_to_date",
+          "updated_from_date": "$updated_from_date",
+          "updated_to_date": "$updated_to_date",
+          "page": "$page",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_get_product",
+      "description": "Read one product: name, sku, original_sku, price, market_price, status, attributes, images, categories and stock per warehouse. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Tiki product id, e.g. 2088336 (product_id of tiki_list_products).",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "includes": {
+            "type": "string",
+            "description": "Extra data, comma-separated: seller, categories, inventory, attributes, images."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2.1/products/{product_id}",
+        "queryParams": {
+          "includes": "$includes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_find_product_by_sku",
+      "description": "Find a product by your own SKU (original_sku): product_id, sku, name, price, market_price, categories and images. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "original_sku": {
+            "type": "string",
+            "description": "Your SKU as sent when the product was created."
+          }
+        },
+        "required": [
+          "original_sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/products/findBy",
+        "queryParams": {
+          "original_sku": "$original_sku"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_list_categories",
+      "description": "Tiki categories: id, name, parent, is_primary and whether products can be created in it. Filter by parent to walk the tree. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Category name or part of it."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Parent category id: its children.",
+            "pattern": "^[0-9]{1,10}$"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "description": "true: only primary categories (where products are created)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/categories",
+        "queryParams": {
+          "name": "$name",
+          "parent": "$parent",
+          "isPrimary": "$is_primary"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_get_category_attributes",
+      "description": "Attributes of one category for product requests: code, display name, data type, is_required and allowed values. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "description": "Category id from tiki_list_categories.",
+            "pattern": "^[0-9]{1,10}$"
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/categories/{category_id}/attributes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_list_brands",
+      "description": "Search Tiki brands by name: id and name, as used in product requests. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Brand name or part of it."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/brands",
+        "queryParams": {
+          "name": "$name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_list_tiki_warehouses",
+      "description": "Tiki warehouses (fulfilment centres): id, code and name, as they appear in orders and seller inventory mappings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/warehouses/tiki"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_list_product_requests",
+      "description": "Product creation and update requests: id, track_id, state (drafted, processing, waiting, approved, rejected, deleted), reason and the products, with `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "Only requests in this state.",
+            "enum": [
+              "drafted",
+              "processing",
+              "waiting",
+              "approved",
+              "rejected",
+              "deleted"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "products: add the products of each request.",
+            "enum": [
+              "products"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/requests",
+        "queryParams": {
+          "state": "$state",
+          "include": "$include",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_get_tracking",
+      "description": "State of an asynchronous product request by its track id: state, reason and the request id once accepted. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "track_id": {
+            "type": "string",
+            "description": "track_id returned when a product request was submitted."
+          }
+        },
+        "required": [
+          "track_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/integration/v2/tracking/{track_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tiki_confirm_available",
+      "description": "Confirm stock for an order fulfilled from your inventory (tiki_delivery, seller_delivery or cross_border): list the item ids you can supply and the seller inventory they ship from. Items you leave out are cancelled by the seller (seller_canceled), so always list every item you can deliver.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Tiki order code, e.g. 105386919 (code of tiki_list_orders).",
+            "pattern": "^[A-Za-z0-9-]{4,30}$"
+          },
+          "available_item_ids": {
+            "type": "array",
+            "description": "Ids of the order items you can supply (items[].id of tiki_get_order).",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "seller_inventory_id": {
+            "type": "integer",
+            "description": "Seller inventory id from tiki_list_seller_inventories.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "code",
+          "available_item_ids",
+          "seller_inventory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/integration/v2/orders/{code}/confirm-available",
+        "bodyMapping": {
+          "available_item_ids": "$available_item_ids",
+          "seller_inventory_id": "$seller_inventory_id"
+        }
+      }
+    },
+    {
+      "name": "tiki_confirm_dropship",
+      "description": "Confirm a dropship order (seller_confirmed) from one seller inventory; Tiki then arranges the pickup.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Tiki order code, e.g. 105386919 (code of tiki_list_orders).",
+            "pattern": "^[A-Za-z0-9-]{4,30}$"
+          },
+          "seller_inventory_id": {
+            "type": "integer",
+            "description": "Seller inventory id from tiki_list_seller_inventories.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "code",
+          "seller_inventory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/integration/v2/orders/{code}/dropship/confirm-available",
+        "bodyMapping": {
+          "confirmation_status": "seller_confirmed",
+          "seller_inventory_id": "$seller_inventory_id"
+        }
+      }
+    },
+    {
+      "name": "tiki_update_seller_delivery",
+      "description": "Report the delivery result of an order you deliver yourself (seller_delivery): successful_delivery, or failed_delivery with the cause and, for a new appointment, its date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Tiki order code, e.g. 105386919 (code of tiki_list_orders).",
+            "pattern": "^[A-Za-z0-9-]{4,30}$"
+          },
+          "status": {
+            "type": "string",
+            "description": "successful_delivery or failed_delivery.",
+            "enum": [
+              "successful_delivery",
+              "failed_delivery"
+            ]
+          },
+          "failure_cause": {
+            "type": "string",
+            "description": "For failed_delivery: out_of_needs (customer no longer wants it), redelivery_appointment or out_of_stock.",
+            "enum": [
+              "out_of_needs",
+              "redelivery_appointment",
+              "out_of_stock"
+            ]
+          },
+          "appointment_date": {
+            "type": "string",
+            "description": "New delivery date for redelivery_appointment: yyyy-MM-dd HH:mm:ss, Vietnam time (UTC+7), e.g. 2026-11-01 00:00:00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}:[0-9]{2})?$"
+          },
+          "note": {
+            "type": "string",
+            "description": "Note about the delivery."
+          }
+        },
+        "required": [
+          "code",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/integration/v2/orders/{code}/seller-delivery/update-delivery",
+        "bodyMapping": {
+          "status": "$status",
+          "failure_cause": "$failure_cause",
+          "appointment_date": "$appointment_date",
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "tiki_update_product",
+      "description": "Change the price and the stock per seller warehouse of one product, identified by your original_sku or the Tiki product_id. Stock cannot be changed for products stored at Tiki (instock). Answers state approved, or errors such as a price too far below the listing price.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "original_sku": {
+            "type": "string",
+            "description": "Your SKU; give this or product_id."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Tiki product id; give this or original_sku.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "price": {
+            "type": "integer",
+            "description": "New price in VND.",
+            "minimum": 0
+          },
+          "warehouse_quantities": {
+            "type": "array",
+            "description": "Stock per seller warehouse: warehouse_id from tiki_list_seller_warehouses and qty_available.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "warehouse_id": {
+                  "type": "integer",
+                  "description": "Seller warehouse id."
+                },
+                "qty_available": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Available quantity in that warehouse."
+                }
+              },
+              "required": [
+                "warehouse_id",
+                "qty_available"
+              ]
+            },
+            "maxItems": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/integration/v2.1/products/updateSku",
+        "bodyMapping": {
+          "original_sku": "$original_sku",
+          "product_id": "$product_id",
+          "price": "$price",
+          "warehouse_quantities": "$warehouse_quantities"
+        }
+      }
+    },
+    {
+      "name": "tiki_set_product_active",
+      "description": "Switch one product on (1) or off (0) for sale. 0 takes it off sale on Tiki.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "original_sku": {
+            "type": "string",
+            "description": "Your SKU; give this or product_id."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Tiki product id; give this or original_sku.",
+            "pattern": "^[0-9]{1,15}$"
+          },
+          "active": {
+            "type": "integer",
+            "description": "1 on sale, 0 off sale.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "required": [
+          "active"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/integration/v2.1/products/updateSku",
+        "bodyMapping": {
+          "original_sku": "$original_sku",
+          "product_id": "$product_id",
+          "active": "$active"
+        }
+      }
+    },
+    {
+      "name": "tiki_cancel_dropship",
+      "description": "Refuse a dropship order (seller_canceled). Cannot be undone; the customer is refunded and it counts against the shop.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Tiki order code, e.g. 105386919 (code of tiki_list_orders).",
+            "pattern": "^[A-Za-z0-9-]{4,30}$"
+          },
+          "seller_inventory_id": {
+            "type": "integer",
+            "description": "Seller inventory id from tiki_list_seller_inventories.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "code",
+          "seller_inventory_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/integration/v2/orders/{code}/dropship/confirm-available",
+        "bodyMapping": {
+          "confirmation_status": "seller_canceled",
+          "seller_inventory_id": "$seller_inventory_id"
+        }
+      }
+    }
+  ]
+}

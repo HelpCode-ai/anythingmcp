@@ -180,6 +180,13 @@ describe('FileUploadService', () => {
 
     await expect(svc.publicUrl(link.file_ref, OTHER)).rejects.toThrow(/unknown or has expired/);
     await expect(svc.openPublic(signed.replace(/.$/, signed.endsWith('A') ? 'B' : 'A'))).rejects.toThrow(/Invalid link/);
+    // Every other spelling of the last character is refused, including ones that decode to the same bytes.
+    const sig = signed.split('.')[3];
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    for (const c of alphabet) {
+      if (c === sig.slice(-1)) continue;
+      await expect(svc.openPublic(signed.slice(0, -1) + c)).rejects.toThrow(/Invalid link/);
+    }
 
     prisma.fileUpload.rows[0].publicDownloads = 50;
     await expect(svc.openPublic(signed)).rejects.toThrow(/no longer available/);

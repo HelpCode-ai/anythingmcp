@@ -1,0 +1,812 @@
+{
+  "slug": "marktplaats",
+  "name": "Marktplaats and 2dehands",
+  "description": "Marktplaats API v2 for sellers on Marktplaats.nl and 2dehands / 2ememain.be (one API, site as a choice): own advertisements with photos and attributes, statistics, bids and messages to bidders, categories, paid features and orders. OAuth2 for registered API partners.",
+  "instructions": "## Marktplaats and 2dehands\nThis connector works with the **Marktplaats API v2**, which is the same API for Marktplaats (Netherlands, `api.marktplaats.nl`) and 2dehands / 2ememain (Belgium, `api.2dehands.be` and `api.2ememain.be`), run by Adevinta. Through it a seller manages **their own** advertisements: create, update, photos, statistics, bids and messages to bidders, paid features, categories and attributes. It does not search other sellers' ads.\n\n**Access**: the API is for registered API partners. Ask Marktplaats for API access (business sellers and their software partners); Marktplaats registers an app for your redirect URI and sends a client ID and client secret. Each platform has its own clients and accounts: an app for Marktplaats cannot place ads on 2dehands and the other way round.\n\n**Setup**\n1. When asking for access, give Marktplaats this connector's redirect URI: `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n2. Choose the site in `MARKTPLAATS_SITE`: marktplaats.nl, 2dehands.be or 2ememain.be (2dehands and 2ememain are one platform, with default language nl-BE or fr-BE).\n3. Paste the client ID and secret into `MARKTPLAATS_CLIENT_ID` and `MARKTPLAATS_CLIENT_SECRET`, install, then click **Authorize with Provider** and sign in with the seller account. Every refresh returns a new refresh token, which the connector stores.\n\n**Where to start**: `marktplaats_get_me` gives the seller's userId; `marktplaats_list_my_advertisements` lists their ads; `marktplaats_get_advertisement_statistics` shows views, messages and bids per ad.\n\n**Placing an ad**: 1) `marktplaats_list_categories` and `marktplaats_get_category` for a level-2 category, 2) `marktplaats_list_category_attributes` for the writable attributes and allowed values (some are mandatory, e.g. manufacturer fields for traders under the GPSR), 3) `marktplaats_create_advertisement`, 4) `marktplaats_add_advertisement_images`. Check a postcode with `marktplaats_lookup_postcode`.\n\n**Changing ads**: `marktplaats_update_advertisement` takes JSON Patch operations; give all locales when replacing /translations. `marktplaats_get_advertisement` and `marktplaats_list_advertisement_images` read the current state. `marktplaats_delete_advertisement` is installed switched off.\n\n**Bids**: `marktplaats_list_bids`, `marktplaats_get_bid`, and `marktplaats_message_bidder` to answer a bidder by e-mail. `marktplaats_delete_bid` is installed switched off.\n\n**Paid products**: `marktplaats_list_advertisement_features` shows prices. `marktplaats_buy_advertisement_feature` and `marktplaats_renew_advertisement` charge the seller's invoice and are installed switched off. `marktplaats_get_order` reads an order of paid products; `marktplaats_list_advertisement_transactions` shows payments handled by a partner. `marktplaats_get_user` reads a user.\n\n**Formats**: all money is in **euro cents** (1550 = EUR 15.50). Ad ids (itemId) look like `m1234567890`; user, bid, order and category ids are numbers. Times are ISO 8601 in UTC. Answers are HAL JSON: lists sit under `_embedded`, links under `_links`. Ad lists page with limit (up to 100) and an offset that is a multiple of the limit.\n\n**Errors**: 400 validation-failure lists field errors (missing-required-field, input-invalid, unknown-field and others), 401 means the token expired or belongs to another user, 403 the ad or bid is not yours, 404 not found, 409 a patch could not be applied.",
+  "aliases": [
+    "2dehands",
+    "2ememain",
+    "Marktplaats API",
+    "Adevinta Benelux"
+  ],
+  "region": "nl",
+  "category": "e-commerce",
+  "icon": "marktplaats",
+  "docsUrl": "https://api.marktplaats.nl/docs/v2/index.html",
+  "requiredEnvVars": [
+    "MARKTPLAATS_SITE",
+    "MARKTPLAATS_CLIENT_ID",
+    "MARKTPLAATS_CLIENT_SECRET"
+  ],
+  "optionalEnvVars": [
+    "MARKTPLAATS_REFRESH_TOKEN"
+  ],
+  "envVarMeta": {
+    "MARKTPLAATS_SITE": {
+      "label": "Site",
+      "kind": "setting",
+      "help": "The platform of your seller account and API client: marktplaats.nl (Netherlands) or 2dehands.be / 2ememain.be (Belgium, Dutch or French default language).",
+      "options": [
+        {
+          "value": "marktplaats.nl",
+          "label": "Marktplaats (marktplaats.nl)"
+        },
+        {
+          "value": "2dehands.be",
+          "label": "2dehands (2dehands.be)"
+        },
+        {
+          "value": "2ememain.be",
+          "label": "2ememain (2ememain.be)"
+        }
+      ],
+      "pattern": "^(marktplaats\\.nl|2dehands\\.be|2ememain\\.be)$",
+      "patternMessage": "Choose marktplaats.nl, 2dehands.be or 2ememain.be."
+    },
+    "MARKTPLAATS_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Assigned by Marktplaats when your app is registered as an API partner, for the site chosen above.",
+      "link": "https://api.marktplaats.nl/docs/v2/authentication.html",
+      "pattern": "^\\S{2,200}$",
+      "patternMessage": "Paste the client ID without spaces."
+    },
+    "MARKTPLAATS_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Sent by Marktplaats together with the client ID.",
+      "link": "https://api.marktplaats.nl/docs/v2/authentication.html",
+      "pattern": "^\\S{4,300}$",
+      "patternMessage": "Paste the client secret without spaces."
+    },
+    "MARKTPLAATS_REFRESH_TOKEN": {
+      "label": "Refresh token",
+      "kind": "credential",
+      "secret": true,
+      "advanced": true,
+      "help": "Filled by Authorize with Provider. Only paste one if you obtained it yourself; Marktplaats issues a new refresh token on every refresh.",
+      "link": "https://api.marktplaats.nl/docs/v2/authentication.html"
+    }
+  },
+  "verifyHints": {
+    "401": "Marktplaats did not accept the token: authorize again with the seller account. Check that the client ID and secret belong to the site chosen in MARKTPLAATS_SITE.",
+    "403": "Marktplaats refused the call: the advertisement or bid belongs to another user, or the client lacks the privilege for this action.",
+    "404": "Marktplaats found no advertisement, bid, category or order with that id on this site.",
+    "rate_limited": "Marktplaats is limiting the calls. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "marktplaats_get_me",
+    "params": {}
+  },
+  "prerequisites": "A Marktplaats or 2dehands seller account and an app registered by Marktplaats as an API partner (client ID and secret for that site, with this connector's redirect URI). Marktplaats grants access on request.",
+  "connector": {
+    "name": "Marktplaats API v2",
+    "type": "REST",
+    "baseUrl": "https://api.{{MARKTPLAATS_SITE}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MARKTPLAATS_CLIENT_ID}}",
+      "clientSecret": "{{MARKTPLAATS_CLIENT_SECRET}}",
+      "refreshToken": "{{MARKTPLAATS_REFRESH_TOKEN}}",
+      "authorizationUrl": "https://auth.{{MARKTPLAATS_SITE}}/accounts/oauth/authorize",
+      "tokenUrl": "https://auth.{{MARKTPLAATS_SITE}}/accounts/oauth/token",
+      "tokenAuthMethod": "client_secret_post",
+      "pkce": false
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "marktplaats_get_me",
+      "description": "The signed-in seller (GET /v2/me answers with a redirect to the user): userId, name, email, phone number, postcode, status, dealerPackage (NONE, BASIC, PLUS, PREMIUM), user limits and billing. The userId is needed to list the seller's advertisements.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/me"
+      }
+    },
+    {
+      "name": "marktplaats_get_user",
+      "description": "One user by id; email, phone and postcode only for the signed-in user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "User id from marktplaats_get_me."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users/{user_id}"
+      }
+    },
+    {
+      "name": "marktplaats_list_my_advertisements",
+      "description": "The signed-in seller's advertisements (embedded under mp:advertisements): itemId, categoryId, translations, priceModel, location, seller, status (online or deactivated), startDate, closeDate, url. Only works for the signed-in user's own id. Offset paging: limit up to 100 and offset a multiple of limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The signed-in user's id from marktplaats_get_me."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Advertisements per page, up to 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Skip this many; must be a multiple of limit (0, 100, 200 with limit 100)."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/users/{user_id}/advertisements",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "marktplaats_get_advertisement",
+      "description": "One of the seller's advertisements: categoryId, translations (title and description per locale), priceModel (prices in euro cents), location, seller, status, startDate, closeDate, renewPossible, reserved, category attributes and embedded images.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/advertisements/{item_id}"
+      }
+    },
+    {
+      "name": "marktplaats_create_advertisement",
+      "description": "Place a new advertisement in a level-2 category: translations (title and description), priceModel (euro cents), location (postcode), and the category's writable attributes from marktplaats_list_category_attributes. Answers 201 with the new itemId; add photos afterwards with marktplaats_add_advertisement_images. Placing ads can be charged depending on the category and the seller's package.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Level-2 category id (from marktplaats_list_categories or marktplaats_get_category)."
+          },
+          "translations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "locale": {
+                  "type": "string",
+                  "enum": [
+                    "nl-NL",
+                    "nl-BE",
+                    "fr-BE"
+                  ],
+                  "description": "nl-NL on Marktplaats; nl-BE and/or fr-BE on 2dehands and 2ememain."
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Title in this language."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Description in this language."
+                }
+              },
+              "required": [
+                "locale",
+                "title",
+                "description"
+              ]
+            },
+            "description": "Title and description per language: list of objects with locale, title and description."
+          },
+          "price_model": {
+            "type": "object",
+            "properties": {
+              "modelType": {
+                "type": "string",
+                "enum": [
+                  "fixed",
+                  "bidding",
+                  "see description"
+                ],
+                "description": "fixed (asking price), bidding (offers, optional minimum) or see description."
+              },
+              "askingPrice": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Asking price in euro cents (1550 = EUR 15.50)."
+              },
+              "minimalBid": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Bidding only: lowest accepted bid in euro cents; needs askingPrice too."
+              },
+              "shippingCosts": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Shipping costs in euro cents."
+              }
+            },
+            "required": [
+              "modelType"
+            ],
+            "description": "Price model, e.g. modelType fixed with askingPrice 1550 (cents)."
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Postcode where the item is, e.g. 1097DN (Dutch) or 1000 (Belgian).",
+            "maxLength": 6
+          },
+          "seller": {
+            "type": "object",
+            "description": "Optional seller fields: sellerName (max 30, 60 for API partners), phoneNumber, showEmail, acceptPaypal, kvkNumber, vestiging."
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Category attributes as key and value pairs (value text, number or list), e.g. condition Nieuw; keys and allowed values from marktplaats_list_category_attributes (writable true)."
+          },
+          "url": {
+            "type": "string",
+            "description": "Website link shown with the ad (only visible with the URL feature)."
+          },
+          "show_on_map": {
+            "type": "boolean",
+            "description": "Show the ad on the map."
+          },
+          "license_plate": {
+            "type": "string",
+            "description": "Cars only: license plate (6 or 8 characters); the ad is then enriched with vehicle data."
+          }
+        },
+        "required": [
+          "category_id",
+          "translations",
+          "price_model",
+          "postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/advertisements",
+        "bodyMapping": {
+          "categoryId": "$category_id",
+          "translations": "$translations",
+          "priceModel": "$price_model",
+          "location": {
+            "postcode": "$postcode"
+          },
+          "seller": "$seller",
+          "url": "$url",
+          "showOnMap": "$show_on_map",
+          "licensePlate": "$license_plate",
+          "__merge": "$attributes"
+        }
+      }
+    },
+    {
+      "name": "marktplaats_update_advertisement",
+      "description": "Change an advertisement with JSON Patch operations (op replace, add or remove, path, value): /translations (all locales must be given), /priceModel or /priceModel/askingPrice (cents), /location/postcode, /reserved, /seller/showEmail or any updateable attribute. Answers 200 with the advertisement; 409 means the patch could not be applied.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          },
+          "operations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "replace",
+                    "add",
+                    "remove",
+                    "copy",
+                    "move"
+                  ],
+                  "description": "Patch operation."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Field path starting with a slash, e.g. /priceModel/askingPrice."
+                },
+                "value": {
+                  "description": "New value for replace and add."
+                },
+                "from": {
+                  "type": "string",
+                  "description": "Source path for copy and move."
+                }
+              },
+              "required": [
+                "op",
+                "path"
+              ]
+            },
+            "description": "JSON Patch list, e.g. op replace, path /priceModel/askingPrice, value 1299."
+          }
+        },
+        "required": [
+          "item_id",
+          "operations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/v2/advertisements/{item_id}",
+        "bodyMapping": {
+          "__raw": "$operations"
+        }
+      }
+    },
+    {
+      "name": "marktplaats_delete_advertisement",
+      "description": "Delete an advertisement. It cannot be undone; paid features on it are lost. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/advertisements/{item_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "marktplaats_add_advertisement_images",
+      "description": "Attach photos to an advertisement from public URLs (JPG, PNG or BMP under 8 MB, no GIF), in the given order; replace_all swaps out the current photos. Marktplaats downloads them in the background (status downloading until done). Up to 24 photos per ad, more for car dealers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          },
+          "urls": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 99,
+            "items": {
+              "type": "string"
+            },
+            "description": "Image URLs (http or https)."
+          },
+          "replace_all": {
+            "type": "boolean",
+            "description": "true replaces all current photos."
+          }
+        },
+        "required": [
+          "item_id",
+          "urls"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/advertisements/{item_id}/images",
+        "bodyMapping": {
+          "urls": "$urls",
+          "replaceAll": "$replace_all"
+        }
+      }
+    },
+    {
+      "name": "marktplaats_list_advertisement_images",
+      "description": "Photos of an advertisement: imageId, mediaId, status and links in small, medium, large and xlarge sizes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/advertisements/{item_id}/images"
+      }
+    },
+    {
+      "name": "marktplaats_get_advertisement_statistics",
+      "description": "Statistics of an advertisement: numberOfViews, numberOfAsqs (buyer messages), numberOfBids, numberOfUrlClicks, numberOfPhoneClicks, numberOfFavoriteClicks and, when available, min and max findability (result page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/advertisements/{item_id}/statistics"
+      }
+    },
+    {
+      "name": "marktplaats_list_bids",
+      "description": "Bids on an advertisement, highest first: bid id, amount in euro cents, bidder id and nickname, placeDate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/advertisements/{item_id}/bids"
+      }
+    },
+    {
+      "name": "marktplaats_get_bid",
+      "description": "One bid on an advertisement: amount in euro cents, bidder and placeDate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          },
+          "bid_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Bid id."
+          }
+        },
+        "required": [
+          "item_id",
+          "bid_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/advertisements/{item_id}/bids/{bid_id}"
+      }
+    },
+    {
+      "name": "marktplaats_message_bidder",
+      "description": "Send an e-mail message to the bidder of a bid on your own advertisement (ask bidder question), with your phone number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          },
+          "bid_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Bid id."
+          },
+          "message": {
+            "type": "string",
+            "description": "Message to the bidder."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Your phone number: Dutch starting with 0 or international starting with +, max 12 characters.",
+            "maxLength": 12
+          }
+        },
+        "required": [
+          "item_id",
+          "bid_id",
+          "message",
+          "phone_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/advertisements/{item_id}/bids/{bid_id}/actions/ask-bidder-question",
+        "bodyMapping": {
+          "message": "$message",
+          "phoneNumber": "$phone_number"
+        }
+      }
+    },
+    {
+      "name": "marktplaats_delete_bid",
+      "description": "Delete a bid on your advertisement. It cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          },
+          "bid_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Bid id."
+          }
+        },
+        "required": [
+          "item_id",
+          "bid_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/advertisements/{item_id}/bids/{bid_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "marktplaats_list_advertisement_features",
+      "description": "Paid features available for an advertisement (omhoogplaatsen, dagtopper, dagtopper7, homepaginaAdvertentie and others) with price in euro cents, available and active.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/advertisements/{item_id}/features"
+      }
+    },
+    {
+      "name": "marktplaats_buy_advertisement_feature",
+      "description": "Buy a paid feature for an advertisement and pay it by invoice (pay true, API partners only). Costs money. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          },
+          "feature_name": {
+            "type": "string",
+            "description": "Feature name from marktplaats_list_advertisement_features, e.g. dagtopper.",
+            "pattern": "^[A-Za-z0-9_-]{2,40}$"
+          }
+        },
+        "required": [
+          "item_id",
+          "feature_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/advertisements/{item_id}/features/{feature_name}/buy-feature",
+        "bodyMapping": {
+          "pay": true
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "marktplaats_renew_advertisement",
+      "description": "Renew an advertisement that is about to expire (renewPossible true, usually in its last 7 days); paid by invoice. Costs money. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/advertisements/{item_id}/renew",
+        "bodyMapping": {
+          "pay": true
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "marktplaats_list_advertisement_transactions",
+      "description": "Transactions on an advertisement handled by a payment partner: transactionId, buyerId, amount and shippingCosts in euro cents, status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][0-9]{1,15}$",
+            "description": "Advertisement id (itemId), a letter followed by digits, e.g. m1234567890."
+          }
+        },
+        "required": [
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/advertisements/{item_id}/transactions"
+      }
+    },
+    {
+      "name": "marktplaats_get_order",
+      "description": "One order of paid products (features, renewals): orderId, status (new, payment required, paid, refused, closed), total price in euro cents and the products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/orders/{order_id}"
+      }
+    },
+    {
+      "name": "marktplaats_list_categories",
+      "description": "All categories of the site: level-1 categories with their level-2 children (categoryId, name). Ads go into level-2 categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/categories"
+      }
+    },
+    {
+      "name": "marktplaats_get_category",
+      "description": "One level-1 or level-2 category by id (categoryId, name) with its embedded children.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Category id."
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/categories",
+        "queryParams": {
+          "categoryId": "$category_id"
+        }
+      }
+    },
+    {
+      "name": "marktplaats_list_category_attributes",
+      "description": "Attributes of a level-2 category: key, labels, type, options (allowed values), mandatory, writable, updateable, min and max. Use the keys in attributes when creating or updating ads.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "l1_category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Level-1 category id."
+          },
+          "l2_category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Level-2 category id."
+          }
+        },
+        "required": [
+          "l1_category_id",
+          "l2_category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/categories/{l1_category_id}/{l2_category_id}/attributes"
+      }
+    },
+    {
+      "name": "marktplaats_lookup_postcode",
+      "description": "Location details for a postcode (street, city, province, provinceShortCode), to check a postcode before placing an ad.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "postcode": {
+            "type": "string",
+            "description": "Postcode, e.g. 8301AA.",
+            "maxLength": 7
+          }
+        },
+        "required": [
+          "postcode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/locations",
+        "queryParams": {
+          "postcode": "$postcode"
+        }
+      }
+    }
+  ]
+}

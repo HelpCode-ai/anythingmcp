@@ -1,0 +1,1522 @@
+{
+  "slug": "whatnot",
+  "name": "Whatnot",
+  "description": "Whatnot Seller API for sellers on the live shopping marketplace: orders, order items, shipments and tracking codes, products and variants, inventory, merchandising for buy it now, auctions and shows, show analytics and reports. Personal access token.",
+  "instructions": "## Whatnot\nThis connector works with the **Whatnot Seller API** (REST v2, `https://api.whatnot.com/seller-api/rest/v2`) for sellers on Whatnot, the live shopping marketplace in the United States, Canada, the United Kingdom, Europe and Australia: products and variants, inventory, merchandising (buy it now, auctions, shows), orders, shipments and tracking, shows, show analytics and reports.\n\n**Setup (about 2 minutes)**\n1. Sign in to Whatnot with the seller account owner and open the developer dashboard, tab **Personal access tokens** (https://www.whatnot.com/dashboard/developer?tab=tokens). Only the account owner can create tokens.\n2. Click **Generate new token**, give it a name, choose an expiration (7 to 90 days, a custom date or no expiration) and the permissions: read and write for inventory, merchandising, orders and shipments, read for shows, read and write for reports, and read customers if the agent should see buyer names. Write access includes read access.\n3. Copy the token (it starts with `wn_pat_tk_` and is shown only once) into `WHATNOT_API_TOKEN`.\n\nThe Seller API is still marked beta by Whatnot: fields can change.\n\n**Where to start**: `whatnot_get_current_user` checks the token. `whatnot_list_orders` shows recent orders; fulfil those with status pending_fulfillment. `whatnot_list_products` lists the catalog.\n\n**Orders and shipping**: `whatnot_list_orders`, `whatnot_get_order`, `whatnot_list_order_items`, `whatnot_get_order_item`. Each order item belongs to a shipment: `whatnot_list_shipments`, `whatnot_get_shipment`, `whatnot_list_shipment_items`. Ship with your own label through `whatnot_add_tracking_code` (order item ids, carrier, tracking code). `whatnot_generate_shipping_label` (Whatnot label, may cost money) and `whatnot_cancel_order` (refunds the buyer) are installed switched off.\n\n**Listing a product**: 1) `whatnot_list_dimension_profiles` for a package profile id, 2) `whatnot_create_product` with title, leaf category id from Whatnot's public taxonomy (https://github.com/Whatnot-Inc/product-taxonomy) and the profile, 3) `whatnot_list_product_variants` for the variant ids, 4) `whatnot_update_product_variants` for prices, 5) `whatnot_set_inventory` for stock, 6) `whatnot_update_product_merchandising` to choose buy_it_now or auction and publish. Change products with `whatnot_update_product`, read them with `whatnot_get_product` and `whatnot_get_product_variant`. `whatnot_delete_product` is installed switched off.\n\n**Inventory**: `whatnot_set_inventory` (absolute) and `whatnot_adjust_inventory` (delta) take up to 10 variants per call; give every item a fresh idempotency_key (a UUID) so a retry is applied only once.\n\n**Shows and merchandising**: `whatnot_list_shows` (status scheduled by default), `whatnot_get_show`, `whatnot_get_show_analytics`, `whatnot_get_product_merchandising`, `whatnot_list_product_shows`. Adding a product to a show uses show ids (UUID) in `whatnot_update_product_merchandising` with strategy ADD, REMOVE or REPLACE.\n\n**Reports**: `whatnot_generate_report` starts a financial, analytics overview or livestreams report; poll `whatnot_get_report` or `whatnot_list_reports` until the status is completed.\n\n**Paging**: lists take `limit` (1 to 50, default 10) and return `data` plus `next_cursor`; pass it as `cursor` until it is null.\n\n**Ids and formats**: order, product, shipment and order item ids are digits (send them as text); variant, show and report ids are UUIDs. Money is an object with `amount` as text in whole units (`19.99`) and `currency`. Times are ISO 8601 in UTC with milliseconds (`2026-11-01T00:00:00.000Z`).\n\n**Errors and limits**: errors are problem+json with `type`, `title`, `detail` (a `missing-scope` error lists `required_scopes`: edit the token's permissions); a 422 for a malformed request lists each field under `detail` with `loc` and `msg`. The limit is 10 requests per second per seller and app; a 429 carries Retry-After in seconds.",
+  "aliases": [
+    "Whatnot Seller API",
+    "Whatnot live shopping"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "whatnot",
+  "docsUrl": "https://developers.whatnot.com/getting-started/introduction",
+  "requiredEnvVars": [
+    "WHATNOT_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "WHATNOT_API_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Whatnot developer dashboard, tab Personal access tokens, Generate new token: choose the permissions (scopes) and copy the token. It is shown only once.",
+      "link": "https://www.whatnot.com/dashboard/developer?tab=tokens",
+      "pattern": "^wn_\\S{8,}$",
+      "patternMessage": "Paste the whole token, starting with wn_ and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Whatnot did not accept the token. It may be expired, deleted or regenerated: create a new personal access token in the developer dashboard and paste it again.",
+    "403": "The token lacks a permission (scope) for this call. Edit the token in the developer dashboard, tab Personal access tokens, and add the scope named in required_scopes.",
+    "404": "Whatnot found no order, product, shipment, show or report with that id for this seller.",
+    "rate_limited": "Whatnot allows 10 requests per second per seller and app. Wait for the Retry-After seconds and try again."
+  },
+  "probe": {
+    "tool": "whatnot_get_current_user",
+    "params": {}
+  },
+  "prerequisites": "A Whatnot seller account, signed in as the account owner, to create a personal access token in the developer dashboard. The Seller API is open to sellers (beta). About 2 minutes.",
+  "connector": {
+    "name": "Whatnot Seller API",
+    "type": "REST",
+    "baseUrl": "https://api.whatnot.com/seller-api/rest/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WHATNOT_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "whatnot_get_current_user",
+      "description": "The seller behind the API token: user id, username and display name. Use it to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      }
+    },
+    {
+      "name": "whatnot_list_orders",
+      "description": "List orders sold by the seller, newest first by default: id, status (pending, pending_fulfillment, completed, cancelled, failed), transaction_type (buy_it_now, auction, giveaway, other), show_id, buyer (needs the read:customers scope), amounts (subtotal, shipping, tax, total, discount as amount and currency), created_at, updated_at, cancelled_at, url. Accepted offers only. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_get_order",
+      "description": "One order by id with status, buyer, amounts and timestamps. Fulfil orders whose status is pending_fulfillment; pending orders are not ready yet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Order id (digits)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      }
+    },
+    {
+      "name": "whatnot_list_order_items",
+      "description": "Items of one order: item id, product, variant, quantity, price, and the shipment each item belongs to. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Order id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/items",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_get_order_item",
+      "description": "One item of an order: product, variant, quantity, price and shipment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Order id."
+          },
+          "item_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Order item id."
+          }
+        },
+        "required": [
+          "order_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/items/{item_id}"
+      }
+    },
+    {
+      "name": "whatnot_cancel_order",
+      "description": "Cancel an order that has not shipped and return the updated order. The buyer is refunded and the cancellation counts against the seller. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Order id."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the order is cancelled.",
+            "enum": [
+              "item_damaged",
+              "item_sold",
+              "item_missing",
+              "break_did_not_fill",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "order_id",
+          "reason"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/cancel",
+        "bodyMapping": {
+          "reason": "$reason"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "whatnot_list_products",
+      "description": "List the seller's products, newest first by default: id, title, description, external_id, category, attributes, options, media, dimension_profile and variants. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_get_product",
+      "description": "One product with its category, attributes, options, images, dimension profile and variants (id, sku, price, inventory).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id (digits)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}"
+      }
+    },
+    {
+      "name": "whatnot_create_product",
+      "description": "Create a product in the seller's catalog. Whatnot creates one variant per combination of option values (one variant without options). Variants start without price and inventory: then call whatnot_update_product_variants for prices, whatnot_set_inventory for stock and whatnot_update_product_merchandising to put it on sale.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Product title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Product description."
+          },
+          "category_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Leaf category id from Whatnot's public product taxonomy (github.com/Whatnot-Inc/product-taxonomy)."
+          },
+          "dimension_profile": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9]{1,19}$",
+                "description": "Existing dimension profile id (from whatnot_list_dimension_profiles)."
+              },
+              "name": {
+                "type": "string",
+                "description": "Name prefix when a new profile is created from weight and dimensions."
+              },
+              "weight": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "number",
+                    "description": "Weight per item."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "ounce",
+                      "pound",
+                      "gram",
+                      "kilogram"
+                    ],
+                    "description": "Weight unit."
+                  }
+                },
+                "required": [
+                  "value",
+                  "unit"
+                ],
+                "description": "Per-item weight: value and unit."
+              },
+              "dimensions": {
+                "type": "object",
+                "properties": {
+                  "length": {
+                    "type": "number",
+                    "description": "Length."
+                  },
+                  "width": {
+                    "type": "number",
+                    "description": "Width."
+                  },
+                  "height": {
+                    "type": "number",
+                    "description": "Height."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "inch",
+                      "feet",
+                      "centimeter",
+                      "meter"
+                    ],
+                    "description": "Dimension unit."
+                  }
+                },
+                "required": [
+                  "length",
+                  "width",
+                  "height",
+                  "unit"
+                ],
+                "description": "Package size: length, width, height and unit."
+              }
+            },
+            "description": "Reference an existing profile by id, or give weight and dimensions to create one."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own product id, up to 150 characters.",
+            "maxLength": 150
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$",
+                  "description": "Attribute id of the category."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value for this product."
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ]
+            },
+            "description": "Category attribute values: list of objects with id and value."
+          },
+          "options": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Option name, e.g. Size."
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Option values, e.g. S, M, L."
+                }
+              },
+              "required": [
+                "name",
+                "values"
+              ]
+            },
+            "description": "Up to 3 option axes, each with name and values (e.g. Size: S, M, L)."
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Public https URL of the image; Whatnot downloads it."
+                },
+                "alt": {
+                  "type": "string",
+                  "description": "Optional alt text."
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            "description": "Images: list of objects with url (and optional alt)."
+          }
+        },
+        "required": [
+          "title",
+          "category_id",
+          "dimension_profile"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "category": {
+            "id": "$category_id"
+          },
+          "dimension_profile": "$dimension_profile",
+          "external_id": "$external_id",
+          "attributes": "$attributes",
+          "options": "$options",
+          "media": "$media"
+        }
+      }
+    },
+    {
+      "name": "whatnot_update_product",
+      "description": "Partly update a product: title, description, external id, category, attributes, options, images or dimension profile. Fields left out stay unchanged; a given list replaces the old one. Sale format and shows are changed with whatnot_update_product_merchandising.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Your own product id, up to 150 characters.",
+            "maxLength": 150
+          },
+          "category": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9]{1,19}$",
+                "description": "Leaf category id."
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "description": "New category as an object with id, e.g. id 1234."
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,19}$",
+                  "description": "Attribute id of the category."
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Value for this product."
+                }
+              },
+              "required": [
+                "id",
+                "value"
+              ]
+            },
+            "description": "Replaces the attribute values."
+          },
+          "options": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Option name, e.g. Size."
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Option values, e.g. S, M, L."
+                }
+              },
+              "required": [
+                "name",
+                "values"
+              ]
+            },
+            "description": "Replaces the option axes."
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Public https URL of the image; Whatnot downloads it."
+                },
+                "alt": {
+                  "type": "string",
+                  "description": "Optional alt text."
+                }
+              },
+              "required": [
+                "url"
+              ]
+            },
+            "description": "Replaces the images."
+          },
+          "dimension_profile": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9]{1,19}$",
+                "description": "Existing dimension profile id (from whatnot_list_dimension_profiles)."
+              },
+              "name": {
+                "type": "string",
+                "description": "Name prefix when a new profile is created from weight and dimensions."
+              },
+              "weight": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "number",
+                    "description": "Weight per item."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "ounce",
+                      "pound",
+                      "gram",
+                      "kilogram"
+                    ],
+                    "description": "Weight unit."
+                  }
+                },
+                "required": [
+                  "value",
+                  "unit"
+                ],
+                "description": "Per-item weight: value and unit."
+              },
+              "dimensions": {
+                "type": "object",
+                "properties": {
+                  "length": {
+                    "type": "number",
+                    "description": "Length."
+                  },
+                  "width": {
+                    "type": "number",
+                    "description": "Width."
+                  },
+                  "height": {
+                    "type": "number",
+                    "description": "Height."
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "inch",
+                      "feet",
+                      "centimeter",
+                      "meter"
+                    ],
+                    "description": "Dimension unit."
+                  }
+                },
+                "required": [
+                  "length",
+                  "width",
+                  "height",
+                  "unit"
+                ],
+                "description": "Package size: length, width, height and unit."
+              }
+            },
+            "description": "Reference an existing profile by id, or give weight and dimensions to create one."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{product_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "external_id": "$external_id",
+          "category": "$category",
+          "attributes": "$attributes",
+          "options": "$options",
+          "media": "$media",
+          "dimension_profile": "$dimension_profile"
+        }
+      }
+    },
+    {
+      "name": "whatnot_delete_product",
+      "description": "Delete a product from the seller's catalog. It cannot be undone. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/products/{product_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "whatnot_list_product_variants",
+      "description": "Variants of a product: variant id (UUID), sku, external_id, selected option values, price, inventory and image. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/variants",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_get_product_variant",
+      "description": "One variant of a product by its UUID: sku, options, price, inventory and image.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id."
+          },
+          "variant_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f-]{32,36}$",
+            "description": "Variant id (UUID)."
+          }
+        },
+        "required": [
+          "product_id",
+          "variant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/variants/{variant_id}"
+      }
+    },
+    {
+      "name": "whatnot_update_product_variants",
+      "description": "Update up to 10 variants of one product: price (under the product's sale format), sku, external id, country of origin or image. Fields left out stay unchanged. Without allow_partial_updates one invalid variant rejects the whole batch with 422.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id."
+          },
+          "variants": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Fa-f-]{32,36}$",
+                  "description": "Variant id (UUID)."
+                },
+                "price": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "pattern": "^[0-9]+(\\.[0-9]{1,2})?$",
+                      "description": "Amount in whole currency units as text, e.g. 42.00."
+                    },
+                    "currency": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z]{3}$",
+                      "description": "ISO 4217 code of the seller's market, e.g. USD, GBP, EUR, CAD, AUD."
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ],
+                  "description": "New price: object with amount (text, e.g. 19.99) and currency."
+                },
+                "sku": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Seller SKU; null clears it."
+                },
+                "external_id": {
+                  "type": "string",
+                  "maxLength": 255,
+                  "description": "Your own variant id."
+                },
+                "country_of_origin": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z]{2}$",
+                  "description": "ISO 3166-1 alpha-2 country of origin."
+                },
+                "media": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "description": "Public https URL of the image; Whatnot downloads it."
+                      },
+                      "alt": {
+                        "type": "string",
+                        "description": "Optional alt text."
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ]
+                  },
+                  "description": "One image that replaces the variant image."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Variant changes, each keyed by id, e.g. id plus price with amount 19.99 and currency USD."
+          },
+          "allow_partial_updates": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: apply the valid variants and return the failures in errors."
+          }
+        },
+        "required": [
+          "product_id",
+          "variants"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/products/{product_id}/variants",
+        "bodyMapping": {
+          "variants": "$variants",
+          "allow_partial_updates": "$allow_partial_updates"
+        }
+      }
+    },
+    {
+      "name": "whatnot_set_inventory",
+      "description": "Set the available quantity of up to 10 variants to an absolute value. Each item needs a unique idempotency_key (a new UUID per change); a retry with the same key applies once and reports already_applied. Returns a result per item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": {
+                "variant_id": {
+                  "type": "string",
+                  "description": "Variant id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647,
+                  "description": "New available quantity."
+                },
+                "idempotency_key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Unique key for this write, e.g. a new UUID."
+                }
+              },
+              "required": [
+                "variant_id",
+                "quantity",
+                "idempotency_key"
+              ]
+            },
+            "description": "Variants to set: variant_id, quantity and idempotency_key each."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory/set",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "whatnot_adjust_inventory",
+      "description": "Change the available quantity of up to 10 variants by a delta (negative to reduce; a result below zero becomes 0). Each item needs a unique idempotency_key. Returns a result per item.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": {
+                "variant_id": {
+                  "type": "string",
+                  "description": "Variant id."
+                },
+                "delta": {
+                  "type": "integer",
+                  "minimum": -2147483647,
+                  "maximum": 2147483647,
+                  "description": "Change to apply, e.g. -1 or 5."
+                },
+                "idempotency_key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Unique key for this write, e.g. a new UUID."
+                }
+              },
+              "required": [
+                "variant_id",
+                "delta",
+                "idempotency_key"
+              ]
+            },
+            "description": "Variants to adjust: variant_id, delta and idempotency_key each."
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory/adjust",
+        "bodyMapping": {
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "whatnot_get_product_merchandising",
+      "description": "How and where a product is sold: transaction_type (buy_it_now or auction), reserve_for_live and whether it is assigned to upcoming or live shows. A buy-it-now product not reserved for live is listed in the seller's profile shop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchandising/products/{product_id}"
+      }
+    },
+    {
+      "name": "whatnot_update_product_merchandising",
+      "description": "Set a product's sale format, reserve it for live shows, or add it to or remove it from shows, in one call; fields left out stay unchanged. The first such call publishes a draft product, which needs every variant priced, inventory, a description, an image and the required category attributes. Auctions are always reserved for live.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id."
+          },
+          "transaction_type": {
+            "type": "string",
+            "description": "Sale format.",
+            "enum": [
+              "buy_it_now",
+              "auction"
+            ]
+          },
+          "reserve_for_live": {
+            "type": "boolean",
+            "description": "true holds the product for live shows only; false lists a buy-it-now product in the profile shop."
+          },
+          "shows": {
+            "type": "object",
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "enum": [
+                  "ADD",
+                  "REMOVE",
+                  "REPLACE"
+                ],
+                "description": "ADD, REMOVE, or REPLACE the product's shows with show_ids (an empty list removes it from every show)."
+              },
+              "show_ids": {
+                "type": "array",
+                "maxItems": 25,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Fa-f-]{32,36}$"
+                },
+                "description": "Show ids (UUID) from whatnot_list_shows."
+              }
+            },
+            "required": [
+              "strategy",
+              "show_ids"
+            ],
+            "description": "Change to the product's shows: strategy and show_ids."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/merchandising/products/{product_id}",
+        "bodyMapping": {
+          "transaction_type": "$transaction_type",
+          "reserve_for_live": "$reserve_for_live",
+          "shows": "$shows"
+        }
+      }
+    },
+    {
+      "name": "whatnot_list_product_shows",
+      "description": "Upcoming or live shows a product is assigned to, by scheduled start (latest first by default). Ended and cancelled shows are left out. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Product id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/merchandising/products/{product_id}/shows",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_list_shipments",
+      "description": "List the seller's shipments, newest first by default: id, status (created, label_generated, dropped_off, in_transit, delivered, cancelled and others), tracking (carrier, tracking code), label documents, insurance, required actions, address details and timestamps. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_get_shipment",
+      "description": "One shipment: status, tracking, documents (label), required actions and the buyer address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Shipment id."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}"
+      }
+    },
+    {
+      "name": "whatnot_list_shipment_items",
+      "description": "Active items of a shipment: order item ids, products, quantities and dimension profile. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Shipment id."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}/items",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_add_tracking_code",
+      "description": "Ship order items under a tracking code from the seller's own label. The items must go to the same buyer and address and must not have been dropped off or shipped yet; they move onto one shipment (usually a new one), so read each item's shipment afterwards. The seller must be allowed to use own labels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_item_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,19}$"
+            },
+            "description": "Order item ids (digits as text) to ship together."
+          },
+          "tracking_code": {
+            "type": "string",
+            "description": "Carrier tracking code.",
+            "minLength": 1
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier, e.g. usps, ups, fedex, dhl, royal_mail, canada_post."
+          }
+        },
+        "required": [
+          "order_item_ids",
+          "tracking_code",
+          "carrier"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/add_tracking_code",
+        "bodyMapping": {
+          "order_item_ids": "$order_item_ids",
+          "tracking_code": "$tracking_code",
+          "carrier": "$carrier"
+        }
+      }
+    },
+    {
+      "name": "whatnot_generate_shipping_label",
+      "description": "Queue a Whatnot shipping label for a shipment with its saved settings. 200 means queued, not created; the label arrives through Whatnot's label-created webhook. Labels can carry a cost for the seller. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,19}$",
+            "description": "Shipment id."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments/{shipment_id}/generate_label",
+        "bodyMapping": {}
+      },
+      "enabled": false
+    },
+    {
+      "name": "whatnot_list_dimension_profiles",
+      "description": "The seller's active dimension profiles (package weight and size presets): id, name, weight, dimensions. Use an id when creating a product. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/dimension_profiles",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_list_shows",
+      "description": "List the seller's shows with one status (scheduled by default), by scheduled start time, latest first by default: id (UUID), title, status, visibility, scheduled start and URL. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Show status.",
+            "enum": [
+              "scheduled",
+              "live",
+              "stopped",
+              "ended",
+              "cancelled"
+            ],
+            "default": "scheduled"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shows",
+        "queryParams": {
+          "status": "$status",
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_get_show",
+      "description": "One show by id (UUID): title, status, visibility, scheduled start and URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "show_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f-]{32,36}$",
+            "description": "Show id (UUID)."
+          }
+        },
+        "required": [
+          "show_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shows/{show_id}"
+      }
+    },
+    {
+      "name": "whatnot_get_show_analytics",
+      "description": "Analytics of one show (sales, viewers and other metrics). A show without final numbers answers with null metrics and calculation_status: NOT_ENDED, PENDING or WILL_NOT_BE_CALCULATED (cancelled, private or rehearsal). Needs the read:reports scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "show_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f-]{32,36}$",
+            "description": "Show id (UUID)."
+          }
+        },
+        "required": [
+          "show_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/analytics/shows/{show_id}"
+      }
+    },
+    {
+      "name": "whatnot_generate_report",
+      "description": "Request a report run: seller_financial_report (transactions between start_date and end_date, default one week), analytics_overview_report (one row per day between start_at and end_at) or analytics_livestreams_report (per show). Asynchronous: the run starts pending; poll whatnot_get_report until completed and use its download link. An identical recent request returns the existing run. Needs write:reports.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_parameters": {
+            "type": "object",
+            "properties": {
+              "report_type": {
+                "type": "string",
+                "enum": [
+                  "seller_financial_report",
+                  "analytics_overview_report",
+                  "analytics_livestreams_report"
+                ],
+                "description": "Kind of report."
+              },
+              "start_date": {
+                "type": "string",
+                "description": "Financial report: start, UTC with milliseconds, e.g. 2026-11-01T00:00:00.000Z."
+              },
+              "end_date": {
+                "type": "string",
+                "description": "Financial report: end (exclusive), same format."
+              },
+              "start_at": {
+                "type": "string",
+                "description": "Analytics overview: window start, same format."
+              },
+              "end_at": {
+                "type": "string",
+                "description": "Analytics overview: window end, same format."
+              },
+              "all_matching": {
+                "type": "object",
+                "description": "Livestreams report: filter over all shows, e.g. start_time with start; an empty object covers all shows."
+              },
+              "specific_shows": {
+                "type": "object",
+                "description": "Livestreams report: exactly these shows (show_ids)."
+              }
+            },
+            "required": [
+              "report_type"
+            ],
+            "description": "Report type and its parameters, e.g. report_type seller_financial_report with start_date and end_date."
+          }
+        },
+        "required": [
+          "report_parameters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reports",
+        "bodyMapping": {
+          "report_parameters": "$report_parameters"
+        }
+      }
+    },
+    {
+      "name": "whatnot_list_reports",
+      "description": "The seller's report runs, most recently requested first: id, report_type, status (pending, in_progress, completed, failed, cancelled), parameters and, when completed, the file link. Cursor paging, up to 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Only runs with this status.",
+            "enum": [
+              "pending",
+              "in_progress",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10,
+            "description": "Results per page, 1 to 50 (default 10)."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "next_cursor from the previous page; leave out for the first page. next_cursor is null on the last page."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) newest first, false oldest first."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports",
+        "queryParams": {
+          "status": "$status",
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "reverse": "$reverse"
+        }
+      }
+    },
+    {
+      "name": "whatnot_get_report",
+      "description": "One report run by id (UUID): status and, when completed, the link to download the file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f-]{32,36}$",
+            "description": "Report run id (UUID)."
+          }
+        },
+        "required": [
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/{report_id}"
+      }
+    }
+  ]
+}
