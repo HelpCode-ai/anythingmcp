@@ -1081,6 +1081,8 @@ export class ConnectorsService {
       errorWhen: connectorErrorWhen(connector.config),
       largeIntegers: connectorLargeIntegers(connector.config),
       logSecrets: connectorSecretValues(connector),
+      // Lets the test run take an uploaded file (amcp-file:) of this workspace.
+      organizationId: connector.organizationId,
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL
         ? { proxyUrl: process.env.CONNECTOR_PROXY_URL }
         : {}),

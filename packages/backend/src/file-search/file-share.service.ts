@@ -23,7 +23,7 @@ const MB = 1024 * 1024;
 const DOWNLOAD_URL_TTL_S = 60;
 
 /** Program files and scripts are never served from AnythingMCP Cloud. */
-const BLOCKED_EXT = new Set([
+export const BLOCKED_EXT = new Set([
   '.exe', '.msi', '.bat', '.cmd', '.com', '.scr', '.pif', '.cpl', '.js', '.jse', '.vbs', '.vbe', '.wsf', '.wsh', '.ps1', '.psm1',
   '.jar', '.apk', '.app', '.dmg', '.pkg', '.deb', '.rpm', '.sh', '.lnk', '.hta', '.reg', '.iso', '.img', '.dll', '.sys',
 ]);

@@ -705,6 +705,9 @@ export class DynamicMcpTools {
         largeIntegers: connectorLargeIntegers(tool.connectorConfig.config),
         // Masked in the engines' log lines (a bot token in the URL path).
         logSecrets: secretValues,
+        // The connector's own workspace: an uploaded file (amcp-file:) only
+        // resolves for tools of the workspace that uploaded it.
+        organizationId: tool.organizationId,
         ...(proxyUrl ? { proxyUrl } : {}),
         // Arguments an MCP bridge sends with every call (mcpFixedArguments).
         ...(mcpFixedArguments ? { fixedArguments: mcpFixedArguments } : {}),
