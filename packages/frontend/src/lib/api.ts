@@ -2941,6 +2941,36 @@ export const fileSearch = {
     request(`/api/file-search/connectors/${id}/access-rules`, { method: 'PUT', body: { rules }, token }),
 };
 
+/** One-time upload links an AI client hands to the user (file_upload_link). The token is the credential. */
+export const fileUploads = {
+  status: (uploadToken: string) =>
+    request<{ filename: string; max_bytes: number; state: 'waiting' | 'uploading' | 'uploaded' | 'expired'; link_expires_at: string; bytes: number | null }>(
+      `/api/uploads/u/${encodeURIComponent(uploadToken)}`,
+    ),
+  /** PUT with progress; resolves with the stored size. */
+  upload: (uploadToken: string, file: File, onProgress?: (pct: number) => void) =>
+    new Promise<{ bytes: number }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', `${API_BASE}/api/uploads/u/${encodeURIComponent(uploadToken)}`);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable && onProgress) onProgress(Math.round((100 * ev.loaded) / ev.total));
+      };
+      xhr.onload = () => {
+        let body: any = null;
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          /* not JSON */
+        }
+        if (xhr.status >= 200 && xhr.status < 300) resolve({ bytes: body?.bytes ?? file.size });
+        else reject(new ApiError(body?.message || `Upload failed (${xhr.status})`, xhr.status, body));
+      };
+      xhr.onerror = () => reject(new ApiError('network', 0, null));
+      xhr.send(file);
+    }),
+};
+
 export const fileShare = {
   list: (token: string, opts: { page?: number; pageSize?: number; q?: string; access?: 'public' | 'internal'; mine?: boolean } = {}) => {
     const qs = new URLSearchParams();

@@ -105,6 +105,11 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
     return (process.env.FILES_DOWNLOAD_BASE_URL || process.env.SERVER_URL || 'http://localhost:4000').replace(/\/+$/, '');
   }
 
+  /** Where the browser upload page lives (the dashboard). */
+  private frontendUrl(): string {
+    return (process.env.FRONTEND_URL || process.env.SERVER_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  }
+
   private signingKey(): Buffer {
     const secret = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET;
     if (!secret) throw new Error('ENCRYPTION_KEY is required for file uploads');
@@ -198,21 +203,53 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
       },
     });
     const uploadUrl = `${this.baseUrl()}/api/uploads/u/${token}`;
+    const browserUrl = `${this.frontendUrl()}/upload/${token}`;
     const host = new URL(this.baseUrl()).host;
     return {
+      filename,
+      file_ref: `${FILE_REF_PREFIX}${id}`,
       upload_url: uploadUrl,
+      browser_upload_url: browserUrl,
       method: 'PUT',
       command: `curl -sS -H 'Content-Type: application/octet-stream' -T '<path to ${filename}>' '${uploadUrl}'`,
-      file_ref: `${FILE_REF_PREFIX}${id}`,
       max_bytes: quota.maxFileBytes,
       link_expires_at: uploadBy.toISOString(),
       file_kept_hours: quota.ttlHours,
       next:
-        'Run the command in your code sandbox. Its answer repeats file_ref; pass file_ref as the file parameter of the connector tool ' +
-        '(for example file_url or image_url). For a tool that wants a public link (an image src or URL field), call file_public_url with file_ref.',
+        `Two ways to get the file here, then pass file_ref as the connector tool's file parameter (for example file_url or image_url): ` +
+        `(1) if your code sandbox can reach ${host}, run the command; its answer repeats file_ref. ` +
+        `(2) Otherwise the user uploads it: an upload box is shown with this result in apps that display it (Claude), and browser_upload_url opens the same upload page in a browser. ` +
+        `Tell the user to save the file you created and pick it there; the box tells you when it is done, or the user says so. ` +
+        `For a tool that wants a public link (an image src or URL field), call file_public_url with file_ref after the upload.`,
       if_blocked:
-        `If curl fails with 403, "blocked-by-allowlist" or a network error, the sandbox cannot reach ${host}. ` +
-        `Tell the user to allow ${host} in their AI app's code-execution network settings (Claude: Settings → Capabilities) and to start a new chat; or ask them for a public link to the file instead.`,
+        `curl answering 403, "CONNECT tunnel failed" or "blocked-by-allowlist" means the sandbox cannot reach ${host}. ` +
+        `On Claude Free, Pro and Max that cannot be changed (only Claude Team and Enterprise owners can allow a domain), so do not tell the user to change settings: use way (2).`,
+    };
+  }
+
+  /**
+   * GET /api/uploads/u/:token: what the upload box and the browser page show.
+   * The token is the credential; nothing about the workspace is returned.
+   */
+  async linkStatus(token: string) {
+    if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) throw new NotFoundException('This upload link does not exist.');
+    const row = await this.prisma.fileUpload.findUnique({ where: { tokenHash: sha256(token) } });
+    if (!row) throw new NotFoundException('This upload link does not exist.');
+    const now = new Date();
+    const state =
+      row.state === 'ready' && row.expiresAt && row.expiresAt > now
+        ? 'uploaded'
+        : row.state === 'pending' && row.uploadBy > now
+          ? 'waiting'
+          : row.state === 'uploading'
+            ? 'uploading'
+            : 'expired';
+    return {
+      filename: row.filename,
+      max_bytes: row.maxBytes,
+      state,
+      link_expires_at: row.uploadBy.toISOString(),
+      bytes: state === 'uploaded' ? row.bytes : null,
     };
   }
 

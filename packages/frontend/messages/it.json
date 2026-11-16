@@ -4098,5 +4098,25 @@
       "stopped": "Fermato.",
       "failed": "Impossibile salvare la tua risposta"
     }
+  },
+  "fileUpload": {
+    "page": {
+      "loading": "Caricamento…",
+      "unavailable": "Questo link di upload non è disponibile",
+      "notFound": "Questo link di upload non esiste.",
+      "title": "Carica un file per la tua AI",
+      "intro": "Il tuo assistente AI ha chiesto questo file. Salva il file dalla chat e sceglilo qui.",
+      "limit": "Fino a {size} · il link vale fino alle {time}",
+      "choose": "Scegli file",
+      "drop": "oppure trascinalo qui",
+      "uploading": "Caricamento di {name}…",
+      "done": "Caricato. Torna nella chat e di' all'AI che il file è caricato.",
+      "already": "Questo file è già caricato. Torna nella chat.",
+      "expired": "Questo link è scaduto o è già stato usato. Chiedine uno nuovo all'AI.",
+      "tooBig": "Questo file pesa {size}; il limite è {limit}.",
+      "failed": "Il caricamento non è riuscito: {error}",
+      "network": "Il caricamento non è riuscito. Controlla la connessione e riprova.",
+      "note": "Il file viene conservato per qualche ora, così l'AI può inoltrarlo, poi viene cancellato."
+    }
   }
 }
