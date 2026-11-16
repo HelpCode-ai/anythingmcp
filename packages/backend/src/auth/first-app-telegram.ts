@@ -11,8 +11,11 @@ import qrcode from 'qrcode-generator';
  * Once the bot is connected the panel says that one step is left, Continue,
  * and scrolls that button into view; it never follows it for the user.
  *
- * Two links, each an ordinary `<a target="_blank">` on its own button:
- * - "Create your Telegram bot" opens Telegram on the creation screen;
+ * Its links are ordinary `<a target="_blank">`s, each on its own button:
+ * - "Create your Telegram bot" opens Telegram on the creation screen. On a
+ *   computer that is the Telegram app, if there is one; beside the QR code
+ *   for the phone, "open Telegram Web in this browser" does the same in
+ *   Telegram's web client, for someone with neither app nor phone at hand;
  * - "Changed the username? Link your bot" opens the manager bot's chat with
  *   the setup's code, for a bot whose username names no setup. It appears
  *   when the server saw such a bot, or when no bot arrived in time.
@@ -38,7 +41,7 @@ export function telegramPanelHtml(opts: { withQr: boolean }): string {
     ? `
         <figure class="tg-qr" id="tg-qr" hidden>
           <img id="tg-qr-img" alt="QR code that opens Telegram to create your bot" width="104" height="104">
-          <figcaption>Scan with your phone</figcaption>
+          <figcaption>Scan with your phone<a class="tg-web" id="tg-web" href="https://web.telegram.org/a/" target="_blank" rel="noopener noreferrer" hidden>or open Telegram Web in this browser</a></figcaption>
         </figure>`
     : '';
   // Beside the button, not under it: the panel stays short.
@@ -51,6 +54,10 @@ export function telegramPanelHtml(opts: { withQr: boolean }): string {
   const linkHint = opts.withQr
     ? 'Telegram opens our setup bot: press Start there, then come back here. Bot made on your phone? Scan the code.'
     : 'Telegram opens our setup bot: press Start there, then come back here.';
+  const linkWeb = opts.withQr
+    ? `
+            <a class="tg-web" id="tg-link-web" href="https://web.telegram.org/a/" target="_blank" rel="noopener noreferrer" hidden>Or open it in Telegram Web</a>`
+    : '';
   return `
       <div class="tg" id="tg-setup" hidden>
         <a class="tg-create" id="tg-create" href="https://t.me/" target="_blank" rel="noopener noreferrer">Create your Telegram bot</a>
@@ -60,7 +67,7 @@ export function telegramPanelHtml(opts: { withQr: boolean }): string {
         <div class="tg-link" id="tg-link" hidden>${linkQr}
           <div class="tg-link-main">
             <a class="tg-link-btn" id="tg-link-btn" href="https://t.me/" target="_blank" rel="noopener noreferrer">Changed the username? Link your bot</a>
-            <p class="tg-hint" id="tg-hint">${linkHint}</p>
+            <p class="tg-hint" id="tg-hint">${linkHint}</p>${linkWeb}
           </div>
         </div>
         <details class="tg-paste" id="tg-paste">
@@ -108,6 +115,10 @@ export const TELEGRAM_PANEL_STYLES = `
   .tg-qr { display: flex; align-items: center; gap: 12px; margin: 12px 0 0; }
   .tg-qr img { width: 104px; height: 104px; flex: none; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
   .tg-qr figcaption { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.45; }
+  /* Telegram in the browser: the way in without the app or the phone. */
+  a.tg-web { display: block; width: fit-content; margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--brand); text-decoration: underline; text-underline-offset: 2px; border-radius: 4px; }
+  a.tg-web:hover { color: var(--brand-strong); }
+  a.tg-web:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
   .tg-status { font-size: 13.5px; font-weight: 500; color: var(--text); margin: 12px 0 0; line-height: 1.45; overflow-wrap: anywhere; }
   .tg-status:empty { margin: 0; }
   /* Once connected, the result comes first and what is left to do follows. */
@@ -172,6 +183,8 @@ export const TELEGRAM_PANEL_SCRIPT = `
       var qrImage = document.getElementById('tg-qr-img');
       var linkQr = document.getElementById('tg-link-qr');
       var linkQrImage = document.getElementById('tg-link-qr-img');
+      var web = document.getElementById('tg-web');
+      var linkWeb = document.getElementById('tg-link-web');
       if (!panel || !picker || !request || !quick || !cont || !create || !help || !status || !next || !link || !linkButton || !paste ||
           !form || !field || !save || !formStatus || !window.fetch || !window.JSON) return;
       var clientName = cont.getAttribute('data-client') || 'the chat';
@@ -188,6 +201,7 @@ export const TELEGRAM_PANEL_SCRIPT = `
       var linkAt = 0;
       var connectedAt = 0;
       var opened = false;
+      var openedVia = 'app';
       var openedSent = false;
       var offered = false;
       var offeredSent = false;
@@ -301,7 +315,7 @@ export const TELEGRAM_PANEL_SCRIPT = `
         if (Date.now() - startedAt > GIVE_UP_MS) return stop();
         busy = true;
         var body = {};
-        if (opened && !openedSent) body.opened = true;
+        if (opened && !openedSent) { body.opened = true; body.via = openedVia; }
         if (offered && !offeredSent) body.offered = true;
         post('/auth/first-app/telegram/status', body).then(function (out) {
           busy = false;
@@ -331,6 +345,22 @@ export const TELEGRAM_PANEL_SCRIPT = `
         // Again the link itself opens Telegram; the answer is asked for at once.
         if (!connected) checkNow();
       });
+      // Telegram in the browser (a computer only): the same two links, opened
+      // in Telegram's web client. Again only noted; the link does the opening.
+      if (web) {
+        web.addEventListener('click', function () {
+          if (connected) return;
+          if (!opened) openedVia = 'web';
+          opened = true;
+          linkAt = Date.now() + LINK_AFTER_CLICK_MS;
+          checkNow();
+        });
+      }
+      if (linkWeb) {
+        linkWeb.addEventListener('click', function () {
+          if (!connected) checkNow();
+        });
+      }
       form.addEventListener('submit', function (event) {
         if (event && event.preventDefault) event.preventDefault();
         if (saving || connected) return;
@@ -365,6 +395,10 @@ export const TELEGRAM_PANEL_SCRIPT = `
           linkButton.setAttribute('data-ready', '1');
           claimQr = telegram.claimQr || '';
         }
+        if (linkWeb && telegram.claimWeb) {
+          linkWeb.setAttribute('href', telegram.claimWeb);
+          linkWeb.hidden = false;
+        }
         // No QR code on a touch device, whatever its user agent says (an
         // iPad asking for the desktop site): the button opens the app there.
         try {
@@ -373,6 +407,10 @@ export const TELEGRAM_PANEL_SCRIPT = `
         if (qr && qrImage && telegram.qr && !touch) {
           qrImage.setAttribute('src', telegram.qr);
           qr.hidden = false;
+          if (web && telegram.web) {
+            web.setAttribute('href', telegram.web);
+            web.hidden = false;
+          }
         }
         picker.setAttribute('data-telegram', 'on');
         quick.textContent = 'Telegram added. Create its bot now, or continue and finish it in ' + clientName + '.';
