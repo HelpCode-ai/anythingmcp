@@ -700,6 +700,23 @@ export class McpEndpointController {
             },
           }
         : {}),
+      ...(this.fileUploads?.enabled() && (setupOrg || organizationId)
+        ? {
+            fileUploads: {
+              // The caller's main workspace: a reference resolves only for
+              // connectors of the workspace that uploaded the file.
+              createLink: (filename: string, sizeBytes: number | null) =>
+                this.fileUploads!.createLink({
+                  organizationId: (setupOrg || organizationId) as string,
+                  userId: user.sub,
+                  mcpServerId: user.mcpServerId ?? null,
+                  filename,
+                  sizeBytes,
+                }),
+              publicUrl: (fileRef: string) => this.fileUploads!.publicUrl(fileRef, (setupOrg || organizationId) as string),
+            },
+          }
+        : {}),
       guide: (ids, wholeScope) =>
         this.mcpServersService.getSharedGuide({
           connectorIds: ids,

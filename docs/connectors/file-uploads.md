@@ -25,6 +25,10 @@ example), the AI calls **`file_public_url`** with the reference after the upload
 download link that works for one hour.
 
 The two tools appear on an MCP server only when one of its tools sends a file.
+On the shared endpoint (`/mcp`, used by the AnythingMCP app in the Claude directory and by the
+generic connection URL) they are run through `anythingmcp_run_write_tool` with `tool:
+"file_upload_link"`, and the AI gives the user the upload page (`browser_upload_url`); the upload
+box appears only on a server's own URL (`/mcp/<id>`).
 
 ## Which AI clients can upload from their sandbox
 
