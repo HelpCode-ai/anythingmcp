@@ -3934,19 +3934,19 @@
             "type": "number"
           },
           "latitude": {
-            "description": "Alias for lat — either name works",
+            "description": "Alias for lat; either name works",
             "type": "number"
           },
           "lng": {
-            "description": "Alias for lon — either name works",
+            "description": "Alias for lon; either name works",
             "type": "number"
           },
           "longitude": {
-            "description": "Alias for lon — either name works",
+            "description": "Alias for lon; either name works",
             "type": "number"
           },
           "site": {
-            "description": "DC Hub market slug instead of coordinates, as rank_markets lists it, e.g. \"midland-tx\" (Midland–Odessa), \"dallas\". Resolved to that market's PUBLISHED CENTROID through the DCPI market row; the answer carries resolved_from.",
+            "description": "DC Hub market slug instead of coordinates, as rank_markets lists it, e.g. \"midland-tx\" (Midland-Odessa), \"dallas\". Resolved to that market's PUBLISHED CENTROID through the DCPI market row; the answer carries resolved_from.",
             "type": "string"
           },
           "radius_km": {
