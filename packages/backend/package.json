@@ -53,7 +53,7 @@
     "@sentry/nestjs": "^11.9.0",
     "@sentry/profiling-node": "^11.9.0",
     "@smithy/node-http-handler": "4.14.2",
-    "axios": "^1.20.0",
+    "axios": "^1.21.1",
     "basic-ftp": "6.2.4",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.11.1",
