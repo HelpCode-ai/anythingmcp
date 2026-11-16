@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Pool } from 'pg';
 import { MongoClient } from 'mongodb';
 import { DatabaseEngine } from './database.engine';
@@ -523,6 +524,72 @@ describe('DatabaseEngine', () => {
         'mongodb://reader:sesame@mongo.example.test:27017/shop',
         expect.objectContaining({ serverSelectionTimeoutMS: 10000 }),
       );
+    });
+  });
+
+  /**
+   * A debug line names where a query goes, never who connects or with what.
+   * The PostgreSQL line used to print whatever followed the first `@` of the
+   * connection string, which is the rest of a password that contains one.
+   */
+  describe('log lines carry the host only', () => {
+    let lines: string[];
+
+    beforeEach(() => {
+      lines = [];
+      jest.spyOn(Logger.prototype, 'debug').mockImplementation((message: unknown) => {
+        lines.push(String(message));
+      });
+    });
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it.each([
+      ['a password with an @ in the URL', 'postgres://reader:p@ss@w0rd@db.example.test:5432/sales', undefined],
+      ['credentials in the URL', 'postgres://reader:s3same@db.example.test:5432/sales', undefined],
+      ['credentials from authConfig', 'postgres://db.example.test:5432/sales', { username: 'reader', password: 'p@ss@w0rd' }],
+    ])('PostgreSQL with %s', async (_label, baseUrl, authConfig) => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      await engine.execute(
+        { baseUrl, authType: 'CONNECTION_STRING', authConfig },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT 1' },
+      );
+
+      expect(lines).toEqual(['PostgreSQL query → db.example.test']);
+    });
+
+    it('PostgreSQL behind PgBouncer, on the retry line too', async () => {
+      mockQuery
+        .mockRejectedValueOnce(new Error('unsupported startup parameter: statement_timeout'))
+        .mockResolvedValue({ rows: [] });
+
+      await engine.execute(
+        { baseUrl: 'postgres://reader:p@ss@w0rd@db.example.test:6432/sales', authType: 'CONNECTION_STRING' },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT 1' },
+      );
+
+      expect(lines).toEqual([
+        'PostgreSQL query → db.example.test',
+        'PostgreSQL db.example.test refused statement_timeout; using a client-side timeout',
+      ]);
+    });
+
+    it.each([
+      ['in the URL', 'mssql://sqlreader:s3same@sql.example.test:1433/sales', undefined],
+      ['in authConfig', 'mssql://sql.example.test:1433/sales', { username: 'sqlreader', password: 's3same' }],
+    ])('MSSQL with the login %s: no user name', async (_label, baseUrl, authConfig) => {
+      mockMssqlQuery.mockResolvedValue({ recordset: [], rowsAffected: [0] });
+
+      await engine.execute(
+        { baseUrl, authType: 'CONNECTION_STRING', authConfig },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT 1' },
+      );
+
+      expect(lines).toEqual(['MSSQL auth: SQL Server login', 'MSSQL query → sql.example.test/sales']);
     });
   });
 

@@ -6,6 +6,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  OnApplicationBootstrap,
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -62,8 +63,26 @@ function hasQueryString(url: string): boolean {
   }
 }
 
+/**
+ * What a log line may say about a failed write: the error's code or class,
+ * never its message. A Prisma message can quote the arguments of the call,
+ * and here those include a connection string.
+ */
+function errorKind(err: unknown): string {
+  const { code, name } = (err ?? {}) as { code?: unknown; name?: unknown };
+  if (typeof code === 'string' && code) return code;
+  return typeof name === 'string' && name ? name : 'Error';
+}
+
+/** Connector ids for a log line: the first few, then how many more. */
+function idsForLog(ids: string[], max = 20): string {
+  if (ids.length === 0) return '';
+  const more = ids.length > max ? `, and ${ids.length - max} more` : '';
+  return ` (${ids.slice(0, max).join(', ')}${more})`;
+}
+
 @Injectable()
-export class ConnectorsService {
+export class ConnectorsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ConnectorsService.name);
   private readonly encryptionKey: string;
 
@@ -86,6 +105,15 @@ export class ConnectorsService {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
       this.configService.get<string>('ENCRYPTION_KEY'),
+    );
+  }
+
+  onApplicationBootstrap() {
+    // Not awaited, so a large table never holds up the start. The pass
+    // catches its own errors; the catch here is for anything it did not
+    // foresee, so that nothing it does can stop the boot.
+    void this.repairDatabaseUrlCredentials().catch((err) =>
+      this.logger.error(`Database connection strings not checked: ${errorKind(err)}`),
     );
   }
 
@@ -320,6 +348,101 @@ export class ConnectorsService {
     } catch {
       return {};
     }
+  }
+
+  /**
+   * Move the credentials still written in stored DATABASE connection strings
+   * into the encrypted `auth_config`, as `create` and `update` do for a
+   * connector saved today. Connectors saved before those did it kept
+   * `user:password@` in the plaintext `base_url` until someone opened Edit
+   * and saved; this does it for them at boot.
+   *
+   * - Same rule as a save: `moveUrlCredentials` decides, and what it declines
+   *   (credentials already in authConfig, a string `new URL` cannot parse
+   *   such as ADO.NET or multi-host MongoDB, `{{VAR}}` references, no
+   *   password) stays exactly as stored and is counted as left as is. Such a
+   *   password is still masked on read (`toPublicConnector`).
+   * - The credential does not change, only where it is stored, so the token
+   *   caches and the auth status that `update` resets are not touched.
+   * - Instance-level maintenance, like `reconcileEnvVarsAtRest`: one query
+   *   over every workspace's connectors, outside `tenantTx`. Each row is then
+   *   written by id, and only if its URL and authConfig are still what was
+   *   read, so a save in between, or a second instance running the same
+   *   pass, wins. A second run finds nothing to move.
+   * - An authConfig that cannot be decrypted is never overwritten.
+   * - Never throws. Logs connector ids and counts only: no connection
+   *   string, user name, password or error message.
+   */
+  async repairDatabaseUrlCredentials(): Promise<{
+    moved: string[];
+    leftAsIs: string[];
+    failed: string[];
+  }> {
+    const moved: string[] = [];
+    const leftAsIs: string[] = [];
+    const failed: string[] = [];
+    let rows: Array<{ id: string; baseUrl: string; authConfig: string | null }>;
+    try {
+      // Userinfo needs an `@`: the rows without one, nearly all of them, are
+      // filtered out by the database.
+      rows = await this.prisma.connector.findMany({
+        where: { type: 'DATABASE', baseUrl: { contains: '@' } },
+        select: { id: true, baseUrl: true, authConfig: true },
+        orderBy: { id: 'asc' },
+      });
+    } catch (err) {
+      this.logger.error(`Database connection strings not checked: ${errorKind(err)}`);
+      return { moved, leftAsIs, failed };
+    }
+
+    for (const row of rows) {
+      let authConfig: Record<string, unknown>;
+      try {
+        authConfig = row.authConfig
+          ? (JSON.parse(decrypt(row.authConfig, this.encryptionKey)) as Record<string, unknown>)
+          : {};
+        if (!authConfig || typeof authConfig !== 'object' || Array.isArray(authConfig)) {
+          throw new Error('not an object');
+        }
+      } catch {
+        failed.push(row.id);
+        this.logger.warn(
+          `Connector ${row.id}: the stored auth config could not be read (wrong ENCRYPTION_KEY?), its connection string is left as is`,
+        );
+        continue;
+      }
+      try {
+        const next = moveUrlCredentials(row.baseUrl, authConfig);
+        if (!next) {
+          leftAsIs.push(row.id);
+          continue;
+        }
+        const { count } = await this.prisma.connector.updateMany({
+          where: { id: row.id, baseUrl: row.baseUrl, authConfig: row.authConfig },
+          data: {
+            baseUrl: normalizeConnectorBaseUrl(next.baseUrl, 'DATABASE'),
+            // Stored as `create` and `update` store it: the JSON, encrypted.
+            authConfig: encrypt(JSON.stringify(next.authConfig), this.encryptionKey),
+          },
+        });
+        // No row: it was saved, or repaired by another instance, in between.
+        (count > 0 ? moved : leftAsIs).push(row.id);
+      } catch (err) {
+        failed.push(row.id);
+        this.logger.warn(
+          `Connector ${row.id}: moving the connection string credentials failed (${errorKind(err)}), the connector is left as is`,
+        );
+      }
+    }
+
+    const summary =
+      `Database connection strings: credentials of ${moved.length} connector${moved.length === 1 ? '' : 's'} ` +
+      `moved into the encrypted auth config${idsForLog(moved)}; ` +
+      `${leftAsIs.length} left as is${idsForLog(leftAsIs)}; ` +
+      `${failed.length} failed${idsForLog(failed)}`;
+    if (failed.length > 0) this.logger.warn(summary);
+    else this.logger.log(summary);
+    return { moved, leftAsIs, failed };
   }
 
   /**
@@ -601,8 +724,10 @@ export class ConnectorsService {
           );
           break;
         case 'DATABASE':
+          // The interpolated URL, as on a tool call: a connection string
+          // written with {{VAR}} tests the way it runs.
           await this.databaseEngine.testConnection({
-            baseUrl: connector.baseUrl,
+            baseUrl,
             authType: connector.authType,
             authConfig,
           });

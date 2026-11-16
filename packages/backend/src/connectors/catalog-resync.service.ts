@@ -5,6 +5,8 @@ import {
   hashContent,
   hashInstructions,
 } from '../adapters/catalog-fingerprint';
+import { urlForLog } from '../common/log-safe-url.util';
+import { maskUrlPassword } from './database-url-credentials.util';
 
 /**
  * Re-sync of catalog-installed connectors with the current catalog.
@@ -538,13 +540,41 @@ export class CatalogResyncService {
         `${result.updatedCount} updated, ${result.createdCount} added, ` +
         `${result.deprecatedCount} deprecated` +
         (result.baseUrlApplied
-          ? `, baseUrl → ${diff.baseUrl!.to} (was ${diff.baseUrl!.from})`
+          ? `, baseUrl → ${baseUrlForLog(diff.baseUrl!.to)} (was ${baseUrlForLog(diff.baseUrl!.from)})`
           : '') +
         ` → ${adapter.version}`,
     );
 
     return { applied: true, diff, snapshot: result.snapshot };
   }
+}
+
+/**
+ * A base URL as a log line may carry it: scheme, host and path. The
+ * connector's own URL can hold a password (a DATABASE connection string saved
+ * before credentials moved to authConfig), so it is never logged as stored.
+ * The mask comes first for the strings `new URL` cannot read, which
+ * `urlForLog` would otherwise keep whole.
+ */
+function baseUrlForLog(url: string): string {
+  return urlForLog(maskUrlPassword(url));
+}
+
+/**
+ * The diff as an API response may carry it: a password in either base URL is
+ * masked, as `toPublicConnector` masks the connector's own. `resync` keeps
+ * working on the unmasked diff; this is for what leaves the server.
+ */
+export function toPublicCatalogDiff<T extends { baseUrl: BaseUrlChange | null }>(diff: T): T {
+  if (!diff.baseUrl) return diff;
+  return {
+    ...diff,
+    baseUrl: {
+      ...diff.baseUrl,
+      from: maskUrlPassword(diff.baseUrl.from),
+      to: maskUrlPassword(diff.baseUrl.to),
+    },
+  };
 }
 
 /**

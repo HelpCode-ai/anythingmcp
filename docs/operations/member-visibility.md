@@ -11,7 +11,7 @@ should see what their AI client can use, and their own calls, nothing more.
 | Mode | What a member who is not an admin sees |
 |---|---|
 | **Open** (default) | Everything in the workspace, as before this setting existed. |
-| **Restricted** | Only their own tool calls, the connectors their MCP roles reach, and the MCP servers that hold one of those connectors. |
+| **Restricted** | Only their own tool calls, the connectors their MCP roles reach, and the MCP servers that hold one of those connectors. Of a connector they do not own: its name, its status and the tools they may use, not its settings. |
 
 Admins always see everything, in both modes. "Member" below means a VIEWER or
 an EDITOR of the workspace. An EDITOR also keeps seeing what they own.
@@ -26,8 +26,10 @@ workspace until an admin switches it.
 |---|---|---|
 | Audit log (`GET /api/audit/invocations`) | Every call of the workspace, with the caller and the full input and output | Only the calls the member made. Calls without a user (for example a static key) are hidden. The page says "You see your own calls. Workspace admins see all calls." |
 | Analytics, stats, tool performance (`/api/audit/stats`, `/analytics`, `/breakdowns`, `/tool-performance`) | Workspace-wide numbers, including calls per user | The same numbers, counted over the member's own calls only. The "by user" panel is hidden; the API's `byUser` holds only the member's own row. |
-| Connectors (`GET /api/connectors`, `/health-check`) | Every connector with all of its tools | Connectors the member owns, or that hold at least one tool their roles allow. On a connector they do not own, only the allowed tools are listed. |
-| Connector and tool detail (`/api/connectors/:id`, its OAuth settings, per-user sign-in, webhook, tools, annotations, response mapping) | Any connector of the workspace | 404 for a connector the member cannot see, with the same body as an unknown id. A member cannot tell "hidden" from "does not exist". |
+| Connectors (`GET /api/connectors`, `/health-check`) | Every connector with all of its tools and settings | Connectors the member owns, or that hold at least one tool their roles allow. A connector they own comes back in full. One they do not own comes back in the [reduced view](#what-a-member-sees-of-a-shared-connector), with only the allowed tools. |
+| Connector and tool detail (`/api/connectors/:id`, its per-user sign-in, tools) | Any connector of the workspace | 404 for a connector the member cannot see, with the same body as an unknown id. A member cannot tell "hidden" from "does not exist". A connector they can see but do not own comes back in the reduced view. |
+| Connector settings (`/api/connectors/:id/oauth-config`) | Any connector of the workspace | Only for a connector the member owns; 404 for the others, visible or not. |
+| Owner-or-admin reads (`/api/connectors/:id/webhook/url`, `/webhook/events`, `/catalog-diff`, a tool's `/annotations` and `/response-mapping`) | Owner or admin only (403 for other members) | 404 for a connector the member cannot see, and for a tool outside their roles on a connector they do not own; otherwise as in Open. |
 | Exports (`/api/connectors/export-all`, `/:id/export`) | Every connector, secrets masked unless admin | Only connectors the member owns; 404 for the others. |
 | File Search (`/api/file-search/connectors/:id` and its tree, problems, runs, scans and access rules) | Any File Search connector of the workspace | 404 for a connector the member cannot see. |
 | MCP servers (`GET /api/mcp-servers`, `/:id`, `/:id/activity`) | Every server, with the names of all its connectors | Servers the member owns, or that hold a connector they can see. Connector names and counts list only those connectors. 404 for the others. |
@@ -36,7 +38,53 @@ workspace until an admin switches it.
 | MCP endpoint (`/mcp`, `/mcp/<serverId>`) | Tools filtered by MCP roles | Unchanged: roles already decide what an AI client can list and call. |
 
 Writes are not part of this setting. Changing or deleting a connector or a
-server stays limited to its owner or an admin, in both modes.
+server stays limited to its owner or an admin, in both modes. The dashboard
+shows Edit, Test, Variables, Delete and the other controls that change a
+connector only to its owner and to admins, in both modes.
+
+### What a member sees of a shared connector
+
+In restricted mode, a connector a member can see but does not own is returned
+in a **reduced view**. It says that the connector exists, whether it works and
+which tools the member may use. It says nothing about where the connector
+connects or how.
+
+| | Fields |
+|---|---|
+| Connector | `id`, `name`, `type`, `icon`, `isActive`, `credentialScope`, `setupStatus`, `authStatus`, `authStatusCode`, and `memberView: true` |
+| Each allowed tool | `id`, `name`, `description`, `isEnabled` |
+
+Everything else is left out: the address (`baseUrl`, which for a database
+holds host, port, database and user name), `specUrl`, `config`, variables
+(`envVars`, also the ones that are not secret), `headers`, `instructions`, the
+auth type, the names of missing variables, the provider's message about a
+refused credential, webhook settings, the MCP servers of the connector, and on
+each tool the parameters, the endpoint mapping (for a database tool: its SQL),
+the response mapping and the output schema. The list of fields is an
+allowlist: a field added to connectors later stays out until it is added to
+the list on purpose.
+
+`memberView: true` marks the reduced view, so a client can tell it from a
+connector whose settings are empty. The same view is returned by
+`GET /api/connectors`, `GET /api/connectors/:id` and, for the tools,
+`GET /api/connectors/:id/tools`. In `GET /api/connectors/health-check` such a
+connector keeps its status and latency; its `message` is a fixed sentence per
+status instead of the provider's answer, which can name a host or a database.
+
+In the dashboard the connector's card shows name, type, number of tools and
+status. Its page shows a note "Shared with you", the tools by name and
+description and, for a connector with per-user sign-in, **Connect my
+account**. There is no address, no settings card and nothing to edit.
+
+Not reduced: a connector the member owns, anything an admin reads, and every
+answer in Open mode. A member's AI client is not affected either: on the MCP
+endpoint it gets the allowed tools with their parameters, as before.
+
+File Search connectors: the reduced view applies to the connector itself, and
+the dashboard does not show its Files panel in the reduced view. The File
+Search endpoints of a connector a member can see
+(`/api/file-search/connectors/:id` and below) still answer as described in the
+table above.
 
 A restricted member who sees no connector or server gets "Nothing has been
 shared with you yet. Ask a workspace admin for a role." on the Connectors and

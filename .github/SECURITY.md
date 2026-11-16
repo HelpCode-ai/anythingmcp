@@ -56,7 +56,10 @@ AnythingMCP handles sensitive data (API keys, database credentials, OAuth tokens
 
 ### `JWT_SECRET` and `COOKIE_SECRET`
 
-Update the value in `.env` and restart: `docker compose up -d`. Existing sessions invalidate immediately — no re-encryption needed.
+Update the value in `.env` and restart: `docker compose up -d`. No re-encryption is needed.
+
+- A new `JWT_SECRET` signs everyone out at once.
+- `COOKIE_SECRET` only signs the short-lived cookies of the sign-in and connect flows (at most two hours). Adding it where it was unset breaks nothing: cookies signed with `JWT_SECRET` before the restart are still accepted. Changing an existing `COOKIE_SECRET` makes users who are in the middle of such a flow start it again.
 
 ### `ENCRYPTION_KEY` (AES-256-GCM, stored credentials)
 
