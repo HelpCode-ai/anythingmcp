@@ -118,6 +118,7 @@ import {
   mergeSummaries,
   type SecretMoveSummary,
 } from './secret-extraction.util';
+import { hasHttpBaseUrl, keepMaskedBaseUrl } from './base-url-secrets.util';
 import {
   MemberVisibilityService,
   canSeeConnector,
@@ -1631,6 +1632,18 @@ export class ConnectorsController {
     if (connector.type === 'DATABASE' && dto.baseUrl !== undefined) {
       // The connection string was shown with its password masked.
       data.baseUrl = keepMaskedUrlPassword(dto.baseUrl, connector.baseUrl);
+    }
+    if (hasHttpBaseUrl(connector.type) && dto.baseUrl !== undefined) {
+      // A secret still stored in the base URL was shown as ********: the
+      // URL sent back as shown keeps the stored one (and the extraction
+      // below then moves the secret into a variable).
+      const kept = keepMaskedBaseUrl(dto.baseUrl, connector.baseUrl);
+      if (kept === null) {
+        throw new BadRequestException(
+          'The base URL still contains a hidden secret (********). Type the full address again, secret included: it is then stored in an encrypted variable.',
+        );
+      }
+      data.baseUrl = kept;
     }
     if ((connector.type as string) === 'EMAIL') {
       data.authConfig = this.mergeEmailAuthConfig(connector.authConfig, dto.authConfig);
