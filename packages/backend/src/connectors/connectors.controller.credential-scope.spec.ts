@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConnectorsController } from './connectors.controller';
 import { encrypt } from '../common/crypto/encryption.util';
+import { UserCredentialError } from './user-credentials.service';
 
 /**
  * Per-user credentials on the connector endpoints: who may switch a
@@ -421,6 +422,27 @@ describe('per-user variables on the connector endpoints', () => {
         'c1',
         expect.objectContaining({ authConfig: { headerName: 'X-Api-Key', apiKey: 'a-shared-key' } }),
       );
+    });
+  });
+
+  describe('POST :id/discover-tools on a connector with per-user variables', () => {
+    it('lists nothing when the connector has changed to a sign-in that keeps a session', async () => {
+      const changed = switchedConnector({ type: 'MCP', authType: 'LOGIN_TOKEN' });
+      const { controller, userCredentials } = buildWithTest(changed, { ok: true, message: 'ok' });
+      (userCredentials as any).variablesForCall = jest.fn();
+      const out: any = await controller.discoverMcpTools(req('ADMIN', 'u-admin'), 'c1');
+      expect(out.error).toContain('LOGIN_TOKEN');
+      expect(out.error).toContain('Nothing was sent');
+      expect((userCredentials as any).variablesForCall).not.toHaveBeenCalled();
+    });
+
+    it('lists nothing for a caller who has not entered their own values', async () => {
+      const { controller, userCredentials } = buildWithTest(switchedConnector({ type: 'MCP' }), { ok: true, message: 'ok' });
+      (userCredentials as any).variablesForCall = jest.fn().mockRejectedValue(
+        new UserCredentialError('You have not connected your own account. No request was sent to the API.', 'not_connected'),
+      );
+      const out: any = await controller.discoverMcpTools(req('ADMIN', 'u-admin'), 'c1');
+      expect(out.error).toContain('You have not connected your own account');
     });
   });
 

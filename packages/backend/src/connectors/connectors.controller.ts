@@ -3156,12 +3156,46 @@ export class ConnectorsController {
    * caller has not entered them.
    */
   private async ownVariablesOf(
-    connector: { id: string; name: string; organizationId: string; credentialScope?: string; config?: unknown },
+    connector: {
+      id: string;
+      name: string;
+      organizationId: string;
+      credentialScope?: string;
+      config?: unknown;
+      type?: string;
+      authType?: string;
+      authConfig?: string | null;
+      baseUrl?: string;
+      headers?: unknown;
+      webhookEnabled?: boolean;
+    },
     userId: string,
   ): Promise<{ userVars: Record<string, string>; credentialKey: string } | undefined> {
     const userVariables = this.perUserVariablesOf(connector);
     if (userVariables.length === 0) return undefined;
     if (!this.userCredentials) throw new BadRequestException('Per-user sign-in is not available on this server.');
+    // As on a call: a user's values go only to a sign-in that takes them,
+    // and never where they would choose the server or the name of a field.
+    const authConfig = this.readAuthConfig(connector.authConfig ?? null) ?? undefined;
+    const problem =
+      userVariableEligibilityProblem({
+        type: String(connector.type ?? ''),
+        authType: String(connector.authType ?? ''),
+        authConfig,
+        config: connector.config,
+        webhookEnabled: connector.webhookEnabled,
+      }) ??
+      userVariablePlacementProblem(userVariables, {
+        baseUrl: connector.baseUrl,
+        config: connector.config,
+        authConfig,
+        headers: connector.headers,
+      });
+    if (problem) {
+      throw new BadRequestException(
+        `${problem} Nothing was sent. Change the connector, or switch it back to a shared sign-in.`,
+      );
+    }
     try {
       return await this.userCredentials.variablesForCall({
         connectorId: connector.id,
