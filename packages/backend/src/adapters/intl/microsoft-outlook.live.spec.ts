@@ -158,6 +158,19 @@ describe('microsoft-outlook adapter — static spec conformance', () => {
     );
   });
 
+  it('pages a keyword search with $skiptoken, never $skip (Graph refuses SearchWithSkip)', async () => {
+    mockedAxios.mockResolvedValue({ data: { value: [] } });
+    await newEngine().execute(connectorConfig(), tool('outlook_search_messages').endpointMapping, {
+      search: '"invoice"',
+      top: 25,
+      skip_token: 'MSZZVlhKcU1',
+    });
+    const params = sent().params;
+    expect(params.$search).toBe('"invoice"');
+    expect(params.$skiptoken).toBe('MSZZVlhKcU1');
+    expect(params).not.toHaveProperty('$skip');
+  });
+
   it('lists messages with a fixed $select and Graph query options', async () => {
     mockedAxios.mockResolvedValue({ data: { value: [] } });
     await newEngine().execute(connectorConfig(), tool('outlook_list_messages').endpointMapping, {
