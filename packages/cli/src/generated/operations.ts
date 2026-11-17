@@ -2408,6 +2408,16 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "hasBody": true
   },
   {
+    "resource": "roles",
+    "action": "listMembers",
+    "method": "GET",
+    "path": "/api/roles/members",
+    "summary": "List members with all their MCP roles (ADMIN)",
+    "admin": true,
+    "pathParams": [],
+    "hasBody": false
+  },
+  {
     "resource": "settings",
     "action": "getFooterLinks",
     "method": "GET",
