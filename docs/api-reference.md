@@ -100,7 +100,9 @@ endpoint. `authConfig` (OAuth and other stored credentials) is never exported:
 re-authorize the connector after importing it. Secret environment variables
 and headers are included only for admins signed in to the dashboard or using a
 `MANAGEMENT_ADMIN` key. For other roles, and for any `MANAGEMENT_READ` key, they
-are empty and named in `maskedEnvVars` / `maskedHeaders`. Per-tool `useProxy`, annotation
+are empty and named in `maskedEnvVars` / `maskedHeaders`, and a secret still written in an HTTP
+base URL (a webhook token, a key, `user:password@`) shows as `********`; see
+[Secrets typed into the base URL](connectors/rest.md#secrets-typed-into-the-base-url). Per-tool `useProxy`, annotation
 overrides and role access are not exported.
 
 ```bash
