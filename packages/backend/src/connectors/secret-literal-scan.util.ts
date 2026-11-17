@@ -62,10 +62,16 @@ function isObject(v: unknown): v is Record<string, unknown> {
  * password (database-url-credentials.util.ts), a different shape than the
  * literal-in-a-header/query/path/name check below. No tool-level check: the
  * builtin query and recent-events tools never carry the connection string.
+ *
+ * The printed pattern drops the query string and fragment: `maskUrlPassword`
+ * only masks the userinfo password, so a query parameter such as
+ * `?password=…` or `?sslpassword=…` would otherwise print in full in a
+ * report that is supposed to carry no secret.
  */
 function scanDatabaseConnector(connector: ConnectorRow): ScanFinding[] {
-  const masked = maskUrlPassword(connector.baseUrl ?? '');
-  if (masked === connector.baseUrl) return [];
+  const withoutQuery = (connector.baseUrl ?? '').split(/[?#]/)[0];
+  const masked = maskUrlPassword(withoutQuery);
+  if (masked === withoutQuery) return [];
   return [
     {
       connectorId: connector.id,

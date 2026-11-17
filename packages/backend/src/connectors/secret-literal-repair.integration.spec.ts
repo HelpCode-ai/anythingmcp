@@ -28,6 +28,9 @@ const GOOGLE = ['AI', 'zaSyB1x2y3z4A5B6C7D8E9F0gHiJkLmNoPqRs'].join('');
 
 d('secret literal report + repair (real Postgres)', () => {
   let client: Client;
+  // encrypt() uses a random IV each call, so the exact ciphertext inserted
+  // in beforeAll is captured here rather than re-encrypted for comparison.
+  let dbBadKeyAuthConfig: string;
   const lines: string[] = [];
   const out = (line: string) => lines.push(line);
 
@@ -130,6 +133,16 @@ d('secret literal report + repair (real Postgres)', () => {
       baseUrl: `https://api.telegram.org/bot${TG}`,
       envVars: { $enc: encrypt(JSON.stringify({ A: 'b' }), 'z'.repeat(48), 'connectors.env_vars') },
     });
+
+    // DATABASE, authConfig encrypted with another key: must be skipped, its
+    // base_url and auth_config left exactly as they are, like c-badkey.
+    dbBadKeyAuthConfig = encrypt(JSON.stringify({ username: 'app', password: 'old' }), 'z'.repeat(48));
+    await connector('c-db-badkey', {
+      name: 'DB bad key',
+      type: 'DATABASE',
+      baseUrl: 'postgresql://app:badkeypw@db.example.com:5432/shop',
+      authConfig: dbBadKeyAuthConfig,
+    });
   });
 
   afterAll(async () => {
@@ -154,12 +167,16 @@ d('secret literal report + repair (real Postgres)', () => {
     // Still flagged: the URL still shows it, even though repair will leave
     // it alone because authConfig already holds credentials.
     expect(byConnector('c-db-protected')).toEqual(['baseUrl']);
+    // The report never reads auth_config, so an unreadable one does not
+    // stop this connector's URL from being flagged either.
+    expect(byConnector('c-db-badkey')).toEqual(['baseUrl']);
     const text = lines.join('\n');
     expect(text).not.toContain(TG_SECRET);
     expect(text).not.toContain(GOOGLE);
     expect(text).not.toContain('k1k2k3k4k5');
     expect(text).not.toContain('s3cret');
     expect(text).not.toContain('n3w');
+    expect(text).not.toContain('badkeypw');
     const stored = await client.query(`SELECT base_url FROM connectors WHERE id = 'c-tg-catalog'`);
     expect(stored.rows[0].base_url).toContain(TG_SECRET);
   });
@@ -170,15 +187,21 @@ d('secret literal report + repair (real Postgres)', () => {
     // already holds credentials), so it is in neither list, like a
     // REST connector that turns out to need no changes.
     expect(result.plans.map((p) => p.connectorId).sort()).toEqual(['c-db', 'c-maps', 'c-tg-catalog', 'c-tg-custom']);
-    expect(result.skipped).toEqual([{ connectorId: 'c-badkey', reason: expect.stringMatching(/could not be decrypted/) }]);
+    expect(result.skipped.sort((a, b) => a.connectorId.localeCompare(b.connectorId))).toEqual([
+      { connectorId: 'c-badkey', reason: expect.stringMatching(/could not be decrypted/) },
+      { connectorId: 'c-db-badkey', reason: expect.stringMatching(/could not be decrypted/) },
+    ]);
     expect(lines.join('\n')).not.toContain(TG_SECRET);
     expect(lines.join('\n')).not.toContain('s3cret');
+    expect(lines.join('\n')).not.toContain('badkeypw');
     const tables = await client.query(`SELECT 1 FROM pg_tables WHERE tablename LIKE 'secret_literal_repair_backup_%'`);
     expect(tables.rowCount).toBe(0);
     const stored = await client.query(`SELECT name FROM mcp_tools WHERE id = 't-tg-custom'`);
     expect(stored.rows[0].name).toContain('7123456789');
     const dbRow = await client.query(`SELECT base_url FROM connectors WHERE id = 'c-db'`);
     expect(dbRow.rows[0].base_url).toContain('s3cret');
+    const dbBadKeyRow = await client.query(`SELECT base_url FROM connectors WHERE id = 'c-db-badkey'`);
+    expect(dbBadKeyRow.rows[0].base_url).toBe('postgresql://app:badkeypw@db.example.com:5432/shop');
   });
 
   it('repair --apply: backs up, rewrites, keeps every variable, and is idempotent', async () => {
@@ -243,13 +266,20 @@ d('secret literal report + repair (real Postgres)', () => {
     expect(rows['c-clean'].base_url).toBe('https://api.example.com/v1');
     expect(rows['c-badkey'].base_url).toContain(TG_SECRET);
 
-    // A second run finds nothing left to do (the bad-key connector stays
+    // DATABASE, authConfig encrypted with another key: left exactly as it
+    // was, byte for byte, never backed up (it was never written).
+    expect(rows['c-db-badkey'].base_url).toBe('postgresql://app:badkeypw@db.example.com:5432/shop');
+    expect(rows['c-db-badkey'].auth_config).toBe(dbBadKeyAuthConfig);
+    expect(backup.rows.find((r) => r.id === 'c-db-badkey')).toBeUndefined();
+
+    // A second run finds nothing left to do (the bad-key connectors stay
     // skipped; c-db-protected still has nothing to move).
     const again = await repair(client, { workspaceId: ORG, out });
     expect(again.plans).toEqual([]);
     const findings = (await report(client, out)).filter((f) => f.workspaceId === ORG);
-    // c-db is now clean; c-db-protected's URL still shows its password —
-    // the one case the fix cannot clean up without risking who connects.
-    expect(findings.map((f) => f.connectorId).sort()).toEqual(['c-badkey', 'c-db-protected']);
+    // c-db is now clean; the other three still show a password in their
+    // URL — the cases the fix cannot clean up without risking who connects
+    // or without a readable authConfig to compare against.
+    expect(findings.map((f) => f.connectorId).sort()).toEqual(['c-badkey', 'c-db-badkey', 'c-db-protected']);
   });
 });

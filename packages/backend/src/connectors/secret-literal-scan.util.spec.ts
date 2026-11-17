@@ -79,6 +79,39 @@ describe('scanConnector', () => {
       ).toEqual([]);
     });
 
+    it('drops the query string from the printed pattern, so a secret there is never printed', () => {
+      const found = scanConnector(
+        connector({
+          type: 'DATABASE',
+          baseUrl: 'postgresql://app:s3cret@db.example.com:5432/shop?sslmode=require&sslpassword=anothersecret',
+        }),
+        [],
+      );
+      expect(found).toEqual([
+        {
+          connectorId: 'c1',
+          workspaceId: 'org1',
+          field: 'baseUrl',
+          kind: 'database_url_password',
+          pattern: 'postgresql://app:********@db.example.com:5432/shop',
+          adapterSlug: null,
+        },
+      ]);
+      expect(JSON.stringify(found)).not.toContain('anothersecret');
+      expect(JSON.stringify(found)).not.toContain('sslpassword');
+    });
+
+    it('finds nothing for a userinfo-free URL even when the query string looks secret-ish', () => {
+      // The query string is dropped before checking, not inspected for secrets
+      // of its own — only the userinfo password is this check's job.
+      expect(
+        scanConnector(
+          connector({ type: 'DATABASE', baseUrl: 'postgresql://db.example.com:5432/shop?sslpassword=anothersecret' }),
+          [],
+        ),
+      ).toEqual([]);
+    });
+
     it('does not inspect tools: the connection string is the only field that can carry a password', () => {
       expect(
         scanConnector(connector({ type: 'DATABASE', baseUrl: 'postgresql://db.example.com:5432/shop' }), [
