@@ -86,6 +86,8 @@ describe('LoginController', () => {
     grantWholeOrganization: jest.Mock;
     listSelectableTargets: jest.Mock;
     resolve: jest.Mock;
+    keepVisible: jest.Mock;
+    restrictedIn: jest.Mock;
   };
 
   beforeEach(() => {
@@ -105,6 +107,9 @@ describe('LoginController', () => {
       listSelectableTargets: jest.fn().mockResolvedValue([]),
       // No grant: the user's own organization, as before grants existed.
       resolve: jest.fn().mockResolvedValue(null),
+      // Member visibility hides nothing unless a test says so.
+      keepVisible: jest.fn(async (_userId: string, servers: unknown[]) => servers),
+      restrictedIn: jest.fn().mockResolvedValue(false),
     };
 
     controller = new LoginController(
@@ -2902,6 +2907,12 @@ describe('LoginController', () => {
       expect(p.organizationMember.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ userId: 'u1', organizationId: 'org-1' }) }),
       );
+
+      // A member who may not see the server (restricted member visibility).
+      grants.keepVisible.mockResolvedValueOnce([]);
+      const hidden = await page(make(DEPLOY.cloud, p), req as any);
+      expect(hidden).not.toContain('Sales');
+      expect(grants.keepVisible).toHaveBeenLastCalledWith('u1', [{ id: 'srv-1', organizationId: 'org-1' }]);
 
       p.organizationMember.findFirst.mockResolvedValue(null);
       const outsider = await page(make(DEPLOY.cloud, p), req as any);

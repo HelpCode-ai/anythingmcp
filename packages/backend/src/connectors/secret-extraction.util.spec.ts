@@ -6,6 +6,7 @@ import {
 } from './secret-extraction.util';
 import { interpolateConnectorConfig } from '../common/env-interpolation.util';
 import { CurlParser } from './parsers/curl.parser';
+import { isSecretName } from './connector-secrets.util';
 
 const TG = `7123456789:${['AAH', 'k3jd9QwErTyUiOp', 'AsDfGhJkLzXcVbN', 'm12'].join('')}`;
 const GOOGLE = ['AI', 'zaSyB1x2y3z4A5B6C7D8E9F0gHiJkLmNoPqRs'].join('');
@@ -240,5 +241,82 @@ describe('SecretExtractor', () => {
     const merged = mergeSummaries([a.summary(), {}]);
     expect(merged.secretsMoved).toHaveLength(1);
     expect(mergeSummaries([{}, {}])).toEqual({});
+  });
+});
+
+describe('SecretExtractor: webhook URLs and URL passwords', () => {
+  const BITRIX = ['k2bx', 'a8g5', 'n4gh', 'vqgo'].join('');
+  const SLACK = ['AbCdEfGh', 'IjKlMnOp', 'QrStUv12'].join('');
+  const DISCORD = ['Xy1_Ab2-Cd3Ef4Gh5', 'Ij6Kl7Mn8Op9Qr0St', 'Uv1Wx2Yz3Ab4Cd5Ef', 'Gh6Ij7Kl8Mn9Op0Q'].join('');
+  const GUID = '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d';
+  const HEX = ['0123456789ab', 'cdef01234567', '89abcdef'].join('');
+
+  /** Connector name, base URL as typed, what is stored, the variable and its value. */
+  const CASES: Array<[name: string, typed: string, stored: string, variable: string, value: string]> = [
+    [
+      'Bitrix CRM',
+      `https://portal.bitrix24.com/rest/1/${BITRIX}/`,
+      'https://portal.bitrix24.com/rest/1/{{BITRIX_CRM_WEBHOOK_TOKEN}}/',
+      'BITRIX_CRM_WEBHOOK_TOKEN',
+      BITRIX,
+    ],
+    [
+      'Slack Webhook',
+      `https://hooks.slack.com/services/T0A1B2C3D/B0E1F2G3H/${SLACK}`,
+      'https://hooks.slack.com/services/T0A1B2C3D/B0E1F2G3H/{{SLACK_WEBHOOK_TOKEN}}',
+      'SLACK_WEBHOOK_TOKEN',
+      SLACK,
+    ],
+    [
+      'Alerts',
+      `https://discord.com/api/webhooks/123456789012345678/${DISCORD}`,
+      'https://discord.com/api/webhooks/123456789012345678/{{ALERTS_WEBHOOK_TOKEN}}',
+      'ALERTS_WEBHOOK_TOKEN',
+      DISCORD,
+    ],
+    [
+      'Teams',
+      `https://acme.webhook.office.com/webhookb2/${GUID}@${GUID}/IncomingWebhook/${HEX}/${GUID}/`,
+      `https://acme.webhook.office.com/webhookb2/${GUID}@${GUID}/IncomingWebhook/{{TEAMS_WEBHOOK_TOKEN}}/`,
+      'TEAMS_WEBHOOK_TOKEN',
+      `${HEX}/${GUID}`,
+    ],
+    [
+      'Legacy ERP',
+      'https://apiuser:Pa55w0rd-1@erp.example.com:8443/api/',
+      'https://apiuser:{{LEGACY_ERP_PASSWORD}}@erp.example.com:8443/api/',
+      'LEGACY_ERP_PASSWORD',
+      'Pa55w0rd-1',
+    ],
+  ];
+
+  it.each(CASES)('%s: only the secret segment moves, into a variable the dashboard masks', (name, typed, stored, variable, value) => {
+    const x = new SecretExtractor(name, {});
+    expect(x.extractUrl(typed, 'baseUrl')).toBe(stored);
+    expect(x.newEnvVars).toEqual({ [variable]: value });
+    expect(isSecretName(variable)).toBe(true);
+    expect(JSON.stringify(x.summary())).not.toContain(value);
+  });
+
+  it.each(CASES)('%s: a call resolves the base URL exactly as typed', (name, typed) => {
+    const x = new SecretExtractor(name, {});
+    const stored = x.extractUrl(typed, 'baseUrl');
+    const { config } = interpolateConnectorConfig(
+      { baseUrl: stored },
+      { method: 'POST', path: '/' },
+      { OTHER: 'x', ...x.newEnvVars },
+    );
+    expect(config.baseUrl).toBe(typed);
+  });
+
+  it('leaves out the long-random-token rule when asked to (start-up repair)', () => {
+    const opaque = 'q8ZtW3nRk2LxV9pMbH4cJs7YdF6gTe1A';
+    const x = new SecretExtractor('Acme', {});
+    expect(x.extractUrl(`https://api.example.com/hooks/${opaque}`, 'baseUrl', { highEntropy: false })).toBe(
+      `https://api.example.com/hooks/${opaque}`,
+    );
+    expect(x.extractUrl(`https://api.example.com/hooks/${opaque}`, 'baseUrl')).toBe(
+      'https://api.example.com/hooks/{{ACME_SECRET_1}}',
+    );
   });
 });

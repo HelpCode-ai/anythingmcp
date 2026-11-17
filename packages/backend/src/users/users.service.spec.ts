@@ -128,13 +128,13 @@ describe('UsersService', () => {
           role: 'VIEWER',
           joinedAt: new Date('2026-01-01'),
           deactivatedAt: null,
-          user: { id: 'u1', email: 'a@x', name: 'A', mcpRoleId: null, mcpRole: null, createdAt: new Date(), updatedAt: new Date() },
+          user: { id: 'u1', email: 'a@x', name: 'A', mcpRoleId: null, mcpRole: null, createdAt: new Date(), updatedAt: new Date(), roleAssignments: [] },
         },
         {
           role: 'ADMIN',
           joinedAt: new Date('2026-01-02'),
           deactivatedAt: new Date('2026-02-01'),
-          user: { id: 'u2', email: 'b@x', name: 'B', mcpRoleId: null, mcpRole: null, createdAt: new Date(), updatedAt: new Date() },
+          user: { id: 'u2', email: 'b@x', name: 'B', mcpRoleId: null, mcpRole: null, createdAt: new Date(), updatedAt: new Date(), roleAssignments: [] },
         },
       ]);
       const rows = await service.findAll('org-1');
@@ -146,6 +146,36 @@ describe('UsersService', () => {
         ['u2', 'ADMIN', false, 'org-1'],
       ]);
       expect(rows[1].deactivatedAt).toEqual(new Date('2026-02-01'));
+    });
+
+    it('returns every MCP role of a member, not only the deprecated single one', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([
+        {
+          role: 'VIEWER',
+          joinedAt: new Date('2026-01-01'),
+          deactivatedAt: null,
+          user: {
+            id: 'u1', email: 'a@x', name: 'A', mcpRoleId: 'r1', mcpRole: { id: 'r1', name: 'Support' },
+            createdAt: new Date(), updatedAt: new Date(),
+            roleAssignments: [
+              { roleId: 'r1', source: 'manual', organizationId: 'org-1', role: { name: 'Support' } },
+              { roleId: 'r2', source: 'entra', organizationId: 'org-1', role: { name: 'Finance' } },
+              { roleId: 'sys', source: 'manual', organizationId: null, role: { name: 'Global' } },
+            ],
+          },
+        },
+      ]);
+      const [row] = await service.findAll('org-1');
+      expect(row.mcpRoles).toEqual([
+        { roleId: 'r1', roleName: 'Support', source: 'manual', global: false },
+        { roleId: 'r2', roleName: 'Finance', source: 'entra', global: false },
+        { roleId: 'sys', roleName: 'Global', source: 'manual', global: true },
+      ]);
+      // Grants of another workspace stay out: only this one or none.
+      const args = mockPrisma.organizationMember.findMany.mock.calls[0][0];
+      expect(args.include.user.select.roleAssignments.where).toEqual({
+        OR: [{ organizationId: 'org-1' }, { organizationId: null }],
+      });
     });
   });
 

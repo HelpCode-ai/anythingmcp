@@ -2399,7 +2399,7 @@
     "confirmDelete": "Eliminare il ruolo \"{name}\"? Gli utenti con questo ruolo non lo avranno più.",
     "deleted": "Ruolo eliminato",
     "toolAccessUpdated": "Accesso agli strumenti aggiornato",
-    "assigned": "Ruolo MCP assegnato",
+    "assigned": "Ruoli MCP salvati",
     "accessDenied": {
       "title": "Accesso negato",
       "body": "Solo gli amministratori possono accedere a questa pagina.",
@@ -2453,7 +2453,20 @@
       "appRole": "Ruolo nell'app",
       "mcpRole": "Ruolo per gli strumenti MCP",
       "fullAccess": "Accesso completo (admin)",
-      "noRestriction": "Nessun ruolo"
+      "unionHint": "Un membro può usare insieme gli strumenti di tutti i suoi ruoli. Ogni ruolo aggiunge strumenti, nessuno ne toglie.",
+      "reach": "Connettori raggiunti",
+      "fromSso": "da gruppo single sign-on",
+      "allWorkspaces": "tutti i workspace",
+      "allWorkspacesHint": "Questo ruolo vale in ogni workspace e non si può cambiare qui.",
+      "ssoHint": "I ruoli da un gruppo single sign-on seguono il gruppo. Si cambiano in",
+      "ssoLink": "Impostazioni → Single sign-on → Associazioni dei ruoli",
+      "manualPlaceholder": "Scegli i ruoli",
+      "deactivated": "Disattivato",
+      "allConnectors": "Tutti i connettori",
+      "noConnectors": "Nessuno",
+      "connectorCount": "{count, plural, one {# connettore} other {# connettori}}",
+      "noRoleOpen": "Nessun ruolo. Può usare tutti gli strumenti finché nessun ruolo ha un elenco di strumenti.",
+      "noRoleClosed": "Nessun ruolo, quindi nessuno strumento."
     }
   },
   "settingsAdmin": {

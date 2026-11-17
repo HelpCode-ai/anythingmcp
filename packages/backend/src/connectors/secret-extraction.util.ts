@@ -1,4 +1,5 @@
 import {
+  type FindOptions,
   findSecretInHeader,
   findSecretInQueryParam,
   findSecretLiterals,
@@ -224,6 +225,14 @@ export class SecretExtractor {
       case 'known_prefix':
       case 'jwt':
         return `${this.prefix}_${PREFIX_SUFFIX[f.label] ?? 'TOKEN'}`;
+      case 'webhook_token':
+        // `SLACK_WEBHOOK_TOKEN`, not `SLACK_WEBHOOK_WEBHOOK_TOKEN`. Either
+        // way the name holds WEBHOOK and TOKEN, so isSecretName masks it.
+        return /(^|_)WEBHOOK$/.test(this.prefix)
+          ? `${this.prefix}_TOKEN`
+          : `${this.prefix}_WEBHOOK_TOKEN`;
+      case 'url_password':
+        return `${this.prefix}_PASSWORD`;
       case 'high_entropy':
       default:
         return `${this.prefix}_SECRET_${++this.secretCounter}`;
@@ -246,10 +255,13 @@ export class SecretExtractor {
     return out;
   }
 
-  /** A base URL, a path or a URL-valued setting. */
-  extractUrl(url: string, field: string): string {
+  /**
+   * A base URL, a path or a URL-valued setting. `opts` narrows the rules
+   * (the start-up repair leaves out the long-random-token heuristic).
+   */
+  extractUrl(url: string, field: string, opts?: FindOptions): string {
     if (typeof url !== 'string' || !url) return url;
-    return this.rewrite(url, findSecretLiterals(url), field);
+    return this.rewrite(url, findSecretLiterals(url, opts), field);
   }
 
   /**

@@ -765,7 +765,8 @@ export class McpEndpointController {
         const servers = serverIds.length
           ? await this.mcpServersService.getServerNames(serverIds)
           : organizationId
-            ? await this.mcpServersService.getServerNamesByOrg(organizationId)
+            ? // Member visibility: a restricted member is shown only their own servers.
+              await this.grants.serverNamesFor(user.sub, organizationId)
             : [];
         return {
           dashboardUrl: `${dashboardBase}/connectors`,

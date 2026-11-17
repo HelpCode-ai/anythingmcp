@@ -50,6 +50,8 @@ describe('AuditService own-calls filter', () => {
         toolId: 'tool-1',
         status: 'ERROR',
         mcpServerId: 'srv-1',
+        // A server filter matches only a server the member owns.
+        mcpServer: { userId: ME },
         tool: {
           connector: { organizationId: ORG },
           name: { contains: 'crm', mode: 'insensitive' },
@@ -67,10 +69,39 @@ describe('AuditService own-calls filter', () => {
     });
 
     it('has no user filter on the open path', async () => {
-      await service.getRecentInvocations(10, 0, { organizationId: ORG });
+      await service.getRecentInvocations(10, 0, { organizationId: ORG, mcpServerId: 'srv-1' });
       expect(prisma.toolInvocation.findMany.mock.calls[0][0].where).toEqual({
+        mcpServerId: 'srv-1',
         tool: { connector: { organizationId: ORG } },
       });
+    });
+
+    it('names a server only when the member owns it', async () => {
+      prisma.toolInvocation.findMany.mockResolvedValue([
+        { id: 'c1', mcpServerId: 'srv-mine', mcpServer: { id: 'srv-mine', name: 'Mine', slug: 'mine', userId: ME } },
+        { id: 'c2', mcpServerId: 'srv-team', mcpServer: { id: 'srv-team', name: 'Default (Alice)', slug: 'default-alice', userId: 'alice' } },
+        { id: 'c3', mcpServerId: null, mcpServer: null },
+      ]);
+      const rows = await service.getRecentInvocations(10, 0, { organizationId: ORG, onlyUserId: ME });
+      expect(prisma.toolInvocation.findMany.mock.calls[0][0].include.mcpServer.select).toEqual({
+        id: true,
+        name: true,
+        slug: true,
+        userId: true,
+      });
+      expect(rows).toEqual([
+        { id: 'c1', mcpServerId: 'srv-mine', mcpServer: { id: 'srv-mine', name: 'Mine', slug: 'mine' } },
+        { id: 'c2', mcpServerId: null, mcpServer: null },
+        { id: 'c3', mcpServerId: null, mcpServer: null },
+      ]);
+      expect(JSON.stringify(rows)).not.toContain('Alice');
+    });
+
+    it('returns rows untouched on the open path', async () => {
+      const row = { id: 'c2', mcpServerId: 'srv-team', mcpServer: { id: 'srv-team', name: 'Default (Alice)', slug: 'default-alice' } };
+      prisma.toolInvocation.findMany.mockResolvedValue([row]);
+      expect(await service.getRecentInvocations(10, 0, { organizationId: ORG })).toEqual([row]);
+      expect(prisma.toolInvocation.findMany.mock.calls[0][0].include.mcpServer.select).toEqual({ id: true, name: true, slug: true });
     });
   });
 
@@ -108,6 +139,38 @@ describe('AuditService own-calls filter', () => {
         expect(args.where).toMatchObject({ organizationId: ORG });
       }
     });
+
+    describe('byServer', () => {
+      const rows = (errors: boolean) => [
+        { mcpServerId: 'srv-mine', _count: { _all: errors ? 1 : 5 }, _sum: { repeatCount: errors ? 1 : 5 } },
+        { mcpServerId: 'srv-alice', _count: { _all: errors ? 2 : 4 }, _sum: { repeatCount: errors ? 2 : 4 } },
+        { mcpServerId: null, _count: { _all: errors ? 0 : 3 }, _sum: { repeatCount: errors ? 0 : 3 } },
+      ];
+      beforeEach(() => {
+        prisma.toolInvocation.groupBy.mockImplementation(async (args: any) =>
+          args.by[0] === 'mcpServerId' ? rows(args.where.status === 'ERROR') : [],
+        );
+        prisma.mcpServerConfig.findMany.mockResolvedValue([
+          { id: 'srv-mine', name: 'Mine', userId: ME },
+          { id: 'srv-alice', name: 'Default (Alice)', userId: 'alice' },
+        ]);
+      });
+
+      it('names only servers the member owns; the others join the row without a server', async () => {
+        const out = await service.getBreakdowns(ORG, 30, ME);
+        expect(out.byServer).toEqual([
+          { id: null, label: 'Other server or none', count: 7, errors: 2 },
+          { id: 'srv-mine', label: 'Mine', count: 5, errors: 1 },
+        ]);
+        expect(JSON.stringify(out)).not.toContain('Alice');
+        expect(JSON.stringify(out)).not.toContain('srv-alice');
+      });
+
+      it('lists every server on the open path', async () => {
+        const out = await service.getBreakdowns(ORG, 30);
+        expect(out.byServer.map((r: any) => r.label)).toEqual(['Mine', 'Default (Alice)', 'Direct / no server']);
+      });
+    });
   });
 
   describe('getAnalytics / analyticsQuery', () => {
@@ -137,7 +200,24 @@ describe('AuditService own-calls filter', () => {
     it('passes the user to the query', async () => {
       await service.getToolPerformance(ORG, {}, ME);
       const sql = prisma.$queryRaw.mock.calls[0][0];
-      expect(sql.values.filter((v: unknown) => v === ME)).toHaveLength(2);
+      // Two call filters, and three server expressions (id and name in the
+      // groups, id in the latest-error lookup).
+      expect(sql.values.filter((v: unknown) => v === ME)).toHaveLength(5);
+    });
+
+    it('names only servers the member owns, in the groups and in the latest-error lookup', () => {
+      const sql = toolPerformanceQuery(ORG, since, until, {}, 25, ME);
+      expect(sql.text).toMatch(/CASE WHEN s\.user_id = \$\d+ THEN ti\.mcp_server_id END AS mcp_server_id/);
+      expect(sql.text).toMatch(/CASE WHEN s\.user_id = \$\d+ THEN s\.name END AS mcp_server_name/);
+      expect(sql.text).toMatch(/GROUP BY 1, 2, 3, 4, 5, 6/);
+      const lateral = sql.text.slice(sql.text.indexOf('LEFT JOIN LATERAL'));
+      expect(lateral).toMatch(/LEFT JOIN mcp_server_configs ls ON ls\.id = ti\.mcp_server_id/);
+      expect(lateral).toMatch(/CASE WHEN ls\.user_id = \$\d+ THEN ti\.mcp_server_id END IS NOT DISTINCT FROM page\.mcp_server_id/);
+    });
+
+    it('a server filter matches only a server the member owns', () => {
+      const sql = toolPerformanceQuery(ORG, since, until, { mcpServerId: 'srv-1' }, 25, ME);
+      expect(sql.text).toMatch(/AND ti\.mcp_server_id = \$\d+ AND s\.user_id = \$\d+/);
     });
 
     it('filters both the groups and the latest-error lookup, with bound values', () => {

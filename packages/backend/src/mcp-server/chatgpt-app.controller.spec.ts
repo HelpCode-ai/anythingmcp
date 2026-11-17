@@ -55,7 +55,6 @@ function build(opts: { allowedByOrg?: Record<string, string[] | null> } = {}) {
     ),
     getSharedGuide: jest.fn(async () => undefined),
     getServerNames: jest.fn(async () => []),
-    getServerNamesByOrg: jest.fn(async () => []),
     activityByConnector: jest.fn(async () => []),
   };
   const setup = { get: jest.fn(() => ({ canSetUp: jest.fn(async () => true) })) };
@@ -73,6 +72,7 @@ function build(opts: { allowedByOrg?: Record<string, string[] | null> } = {}) {
     {
       resolve: jest.fn().mockResolvedValue(null),
       clientRedirectUris: jest.fn(async () => ['https://claude.ai/api/mcp/auth_callback']),
+      serverNamesFor: jest.fn(async () => []),
     } as any,
     { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     setup as any,

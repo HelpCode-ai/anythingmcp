@@ -101,6 +101,35 @@ export class McpApiKeysService implements OnApplicationBootstrap {
     });
   }
 
+  /**
+   * For member visibility: each of `serverIds` that exists, with its workspace,
+   * its owner and the caller's role in that workspace (null when the caller is
+   * not an active member there).
+   */
+  async serverFacts(
+    userId: string,
+    serverIds: string[],
+  ): Promise<Array<{ id: string; organizationId: string; ownerId: string; role: string | null }>> {
+    const ids = [...new Set(serverIds.filter(Boolean))];
+    if (ids.length === 0) return [];
+    const servers = await this.prisma.mcpServerConfig.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, organizationId: true, userId: true },
+    });
+    if (servers.length === 0) return [];
+    const memberships = await this.prisma.organizationMember.findMany({
+      where: { userId, organizationId: { in: [...new Set(servers.map((s) => s.organizationId))] }, deactivatedAt: null },
+      select: { organizationId: true, role: true },
+    });
+    const roleIn = new Map(memberships.map((m) => [m.organizationId, m.role as string]));
+    return servers.map((s) => ({
+      id: s.id,
+      organizationId: s.organizationId,
+      ownerId: s.userId,
+      role: roleIn.get(s.organizationId) ?? null,
+    }));
+  }
+
   async listByUser(userId: string) {
     return this.prisma.mcpApiKey.findMany({
       // Support keys are an operator's, not the user's (see support-keys.ts).

@@ -11,6 +11,28 @@ interface LimitPresence {
   value: Promise<boolean>;
 }
 
+/** One MCP role assignment as the dashboard shows it. */
+export interface MemberRoleAssignment {
+  roleId: string;
+  roleName: string;
+  /** 'manual' = set by an admin; anything else comes from an IdP group sync. */
+  source: string;
+  /** True for a grant with no organization: it applies in every workspace. */
+  global: boolean;
+}
+
+export interface MemberRoleSummary {
+  id: string;
+  email: string;
+  name: string | null;
+  /** Workspace role (ADMIN, EDITOR, VIEWER). */
+  role: string;
+  active: boolean;
+  roles: MemberRoleAssignment[];
+  /** Connectors the roles reach; null when roles do not limit the member. */
+  connectors: Array<{ id: string; name: string }> | null;
+}
+
 const LIMIT_PRESENCE_TTL_MS = 5_000;
 const MAX_LIMIT_PRESENCE_ENTRIES = 1_000;
 
@@ -542,8 +564,17 @@ export class RolesService {
     return this.setUserRoles(userId, roleId ? [roleId] : [], organizationId);
   }
 
-  /** Role ids assigned to a user in an organization, with their provenance. */
+  /**
+   * Role ids assigned to a user in an organization, with their provenance.
+   * Null when the user is not a member, so an admin cannot read the
+   * workspace-independent grants of someone outside their organization.
+   */
   async getUserRoles(userId: string, organizationId: string) {
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_organizationId: { userId, organizationId } },
+      select: { userId: true },
+    });
+    if (!membership) return null;
     return this.prisma.userRoleAssignment.findMany({
       where: {
         userId,
@@ -555,6 +586,119 @@ export class RolesService {
         role: { select: { id: true, name: true } },
       },
     });
+  }
+
+  /**
+   * Every member of an organization with EVERY MCP role they hold there, for
+   * the dashboard's role assignment table.
+   *
+   * Effective tool access is the union of all assignments (see
+   * getAllowedToolIds), so showing one of them — the deprecated scalar
+   * `users.mcpRoleId` — let an admin believe a member was limited to one role
+   * while an IdP-synced or workspace-independent role widened it unseen.
+   *
+   * `connectors` lists the connectors whose tools the member's roles grant.
+   * It is null when roles do not limit the member: an ADMIN of the
+   * organization, or a member with no role in an organization that has never
+   * created a tool whitelist. A member with no role in an organization that
+   * does use whitelists reaches nothing (`[]`), matching getAllowedToolIds.
+   */
+  async getMemberAssignments(organizationId: string): Promise<MemberRoleSummary[]> {
+    const memberships = await this.prisma.organizationMember.findMany({
+      where: { organizationId },
+      select: {
+        role: true,
+        deactivatedAt: true,
+        user: { select: { id: true, email: true, name: true } },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+    if (memberships.length === 0) return [];
+    const userIds = memberships.map((m) => m.user.id);
+
+    // Same scope as getAllowedToolIds: grants in this organization plus
+    // grants with no organization, which apply everywhere.
+    const assignments = await this.prisma.userRoleAssignment.findMany({
+      where: {
+        userId: { in: userIds },
+        OR: [{ organizationId }, { organizationId: null }],
+      },
+      select: {
+        userId: true,
+        roleId: true,
+        source: true,
+        organizationId: true,
+        role: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Tool grants of the assigned roles, limited to this organization's
+    // connectors: a tool of another workspace is never reachable from here.
+    const roleIds = [...new Set(assignments.map((a) => a.roleId))];
+    const grants = roleIds.length
+      ? await this.prisma.toolRoleAccess.findMany({
+          where: {
+            roleId: { in: roleIds },
+            tool: { connector: { organizationId } },
+          },
+          select: {
+            roleId: true,
+            tool: { select: { connector: { select: { id: true, name: true } } } },
+          },
+        })
+      : [];
+    const connectorsByRole = new Map<string, Map<string, string>>();
+    for (const g of grants) {
+      const map = connectorsByRole.get(g.roleId) ?? new Map<string, string>();
+      map.set(g.tool.connector.id, g.tool.connector.name);
+      connectorsByRole.set(g.roleId, map);
+    }
+
+    const byUser = new Map<string, typeof assignments>();
+    for (const a of assignments) {
+      const list = byUser.get(a.userId) ?? [];
+      list.push(a);
+      byUser.set(a.userId, list);
+    }
+
+    // Only needed for a non-admin member with no role at all.
+    let usesWhitelists: boolean | undefined;
+
+    const result: MemberRoleSummary[] = [];
+    for (const m of memberships) {
+      const own = byUser.get(m.user.id) ?? [];
+      let connectors: Array<{ id: string; name: string }> | null;
+      if (m.role === 'ADMIN') {
+        connectors = null;
+      } else if (own.length === 0) {
+        usesWhitelists ??= await this.organizationUsesToolWhitelists(organizationId);
+        connectors = usesWhitelists ? [] : null;
+      } else {
+        const reach = new Map<string, string>();
+        for (const a of own) {
+          for (const [id, name] of connectorsByRole.get(a.roleId) ?? []) reach.set(id, name);
+        }
+        connectors = [...reach]
+          .map(([id, name]) => ({ id, name }))
+          .sort((x, y) => x.name.localeCompare(y.name));
+      }
+      result.push({
+        id: m.user.id,
+        email: m.user.email,
+        name: m.user.name,
+        role: m.role,
+        active: m.deactivatedAt === null,
+        roles: own.map((a) => ({
+          roleId: a.roleId,
+          roleName: a.role.name,
+          source: a.source,
+          global: a.organizationId === null,
+        })),
+        connectors,
+      });
+    }
+    return result;
   }
 
   // ── Seed system roles ─────────────────────────────────────────────────────
