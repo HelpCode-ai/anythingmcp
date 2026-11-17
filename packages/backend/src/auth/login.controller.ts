@@ -509,8 +509,9 @@ export class LoginController {
       this.configService.get<string>('MCP_SERVER_NAME') || 'AnythingMCP';
 
     // CSRF: the signed cookie must match the form field. Reject before doing
-    // anything with the submitted credentials.
-    if (!this.verifyCsrf(req, body.csrf)) {
+    // anything with the submitted credentials. A POST without a form body
+    // (bots, replayed requests) has no body at all: treat it the same way.
+    if (!body || !this.verifyCsrf(req, body.csrf)) {
       this.logger.warn('Rejected login with missing/invalid CSRF token');
       res.clearCookie('login_csrf');
       return res.redirect(
@@ -1690,7 +1691,7 @@ export class LoginController {
     @Body() body: { servers?: string | string[]; workspace?: string; csrf?: string },
     @Res() res: Response,
   ) {
-    if (!this.verifyCsrf(req, body.csrf)) {
+    if (!body || !this.verifyCsrf(req, body.csrf)) {
       this.logger.warn('Rejected server selection with missing/invalid CSRF token');
       res.clearCookie('login_csrf');
       return res.redirect(
