@@ -169,9 +169,9 @@ export class McpServersService {
 
   /**
    * `findAllByOrg` for a member whose view is narrowed by member visibility:
-   * only the servers they own or that hold a connector they may see, and in
-   * each one only those connectors (names and `_count.connectors`). Filtered
-   * in the query, so `limit` and `offset` page over visible servers only.
+   * only the servers they own (`serverWhere`), and in each one only the
+   * connectors they may see (names and `_count.connectors`). Filtered in the
+   * query, so `limit` and `offset` page over visible servers only.
    */
   async findAllVisibleByOrg(
     organizationId: string,
@@ -202,9 +202,9 @@ export class McpServersService {
 
   /**
    * `findById` for a member whose view is narrowed by member visibility:
-   * null when the server is not in the workspace or not visible to them (the
-   * caller answers both with the unknown-id 404), otherwise the server with
-   * only the connectors they may see.
+   * null when the server is not in the workspace or not theirs (the caller
+   * answers both with the unknown-id 404), otherwise the server with only the
+   * connectors they may see.
    */
   async findVisibleById(id: string, organizationId: string, scope: VisibilityScope) {
     const visibleConnector = { connector: connectorWhere(scope) };
@@ -573,17 +573,6 @@ export class McpServersService {
     if (serverIds.length === 0) return [];
     return this.prisma.mcpServerConfig.findMany({
       where: { id: { in: [...new Set(serverIds)] }, isActive: true },
-      select: { id: true, name: true },
-      orderBy: { createdAt: 'asc' },
-    });
-  }
-
-  /** Active servers of one workspace, for links handed to the model. */
-  async getServerNamesByOrg(
-    organizationId: string,
-  ): Promise<Array<{ id: string; name: string }>> {
-    return this.prisma.mcpServerConfig.findMany({
-      where: { organizationId, isActive: true },
       select: { id: true, name: true },
       orderBy: { createdAt: 'asc' },
     });

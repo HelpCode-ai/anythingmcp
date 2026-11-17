@@ -5,6 +5,7 @@ import {
   MemberVisibilityService,
   VisibilityScope,
   canSeeConnector,
+  canSeeServer,
   connectorWhere,
   parseMemberVisibilityMode,
   serverWhere,
@@ -351,33 +352,23 @@ describe('visibility helpers', () => {
       expect(serverWhere(open)).toEqual({});
     });
 
-    it('matches owned servers or servers holding a visible connector', () => {
-      expect(serverWhere(someTools)).toEqual({
-        OR: [
-          { userId: 'u1' },
-          {
-            connectors: {
-              some: {
-                connector: {
-                  OR: [{ userId: 'u1' }, { tools: { some: { id: { in: ['t1', 't3'] } } } }],
-                },
-              },
-            },
-          },
-        ],
-      });
+    it.each([
+      ['a tool whitelist', 'someTools'],
+      ['no whitelist', 'noWhitelist'],
+      ['no allowed tool', 'noTools'],
+    ])('with %s: only the servers the member owns, never one that merely holds a visible connector', (_label, name) => {
+      const scope = { someTools, noWhitelist, noTools }[name as 'someTools' | 'noWhitelist' | 'noTools'];
+      expect(serverWhere(scope)).toEqual({ userId: 'u1' });
     });
 
-    it('with no whitelist: owned servers or servers with any connector', () => {
-      expect(serverWhere(noWhitelist)).toEqual({
-        OR: [{ userId: 'u1' }, { connectors: { some: { connector: {} } } }],
-      });
-    });
-
-    it('with no allowed tool: owned servers or servers holding an owned connector', () => {
-      expect(serverWhere(noTools)).toEqual({
-        OR: [{ userId: 'u1' }, { connectors: { some: { connector: { userId: 'u1' } } } }],
-      });
+    it('canSeeServer is the in-memory twin', () => {
+      for (const scope of [open, someTools, noWhitelist, noTools]) {
+        for (const owner of ['u1', 'u9']) {
+          const where = serverWhere(scope);
+          const viaWhere = !('userId' in where) || where.userId === owner;
+          expect(canSeeServer(scope, { userId: owner })).toBe(viaWhere);
+        }
+      }
     });
   });
 });

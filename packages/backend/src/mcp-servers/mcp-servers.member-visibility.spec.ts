@@ -14,9 +14,12 @@ import { McpServersService } from './mcp-servers.service';
  *    in RULES below, so a new read route cannot ship without one.
  * 2. Matrix: ADMIN / EDITOR / VIEWER x open / restricted x (no whitelist,
  *    role with tools, role without tools), over servers the caller owns,
- *    other members' servers and other members' default servers (D9). A hidden
- *    server answers exactly the 404 an unknown id gets; admins and open
- *    workspaces never read their roles.
+ *    other members' servers and other members' default servers. A restricted
+ *    member sees only the servers they own, whatever their roles allow: a
+ *    server of someone else answers exactly the 404 an unknown id gets, on
+ *    reads and writes, even when it holds a connector they may see. Inside
+ *    their own servers they see only the connectors they may see. Admins and
+ *    open workspaces never read their roles.
  * 3. Server picker and grants: every workspace follows its own mode and the
  *    caller's role there; a hidden server is dropped from a grant like an
  *    unknown id.
@@ -40,9 +43,9 @@ const OTHER = 'user-other';
 const OTHER2 = 'user-other-2';
 
 type Rule =
-  /** A list narrowed in the query: owned servers or those with a visible connector. */
+  /** A list narrowed in the query: owned servers only, connectors narrowed. */
   | 'list'
-  /** 404 (unknown-id body) for a hidden server, connectors narrowed. */
+  /** 404 (unknown-id body) for a server the member does not own, connectors narrowed. */
   | 'visible'
   /** Per workspace, by that workspace's mode and the caller's role there. */
   | 'per-workspace'
@@ -265,6 +268,10 @@ function makePrisma(w: World, myRoles: Record<string, string>) {
       count: jest.fn(async (args: any) =>
         members.filter((x) => x.userId === args.where.userId && x.organizationId === args.where.organizationId).length,
       ),
+      findFirst: jest.fn(async (args: any) => {
+        const x = members.find((mm) => mm.userId === args.where.userId && mm.organizationId === args.where.organizationId);
+        return x ? { role: x.role } : null;
+      }),
     },
     mcpConnectionGrant: {
       findUnique: jest.fn(async () => null),
@@ -273,6 +280,7 @@ function makePrisma(w: World, myRoles: Record<string, string>) {
       }),
     },
     mcpApiKey: { findMany: jest.fn(async () => []) },
+    connector: { count: jest.fn(async (args: any) => w.connectors.filter((c) => m(c, args.where)).length) },
     toolInvocation: {
       groupBy: jest.fn(async (args: any) =>
         args.where.mcpServerId.in.map((id: string) => ({
@@ -386,31 +394,30 @@ const ALL_NAMES: Record<string, string[]> = {
   'srv-inactive': ['shared'],
 };
 
+/** What a restricted member sees: their own servers, whatever their roles allow. */
+const OWN = ['srv-mine', 'srv-mine-hidden'];
+
 const CASES: Array<{ name: string; allowed: string[] | null; visible: string[]; names: Record<string, string[]> }> = [
   {
-    // D4: no whitelist, every connector is visible; D9: an empty server of
-    // another member is still hidden.
+    // No whitelist: every connector is visible, but another member's server
+    // stays hidden even when it holds them.
     name: 'no whitelist',
     allowed: null,
-    visible: IN_ORG.filter((s) => s !== 'srv-default-empty'),
-    names: ALL_NAMES,
+    visible: OWN,
+    names: { 'srv-mine': ['mine'], 'srv-mine-hidden': ['hidden'] },
   },
   {
+    // The role reaches `shared`, yet srv-shared and Default (other) stay
+    // hidden: holding a visible connector no longer shows a server.
     name: 'role with tools',
     allowed: ['s1'],
-    visible: ['srv-mine', 'srv-mine-hidden', 'srv-shared', 'srv-default-with', 'srv-inactive'],
-    names: {
-      'srv-mine': ['mine'],
-      'srv-mine-hidden': [],
-      'srv-shared': ['shared'],
-      'srv-default-with': ['shared'],
-      'srv-inactive': ['shared'],
-    },
+    visible: OWN,
+    names: { 'srv-mine': ['mine'], 'srv-mine-hidden': [] },
   },
   {
     name: 'role without tools',
     allowed: ['t-unrelated'],
-    visible: ['srv-mine', 'srv-mine-hidden'],
+    visible: OWN,
     names: { 'srv-mine': ['mine'], 'srv-mine-hidden': [] },
   },
 ];
@@ -516,6 +523,47 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
         ]);
       });
 
+      it.each(IN_ORG)('PUT, DELETE and PUT connectors on %s: the unknown-id 404 for a server the member does not own', async (id) => {
+        jest.spyOn(c.service, 'update').mockResolvedValue({ id } as any);
+        jest.spyOn(c.service, 'delete').mockResolvedValue(undefined);
+        jest.spyOn(c.service, 'assignConnectors').mockResolvedValue(undefined);
+        const owned = OWN.includes(id);
+        const ops = {
+          update: (r: any, x: string) => c.servers.update(r, x, { name: 'renamed' } as any),
+          delete: (r: any, x: string) => c.servers.delete(r, x),
+          assignConnectors: (r: any, x: string) => c.servers.assignConnectors(r, x, { connectorIds: ['mine'] }),
+        };
+        for (const [op, run] of Object.entries(ops)) {
+          const unknown = await run(req('ADMIN'), 'no-such-id').catch((e: unknown) => e);
+          const got = await outcome(run(req(role), id));
+          if (restricted && !visible.includes(id)) {
+            expect({ op, error: (got as any).error }).toEqual({ op, error: expect.any(NotFoundException) });
+            expect((got as any).error.getResponse()).toEqual((unknown as NotFoundException).getResponse());
+          } else if (role === 'VIEWER' || (role !== 'ADMIN' && !owned)) {
+            expect({ op, error: (got as any).error }).toEqual({ op, error: expect.any(ForbiddenException) });
+          } else {
+            expect({ op, ok: got.ok }).toEqual({ op, ok: true });
+          }
+        }
+      });
+
+      it('PUT /api/mcp-servers/srv-mine/connectors: a connector the member cannot see answers like an unknown one', async () => {
+        if (role === 'VIEWER') return; // a VIEWER cannot write at all (above)
+        jest.spyOn(c.service, 'assignConnectors').mockResolvedValue(undefined);
+        const unknown = await c.servers
+          .assignConnectors(req(role), 'srv-mine', { connectorIds: ['no-such-connector'] })
+          .catch((e: unknown) => e);
+        expect(unknown).toBeInstanceOf(NotFoundException);
+        const got = await outcome(c.servers.assignConnectors(req(role), 'srv-mine', { connectorIds: ['mine', 'hidden'] }));
+        if (restricted && allowed !== null) {
+          expect(got.ok).toBe(false);
+          expect((got as any).error.getResponse()).toEqual((unknown as NotFoundException).getResponse());
+          expect(c.service.assignConnectors).not.toHaveBeenCalled();
+        } else {
+          expect(got).toEqual({ ok: true, value: { message: 'Connectors assigned' } });
+        }
+      });
+
       it('POST /api/mcp-servers: refused for a VIEWER (D10), unchanged for EDITOR and ADMIN', async () => {
         const got = await outcome(c.servers.create(req(role), { name: 'Sales' }));
         if (role === 'VIEWER') {
@@ -539,10 +587,11 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
 // ── 3. Grants across workspaces ───────────────────────────────────────────
 
 describe('grants across workspaces', () => {
-  it('a member admin elsewhere grants every server there, and only visible ones here', async () => {
+  it('a member admin elsewhere grants every server there, and only their own ones here', async () => {
     const c = build({ mode: 'restricted', role: 'VIEWER', allowed: ['s1'] });
-    const granted = await c.grants.grantServers('client-1', ME, ['srv-hidden', 'srv-shared', 'srv-o2', 'srv-o3']);
-    expect(granted).toEqual(['srv-shared', 'srv-o2', 'srv-o3']);
+    const granted = await c.grants.grantServers('client-1', ME, ['srv-hidden', 'srv-shared', 'srv-mine', 'srv-o2', 'srv-o3']);
+    // srv-shared holds a connector the role reaches, and is still not granted.
+    expect(granted).toEqual(['srv-mine', 'srv-o2', 'srv-o3']);
     // The role lookup ran for the restricted workspace only.
     expect(c.roles.getAllowedToolIds).toHaveBeenCalledTimes(1);
     expect(c.roles.getAllowedToolIds).toHaveBeenCalledWith(ME, ORG);
@@ -557,6 +606,31 @@ describe('grants across workspaces', () => {
   it('keeps the whole-workspace grant as it is', async () => {
     const c = build({ mode: 'restricted', role: 'VIEWER', allowed: ['s1'] });
     await expect(c.connections.update(req('VIEWER'), 'client-1', { organizationId: ORG })).resolves.toEqual({ ok: true });
+  });
+});
+
+// ── 3b. Server links for the model, and the consent default ───────────────
+
+describe('server names for the shared endpoint and the consent page', () => {
+  it('names only the member\'s own active servers in a restricted workspace, every one otherwise', async () => {
+    const restricted = build({ mode: 'restricted', role: 'VIEWER', allowed: ['s1'] });
+    expect((await restricted.grants.serverNamesFor(ME, ORG)).map((s) => s.id)).toEqual(OWN);
+    const open = build({ mode: 'open', role: 'VIEWER', allowed: ['s1'] });
+    expect((await open.grants.serverNamesFor(ME, ORG)).map((s) => s.id)).toEqual(
+      IN_ORG.filter((s) => s !== 'srv-inactive'),
+    );
+    // Admin in a restricted workspace: every active server.
+    expect((await restricted.grants.serverNamesFor(ME, ORG_ADMIN)).map((s) => s.id)).toEqual(['srv-o2']);
+    // Not a member: nothing.
+    expect(await restricted.grants.serverNamesFor(ME, FOREIGN)).toEqual([]);
+  });
+
+  it('restrictedIn follows each workspace\'s mode and the role there', async () => {
+    const c = build({ mode: 'restricted', role: 'EDITOR', allowed: null });
+    expect(await c.grants.restrictedIn(ME, ORG)).toBe(true);
+    expect(await c.grants.restrictedIn(ME, ORG_ADMIN)).toBe(false);
+    expect(await c.grants.restrictedIn(ME, ORG_OPEN)).toBe(false);
+    expect(await c.grants.restrictedIn(ME, FOREIGN)).toBe(false);
   });
 });
 
