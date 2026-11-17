@@ -1,4 +1,5 @@
 import { outboundRequest } from '../common/outbound-http';
+import { trimTrailingSlashes } from './address-fix';
 
 /** The catalog adapters that talk to an Odoo and take its database name. */
 const ODOO_ADAPTERS = new Set(['odoo', 'odoo-jsonrpc']);
@@ -40,7 +41,7 @@ export function odooOrigin(baseUrl: string): string {
   try {
     return new URL(baseUrl).origin;
   } catch {
-    return baseUrl.replace(/\/+$/, '').replace(/\/json\/2$/, '');
+    return trimTrailingSlashes(baseUrl).replace(/\/json\/2$/, '');
   }
 }
 
