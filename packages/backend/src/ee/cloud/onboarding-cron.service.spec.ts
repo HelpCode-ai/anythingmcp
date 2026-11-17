@@ -633,7 +633,7 @@ describe('OnboardingCronService — onboarding pass', () => {
   it('nudges a user with no AI client an hour after sign-up, without naming one', async () => {
     const { service, email } = makeService({ candidates: [user({})] });
     await service.run();
-    expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, undefined);
+    expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, { quickSetups: expect.any(Array) });
   });
 
   it('asks the database only for users who signed up at least an hour ago', async () => {
@@ -653,7 +653,7 @@ describe('OnboardingCronService — onboarding pass', () => {
       ],
     });
     await service.run();
-    expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, undefined);
+    expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, { quickSetups: expect.any(Array) });
   });
 
   it('counts a teammate\'s connector: no reminder, completion stamped', async () => {
@@ -671,17 +671,17 @@ describe('OnboardingCronService — onboarding pass', () => {
   describe('reminder 1 test arms', () => {
     const events = (prisma: any) => prisma.productEvent.create.mock.calls.map((c: any[]) => c[0].data);
 
-    it('arm A: today\'s email, recorded with its arm', async () => {
+    it('a user once in arm A now gets the one-click chats too, recorded as arm B', async () => {
       const { service, email, prisma } = makeService({ candidates: [user({ id: 'u3' })] });
       const out = await service.run();
-      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u1@example.com', 'Ada', 1, undefined);
+      expect(email.sendOnboardingReminderEmail.mock.calls[0][3].quickSetups).toHaveLength(3);
       expect(out.firstReminders).toBe(1);
       expect(events(prisma)).toEqual([
         {
           event: 'onboarding_reminder_sent',
           userId: 'u3',
           organizationId: 'org-1',
-          metadata: { reminder: 1, arm: 'A', kind: 'generic' },
+          metadata: { reminder: 1, arm: 'B', kind: 'generic' },
         },
       ]);
     });
@@ -693,7 +693,7 @@ describe('OnboardingCronService — onboarding pass', () => {
       expect(opts.quickSetups).toEqual([
         { label: 'Telegram bot', url: 'https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP' },
         { label: 'Odoo', url: 'https://claude.ai/new?q=Connect%20my%20Odoo%20to%20AnythingMCP' },
-        { label: 'Shopify store', url: 'https://claude.ai/new?q=Connect%20my%20Shopify%20store%20to%20AnythingMCP' },
+        { label: 'WooCommerce store', url: 'https://claude.ai/new?q=Connect%20my%20WooCommerce%20store%20to%20AnythingMCP' },
       ]);
       expect(events(prisma)[0].metadata).toEqual({ reminder: 1, arm: 'B', kind: 'generic' });
     });
@@ -743,7 +743,7 @@ describe('OnboardingCronService — onboarding pass', () => {
       const out = await service.run();
       expect(out.firstReminderHoldout).toBe(0);
       expect(out.firstReminders).toBe(1);
-      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u3@example.com', 'Ada', 1, undefined);
+      expect(email.sendOnboardingReminderEmail).toHaveBeenCalledWith('u3@example.com', 'Ada', 1, { quickSetups: expect.any(Array) });
       expect(events(prisma).map((e: any) => e.userId)).toEqual(['u3']);
     });
 
@@ -795,7 +795,7 @@ describe('OnboardingCronService — onboarding pass', () => {
       );
       expect(prisma.productEvent.create.mock.calls[0][0].data.metadata).toEqual({
         reminder: 2,
-        arm: 'A',
+        arm: 'B',
         kind: 'generic',
       });
     });
