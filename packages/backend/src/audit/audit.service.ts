@@ -365,18 +365,25 @@ export class AuditService implements OnModuleDestroy {
       mcpServerId?: string;
       organizationId?: string;
       /**
-       * Restricted member visibility: only calls made by this user. Absent on
-       * the open path; when present (even empty) it is always applied, so a
-       * bad value matches nothing instead of everything.
+       * Restricted member visibility: only calls made by this user, and only
+       * the MCP servers this user owns are named (`mcpServer` and
+       * `mcpServerId` are null on a call made through another member's
+       * server; filtering by such a server matches nothing). Absent on the
+       * open path; when present (even empty) it is always applied, so a bad
+       * value matches nothing instead of everything.
        */
       onlyUserId?: string;
     },
   ) {
+    const restricted = filters?.onlyUserId !== undefined;
     const where: any = { ...this.orgScope(filters?.organizationId) };
-    if (filters?.onlyUserId !== undefined) where.userId = filters.onlyUserId;
+    if (restricted) where.userId = filters!.onlyUserId;
     if (filters?.toolId) where.toolId = filters.toolId;
     if (filters?.status) where.status = filters.status;
-    if (filters?.mcpServerId) where.mcpServerId = filters.mcpServerId;
+    if (filters?.mcpServerId) {
+      where.mcpServerId = filters.mcpServerId;
+      if (restricted) where.mcpServer = { userId: filters!.onlyUserId };
+    }
     if (filters?.search) {
       where.tool = { ...where.tool, name: { contains: filters.search, mode: 'insensitive' } };
     }
@@ -384,7 +391,7 @@ export class AuditService implements OnModuleDestroy {
       where.tool = { ...where.tool, connectorId: filters.connectorId };
     }
 
-    return this.prisma.toolInvocation.findMany({
+    const rows = await this.prisma.toolInvocation.findMany({
       where,
       take: limit,
       skip: offset,
@@ -401,9 +408,17 @@ export class AuditService implements OnModuleDestroy {
           select: { id: true, email: true, name: true },
         },
         mcpServer: {
-          select: { id: true, name: true, slug: true },
+          // The owner only to decide below whether the server may be named.
+          select: { id: true, name: true, slug: true, ...(restricted ? { userId: true } : {}) },
         },
       },
+    });
+    if (!restricted) return rows;
+    return rows.map((row: any) => {
+      const own = !!row.mcpServer && row.mcpServer.userId === filters!.onlyUserId;
+      if (!own) return { ...row, mcpServerId: null, mcpServer: null };
+      const { userId: _owner, ...server } = row.mcpServer;
+      return { ...row, mcpServer: server };
     });
   }
 
@@ -574,7 +589,10 @@ export class AuditService implements OnModuleDestroy {
    * (both env-configurable, default 0 → shows 0 until an operator sets rates).
    *
    * `onlyUserId` (restricted member visibility) narrows every list and total
-   * to that user's calls, so `byUser` holds at most the caller's own row.
+   * to that user's calls, so `byUser` holds at most the caller's own row, and
+   * `byServer` names only the servers that user owns: calls through any other
+   * server are counted in one row with `id: null` together with the calls
+   * made without a server.
    */
   async getBreakdowns(organizationId: string, days = 30, onlyUserId?: string) {
     const safeDays = Math.min(Math.max(days || 30, 1), 365);
@@ -609,7 +627,7 @@ export class AuditService implements OnModuleDestroy {
         ? this.prisma.connector.findMany({ where: { id: { in: connIds } }, select: { id: true, name: true } })
         : [],
       srvIds.length
-        ? this.prisma.mcpServerConfig.findMany({ where: { id: { in: srvIds } }, select: { id: true, name: true } })
+        ? this.prisma.mcpServerConfig.findMany({ where: { id: { in: srvIds } }, select: { id: true, name: true, userId: true } })
         : [],
       userIds.length
         ? this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, email: true, name: true } })
@@ -617,6 +635,30 @@ export class AuditService implements OnModuleDestroy {
     ]);
     const connName = new Map(conns.map((c) => [c.id, c.name]));
     const srvName = new Map(srvs.map((s) => [s.id, s.name]));
+    // Restricted member visibility: a server the caller does not own is not
+    // named; its calls join the row of calls without a server.
+    const ownServers = new Set(
+      (srvs as Array<{ id: string; userId?: string }>).filter((s) => s.userId === onlyUserId).map((s) => s.id),
+    );
+    const serverRows = <T extends { mcpServerId: string | null; _count: { _all: number }; _sum?: { repeatCount: number | null } }>(
+      rows: T[],
+    ) => {
+      if (onlyUserId === undefined) return rows;
+      const calls = (r: T) => r._sum?.repeatCount ?? r._count._all;
+      const out: Array<{ mcpServerId: string | null; _count: { _all: number }; _sum: { repeatCount: number | null } }> = [];
+      let other = 0;
+      let hasOther = false;
+      for (const r of rows) {
+        if (r.mcpServerId && ownServers.has(r.mcpServerId)) {
+          out.push({ mcpServerId: r.mcpServerId, _count: { _all: calls(r) }, _sum: { repeatCount: calls(r) } });
+        } else {
+          other += calls(r);
+          hasOther = true;
+        }
+      }
+      if (hasOther) out.push({ mcpServerId: null, _count: { _all: other }, _sum: { repeatCount: other } });
+      return out;
+    };
     const userName = new Map(users.map((u) => [u.id, u.name || u.email]));
 
     const merge = (
@@ -655,8 +697,12 @@ export class AuditService implements OnModuleDestroy {
       byConnector: merge(byConnector, byConnectorErr, 'connectorId', (id) =>
         id ? (connName.get(id) ?? 'Unknown connector') : 'No connector',
       ),
-      byServer: merge(byServer, byServerErr, 'mcpServerId', (id) =>
-        id ? (srvName.get(id) ?? 'Unknown server') : 'Direct / no server',
+      byServer: merge(serverRows(byServer), serverRows(byServerErr), 'mcpServerId', (id) =>
+        id
+          ? (srvName.get(id) ?? 'Unknown server')
+          : onlyUserId !== undefined
+            ? 'Other server or none'
+            : 'Direct / no server',
       ),
       byUser: merge(byUser, byUserErr, 'userId', (id) =>
         id ? (userName.get(id) ?? 'Unknown user') : 'Anonymous',

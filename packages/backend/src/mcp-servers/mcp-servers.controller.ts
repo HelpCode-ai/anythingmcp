@@ -21,7 +21,12 @@ import { CODE_MODE_MODES, type CodeMode } from '../mcp-server/code-tool.util';
 import { McpServersService } from './mcp-servers.service';
 import { LicenseGuardService } from '../license/license-guard.service';
 import { PrismaService } from '../common/prisma.service';
-import { MemberVisibilityService, type VisibilityScope } from '../settings/member-visibility.service';
+import {
+  MemberVisibilityService,
+  canSeeServer,
+  connectorWhere,
+  type VisibilityScope,
+} from '../settings/member-visibility.service';
 
 class CreateMcpServerDto {
   @ApiProperty({ description: 'Human-readable name.', example: 'Sales Workspace' })
@@ -114,12 +119,12 @@ const UNRESTRICTED_SCOPE: VisibilityScope = Object.freeze({ restricted: false as
 /**
  * Member visibility (settings/member-visibility.service.ts) on this
  * controller: in a workspace set to `restricted`, a member who is not an admin
- * reads only the servers they own or that hold a connector they may see, and
- * in each server only those connectors. A hidden server answers exactly the
- * 404 an unknown id gets. Admins and open workspaces take today's code path.
- * Writes keep their owner-or-admin rule; a VIEWER cannot create a server in
- * any mode. The route-by-route rules are listed in
- * mcp-servers.member-visibility.spec.ts.
+ * reads, changes and counts only the servers they own, and in each one only
+ * the connectors they may see. Another member's server answers exactly the
+ * 404 an unknown id gets, on reads and writes alike. Admins and open
+ * workspaces take today's code path. Writes keep their owner-or-admin rule; a
+ * VIEWER cannot create a server in any mode. The route-by-route rules are
+ * listed in settings/member-visibility.routes.ts.
  */
 @ApiTags('MCP Servers')
 @ApiBearerAuth()
@@ -147,6 +152,18 @@ export class McpServersController {
     }
   }
 
+  /**
+   * Restricted member visibility: another member's server answers the 404 of
+   * an unknown id, before the owner-or-admin rule could answer 403 and so
+   * confirm that it exists. Nothing for admins and open workspaces.
+   */
+  private async hideUnlessVisible(server: any, req: any): Promise<VisibilityScope> {
+    this.assertOrgMatch(server, req);
+    const scope = await this.scopeFor(req);
+    if (!canSeeServer(scope, server)) throw new NotFoundException('MCP server not found');
+    return scope;
+  }
+
   private assertCanWrite(server: any, req: any) {
     this.assertOrgMatch(server, req);
     if (req.user.role === 'VIEWER') {
@@ -166,7 +183,8 @@ export class McpServersController {
       '(`calls30d`, `lastCallAt`). Without `limit` all servers are returned.\n\n' +
       '```bash\namcp api GET /api/mcp-servers\n```\n\n' +
       'In a workspace with restricted member visibility, a member who is not an admin gets only the servers they own ' +
-      'or that hold a connector they can see, each with only those connectors in its names and counts.',
+      '(never another member\'s server, not even one holding a connector they can see), each with only the connectors ' +
+      'they can see in its names and counts.',
   })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Page size, 1..200. Omit for all.', example: 50 })
   @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip.', example: 0 })
@@ -224,8 +242,8 @@ export class McpServersController {
   @ApiOperation({
     summary: 'Get MCP server detail',
     description:
-      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a server they ' +
-      'cannot see, and only the connectors they can see on the others.',
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 (the body of an unknown ' +
+      'id) for every server they do not own, and on their own servers only the connectors they can see.',
   })
   async get(@Req() req: any, @Param('id') id: string) {
     const scope = await this.scopeFor(req);
@@ -248,7 +266,7 @@ export class McpServersController {
     description:
       'Tool calls made through this server in the last 30 days and when the last one happened. Polled by the connect ' +
       'page to show when the first request from an AI client arrives; also a cheap way to check a server is in use. ' +
-      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a server they cannot see.',
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for every server they do not own.',
   })
   @ApiResponse({
     status: 200,
@@ -277,7 +295,8 @@ export class McpServersController {
       '`code_propose_tool` (propose a program as a saved code tool for an admin to approve).\n\n' +
       'Code runs in an isolated sandbox and needs a configured code-runner. `skillsDelivery` sets how applied skills ' +
       'reach clients (`auto`, `inline`, `index`); `isActive: false` switches the endpoint off. Only the server owner or ' +
-      'an admin may change it; a slug already used in the workspace answers 409.\n\n' +
+      'an admin may change it; a slug already used in the workspace answers 409. In a workspace with restricted member ' +
+      'visibility, a member who is not an admin gets 404 for a server they do not own.\n\n' +
       '```bash\namcp api PUT /api/mcp-servers/<id> --data \'{"codeMode":"inline"}\' --yes\n```',
   })
   @ApiBody({
@@ -294,6 +313,7 @@ export class McpServersController {
   async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateMcpServerDto) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
+    await this.hideUnlessVisible(server, req);
     this.assertCanWrite(server, req);
     // Switching a paused server back on counts against the plan's cap (Cloud).
     if (dto.isActive === true && !server.isActive) {
@@ -303,10 +323,16 @@ export class McpServersController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete MCP server' })
+  @ApiOperation({
+    summary: 'Delete MCP server',
+    description:
+      'Only the server owner or an admin. In a workspace with restricted member visibility, a member who is not an ' +
+      'admin gets 404 for a server they do not own.',
+  })
   async delete(@Req() req: any, @Param('id') id: string) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
+    await this.hideUnlessVisible(server, req);
     this.assertCanWrite(server, req);
     await this.mcpServersService.delete(id);
     return { message: 'MCP server deleted' };
@@ -319,7 +345,8 @@ export class McpServersController {
       'Sets the connectors whose tools this server exposes. The list **replaces** the current assignment: send every ' +
       'connector that should stay, or `[]` to remove them all. Connected AI clients are told the tool list changed. ' +
       '404 when an id is not a connector of your workspace. Which tools each user may call is then decided by roles ' +
-      '(`/api/roles`).\n\n' +
+      '(`/api/roles`). In a workspace with restricted member visibility, a member who is not an admin gets 404 for a ' +
+      'server they do not own and for a connector they cannot see.\n\n' +
       '```bash\namcp api PUT /api/mcp-servers/<id>/connectors --data \'{"connectorIds":["<connectorId>"]}\' --yes\n```',
   })
   @ApiResponse({ status: 200, schema: { type: 'object', example: { message: 'Connectors assigned' } } })
@@ -330,12 +357,15 @@ export class McpServersController {
   ) {
     const server = await this.mcpServersService.findById(id);
     if (!server) throw new NotFoundException('MCP server not found');
+    const scope = await this.hideUnlessVisible(server, req);
     this.assertCanWrite(server, req);
 
-    // Validate that all connectors belong to the same organization
+    // Validate that all connectors belong to the same organization and, for a
+    // restricted member, that they can see each one: a hidden connector
+    // answers like an unknown id.
     if (dto.connectorIds.length > 0) {
       const orgCount = await this.prisma.connector.count({
-        where: { id: { in: dto.connectorIds }, organizationId: req.user.organizationId },
+        where: { AND: [{ id: { in: dto.connectorIds }, organizationId: req.user.organizationId }, connectorWhere(scope)] },
       });
       if (orgCount !== dto.connectorIds.length) {
         throw new NotFoundException('One or more connectors not found');

@@ -191,11 +191,10 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
   const IN_ORG = ['srvEditor', 'srvViewerDefault', 'srvShared', 'srvHidden', 'srvOther2Default', 'srvOtherDefault'];
   const visibleFor = (who: string, mode: string, state: string): string[] => {
     if (who === 'ADMIN' || mode === 'open') return IN_ORG;
-    const own = who === 'EDITOR' ? 'srvEditor' : 'srvViewerDefault';
-    // D4: no whitelist, every server with a connector; D9: other members' empty defaults stay hidden.
-    if (state === 'none') return IN_ORG.filter((s) => s === own || !['srvViewerDefault', 'srvOther2Default'].includes(s));
-    const viaRole = state === 'with tools' ? ['srvShared', 'srvOtherDefault'] : [];
-    return IN_ORG.filter((s) => s === own || viaRole.includes(s));
+    // Restricted: only the member's own server, whatever the whitelist. Not
+    // srvShared or srvOtherDefault, although they hold `shared`.
+    void state;
+    return [who === 'EDITOR' ? 'srvEditor' : 'srvViewerDefault'];
   };
   const name = (id: string) => Object.keys(ids).find((k) => ids[k] === id);
   const unknownBody = { statusCode: 404, message: 'MCP server not found', error: 'Not Found' };
@@ -253,7 +252,8 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
         const second = targets.body.find((t: any) => t.organizationId === ids.org2);
         if (who === 'ADMIN') expect(second).toBeUndefined();
         if (who === 'EDITOR') expect(second.servers.map((s: any) => name(s.id))).toEqual(['srvO2', 'srvO2Empty']);
-        if (who === 'VIEWER') expect(second.servers.map((s: any) => name(s.id))).toEqual(['srvO2']);
+        // Restricted there and owning nothing there: no server to offer.
+        if (who === 'VIEWER') expect(second.servers).toEqual([]);
 
         // Grants: a hidden server is refused exactly like an unknown id.
         const clientId = `client-${who}-${mode}-${state}`;
@@ -269,6 +269,19 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
           select: { serverIds: true },
         });
         expect(stored!.serverIds.map(name).sort()).toEqual([...expected].sort());
+      });
+
+      it.each(['ADMIN', 'EDITOR', 'VIEWER'])('%s: writes on another member\'s server', async (who) => {
+        const restricted = mode === 'restricted' && who !== 'ADMIN';
+        for (const [method, path, body] of [
+          ['PUT', `/api/mcp-servers/${ids.srvHidden}`, { description: 'changed' }],
+          ['PUT', `/api/mcp-servers/${ids.srvHidden}/connectors`, { connectorIds: [ids.hidden] }],
+        ] as const) {
+          const r = await call(who, method, path, body);
+          if (restricted) expect(r).toEqual({ status: 404, body: unknownBody });
+          else if (who === 'ADMIN') expect(r.status).toBe(200);
+          else expect(r.status).toBe(403);
+        }
       });
 
       it.each(['ADMIN', 'EDITOR', 'VIEWER'])('%s: POST /api/mcp-servers (D10)', async (who) => {
@@ -290,10 +303,29 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
   it('pages over visible servers only: limit and offset are applied after the filter', async () => {
     await setMode('restricted');
     await setWhitelist('with tools');
-    const all = (await get('VIEWER', '/api/mcp-servers')).body.map((s: any) => name(s.id));
-    expect(all).toEqual(['srvViewerDefault', 'srvShared', 'srvOtherDefault']);
-    const page = await get('VIEWER', '/api/mcp-servers?limit=2&offset=1');
-    expect(page.body.map((s: any) => name(s.id))).toEqual(['srvShared', 'srvOtherDefault']);
+    // Two more servers of the viewer, created after every other one.
+    const extra: string[] = [];
+    for (const [i, n] of ['viewer-second', 'viewer-third'].entries()) {
+      const s = await prisma.mcpServerConfig.create({
+        data: {
+          userId: ids.VIEWER,
+          organizationId: ids.org,
+          name: n,
+          slug: `${n}-${randomUUID().slice(0, 8)}`,
+          createdAt: new Date(Date.UTC(2027, 0, 1, 0, i)),
+        },
+      });
+      extra.push(s.id);
+      ids[n] = s.id;
+    }
+    try {
+      const all = (await get('VIEWER', '/api/mcp-servers')).body.map((s: any) => name(s.id));
+      expect(all).toEqual(['srvViewerDefault', 'viewer-second', 'viewer-third']);
+      const page = await get('VIEWER', '/api/mcp-servers?limit=2&offset=1');
+      expect(page.body.map((s: any) => name(s.id))).toEqual(['viewer-second', 'viewer-third']);
+    } finally {
+      await prisma.mcpServerConfig.deleteMany({ where: { id: { in: extra } } });
+    }
   });
 
   it('fails closed: a role lookup that throws answers 500, never the unrestricted result', async () => {
