@@ -1722,11 +1722,35 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "learning",
+    "action": "addTopic",
+    "method": "POST",
+    "path": "/api/learning/projects/:id/topics",
+    "summary": "Add a topic to a learning project, optionally filed in its own folder",
+    "admin": true,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "learning",
     "action": "withdraw",
     "method": "POST",
     "path": "/api/learning/projects/:id/withdraw",
     "summary": "Decline or stop a learning project as its member, optionally erasing what was not published",
     "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "learning",
+    "action": "updateTopic",
+    "method": "PATCH",
+    "path": "/api/learning/topics/:id",
+    "summary": "Rename a topic, change when it applies, or file its skills in another folder",
+    "admin": true,
     "pathParams": [
       "id"
     ],

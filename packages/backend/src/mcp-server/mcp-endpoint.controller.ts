@@ -25,7 +25,12 @@ import { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { LearningService, type ActiveLearning } from '../ee/learning/learning.service';
-import { learningFooter, learningInstruction, learningToolEntries } from '../ee/learning/learning-tools';
+import {
+  learningFooter,
+  learningInstruction,
+  learningToolEntries,
+  readReminderDue,
+} from '../ee/learning/learning-tools';
 import { McpServer, isLegacyRequest } from '@modelcontextprotocol/server';
 import {
   NodeStreamableHTTPServerTransport as StreamableHTTPServerTransport,
@@ -2298,17 +2303,28 @@ export class McpEndpointController {
         ]
           .filter(Boolean)
           .join('\n\n') || undefined;
+      // An expert who mostly reads gets the reminder on read results too, at
+      // most every few minutes (#1770).
+      const learning = params.learning;
+      const readReminder =
+        learning && annotations.readOnlyHint === true ? learningFooter(learning) : undefined;
+      const registered = [footer, readReminder ? `read:${readReminder}` : null].filter(Boolean).join('|');
 
       entries.push({
         name: exposedName,
-        // The footer is part of what a live session registered.
-        sig: footer ? `${sig}|${footer}` : sig,
+        // The footers are part of what a live session registered.
+        sig: registered ? `${sig}|${registered}` : sig,
         register: (mcpServer: McpServer) => {
           const withFooter = (r: any) => {
-            if (!footer || r?.isError || !Array.isArray(r?.content)) return r;
+            if (r?.isError || !Array.isArray(r?.content)) return r;
+            const extra = [
+              footer,
+              readReminder && learning && readReminderDue(learning.projectId) ? readReminder : null,
+            ].filter((t): t is string => !!t);
+            if (!extra.length) return r;
             return {
               ...r,
-              content: [...r.content, { type: 'text' as const, text: footer }],
+              content: [...r.content, ...extra.map((text) => ({ type: 'text' as const, text }))],
             };
           };
           const handler = async (args: any) => {

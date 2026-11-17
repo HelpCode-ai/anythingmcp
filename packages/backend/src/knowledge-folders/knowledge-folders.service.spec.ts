@@ -28,6 +28,7 @@ function make(opts: {
     kgSkillSuggestion: { updateMany: jest.fn() },
     memoryItem: { updateMany: jest.fn() },
     learningProject: { updateMany: jest.fn() },
+    learningTopic: { updateMany: jest.fn() },
   };
   const prisma: any = {
     knowledgeFolder: {
@@ -57,6 +58,7 @@ function make(opts: {
       findMany: jest.fn(async () => []),
     },
     learningProject: { count: jest.fn(async () => 0) },
+    learningTopic: { count: jest.fn(async () => 0) },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
   const edition: any = {
@@ -205,6 +207,11 @@ describe('KnowledgeFoldersService changes', () => {
       where: { organizationId: ORG, folderId: 'quotes' },
       data: { folderId: 'sales' },
     });
+    // So does a topic filed in its own folder.
+    expect(tx.learningTopic.updateMany).toHaveBeenCalledWith({
+      where: { organizationId: ORG, folderId: 'quotes' },
+      data: { folderId: 'sales' },
+    });
     expect(tx.knowledgeFolder.delete).toHaveBeenCalledWith({ where: { id: 'quotes' } });
   });
 
@@ -297,6 +304,15 @@ describe('KnowledgeFoldersService never widens access by accident', () => {
     prisma.learningProject.count = jest.fn(async () => 1);
     await expect(svc.remove(ORG, 'sales')).rejects.toThrow(/still holds 1 item/);
     expect(prisma.learningProject.count).toHaveBeenCalledWith({ where: { organizationId: ORG, folderId: 'sales' } });
+  });
+
+  it('refuses deleting a limited folder that a learning topic files into', async () => {
+    const { svc, prisma } = make();
+    prisma.kgSkillSuggestion.count = jest.fn(async () => 0);
+    prisma.memoryItem.count = jest.fn(async () => 0);
+    prisma.learningTopic.count = jest.fn(async () => 2);
+    await expect(svc.remove(ORG, 'sales')).rejects.toThrow(/still holds 2 item/);
+    expect(prisma.learningTopic.count).toHaveBeenCalledWith({ where: { organizationId: ORG, folderId: 'sales' } });
   });
 
   it('hands a deleted limited folder\'s limit down to its subfolders', async () => {

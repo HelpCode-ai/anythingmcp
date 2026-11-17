@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { KgSkillService, audienceVisibility, skillKey } from './kg-skill.service';
+import { KgSkillService, audienceVisibility, skillKey, skillVisibility } from './kg-skill.service';
 
 function okJson(body: any) {
   return { ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body };
@@ -458,8 +458,7 @@ describe('KgSkillService with folders', () => {
     const svc = new KgSkillService({ kgSkillSuggestion: { findMany } } as any, {} as any);
     await svc.activeSkillsText(ORG, 'srv', [], 'auto', access(['f-sales']) as any);
     expect(findMany.mock.calls[0][0].where.AND).toEqual([
-      { audienceUserId: null },
-      { OR: [{ folderId: null }, { folderId: { in: ['f-sales'] } }] },
+      { AND: [{ audienceUserId: null }, { OR: [{ folderId: null }, { folderId: { in: ['f-sales'] } }] }] },
     ]);
   });
 
@@ -923,6 +922,34 @@ describe('KgSkillService audience', () => {
 
   it('serves a member their own drafts, and the draft instead of its published copy', () => {
     expect(audienceVisibility(access('u-expert') as any)).toEqual(forMember('u-expert'));
+  });
+
+  it('serves a member their own drafts even in a folder limited to roles they lack', () => {
+    const limited = { organizationId: ORG, all: false, ids: new Set(['f-open']), folders: [], userId: 'u-expert' };
+    const inFolders = { OR: [{ folderId: null }, { folderId: { in: ['f-open'] } }] };
+    expect(skillVisibility(limited as any)).toEqual({
+      OR: [
+        // The draft: no folder check.
+        { audienceUserId: 'u-expert' },
+        // Everything else: for everyone, and in a folder the caller may see.
+        {
+          AND: [
+            {
+              audienceUserId: null,
+              NOT: { publishedOfTopics: { some: { draftSkill: { audienceUserId: 'u-expert' } } } },
+            },
+            inFolders,
+          ],
+        },
+      ],
+    });
+    // Without a known caller: skills for everyone, in visible folders.
+    expect(skillVisibility({ ...limited, userId: null } as any)).toEqual({
+      AND: [{ audienceUserId: null }, inFolders],
+    });
+    // No folder limit at all: the audience rule alone.
+    expect(skillVisibility(access('u-expert') as any)).toEqual(forMember('u-expert'));
+    expect(skillVisibility(undefined)).toEqual(forEveryone);
   });
 
   it('applies on every path that serves skills', async () => {

@@ -9616,10 +9616,12 @@ AnythingMCP stores it and serves it back.
    worked *example*.
 2. **A topic** groups lessons about one kind of work, for example "Quotes for
    old windows". One topic is one skill. The skill text is put together from
-   the topic's lessons, so a new lesson never rewrites the others.
-3. **A draft** of the skill, with every lesson, is served to the member only.
-   Their AI client improves at once; if they correct it again, the lesson is
-   revised.
+   the topic's lessons, so a new lesson never rewrites the others. An admin
+   can set the topics in advance; the member's AI client files lessons under
+   them first and starts a new topic only when none fits.
+3. **A draft** of the skill, with every lesson, is served to the member only,
+   also when its folder is limited to roles the member does not hold. Their AI
+   client improves at once; if they correct it again, the lesson is revised.
 4. **The member confirms** lessons in the chat ("this is what I learned, is it
    right?").
 5. **A person publishes** a topic: its confirmed lessons become a skill for
@@ -9638,14 +9640,24 @@ the server only stores and arranges text.
 | Name | For example "Hardware for old windows". The member and their AI client see it. |
 | Learn from | The member. One project per member and MCP server. |
 | On the MCP server | Lessons are kept only from the member's work on this server. |
-| File the skills in | Optional [folder](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md#folders>). A folder limited to roles also limits who is served the published skill. |
+| File the skills in | Optional [folder](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/memory.md#folders>) for topics without a folder of their own. A folder limited to roles also limits who is served the published skill. |
 | Ends on | Optional. The project ends on its own that day. |
 | Labels | Put on the learned skills, next to `learned`. |
 | Publishing | *A person publishes each topic* (default), or *lessons the member confirms are published*. |
 | Show the member's name | Off by default: the name is shown to admins only. |
 
 The project then waits for the member. You can pause, resume, end or delete it
-from its page. Ending keeps the lessons and the published skills; deleting
+from its page.
+
+### Topics
+
+On the project's **Topics** tab, admins add a topic (**+ Add a topic**: name,
+when to use, folder) or **Edit** one. A topic with its own folder files its
+skills there; without one, they go into the project's folder. One member
+working in two areas can so have each area filed, and limited to roles, on its
+own. Renaming a topic renames its skills (the published skill gets a new
+version); moving it moves its draft and published skills. The member's AI
+client sees the new list on its next request. Ending keeps the lessons and the published skills; deleting
 removes the lessons and keeps the published skills.
 
 ## What the member sees
@@ -9669,15 +9681,17 @@ On `/mcp/<serverId>`, for the project's member only:
 
 | Tool | What it does |
 |---|---|
-| `learning_record(topic, kind, text, before?, after?, reason?, tool?, whenToUse?, replaces?)` | Keeps one lesson under a topic. A new topic name starts a new skill. |
+| `learning_record(topic, kind, text, before?, after?, reason?, tool?, whenToUse?, replaces?)` | Keeps one lesson under a topic. The description lists the project's topics with when they apply; a new topic name starts a new skill. |
 | `learning_review(topic?, limit?)` | Lists the lessons the member has not confirmed yet. |
 | `learning_confirm(decisions)` | Records the member's answers: `confirm`, `reject` or `correct` (with the corrected text). |
 
 The AI client is told when to call them in three places: the server's
 instructions, the description of `learning_record`, and one line at the end of
-the result of every tool that may change something ("if the user corrects this
-result, call learning_record"). The last one matters because some clients never
-show a server's instructions to the model.
+tool results ("if the user corrects this result, call learning_record"). That
+line is on every result of a tool that may change something, and on the result
+of a read-only tool at most every ten minutes, so a member who mostly looks
+things up is reminded too. It matters because some clients never show a
+server's instructions to the model.
 
 The tools disappear when the project is paused or ended, the member stops it
 or opts out, or the plan no longer includes it. A call made after that saves
@@ -9701,10 +9715,11 @@ A topic with confirmed lessons newer than its last publication is marked
 Everything the dashboard does for learning projects is in the management API
 under `/api/learning`, so the [CLI](<https://github.com/HelpCode-ai/anythingmcp/blob/main/packages/cli/README.md>) reaches it with
 `amcp api` and a management key (`amcp login --management`). The key carries
-its owner's role: starting, changing, pausing, ending and deleting a project
-need an admin; reading lessons and publishing need an admin or an editor. A
-read-only (`MANAGEMENT_READ`) key gets 403 on every change.
-`amcp api --list learning` prints all 16 operations.
+its owner's role: starting, changing, pausing, ending and deleting a project,
+and setting its topics, need an admin; reading lessons and publishing need an
+admin or an editor. A read-only (`MANAGEMENT_READ`) key gets 403 on every
+change.
+`amcp api --list learning` prints all 18 operations.
 
 What the plan includes, and the projects of the workspace:
 
@@ -9726,8 +9741,20 @@ amcp api POST /api/learning/projects --yes --data '{
   "folderId": "<folder id>",
   "endsAt": "2027-03-31T23:59:59Z",
   "tags": ["windows"],
-  "publishMode": "manual"
+  "publishMode": "manual",
+  "topics": [
+    {"title": "Spare parts for old windows", "whenToUse": "Quotes with spare parts", "folderId": "<folder id>"},
+    {"title": "Back office"}
+  ]
 }'
+```
+
+Add a topic later, or rename one and file it elsewhere (`folderId: null` puts
+it back in the project's folder):
+
+```bash
+amcp api POST /api/learning/projects/<id>/topics --yes --data '{"title":"Shop support","folderId":"<folder id>"}'
+amcp api PATCH /api/learning/topics/<topic id> --yes --data '{"title":"Web shop support","folderId":null}'
 ```
 
 It waits for the member. Pause, resume, end or delete it:

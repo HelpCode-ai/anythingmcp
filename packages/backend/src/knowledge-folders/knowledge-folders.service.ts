@@ -353,15 +353,17 @@ export class KnowledgeFoldersService {
     // A limited folder must not hand its contents to a wider audience.
     const childRoles = new Map<string, string[]>();
     if (limit.length) {
-      // A learning project counts too: it keeps filing skills in its folder.
-      const [skills, memory, projects] = await Promise.all([
+      // A learning project or topic counts too: it keeps filing skills there.
+      const [skills, memory, projects, topics] = await Promise.all([
         this.prisma.kgSkillSuggestion.count({ where: { organizationId, folderId: id } }),
         this.prisma.memoryItem.count({ where: { organizationId, folderId: id } }),
         this.prisma.learningProject.count({ where: { organizationId, folderId: id } }),
+        this.prisma.learningTopic.count({ where: { organizationId, folderId: id } }),
       ]);
-      if (skills + memory + projects > 0) {
+      const held = skills + memory + projects + topics;
+      if (held > 0) {
         throw new ConflictException(
-          `"${folder.path}" is limited to roles and still holds ${skills + memory + projects} item(s). Move them or remove the limit first.`,
+          `"${folder.path}" is limited to roles and still holds ${held} item(s). Move them or remove the limit first.`,
         );
       }
       // Subfolders keep the limit they inherited: an unlimited one takes it
@@ -399,6 +401,10 @@ export class KnowledgeFoldersService {
       });
       // A learning project files its skills where its folder went.
       await tx.learningProject.updateMany({
+        where: { organizationId, folderId: id },
+        data: { folderId: parentId },
+      });
+      await tx.learningTopic.updateMany({
         where: { organizationId, folderId: id },
         data: { folderId: parentId },
       });

@@ -12,13 +12,10 @@ import { RedisService } from '../common/redis.service';
 import { RolesService } from '../roles/roles.service';
 import { KgStaticService } from './kg-static.service';
 import { memberContributes } from './kg-learning.service';
-import {
-  folderVisibility,
-  type FolderAccess,
-} from '../knowledge-folders/knowledge-folders.service';
+import { type FolderAccess } from '../knowledge-folders/knowledge-folders.service';
 import { KgObservationalService } from './kg-observational.service';
 import { KgLlmService } from './kg-llm.service';
-import { audienceVisibility } from './kg-skill.service';
+import { skillVisibility } from './kg-skill.service';
 
 @Injectable()
 export class KgService {
@@ -735,8 +732,8 @@ export class KgService {
         status: 'applied',
         ...(or.length ? { OR: or } : {}),
         // Skills in folders limited to roles the caller lacks stay out, and
-        // a member's draft is served to that member only.
-        AND: [folderVisibility(opts?.folders), audienceVisibility(opts?.folders)],
+        // a member's draft is served to that member only (whatever its folder).
+        AND: [skillVisibility(opts?.folders)],
       },
       select: { id: true, title: true, whenToUse: true },
       take: 25,
