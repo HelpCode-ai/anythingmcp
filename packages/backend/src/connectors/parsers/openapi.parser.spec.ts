@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { OpenApiParser } from './openapi.parser';
+import { OpenApiParser, describeSpecDownloadFailure } from './openapi.parser';
 
 describe('OpenApiParser', () => {
   let parser: OpenApiParser;
@@ -989,4 +989,28 @@ describe('OpenApiParser', () => {
     });
   });
 
+});
+
+describe('describeSpecDownloadFailure', () => {
+  const url = 'https://docs.example.com/api/swagger.json';
+
+  it('explains a redirect loop and points to pasting the spec', () => {
+    const msg = describeSpecDownloadFailure(url, { code: 'ERR_FR_TOO_MANY_REDIRECTS', message: 'Maximum number of redirects exceeded' });
+    expect(msg).toContain('keeps redirecting');
+    expect(msg).toContain('paste the spec');
+  });
+
+  it('explains a 403 from a bot check', () => {
+    const msg = describeSpecDownloadFailure(url, { response: { status: 403 }, message: 'Request failed with status code 403' });
+    expect(msg).toContain('HTTP 403');
+    expect(msg).toContain('paste the spec');
+  });
+
+  it('names other HTTP statuses', () => {
+    expect(describeSpecDownloadFailure(url, { response: { status: 404 } })).toContain('HTTP 404');
+  });
+
+  it('keeps the original message for network errors', () => {
+    expect(describeSpecDownloadFailure(url, { code: 'ENOTFOUND', message: 'getaddrinfo ENOTFOUND docs.example.com' })).toContain('ENOTFOUND');
+  });
 });
