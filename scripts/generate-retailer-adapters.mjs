@@ -39,14 +39,14 @@ const USAGE_MARKER = '**Order workflow**';
  * help and verify hints). When one of them changes in the source adapter the
  * script stops, so the wording below is read again before it is regenerated.
  */
-const REVIEWED_SOURCE_SHA256 = '9e803eb5a80a369b9b065009b30944f36a9308f0126684d2e5f8d7d0b6ef1940';
+const REVIEWED_SOURCE_SHA256 = '47d31cc1ca0946463942d301c57359f49c235b819e6e6e3dcc2102894be67928';
 
 const COUNTRY = {
   AT: 'Austria', BE: 'Belgium', CA: 'Canada', CH: 'Switzerland', CZ: 'the Czech Republic', DE: 'Germany',
   DK: 'Denmark', ES: 'Spain', FR: 'France', GB: 'the United Kingdom', HU: 'Hungary', IE: 'Ireland', IT: 'Italy',
   HR: 'Croatia', LU: 'Luxembourg', NL: 'the Netherlands', NO: 'Norway', PL: 'Poland', PT: 'Portugal', RO: 'Romania', SI: 'Slovenia',
   SE: 'Sweden', SK: 'Slovakia', US: 'the United States',
-  AU: 'Australia', CL: 'Chile', FI: 'Finland', IL: 'Israel', MX: 'Mexico', PE: 'Peru',
+  AU: 'Australia', BR: 'Brazil', CL: 'Chile', FI: 'Finland', GR: 'Greece', IL: 'Israel', MX: 'Mexico', PE: 'Peru',
 };
 
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
