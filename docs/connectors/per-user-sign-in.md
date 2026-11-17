@@ -100,13 +100,48 @@ first user's account and with each later sign-in. **Re-discover Tools** lists
 them with your own sign-in. The remote server still checks every call against the
 caller's own permissions.
 
+## Connectors without a provider sign-in: per-user values
+
+> Self-hosted: on with an Enterprise licence. AnythingMCP Cloud: not switched
+> on yet. Set through the API for now; the dashboard and the connect page get
+> their forms in a later release.
+
+A connector that signs in with an API key, a token or a user name and password
+has no provider sign-in to send each user through. There, per-user means every
+user enters **their own values of some of the connector's variables**, for
+example `ACME_API_KEY`, or the user name and password of a mail archive.
+
+- **Which connectors.** REST, GraphQL, SOAP, OData, e-mail and MCP connectors
+  whose sign-in is an API key (header or query), a bearer token, basic auth,
+  WS-Security or none (a key in the address or the body). Not yet: database
+  connectors, login-token, HMAC and OAuth 1.0a sign-ins, client certificates,
+  and bearer tokens that are renewed in the background. File Search and
+  connectors that receive webhooks stay shared: they work without a caller.
+- **Switching.** `PATCH /api/connectors/:id/credential-scope` with
+  `{ "credentialScope": "USER", "userVariables": ["ACME_API_KEY"] }`. The
+  connection test must pass with the connector's current values first, because
+  it is how each user's values are checked later. The connector must use each
+  variable as `{{NAME}}` somewhere (address, headers, sign-in or tools).
+- **What the switch removes.** The connector's own values of those variables,
+  everywhere they are stored. A call never falls back to them: a user who has
+  not entered their own gets the "connect first" error with the link to the
+  connect page, and nothing is sent.
+- **Entering values.** `PUT /api/connectors/:id/my-credential` with
+  `{ "variables": { "ACME_API_KEY": "…" } }`. The values are tried with the
+  connection test and stored only when it passes. They are stored encrypted,
+  per user, and never returned.
+- **Back to shared.** Removes every user's values. The connector's own values
+  of those variables are empty then and have to be entered again.
+
 ## API
 
 | Method and path | Who | What |
 |---|---|---|
 | `PATCH /api/connectors/:id/credential-scope` `{ "credentialScope": "USER" \| "SHARED" }` | owner or admin | Switch the mode (USER needs Enterprise) |
 | `POST /api/connectors/:id/oauth/authorize` | any member (per-user connectors) | Start your own sign-in |
-| `GET /api/connectors/:id/my-credential` | any member | Whether you are connected; no token is returned |
+| `PATCH /api/connectors/:id/credential-scope` `{ "credentialScope": "USER", "userVariables": ["NAME"] }` | owner or admin | Per-user values for a connector without a provider sign-in |
+| `GET /api/connectors/:id/my-credential` | any member | Whether you are connected, and for per-user values which variables to enter; no token or value is returned |
+| `PUT /api/connectors/:id/my-credential` `{ "variables": { "NAME": "value" } }` | any member (per-user values) | Enter your own values; stored only when the connection test passes |
 | `DELETE /api/connectors/:id/my-credential` | any member | Disconnect your own account |
 | `GET /auth/connect/:id` | anyone (HTML) | The connect page; signs the user in first |
 

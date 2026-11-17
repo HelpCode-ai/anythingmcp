@@ -66,7 +66,13 @@ describe('connector member view', () => {
   });
 
   it('a field added to the model later does not appear by itself', () => {
-    const later = { ...connector, internalHost: '10.0.0.5', tools: [{ ...tool, rawQuery: 'SELECT 1' }] };
+    // connectUrl is only set on a connector with per-user credentials.
+    const later = {
+      ...connector,
+      connectUrl: 'https://amcp.example.invalid/auth/connect/c1',
+      internalHost: '10.0.0.5',
+      tools: [{ ...tool, rawQuery: 'SELECT 1' }],
+    };
     const view = toMemberConnector(later);
     expect(Object.keys(view).sort()).toEqual([...MEMBER_CONNECTOR_FIELDS, 'memberView', 'tools'].sort());
     expect(Object.keys(view.tools[0]).sort()).toEqual([...MEMBER_TOOL_FIELDS].sort());

@@ -1,5 +1,6 @@
 import { getAdapter } from '../adapters/catalog';
 import { isMachineGrant } from './oauth-grant.util';
+import { userVariableNames } from './user-credential.util';
 import { shopeeNeedsAuthorization } from './engines/shopee-token.service';
 import { tiktokShopMissingAppVars, tiktokShopNeedsAuthorization } from './engines/tiktok-shop-token.service';
 import { iopNeedsAuthorization } from './engines/iop-token.service';
@@ -127,12 +128,23 @@ function resolvableEnvVars(input: SetupStatusInput): Record<string, string> {
   const raw = input.envVars;
   const slug = (input.config as { adapterSlug?: unknown } | null)?.adapterSlug;
   const optional = typeof slug === 'string' ? getAdapter(slug)?.optionalEnvVars : undefined;
-  if (!optional?.length || !raw || typeof raw !== 'object') return values;
-  for (const name of optional) {
-    if (!(name in values) && (raw as Record<string, unknown>)[name] === '') values[name] = '';
+  if (optional?.length && raw && typeof raw === 'object') {
+    for (const name of optional) {
+      if (!(name in values) && (raw as Record<string, unknown>)[name] === '') values[name] = '';
+    }
+  }
+  // A variable every user enters for themselves (config.userVariables) is
+  // empty on the connector on purpose: each call checks the caller's own
+  // value instead. It must not hold the connector back as "still empty", or
+  // its tools would never be listed and nobody could be told to connect.
+  if (input.credentialScope === undefined || input.credentialScope === 'USER') {
+    for (const name of userVariableNames(input.config)) values[name] = PER_USER_VALUE;
   }
   return values;
 }
+
+/** Stands in for a per-user variable when only the connector's readiness is computed. Never sent. */
+const PER_USER_VALUE = 'per-user';
 
 export function computeSetupState(input: SetupStatusInput): SetupState {
   const envVars = resolvableEnvVars(input);

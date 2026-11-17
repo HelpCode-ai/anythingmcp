@@ -329,3 +329,34 @@ describe('computeSetupState', () => {
     });
   });
 });
+
+describe('computeSetupState — per-user variables', () => {
+  // What a switch to per-user variables leaves on the connector: the
+  // variables each user enters, empty.
+  const perUser = {
+    authType: 'API_KEY',
+    authConfig: { headerName: 'X-Api-Key', apiKey: '{{ACME_API_KEY}}' },
+    baseUrl: 'https://{{ACME_TENANT}}.example.test',
+    envVars: { ACME_TENANT: 'shop', ACME_API_KEY: '' },
+    config: { userVariables: ['ACME_API_KEY'] },
+    credentialScope: 'USER',
+  };
+
+  it('does not hold the connector back for a variable every user enters', () => {
+    expect(computeSetupState(perUser)).toEqual({ status: 'ready', missing: [] });
+  });
+
+  it('still asks for a variable that is the connector\'s own', () => {
+    expect(computeSetupState({ ...perUser, envVars: { ACME_API_KEY: '' } })).toEqual({
+      status: 'needs_input',
+      missing: ['ACME_TENANT'],
+    });
+  });
+
+  it('asks for it again once the connector is shared', () => {
+    expect(computeSetupState({ ...perUser, credentialScope: 'SHARED' })).toEqual({
+      status: 'needs_input',
+      missing: ['ACME_API_KEY'],
+    });
+  });
+});

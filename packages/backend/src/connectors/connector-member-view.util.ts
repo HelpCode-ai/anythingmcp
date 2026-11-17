@@ -25,6 +25,8 @@ export const MEMBER_CONNECTOR_FIELDS = [
   'isActive',
   // USER: the member signs in with their own account ("Connect my account").
   'credentialScope',
+  // The page where they do it (a link under /auth/connect; names no host or variable).
+  'connectUrl',
   // The badges next to "Active": ready / needs_input / needs_authorization,
   // and the credential health with its machine-readable reason.
   'setupStatus',
