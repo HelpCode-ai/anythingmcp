@@ -192,16 +192,19 @@ export function trialReactivationUrl(env: NodeJS.ProcessEnv = process.env): stri
 /**
  * Which reactivation link an ended trial's AI client gets: 'page', the
  * no-login reactivation page of the Cloud (/reactivate/<token>), or
- * 'pricing', the public pricing page (trialReactivationUrl). Half of the
- * workspaces each, fixed per workspace so every blocked call of one gets the
- * same link. Read with `trial_expired_call_blocked` (metadata.variant) and
- * Stripe's checkouts of source 'mcp_reactivate' / 'mcp_blocked'.
+ * 'pricing', the public pricing page (trialReactivationUrl).
+ *
+ * From 2026-11-07 to 2026-11-17 this was a 50/50 test per workspace
+ * (sha256 `reactivate-link-v1:<org>`). It ended in a tie (page 6.3 % of 475
+ * blocked workspaces paid, pricing 7.4 % of 445; €2.19 vs €2.10 per
+ * workspace) and every workspace now gets the page: no sign-in before paying,
+ * and slightly more yearly plans. 'pricing' remains the fallback when no
+ * token can be made (trialReactivationLink).
  */
 export type ReactivationLinkVariant = 'page' | 'pricing';
 
-export function reactivationLinkVariant(organizationId: string): ReactivationLinkVariant {
-  const bucket = createHash('sha256').update(`reactivate-link-v1:${organizationId}`).digest().readUInt16BE(0) % 100;
-  return bucket < 50 ? 'page' : 'pricing';
+export function reactivationLinkVariant(_organizationId: string): ReactivationLinkVariant {
+  return 'page';
 }
 
 /**
