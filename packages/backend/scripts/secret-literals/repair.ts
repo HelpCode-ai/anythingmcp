@@ -11,7 +11,13 @@
  *     regenerated from the cleaned path;
  *   - config.baseUrlBaseline is cleaned the same way;
  *   - a catalog connector's own headers are left alone (they are rebuilt
- *     from the adapter's template when its variables change).
+ *     from the adapter's template when its variables change);
+ *   - a DATABASE connector's `user:password@` moves into auth_config
+ *     (re-encrypted with ENCRYPTION_KEY, same column the live API now writes
+ *     on every create/update — see database-url-credentials.util.ts), unless
+ *     auth_config already holds a username or password: which one wins then
+ *     differs by driver, so moving it could change who connects, exactly the
+ *     rule the API itself follows.
  *
  * DRY RUN BY DEFAULT: prints what it would change (redacted) and writes
  * nothing. With --apply it first copies every row it is about to change into
@@ -24,7 +30,8 @@
  * in-memory tool registry: restart it (or reload the affected connectors).
  *
  * Rollback, using the backup table the run prints:
- *   UPDATE connectors c SET base_url=b.base_url, headers=b.headers, config=b.config, env_vars=b.env_vars
+ *   UPDATE connectors c SET base_url=b.base_url, headers=b.headers, config=b.config,
+ *          env_vars=b.env_vars, auth_config=b.auth_config
  *     FROM <backup> b WHERE b.kind='connector' AND b.id=c.id;
  *   UPDATE mcp_tools t SET name=b.name, description=b.description, parameters=b.parameters,
  *          endpoint_mapping=b.endpoint_mapping
@@ -38,8 +45,35 @@ import {
   type ToolRow,
 } from '../../src/connectors/secret-literal-scan.util';
 import { openEnvVarsStrict, sealEnvVars } from '../../src/common/crypto/env-vars-at-rest';
+import { decrypt, encrypt } from '../../src/common/crypto/encryption.util';
 
-const GUARDED = `('REST','SOAP','GRAPHQL','MCP','ODATA')`;
+const GUARDED = `('REST','SOAP','GRAPHQL','MCP','ODATA','DATABASE')`;
+
+/**
+ * auth_config's own format (connectors.service.ts): a plain ciphertext
+ * string, no `$enc` wrapper and no AAD — unlike env_vars. `null` means "not
+ * decrypted yet" (the two-phase trick `planRepair` relies on); a value that
+ * fails to decrypt is reported as `null` too, so the caller can tell it
+ * apart from "genuinely holds nothing" and skip the row instead of writing
+ * an empty authConfig over a real one.
+ */
+function openAuthConfigStrict(value: unknown, encryptionKey: string): Record<string, unknown> | null {
+  if (value === null || value === undefined) return {};
+  if (typeof value !== 'string' || !value) return {};
+  try {
+    const parsed = JSON.parse(decrypt(value, encryptionKey));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read lazily, like env-vars-at-rest.ts's own key(): only a run that actually touches a DATABASE connector needs it set. */
+function encryptionKey(): string {
+  const value = process.env.ENCRYPTION_KEY;
+  if (!value) throw new Error("ENCRYPTION_KEY is not set: a DATABASE connector's credentials cannot be moved");
+  return value;
+}
 
 export interface RepairOptions {
   apply?: boolean;
@@ -87,7 +121,7 @@ export async function repair(client: Client, opts: RepairOptions = {}): Promise<
   try {
     const connectors = (
       await client.query(
-        `SELECT c.id, c.organization_id, c.name, c.type::text AS type, c.base_url, c.headers, c.config, c.env_vars
+        `SELECT c.id, c.organization_id, c.name, c.type::text AS type, c.base_url, c.headers, c.config, c.env_vars, c.auth_config
            FROM connectors c WHERE ${where} ${opts.apply ? 'FOR UPDATE' : ''}`,
         params,
       )
@@ -116,7 +150,8 @@ export async function repair(client: Client, opts: RepairOptions = {}): Promise<
     const result: RepairResult = { plans: [], skipped: [] };
     for (const c of connectors) {
       // Planned without the variables first: most connectors have nothing to
-      // move, and their env_vars are then never decrypted.
+      // move, and their env_vars (or a DATABASE connector's auth_config) are
+      // then never decrypted.
       const row: ConnectorRow = {
         id: c.id,
         organizationId: c.organization_id,
@@ -126,9 +161,22 @@ export async function repair(client: Client, opts: RepairOptions = {}): Promise<
         headers: c.headers,
         config: c.config,
         envVars: null,
+        authConfig: null,
       };
       const ownTools = toolsByConnector.get(c.id) ?? [];
       if (!planRepair(row, ownTools)) continue;
+
+      if (c.type === 'DATABASE') {
+        const authConfig = openAuthConfigStrict(c.auth_config, encryptionKey());
+        if (authConfig === null) {
+          result.skipped.push({ connectorId: c.id, reason: 'auth_config could not be decrypted (ENCRYPTION_KEY?)' });
+          continue;
+        }
+        const plan = planRepair({ ...row, authConfig }, ownTools);
+        if (plan) result.plans.push(plan);
+        continue;
+      }
+
       const env = openEnvVarsStrict(c.env_vars);
       if (env === null) {
         result.skipped.push({ connectorId: c.id, reason: 'env_vars could not be decrypted (ENCRYPTION_KEY?)' });
@@ -147,14 +195,16 @@ export async function repair(client: Client, opts: RepairOptions = {}): Promise<
       await client.query(
         `CREATE TABLE ${table} (
            kind text NOT NULL, id text NOT NULL, base_url text, headers jsonb, config jsonb,
-           env_vars jsonb, name text, description text, parameters jsonb, endpoint_mapping jsonb,
+           env_vars jsonb, auth_config text, name text, description text, parameters jsonb, endpoint_mapping jsonb,
            backed_up_at timestamptz NOT NULL DEFAULT now())`,
       );
       const connectorIds = result.plans.map((p) => p.connectorId);
       const toolIds = result.plans.flatMap((p) => p.tools.map((t) => t.id));
       await client.query(
-        `INSERT INTO ${table} (kind, id, base_url, headers, config, env_vars)
-         SELECT 'connector', id, base_url, headers, config, env_vars FROM connectors WHERE id = ANY($1)`,
+        // auth_config is copied as the ciphertext string it already is — no
+        // decrypt/re-encrypt round trip for the backup itself.
+        `INSERT INTO ${table} (kind, id, base_url, headers, config, env_vars, auth_config)
+         SELECT 'connector', id, base_url, headers, config, env_vars, auth_config FROM connectors WHERE id = ANY($1)`,
         [connectorIds],
       );
       if (toolIds.length > 0) {
@@ -177,6 +227,11 @@ export async function repair(client: Client, opts: RepairOptions = {}): Promise<
         if (plan.connector.config !== undefined) set('config', plan.connector.config, true);
         if (plan.connector.envVars !== undefined) {
           set('env_vars', sealEnvVars(plan.connector.envVars), true);
+        }
+        if (plan.connector.authConfig !== undefined) {
+          // auth_config is a plain text column (the ciphertext itself), not
+          // jsonb, unlike env_vars — see schema.prisma and connectors.service.ts.
+          set('auth_config', encrypt(JSON.stringify(plan.connector.authConfig), encryptionKey()));
         }
         if (sets.length > 0) {
           values.push(plan.connectorId);
