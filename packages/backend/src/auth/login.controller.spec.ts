@@ -271,6 +271,29 @@ describe('LoginController', () => {
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
       expect(res._redirect).toContain('/auth/login?error=');
     });
+
+    it('redirects instead of crashing when the POST has no form body', async () => {
+      const res = makeRes();
+      await controller.handleLogin(
+        makeReq({ signedCookies: { login_csrf: 'tok' } }),
+        undefined as any,
+        res,
+      );
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(res._redirect).toContain('/auth/login?error=');
+      expect(res._cleared).toContain('login_csrf');
+    });
+
+    it('redirects instead of crashing when the server selection has no form body', async () => {
+      const res = makeRes();
+      await controller.handleServerSelection(
+        makeReq({ signedCookies: { login_csrf: 'tok' } }),
+        undefined as any,
+        res,
+      );
+      expect(res._redirect).toContain('/auth/login?error=');
+      expect(res._cleared).toContain('login_csrf');
+    });
   });
 
   describe('POST /auth/login (deny)', () => {
