@@ -393,9 +393,10 @@ export class OnboardingCronService {
 
       // First nudge: an hour after signup (every candidate is at least that
       // old). Someone who already connected an AI client is told to ask it
-      // for the app in the same chat, naming the client, in both arms; arm B
-      // replaces the generic how-to with one-click Claude chats; the holdout
-      // gets nothing, and moves on to the reminder-2 step all the same.
+      // for the app in the same chat, naming the client; anyone else gets
+      // one-click Claude chats (arm B, the only email arm since 2026-11-17);
+      // the holdout gets nothing, and moves on to the reminder-2 step all the
+      // same.
       const aiClient = aiClients.get(u.id);
       const arm = reminderArm(u.id);
       if (u.onboardingReminderCount === 0) {
