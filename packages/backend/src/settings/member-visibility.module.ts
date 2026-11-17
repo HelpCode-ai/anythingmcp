@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { SettingsModule } from './settings.module';
 import { MemberVisibilityService } from './member-visibility.service';
+import { MemberVisibilityInterceptor } from './member-visibility.interceptor';
 import {
   MemberVisibilityAdminController,
   MemberVisibilityMemberController,
@@ -15,11 +17,15 @@ import {
  * API app, so nothing is imported for them here, and a module that imports
  * this one (audit, connectors, tools, MCP servers, File Search) creates no
  * import cycle.
+ *
+ * Also registers MemberVisibilityInterceptor app-wide: it refuses the
+ * `admin-when-restricted` routes of member-visibility.routes.ts to restricted
+ * members and passes every other request through.
  */
 @Module({
   imports: [SettingsModule],
   controllers: [MemberVisibilityMemberController, MemberVisibilityAdminController],
-  providers: [MemberVisibilityService],
+  providers: [MemberVisibilityService, { provide: APP_INTERCEPTOR, useClass: MemberVisibilityInterceptor }],
   exports: [MemberVisibilityService],
 })
 export class MemberVisibilityModule {}
