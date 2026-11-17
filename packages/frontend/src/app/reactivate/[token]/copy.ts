@@ -43,6 +43,8 @@ export interface ReactivateCopy {
   opening: string;
   checkoutFailed: string;
   chips: { cancel: string; stripe: string; noSetup: string };
+  /** The payment methods under the subscribe button: "Pay with" and the word for a card. */
+  pay: { label: string; card: string };
   stats: { workspaces: string; toolCalls: string };
   badges: { claude: string; chatgpt: string; eu: string; gdpr: string; encrypted: string; openSource: string };
   worksWith: string;
@@ -108,6 +110,7 @@ const en: ReactivateCopy = {
   opening: 'Opening secure checkout…',
   checkoutFailed: 'The checkout could not be opened right now. Please try again in a moment.',
   chips: { cancel: 'Cancel any time', stripe: 'Payment by Stripe', noSetup: 'No new setup' },
+  pay: { label: 'Pay with', card: 'Card' },
   stats: { workspaces: 'workspaces on AnythingMCP Cloud', toolCalls: 'AI tool calls last month' },
   badges: {
     claude: 'Listed in the Claude Directory',
@@ -123,7 +126,7 @@ const en: ReactivateCopy = {
     payTitle: 'Pay securely with Stripe',
     payBody: 'Card, SEPA Direct Debit and other methods. We never see your card details.',
     activeTitle: 'Your workspace switches back on',
-    activeBody: 'Automatically, usually within two or three minutes. No sign-in, no licence key.',
+    activeBody: 'Automatically, usually within seconds. No sign-in, no licence key.',
     backTitle: 'Ask {client} again',
     backBody: 'Go back to your chat and repeat your request. Your connectors answer as before.',
   },
@@ -147,7 +150,7 @@ const en: ReactivateCopy = {
   activeBody: '{workspace} is active again. Go back to {client} and ask again: your connectors answer as before.',
   openDashboard: 'Open the dashboard',
   processingTitle: 'Confirming your payment…',
-  processingBody: 'This usually takes two or three minutes. Keep this page open, or go back to your chat in a moment.',
+  processingBody: 'This usually takes a few seconds. Keep this page open, or go back to your chat in a moment.',
   processingSlow:
     'Your payment is still being confirmed. If the workspace is not active in a few minutes, sign in or write to support@anythingmcp.com.',
   paymentFailedTitle: "Your last payment didn't go through",
@@ -186,6 +189,7 @@ const de: ReactivateCopy = {
   opening: 'Sicherer Checkout wird geöffnet…',
   checkoutFailed: 'Der Checkout konnte gerade nicht geöffnet werden. Bitte versuchen Sie es gleich noch einmal.',
   chips: { cancel: 'Jederzeit kündbar', stripe: 'Zahlung über Stripe', noSetup: 'Keine neue Einrichtung' },
+  pay: { label: 'Zahlen mit', card: 'Karte' },
   stats: { workspaces: 'Workspaces auf AnythingMCP Cloud', toolCalls: 'KI-Tool-Aufrufe im letzten Monat' },
   badges: {
     claude: 'Gelistet im Claude Directory',
@@ -201,7 +205,7 @@ const de: ReactivateCopy = {
     payTitle: 'Sicher mit Stripe bezahlen',
     payBody: 'Karte, SEPA-Lastschrift und weitere Methoden. Ihre Kartendaten sehen wir nie.',
     activeTitle: 'Ihr Workspace ist wieder aktiv',
-    activeBody: 'Automatisch, meist innerhalb von zwei bis drei Minuten. Ohne Anmeldung, ohne Lizenzschlüssel.',
+    activeBody: 'Automatisch, meist innerhalb weniger Sekunden. Ohne Anmeldung, ohne Lizenzschlüssel.',
     backTitle: 'Fragen Sie {client} erneut',
     backBody: 'Gehen Sie zurück in Ihren Chat und wiederholen Sie die Anfrage. Ihre Connectoren antworten wie zuvor.',
   },
@@ -225,7 +229,7 @@ const de: ReactivateCopy = {
   activeBody: '{workspace} ist wieder aktiv. Gehen Sie zurück zu {client} und fragen Sie erneut: Ihre Connectoren antworten wie zuvor.',
   openDashboard: 'Dashboard öffnen',
   processingTitle: 'Ihre Zahlung wird bestätigt…',
-  processingBody: 'Das dauert meist zwei bis drei Minuten. Lassen Sie diese Seite offen oder kehren Sie gleich zu Ihrem Chat zurück.',
+  processingBody: 'Das dauert meist nur wenige Sekunden. Lassen Sie diese Seite offen oder kehren Sie gleich zu Ihrem Chat zurück.',
   processingSlow:
     'Ihre Zahlung wird noch bestätigt. Ist der Workspace in ein paar Minuten nicht aktiv, melden Sie sich an oder schreiben Sie an support@anythingmcp.com.',
   paymentFailedTitle: 'Ihre letzte Zahlung ist fehlgeschlagen',
@@ -264,6 +268,7 @@ const it: ReactivateCopy = {
   opening: 'Apertura del checkout sicuro…',
   checkoutFailed: 'Non è stato possibile aprire il checkout. Riprova tra un momento.',
   chips: { cancel: 'Disdici quando vuoi', stripe: 'Pagamento con Stripe', noSetup: 'Nessuna nuova configurazione' },
+  pay: { label: 'Paga con', card: 'Carta' },
   stats: { workspaces: 'workspace su AnythingMCP Cloud', toolCalls: 'chiamate AI ai tool nell’ultimo mese' },
   badges: {
     claude: 'Presente nella Claude Directory',
@@ -279,7 +284,7 @@ const it: ReactivateCopy = {
     payTitle: 'Paghi in sicurezza con Stripe',
     payBody: 'Carta, addebito SEPA e altri metodi. Non vediamo mai i dati della tua carta.',
     activeTitle: 'Il workspace si riattiva',
-    activeBody: 'In automatico, di solito in due o tre minuti. Senza login, senza chiave di licenza.',
+    activeBody: 'In automatico, di solito in pochi secondi. Senza login, senza chiave di licenza.',
     backTitle: 'Chiedi di nuovo a {client}',
     backBody: 'Torna nella tua chat e ripeti la richiesta. I tuoi connettori rispondono come prima.',
   },
@@ -303,7 +308,7 @@ const it: ReactivateCopy = {
   activeBody: '{workspace} è di nuovo attivo. Torna su {client} e ripeti la richiesta: i tuoi connettori rispondono come prima.',
   openDashboard: 'Apri la dashboard',
   processingTitle: 'Stiamo confermando il pagamento…',
-  processingBody: 'Di solito ci vogliono due o tre minuti. Lascia aperta questa pagina, oppure torna alla tua chat tra un momento.',
+  processingBody: 'Di solito bastano pochi secondi. Lascia aperta questa pagina, oppure torna alla tua chat tra un momento.',
   processingSlow:
     'Il pagamento è ancora in conferma. Se il workspace non è attivo tra qualche minuto, accedi o scrivi a support@anythingmcp.com.',
   paymentFailedTitle: "L'ultimo pagamento non è andato a buon fine",
@@ -342,6 +347,7 @@ const es: ReactivateCopy = {
   opening: 'Abriendo el pago seguro…',
   checkoutFailed: 'No se pudo abrir el pago en este momento. Inténtalo de nuevo en un momento.',
   chips: { cancel: 'Cancela cuando quieras', stripe: 'Pago con Stripe', noSetup: 'Sin volver a configurar' },
+  pay: { label: 'Paga con', card: 'Tarjeta' },
   stats: { workspaces: 'workspaces en AnythingMCP Cloud', toolCalls: 'llamadas de IA a herramientas el último mes' },
   badges: {
     claude: 'En el Claude Directory',
@@ -357,7 +363,7 @@ const es: ReactivateCopy = {
     payTitle: 'Pagas de forma segura con Stripe',
     payBody: 'Tarjeta, adeudo directo SEPA y otros métodos. Nunca vemos los datos de tu tarjeta.',
     activeTitle: 'Tu workspace se reactiva',
-    activeBody: 'Automáticamente, normalmente en dos o tres minutos. Sin iniciar sesión, sin clave de licencia.',
+    activeBody: 'Automáticamente, normalmente en unos segundos. Sin iniciar sesión, sin clave de licencia.',
     backTitle: 'Vuelve a preguntar a {client}',
     backBody: 'Vuelve a tu chat y repite tu petición. Tus conectores responden como antes.',
   },
@@ -381,7 +387,7 @@ const es: ReactivateCopy = {
   activeBody: '{workspace} vuelve a estar activo. Vuelve a {client} y pregunta de nuevo: tus conectores responden como antes.',
   openDashboard: 'Abrir el panel',
   processingTitle: 'Confirmando tu pago…',
-  processingBody: 'Normalmente tarda dos o tres minutos. Deja esta página abierta o vuelve a tu chat en un momento.',
+  processingBody: 'Normalmente tarda unos segundos. Deja esta página abierta o vuelve a tu chat en un momento.',
   processingSlow:
     'Tu pago aún se está confirmando. Si el workspace no está activo en unos minutos, inicia sesión o escribe a support@anythingmcp.com.',
   paymentFailedTitle: 'Tu último pago no se completó',
@@ -419,6 +425,7 @@ const zh: ReactivateCopy = {
   opening: '正在打开安全结账…',
   checkoutFailed: '暂时无法打开结账页面，请稍后再试。',
   chips: { cancel: '随时取消', stripe: '由 Stripe 处理付款', noSetup: '无需重新配置' },
+  pay: { label: '支付方式', card: '银行卡' },
   stats: { workspaces: '个工作区在使用 AnythingMCP Cloud', toolCalls: '次 AI 工具调用（上个月）' },
   badges: {
     claude: '已上架 Claude Directory',
@@ -434,7 +441,7 @@ const zh: ReactivateCopy = {
     payTitle: '通过 Stripe 安全付款',
     payBody: '支持银行卡、SEPA 直接借记等方式。我们看不到你的卡信息。',
     activeTitle: '工作区自动恢复',
-    activeBody: '通常在两三分钟内自动完成。无需登录，无需许可证密钥。',
+    activeBody: '通常在几秒内自动完成。无需登录，无需许可证密钥。',
     backTitle: '再次询问 {client}',
     backBody: '回到你的对话，重复你的请求。你的连接器会像以前一样响应。',
   },
@@ -458,7 +465,7 @@ const zh: ReactivateCopy = {
   activeBody: '{workspace} 已重新激活。回到 {client} 再问一次：你的连接器会像以前一样响应。',
   openDashboard: '打开控制台',
   processingTitle: '正在确认你的付款…',
-  processingBody: '通常需要两三分钟。你可以保持此页面打开，或稍后回到你的对话。',
+  processingBody: '通常只需几秒钟。你可以保持此页面打开，或稍后回到你的对话。',
   processingSlow: '你的付款仍在确认中。如果几分钟后工作区仍未激活，请登录或写信至 support@anythingmcp.com。',
   paymentFailedTitle: '你的上一笔付款未成功',
   paymentFailedBody: '请登录并更新付款方式：付款成功后订阅会立即恢复。',
@@ -496,6 +503,7 @@ const ja: ReactivateCopy = {
   opening: '安全な決済ページを開いています…',
   checkoutFailed: '現在、決済ページを開けませんでした。しばらくしてからもう一度お試しください。',
   chips: { cancel: 'いつでも解約可能', stripe: 'Stripe で決済', noSetup: '再設定不要' },
+  pay: { label: 'お支払い方法', card: 'カード' },
   stats: { workspaces: 'AnythingMCP Cloud のワークスペース', toolCalls: '先月の AI ツール呼び出し' },
   badges: {
     claude: 'Claude Directory に掲載',
@@ -511,7 +519,7 @@ const ja: ReactivateCopy = {
     payTitle: 'Stripe で安全にお支払い',
     payBody: 'カード、SEPA 口座引き落としなどに対応。カード情報が当社に渡ることはありません。',
     activeTitle: 'ワークスペースが再び有効に',
-    activeBody: '通常 2〜3 分以内に自動で有効になります。ログインもライセンスキーも不要です。',
+    activeBody: '通常は数秒で自動的に有効になります。ログインもライセンスキーも不要です。',
     backTitle: 'もう一度 {client} に依頼',
     backBody: 'チャットに戻って同じ依頼を繰り返してください。コネクタは以前と同じように応答します。',
   },
@@ -535,7 +543,7 @@ const ja: ReactivateCopy = {
   activeBody: '{workspace} は再び有効になりました。{client} に戻ってもう一度依頼してください。コネクタは以前と同じように応答します。',
   openDashboard: 'ダッシュボードを開く',
   processingTitle: 'お支払いを確認しています…',
-  processingBody: '通常 2〜3 分ほどかかります。このページを開いたままにするか、少ししてからチャットに戻ってください。',
+  processingBody: '通常は数秒で完了します。このページを開いたままにするか、少ししてからチャットに戻ってください。',
   processingSlow:
     'お支払いはまだ確認中です。数分経ってもワークスペースが有効にならない場合は、ログインするか support@anythingmcp.com までご連絡ください。',
   paymentFailedTitle: '前回のお支払いが完了しませんでした',
@@ -574,6 +582,7 @@ const ru: ReactivateCopy = {
   opening: 'Открываем безопасную оплату…',
   checkoutFailed: 'Не удалось открыть страницу оплаты. Попробуйте ещё раз через минуту.',
   chips: { cancel: 'Отмена в любой момент', stripe: 'Оплата через Stripe', noSetup: 'Без повторной настройки' },
+  pay: { label: 'Способы оплаты', card: 'Карта' },
   stats: { workspaces: 'workspace в AnythingMCP Cloud', toolCalls: 'вызовов инструментов ИИ за прошлый месяц' },
   badges: {
     claude: 'В каталоге Claude Directory',
@@ -589,7 +598,7 @@ const ru: ReactivateCopy = {
     payTitle: 'Безопасная оплата через Stripe',
     payBody: 'Карта, прямое списание SEPA и другие способы. Мы никогда не видим данные вашей карты.',
     activeTitle: 'Workspace снова включится',
-    activeBody: 'Автоматически, обычно в течение двух-трёх минут. Без входа и без лицензионного ключа.',
+    activeBody: 'Автоматически, обычно за несколько секунд. Без входа и без лицензионного ключа.',
     backTitle: 'Спросите {client} ещё раз',
     backBody: 'Вернитесь в чат и повторите запрос. Коннекторы ответят, как раньше.',
   },
@@ -613,7 +622,7 @@ const ru: ReactivateCopy = {
   activeBody: '{workspace} снова активен. Вернитесь в {client} и повторите запрос: коннекторы ответят, как раньше.',
   openDashboard: 'Открыть панель управления',
   processingTitle: 'Подтверждаем оплату…',
-  processingBody: 'Обычно это занимает две-три минуты. Оставьте страницу открытой или вернитесь в чат чуть позже.',
+  processingBody: 'Обычно это занимает несколько секунд. Оставьте страницу открытой или вернитесь в чат чуть позже.',
   processingSlow:
     'Оплата ещё подтверждается. Если через несколько минут workspace не станет активным, войдите или напишите на support@anythingmcp.com.',
   paymentFailedTitle: 'Последний платёж не прошёл',

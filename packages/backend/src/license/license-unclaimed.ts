@@ -33,6 +33,14 @@ export const UNCLAIMED_SWEEP_MS = 60 * 1000;
  */
 export const UNCLAIMED_SETTLE_MS = 2 * 60 * 1000;
 
+/**
+ * The shortest time between two requests to the licence site for one
+ * workspace's own purchase (LicenseService.claimPaidLicenceFor). The
+ * reactivation page asks every few seconds after a payment; the site sees
+ * one request per workspace in this time.
+ */
+export const WORKSPACE_CLAIM_MIN_INTERVAL_MS = 5 * 1000;
+
 /** One entry of the licence site's answer. */
 export interface UnclaimedLicence {
   key: string;

@@ -12,6 +12,7 @@ import {
   isSettled,
   parseUnclaimedLicences,
   UNCLAIMED_SWEEP_MS,
+  WORKSPACE_CLAIM_MIN_INTERVAL_MS,
   type UnclaimedLicence,
   type UnclaimedSkipReason,
 } from './license-unclaimed';
@@ -983,32 +984,12 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       // Too fresh: the buyer's browser may still be on its way back.
       if (!isSettled(licence, now)) continue;
       out.listed++;
-      const tail = licence.key.slice(-4);
-      try {
-        const target = await this.unclaimedLicenceTarget(licence, now);
-        if ('skip' in target) {
-          out.skipped++;
-          skipReasons.set(target.skip, (skipReasons.get(target.skip) ?? 0) + 1);
-          const log = `Unclaimed licence …${tail} (${maskEmail(licence.email)}) left unbound: ${target.skip}.`;
-          if (target.skip === 'already_paid' || target.skip === 'bound_elsewhere') warn(log);
-          else this.logger.debug(log);
-          continue;
-        }
-        if (target.retryActivation) {
-          if (!(await this.activateLicense(licence.key, target.organizationId))) {
-            out.failed++;
-            continue;
-          }
-        } else {
-          await this.setLicenseKey(licence.key, target.organizationId);
-        }
-        out.bound++;
-        this.logger.log(
-          `Bound paid licence …${tail} (${licence.plan}, ${maskEmail(licence.email)}) to workspace ${target.organizationId}.`,
-        );
-      } catch (err: any) {
-        out.failed++;
-        this.logger.warn(`Could not bind unclaimed licence …${tail}: ${err?.message ?? err}`);
+      const result = await this.bindListedLicence(licence, now, warn);
+      if (result === 'bound') out.bound++;
+      else if (result === 'failed') out.failed++;
+      else {
+        out.skipped++;
+        skipReasons.set(result.skip, (skipReasons.get(result.skip) ?? 0) + 1);
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
@@ -1021,6 +1002,89 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
       );
     }
     return out;
+  }
+
+  /** Binds one listed licence to its workspace; says why when it is left alone. */
+  private async bindListedLicence(
+    licence: UnclaimedLicence,
+    now: Date,
+    warn: (msg: string) => void,
+  ): Promise<'bound' | 'failed' | { skip: UnclaimedSkipReason }> {
+    const tail = licence.key.slice(-4);
+    try {
+      const target = await this.unclaimedLicenceTarget(licence, now);
+      if ('skip' in target) {
+        const log = `Unclaimed licence …${tail} (${maskEmail(licence.email)}) left unbound: ${target.skip}.`;
+        if (target.skip === 'already_paid' || target.skip === 'bound_elsewhere') warn(log);
+        else this.logger.debug(log);
+        return { skip: target.skip };
+      }
+      if (target.retryActivation) {
+        if (!(await this.activateLicense(licence.key, target.organizationId))) return 'failed';
+      } else {
+        await this.setLicenseKey(licence.key, target.organizationId);
+      }
+      this.logger.log(
+        `Bound paid licence …${tail} (${licence.plan}, ${maskEmail(licence.email)}) to workspace ${target.organizationId}.`,
+      );
+      return 'bound';
+    } catch (err: any) {
+      this.logger.warn(`Could not bind unclaimed licence …${tail}: ${err?.message ?? err}`);
+      return 'failed';
+    }
+  }
+
+  /** When each workspace last asked the licence site for its own purchase. */
+  private readonly workspaceClaims = new Map<string, number>();
+
+  /**
+   * Binds the paid licence a workspace just bought, without the two-minute
+   * wait of the sweep (bindUnclaimedPaidLicences).
+   *
+   * That wait gives the buyer's browser time to come back signed in and bind
+   * the licence itself. A checkout opened from the no-login reactivation page
+   * never does: its buyer comes back to that page, which calls this. Until
+   * 17 Nov 2026 they waited for the sweep, a median of 145 seconds and never
+   * under two minutes, while a purchase from the app's wall was active in 6:
+   * a buyer who went straight back to the chat was refused again.
+   *
+   * The licence site is asked for this workspace's unactivated licences only,
+   * and only those that name it are bound: an older site, which ignores the
+   * workspace and answers with its settled list, changes nothing here. One
+   * request per workspace every WORKSPACE_CLAIM_MIN_INTERVAL_MS, whatever the
+   * page does.
+   */
+  async claimPaidLicenceFor(organizationId: string, now: Date = new Date()): Promise<boolean> {
+    if (!this.deployment.isCloud()) return false;
+    const headers = this.serviceHeaders();
+    if (!headers['x-amcp-service-token']) return false;
+
+    const last = this.workspaceClaims.get(organizationId);
+    if (last !== undefined && now.getTime() - last < WORKSPACE_CLAIM_MIN_INTERVAL_MS) return false;
+    for (const [org, at] of this.workspaceClaims) {
+      if (now.getTime() - at >= WORKSPACE_CLAIM_MIN_INTERVAL_MS) this.workspaceClaims.delete(org);
+    }
+    this.workspaceClaims.set(organizationId, now.getTime());
+
+    let licences: UnclaimedLicence[] | null;
+    try {
+      const { data } = await axios.post(
+        `${this.apiBase}/api/license/unclaimed`,
+        { organizationId },
+        { timeout: 10000, headers },
+      );
+      licences = parseUnclaimedLicences(data);
+    } catch (err: any) {
+      this.logger.debug(`Licence claim for workspace ${organizationId} failed: ${err?.message ?? err}`);
+      return false;
+    }
+    let bound = false;
+    for (const licence of licences ?? []) {
+      if (licence.organizationId !== organizationId) continue;
+      const result = await this.bindListedLicence(licence, now, (msg) => this.logger.warn(msg));
+      if (result === 'bound') bound = true;
+    }
+    return bound;
   }
 
   /** Where an unclaimed licence goes, or why it stays where it is. */

@@ -38,8 +38,15 @@ import {
 } from './copy';
 
 /** How often the page asks whether the payment reached the workspace, and for how long. */
-const PAID_POLL_MS = 4000;
-const PAID_POLL_LIMIT = 90;
+const PAID_POLL_MS = 3000;
+const PAID_POLL_LIMIT = 120;
+
+/**
+ * What Stripe Checkout offers our buyers, by how often they pay with it
+ * (succeeded charges, Nov 2026: Link and cards first, then Apple Pay and
+ * PayPal). Brand names, so not translated; "card" is, in copy.ts.
+ */
+const PAY_METHODS = ['Apple Pay', 'Google Pay', 'PayPal', 'SEPA'];
 
 /** Logos of the AI clients the page can name (public/logos/clients). */
 const CLIENT_LOGOS: Record<string, string> = {
@@ -61,7 +68,8 @@ const WORKS_WITH = [
  * workspace's trial ended (A/B against the pricing page). No sign-in: the
  * token names the workspace, and the checkout it opens is for that workspace
  * alone, so the paid licence reaches it without anyone activating a key.
- * Back from Stripe (`?paid=1`) it waits until the workspace is active. The
+ * Back from Stripe (`?paid=1`) it asks the backend to bind that licence and
+ * waits until the workspace is active, usually a few seconds. The
  * words follow the visitor's language among the website's seven (copy.ts).
  */
 export default function ReactivatePage() {
@@ -122,17 +130,26 @@ function ReactivateContent() {
     };
   }, [token]);
 
-  // Back from Stripe: the paid licence reaches the workspace in 2-3 minutes
-  // (the backend binds a licence once it is two minutes old, sweeping every minute).
+  // Back from Stripe: ask the backend to bind the licence just bought, then
+  // read the state again. The payment reaches the licence site within
+  // seconds, so the first ask goes out at once. Without the ask the licence
+  // waited for the backend's sweep: two to three minutes in which a buyer who
+  // went back to the chat was refused again. A failed ask changes nothing:
+  // the sweep still binds the licence.
   useEffect(() => {
     if (!backFromStripe || !view || view.state === 'active' || pollsLeft <= 0) return;
-    const timer = setTimeout(() => {
-      reactivation
-        .get(token)
-        .then(setView)
-        .catch(() => {})
-        .finally(() => setPollsLeft((n) => n - 1));
-    }, PAID_POLL_MS);
+    const timer = setTimeout(
+      () => {
+        reactivation
+          .claim(token)
+          .catch(() => null)
+          .then(() => reactivation.get(token))
+          .then(setView)
+          .catch(() => {})
+          .finally(() => setPollsLeft((n) => n - 1));
+      },
+      pollsLeft === PAID_POLL_LIMIT ? 0 : PAID_POLL_MS,
+    );
     return () => clearTimeout(timer);
   }, [backFromStripe, view, pollsLeft, token]);
 
@@ -193,10 +210,16 @@ function ReactivateContent() {
               <LockIcon />
               {c.nav.secureCheckout}
             </span>
+            {/* Signed out, the sign-in is a quiet link: as a button it drew one
+                desktop visitor in ten away from the plans (Nov 2026). */}
             <Link
               href={session ? '/' : '/login?redirect=%2F'}
               onClick={() => track(session ? 'open_workspace_clicked' : 'sign_in_clicked')}
-              className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'whitespace-nowrap')}
+              className={
+                session
+                  ? cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'whitespace-nowrap')
+                  : 'whitespace-nowrap text-xs text-[var(--text-2)] underline-offset-2 hover:text-[var(--text)] hover:underline'
+              }
             >
               {session ? c.nav.openWorkspace : c.nav.signIn}
             </Link>
@@ -295,7 +318,21 @@ function ReactivateContent() {
                     {checkoutError}
                   </p>
                 )}
-                <ul className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-xs text-[var(--text-2)]">
+                <p
+                  data-testid="pay-methods"
+                  className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1.5 text-xs text-[var(--text-3)]"
+                >
+                  <span className="mr-0.5">{c.pay.label}</span>
+                  {[c.pay.card, ...PAY_METHODS].map((method) => (
+                    <span
+                      key={method}
+                      className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-2)]"
+                    >
+                      {method}
+                    </span>
+                  ))}
+                </p>
+                <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-xs text-[var(--text-2)]">
                   {[c.chips.cancel, c.chips.stripe, c.chips.noSetup].map((item) => (
                     <li key={item} className="inline-flex items-center gap-1">
                       <Check />
@@ -320,6 +357,32 @@ function ReactivateContent() {
                   }
                 />
               </NextIntlClientProvider>
+              {/* Under the plans, where the eye goes after the button: beside
+                  them it competed with it (desktop visitors clicked subscribe
+                  less often than phone visitors). Last on a phone too. */}
+              <div
+                data-testid="reactivate-next"
+                className="order-last mt-4 rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6"
+              >
+                <h2 className="text-sm font-semibold">{c.next.title}</h2>
+                <ol className="mt-4 space-y-4">
+                  {[
+                    { title: c.next.payTitle, body: c.next.payBody },
+                    { title: c.next.activeTitle, body: c.next.activeBody },
+                    { title: fmt(c.next.backTitle, { client: clientName }), body: c.next.backBody },
+                  ].map((step, i) => (
+                    <li key={step.title} className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--brand-tint)] text-xs font-semibold text-[var(--brand)]">
+                        {i + 1}
+                      </span>
+                      <div>
+                        <p className="text-sm font-medium">{step.title}</p>
+                        <p className="mt-0.5 text-[13px] leading-relaxed text-[var(--text-2)]">{step.body}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
             </section>
 
             <aside className="space-y-4">
@@ -371,27 +434,6 @@ function ReactivateContent() {
                     </span>
                   ))}
                 </div>
-              </div>
-
-              <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">
-                <h2 className="text-sm font-semibold">{c.next.title}</h2>
-                <ol className="mt-4 space-y-4">
-                  {[
-                    { title: c.next.payTitle, body: c.next.payBody },
-                    { title: c.next.activeTitle, body: c.next.activeBody },
-                    { title: fmt(c.next.backTitle, { client: clientName }), body: c.next.backBody },
-                  ].map((step, i) => (
-                    <li key={step.title} className="flex gap-3">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--brand-tint)] text-xs font-semibold text-[var(--brand)]">
-                        {i + 1}
-                      </span>
-                      <div>
-                        <p className="text-sm font-medium">{step.title}</p>
-                        <p className="mt-0.5 text-[13px] leading-relaxed text-[var(--text-2)]">{step.body}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
               </div>
 
               <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-6">

@@ -1975,6 +1975,15 @@ export const reactivation = {
       method: 'POST',
       body,
     }),
+  /**
+   * Back from Stripe: binds the licence just bought to the workspace and
+   * answers its state. Safe to repeat; the backend asks the licence site at
+   * most once every few seconds.
+   */
+  claim: (linkToken: string) =>
+    request<{ state: ReactivationView['state'] }>(`/api/license/reactivate/${encodeURIComponent(linkToken)}/claim`, {
+      method: 'POST',
+    }),
   /** A click on the page (paywall_action). Fire and forget; survives the page closing. */
   track: (
     linkToken: string,
