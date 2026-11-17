@@ -305,8 +305,10 @@ export class UsersController {
     summary: 'List all users in organization (ADMIN only)',
     description:
       'The members of your workspace, in the order they joined, with their workspace `role` (ADMIN, EDITOR, VIEWER), ' +
-      'whether they are `active` (not deactivated), their legacy single MCP role and their memory access. Use the `id` ' +
-      'with `/api/roles/assignments/{userId}` to manage MCP roles.',
+      'whether they are `active` (not deactivated), every MCP role they hold (`mcpRoles`: `source` is `manual` or the ' +
+      'identity provider group sync, `global` marks a grant that applies in every workspace; the member may call the ' +
+      'union of their tools) and their memory access. `mcpRoleId` / `mcpRole` are deprecated: they hold one of the ' +
+      'roles at most. Use the `id` with `/api/roles/assignments/{userId}` to manage MCP roles.',
   })
   @ApiResponse({
     status: 200,
@@ -322,6 +324,7 @@ export class UsersController {
           organizationId: 'cmo8a7b6c0001abcdk5l6m7n8',
           mcpRoleId: null,
           mcpRole: null,
+          mcpRoles: [],
           joinedAt: '2026-03-02T08:15:00.000Z',
           deactivatedAt: null,
           active: true,

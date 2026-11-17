@@ -405,6 +405,10 @@ Export your key as `AMCP_MCP_API_KEY` (or `AMCP_ACCESS_TOKEN` when the server op
 | GET | `/api/roles/:id/tools` | List tool access for a role |
 | PUT | `/api/roles/:id/tools` | Set tool access whitelist |
 | PUT | `/api/roles/:id/tools/:toolId/rate-limit` | Update rate limits on an existing tool grant |
+| GET | `/api/roles/members` | List members with every MCP role they hold and the connectors those roles reach |
+| GET | `/api/roles/assignments/:userId` | List a member's MCP roles, with where each comes from |
+| PUT | `/api/roles/assignments/:userId` | Replace a member's manual MCP roles |
+| PUT | `/api/roles/assign/:userId` | Deprecated: set one MCP role. Use `PUT /api/roles/assignments/:userId` |
 
 ### Create Role with Tool Whitelist
 
@@ -423,12 +427,42 @@ curl -s -X PUT http://localhost:4000/api/roles/$ROLE_ID/tools \
   -d '{"toolIds": ["tool-id-1", "tool-id-2", "tool-id-3"]}'
 ```
 
+### Assign roles to members
+
+A member can hold several MCP roles and may call the **union** of their tools:
+each role adds tools, none takes any away. A role comes from one of two
+sources:
+
+- `manual`: set by an admin, under **Settings → Roles** or with
+  `PUT /api/roles/assignments/:userId`.
+- the single sign-on group sync (for example `entra`): set by the
+  provider's role mappings ([SSO guide](sso.md#3-map-directory-groups-to-roles)).
+  Change these in the mappings, not on the member.
+
+`PUT /api/roles/assignments/:userId` replaces only the member's **manual**
+roles in your workspace; roles from group sync stay.
+
+```bash
+curl -s -X PUT http://localhost:4000/api/roles/assignments/$USER_ID \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"roleIds": ["'$ROLE_ID'"]}'
+```
+
+`GET /api/roles/members` returns every member of your workspace with all their
+roles (`roles[]`: `roleId`, `roleName`, `source`, and `global` for a grant that
+applies in every workspace) and `connectors`, the connectors those roles reach.
+`connectors` is `null` when roles do not limit the member: a workspace ADMIN,
+or a member with no role while no role of the workspace has a tool list.
+`GET /api/users` also returns all roles of each member in `mcpRoles`; its
+`mcpRoleId` and `mcpRole` fields are deprecated and hold one role at most.
+
 ### Per-tool rate limits
 
 An administrator can set optional minute and hour limits on an existing
-role/tool grant. The editor UI is planned separately; configure limits through
-the API for now. `GET /api/roles/:id/tools` returns `callsPerMinute` and
-`callsPerHour` on each grant.
+role/tool grant, under **Settings → Roles → Manage tools** or through the API.
+`GET /api/roles/:id/tools` returns `callsPerMinute` and `callsPerHour` on each
+grant.
 
 ```bash
 curl -s -X PUT "http://localhost:4000/api/roles/$ROLE_ID/tools/tool-id-1/rate-limit" \

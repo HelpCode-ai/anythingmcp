@@ -127,10 +127,15 @@ of its tools. So set up the roles first, then switch the mode:
 2. **Make members Viewer** (or Editor if they create connectors themselves)
    under **Settings → Users**. Admins are never restricted, so keep the admin
    role for the people who manage the workspace.
-3. **Assign the roles.** By hand under **Settings → Users**, or from your
-   directory: map SSO groups to MCP roles under **Settings → Single sign-on →
-   Role mappings** ([SSO guide](../sso.md#3-map-directory-groups-to-roles)).
-   Set the workspace role of those mappings to Viewer as well.
+3. **Assign the roles.** By hand under **Settings → Roles → User MCP Role
+   Assignment**, or from your directory: map SSO groups to MCP roles under
+   **Settings → Single sign-on → Role mappings**
+   ([SSO guide](../sso.md#3-map-directory-groups-to-roles)). Set the workspace
+   role of those mappings to Viewer as well. A member can hold several roles
+   and reaches the connectors of all of them together. The assignment table
+   shows every role of each member: roles from a single sign-on group are
+   marked and can only be changed in the role mappings, and the last column
+   counts the connectors the member's roles reach.
 4. **Switch to Restricted** under **Settings → Organization → Security →
    Member visibility**, and save.
 

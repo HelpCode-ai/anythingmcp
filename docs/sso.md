@@ -128,7 +128,9 @@ Resolution rules:
 - A user in several mapped groups receives the **union** of their MCP roles and
   the **most privileged** workspace role.
 - Roles an admin assigned by hand are **never** removed by a sync, and vice
-  versa.
+  versa. **Settings → Roles → User MCP Role Assignment** shows both kinds for
+  each member; synced roles are marked `from single sign-on group` and can
+  only be changed here, in the mappings.
 - A sync will **not** demote the last remaining admin of a workspace. The
   attempt is refused and audited as `LAST_ADMIN_PROTECTION_TRIGGERED`.
 
