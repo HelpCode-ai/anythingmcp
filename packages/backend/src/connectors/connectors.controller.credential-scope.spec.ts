@@ -365,6 +365,31 @@ describe('per-user variables on the connector endpoints', () => {
       expect(connectorsService.update).not.toHaveBeenCalled();
     });
 
+    it('refuses a sign-in that starts renewing the token in the background', async () => {
+      const bearer = switchedConnector({
+        authType: 'BEARER_TOKEN',
+        authConfig: encrypt(JSON.stringify({ token: '{{ACME_API_KEY}}' }), KEY),
+      });
+      const { controller, connectorsService } = buildWithTest(bearer, { ok: true, message: 'ok' });
+      await expect(
+        controller.update(req('ADMIN', 'u-admin'), 'c1', {
+          authConfig: { token: '{{ACME_API_KEY}}', tokenRenewal: { provider: 'meta', appId: 'a', appSecret: 's' } },
+        } as any),
+      ).rejects.toThrow(/switch it back to a shared sign-in before making this change/);
+      expect(connectorsService.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses turning webhooks on, and moving the variable into the name of the header', async () => {
+      const { controller, connectorsService } = buildWithTest(switchedConnector(), { ok: true, message: 'ok' });
+      await expect(controller.update(req('ADMIN', 'u-admin'), 'c1', { webhookEnabled: true } as any)).rejects.toThrow();
+      await expect(
+        controller.update(req('ADMIN', 'u-admin'), 'c1', {
+          authConfig: { headerName: '{{ACME_API_KEY}}', apiKey: '{{ACME_API_KEY}}' },
+        } as any),
+      ).rejects.toThrow(/how or where the connector signs in/);
+      expect(connectorsService.update).not.toHaveBeenCalled();
+    });
+
     it('accepts a sign-in that still refers to the variable', async () => {
       const { controller, connectorsService } = buildWithTest(switchedConnector(), { ok: true, message: 'ok' });
       await controller

@@ -124,6 +124,7 @@ import {
 import {
   checkUserVariableNames,
   unreferencedUserVariables,
+  userVariableEligibilityProblem,
   userVariablePlacementProblem,
 } from './user-variable-switch.util';
 import { withTokenRenewal } from './engines/bearer-token-renewal.service';
@@ -1754,11 +1755,27 @@ export class ConnectorsController {
         dto.config && typeof dto.config === 'object' && !Array.isArray(dto.config)
           ? { ...((connector.config as Record<string, unknown> | null) ?? {}), ...(dto.config as Record<string, unknown>) }
           : connector.config;
-      const misplaced = userVariablePlacementProblem(perUser, {
-        baseUrl: data.baseUrl ?? connector.baseUrl,
-        config: mergedConfig,
-      });
-      if (misplaced) throw new BadRequestException(misplaced);
+      const nextAuth = data.authConfig ?? storedAuth ?? undefined;
+      const misplaced =
+        userVariableEligibilityProblem({
+          type: connector.type,
+          authType: connector.authType,
+          authConfig: nextAuth,
+          config: mergedConfig,
+          webhookEnabled: dto.webhookEnabled ?? connector.webhookEnabled,
+        }) ??
+        userVariablePlacementProblem(perUser, {
+          baseUrl: data.baseUrl ?? connector.baseUrl,
+          config: mergedConfig,
+          authConfig: nextAuth,
+          headers: data.headers ?? connector.headers,
+        });
+      if (misplaced) {
+        throw new BadRequestException(
+          `${misplaced} This connector asks every user for their own credentials: switch it back to a shared ` +
+            'sign-in before making this change.',
+        );
+      }
       if (dropped.length > 0) {
         throw new BadRequestException(
           `This connector asks every user for their own ${dropped.join(', ')}. This change would replace ` +

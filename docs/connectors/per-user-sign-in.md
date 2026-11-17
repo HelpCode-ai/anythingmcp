@@ -130,8 +130,11 @@ example `ACME_API_KEY`, or the user name and password of a mail archive.
 - **Only what signs a user in.** A per-user variable can sit in the sign-in,
   a header, the path of the address or a tool. It cannot be part of the
   server's address (scheme, host, port), of the connector's settings (mail
-  hosts and ports, the MCP path) or the start of a tool's path: a call also
-  carries what the connector shares, and no user may choose where that goes.
+  hosts and ports, the MCP path) or the start of a tool's path, nor the name
+  of a header or parameter or a field that says where a token is fetched: a
+  call also carries what the connector shares, and no user may choose where
+  that goes. A connector edited later into a sign-in that is not offered
+  (see above) stops taking calls until it is switched back to shared.
   Values with a line break or a control character are refused.
 - **Afterwards.** The connector's own values of those variables stay empty,
   whatever is typed into them, and a sign-in field that refers to one cannot

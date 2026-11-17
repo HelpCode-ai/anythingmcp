@@ -148,6 +148,29 @@ describe('DynamicMcpTools — per-user variables', () => {
     expect(userCredentials.variablesForCall).not.toHaveBeenCalled();
   });
 
+  it('sends nothing when the connector has changed to a sign-in that keeps a session', async () => {
+    const tool = makeTool({ authType: 'LOGIN_TOKEN' as any });
+    const { executor, calls, userCredentials } = build(tool, { u1: U1 });
+    const res = await executor.executeTool('acme_list_orders', {}, ctx('u1'));
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('LOGIN_TOKEN');
+    expect(res.content[0].text).toContain('No request was sent');
+    expect(calls()).toBe(0);
+    expect(userCredentials.variablesForCall).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when a per-user variable has become the name of the header', async () => {
+    const tool = makeTool({
+      authConfig: JSON.stringify({ headerName: '{{ACME_USER}}', apiKey: '{{ACME_API_KEY}}' }),
+      headers: undefined,
+    });
+    const { executor, calls } = build(tool, { u1: U1 });
+    const res = await executor.executeTool('acme_list_orders', {}, ctx('u1'));
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('how or where the connector signs in');
+    expect(calls()).toBe(0);
+  });
+
   it("keeps the user's own values out of an error that quotes them", async () => {
     const { executor, restEngine } = build(makeTool(), { u1: U1 });
     restEngine.executeWithMeta.mockRejectedValue(new Error('upstream refused key u1-key-0123456789'));

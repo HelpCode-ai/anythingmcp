@@ -3,6 +3,7 @@ import {
   checkUserVariableNames,
   planUserVariableSwitch,
   unreferencedUserVariables,
+  userVariableEligibilityProblem,
   userVariablePlacementProblem,
 } from './user-variable-switch.util';
 
@@ -204,6 +205,41 @@ describe('userVariablePlacementProblem', () => {
     ).toEqual(expect.stringContaining("path starts with {{ACME_TOKEN}}"));
   });
 
+  it('accepts it as the value of a sign-in field, a header or a query key of any name', () => {
+    for (const authConfig of [
+      { headerName: 'X-Api-Key', apiKey: '{{ACME_TOKEN}}' },
+      { token: '{{ACME_TOKEN}}' },
+      { username: '{{ACME_TOKEN}}', password: '{{ACME_TOKEN}}' },
+      { api_key: '{{ACME_TOKEN}}', appid: '{{ACME_TOKEN}}' },
+      { extraHeaders: { 'X-Acme-Auth': 'client-1:{{ACME_TOKEN}}' } },
+      JSON.stringify({ token: '{{ACME_TOKEN}}' }),
+    ]) {
+      expect(userVariablePlacementProblem(NAMES, { baseUrl: 'https://api.example.test', authConfig })).toBeNull();
+    }
+    expect(
+      userVariablePlacementProblem(NAMES, { baseUrl: 'https://api.example.test', headers: { Authorization: 'Token {{ACME_TOKEN}}' } }),
+    ).toBeNull();
+  });
+
+  it('refuses it where the sign-in says how or where, not with what', () => {
+    for (const authConfig of [
+      { headerName: '{{ACME_TOKEN}}', apiKey: 'k' },
+      { token: 't', tokenRenewal: { appSecret: '{{ACME_TOKEN}}' } },
+      { token: 't', tokenUrl: '{{ACME_TOKEN}}' },
+      { token: 't', loginEndpoint: 'https://login.example.test/{{ACME_TOKEN}}' },
+      { token: 't', tokenProvider: '{{ACME_TOKEN}}' },
+      { apiKey: 'https://{{ACME_TOKEN}}.example.test/key' },
+      { extraHeaders: { '{{ACME_TOKEN}}': 'value' } },
+    ]) {
+      expect(userVariablePlacementProblem(NAMES, { baseUrl: 'https://api.example.test', authConfig })).toEqual(
+        expect.any(String),
+      );
+    }
+    expect(
+      userVariablePlacementProblem(NAMES, { baseUrl: 'https://api.example.test', headers: { '{{ACME_TOKEN}}': 'x' } }),
+    ).toEqual(expect.stringContaining('name of a field'));
+  });
+
   it('is refused by the switch too', () => {
     const out = planUserVariableSwitch({
       authType: 'NONE',
@@ -216,6 +252,36 @@ describe('userVariablePlacementProblem', () => {
       names: NAMES,
     });
     expect(out).toEqual({ error: expect.stringContaining("part of the connector's address") });
+  });
+});
+
+describe('userVariableEligibilityProblem', () => {
+  it('accepts the sign-in methods the switch accepts', () => {
+    expect(userVariableEligibilityProblem({ type: 'REST', authType: 'API_KEY', authConfig: { apiKey: '{{K}}' } })).toBeNull();
+    expect(
+      userVariableEligibilityProblem({ type: 'EMAIL', authType: 'BASIC_AUTH', authConfig: JSON.stringify({ username: '{{U}}' }) }),
+    ).toBeNull();
+  });
+
+  it('names why a connector edited since the switch can no longer take per-user values', () => {
+    expect(userVariableEligibilityProblem({ type: 'REST', authType: 'LOGIN_TOKEN' })).toEqual(expect.any(String));
+    expect(userVariableEligibilityProblem({ type: 'REST', authType: 'HMAC' })).toEqual(expect.any(String));
+    expect(userVariableEligibilityProblem({ type: 'REST', authType: 'OAUTH2', authConfig: {} })).toEqual(
+      expect.stringContaining('through the provider'),
+    );
+    expect(userVariableEligibilityProblem({ type: 'REST', authType: 'API_KEY', webhookEnabled: true })).toEqual(
+      expect.stringContaining('webhooks'),
+    );
+    expect(
+      userVariableEligibilityProblem({
+        type: 'REST',
+        authType: 'BEARER_TOKEN',
+        authConfig: { token: '{{T}}', tokenRenewal: { provider: 'meta', appId: 'a', appSecret: 's' } },
+      }),
+    ).toEqual(expect.any(String));
+    expect(userVariableEligibilityProblem({ type: 'DATABASE', authType: 'CONNECTION_STRING' })).toEqual(
+      expect.stringContaining('database'),
+    );
   });
 });
 

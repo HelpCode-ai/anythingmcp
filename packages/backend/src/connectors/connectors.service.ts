@@ -34,6 +34,7 @@ import { userCredentialKey } from '../common/credential-key.util';
 import {
   planUserVariableSwitch,
   unreferencedUserVariables,
+  userVariableEligibilityProblem,
   userVariablePlacementProblem,
 } from './user-variable-switch.util';
 import { getAdapter } from '../adapters/catalog';
@@ -763,8 +764,19 @@ export class ConnectorsService implements OnApplicationBootstrap {
         if (!this.userCredentials) {
           return { ok: false, kind: 'auth_failed', message: 'Per-user sign-in is not available on this server.' };
         }
-        // A user's value never decides where the test connects to.
-        const misplaced = userVariablePlacementProblem(userVariables, connector);
+        // A user's value never decides where the test connects to, and
+        // never reaches a sign-in that is not one for per-user values.
+        const storedAuthConfig = connector.authConfig
+          ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
+          : undefined;
+        const misplaced =
+          userVariableEligibilityProblem({
+            type: connector.type,
+            authType: connector.authType,
+            authConfig: storedAuthConfig,
+            config: connector.config,
+            webhookEnabled: connector.webhookEnabled,
+          }) ?? userVariablePlacementProblem(userVariables, { ...connector, authConfig: storedAuthConfig });
         if (misplaced) return { ok: false, kind: 'error', message: misplaced };
         if (options.userVariables) {
           envVars = effectiveVariables(envVars, userVariables, options.userVariables);
@@ -1253,14 +1265,15 @@ export class ConnectorsService implements OnApplicationBootstrap {
       if (!this.userCredentials) {
         throw new Error('Per-user sign-in is not available on this server. No request was sent to the API.');
       }
+      const asStored = {
+        baseUrl: connector.baseUrl,
+        headers: connector.headers,
+        authConfig: connector.authConfig ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey)) : undefined,
+        config: connector.config,
+      };
       const unused = unreferencedUserVariables(
         userVariables,
-        {
-          baseUrl: connector.baseUrl,
-          headers: connector.headers,
-          authConfig: connector.authConfig ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey)) : undefined,
-          config: connector.config,
-        },
+        asStored,
         [
           endpointMapping,
           ...((connector as { tools?: Array<{ endpointMapping: unknown }> }).tools ?? []).map((t) => t.endpointMapping),
@@ -1273,7 +1286,14 @@ export class ConnectorsService implements OnApplicationBootstrap {
             'goes, or switch the connector back to a shared sign-in.',
         );
       }
-      const misplaced = userVariablePlacementProblem(userVariables, connector, [endpointMapping]);
+      const misplaced =
+        userVariableEligibilityProblem({
+          type: connector.type,
+          authType: connector.authType,
+          authConfig: asStored.authConfig,
+          config: connector.config,
+          webhookEnabled: connector.webhookEnabled,
+        }) ?? userVariablePlacementProblem(userVariables, asStored, [endpointMapping]);
       if (misplaced) {
         throw new Error(
           `${misplaced} No request was sent to the API. Change the connector, or switch it back to a shared sign-in.`,

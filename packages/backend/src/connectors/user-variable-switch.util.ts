@@ -1,6 +1,12 @@
 import { findUnresolvedPlaceholders } from '../common/unresolved-placeholders.util';
 import { rebuildCatalogCredentials, type CatalogTemplate } from './catalog-env-rebuild.util';
-import { MAX_USER_VARIABLES, USER_VARIABLES_CONFIG_KEY, isVariableName } from './user-credential.util';
+import {
+  MAX_USER_VARIABLES,
+  USER_VARIABLES_CONFIG_KEY,
+  isVariableName,
+  userCredentialModeOf,
+} from './user-credential.util';
+import { withTokenRenewal } from './engines/bearer-token-renewal.service';
 
 /**
  * Switching a connector to per-user variables (user-credential.util).
@@ -132,10 +138,12 @@ const placeholder = (name: string) => new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`);
  */
 export function userVariablePlacementProblem(
   names: readonly string[],
-  connector: { baseUrl?: unknown; config?: unknown },
+  connector: { baseUrl?: unknown; config?: unknown; authConfig?: unknown; headers?: unknown },
   toolMappings: unknown[] = [],
 ): string | null {
   if (names.length === 0) return null;
+  const inSignIn = signInPlacementProblem(names, connector);
+  if (inSignIn) return inSignIn;
   const baseUrl = typeof connector.baseUrl === 'string' ? connector.baseUrl.trim() : '';
   // Everything up to the first "/", "?" or "#" after the scheme: the server.
   const server = /^(?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]*/i.exec(baseUrl)?.[0] ?? '';
@@ -168,6 +176,115 @@ export function userVariablePlacementProblem(
     }
   }
   return null;
+}
+
+/**
+ * Sign-in fields that say how or where to sign in, not with what: the name of
+ * the header or parameter a key goes into, where a token is fetched or
+ * renewed, which scheme applies. Matched on the last key of the field's path.
+ */
+const STRUCTURAL_SIGN_IN_KEY =
+  /^(headerName|paramName|queryParamName|tokenPlacement|tokenPrefix|tokenProvider|passwordType|grant)$|(url|uri|endpoint|host|hostname|domain|server|issuer|audience)$/i;
+
+function parsedAuthConfig(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Every string in a value with the keys leading to it, and every key itself. */
+function leavesAndKeys(
+  value: unknown,
+  path: string[],
+  out: { leaves: Array<{ path: string[]; text: string }>; keys: Array<{ path: string[] }> },
+): void {
+  if (typeof value === 'string') {
+    out.leaves.push({ path, text: value });
+  } else if (Array.isArray(value)) {
+    value.forEach((item, index) => leavesAndKeys(item, [...path, String(index)], out));
+  } else if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      out.keys.push({ path: [...path, key] });
+      leavesAndKeys(item, [...path, key], out);
+    }
+  }
+}
+
+/**
+ * A per-user variable in the sign-in or the headers where it would be more
+ * than a credential: as the name of a header or parameter, in a field that
+ * is an address or picks the scheme, anywhere under the token renewal, or as
+ * the server of a URL written into a value.
+ */
+function signInPlacementProblem(
+  names: readonly string[],
+  connector: { authConfig?: unknown; headers?: unknown },
+): string | null {
+  for (const [where, value] of [
+    ['authConfig', parsedAuthConfig(connector.authConfig)],
+    ['headers', connector.headers],
+  ] as const) {
+    const found = { leaves: [], keys: [] } as Parameters<typeof leavesAndKeys>[2];
+    leavesAndKeys(value, [where], found);
+    for (const name of names) {
+      const uses = placeholder(name);
+      const asKey = found.keys.find(({ path }) => uses.test(path[path.length - 1]));
+      if (asKey) {
+        return `${name} is used as the name of a field (${asKey.path.join('.')}), not as its value. Only a value can be per user.`;
+      }
+      for (const { path, text } of found.leaves) {
+        if (!uses.test(text)) continue;
+        const key = path[path.length - 1];
+        const structural = STRUCTURAL_SIGN_IN_KEY.test(key) || path.includes('tokenRenewal');
+        // A URL written into the value: its server must not come from a user.
+        const server = /^\s*[a-z][a-z0-9+.-]*:\/\/[^/?#]*/i.exec(text)?.[0];
+        if (structural || (server !== undefined && uses.test(server))) {
+          return (
+            `${name} is used in ${path.join('.')}, which says how or where the connector signs in. That is the ` +
+            'same for every user; only the key, token or login itself can be per user.'
+          );
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Why a connector with per-user variables can no longer take them, or null.
+ * The sign-in method is checked when the connector is switched; this is the
+ * same check for a connector edited afterwards, before a user's values go
+ * anywhere near a sign-in that keeps a session or fetches a token.
+ */
+export function userVariableEligibilityProblem(connector: {
+  type: string;
+  authType: string;
+  authConfig?: unknown;
+  config?: unknown;
+  webhookEnabled?: boolean;
+}): string | null {
+  const parsed = parsedAuthConfig(connector.authConfig);
+  const authConfig =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
+  const how = userCredentialModeOf(
+    {
+      type: connector.type,
+      authType: connector.authType,
+      authConfig,
+      config: connector.config,
+      webhookEnabled: connector.webhookEnabled,
+      renewsBearerToken: !!withTokenRenewal(connector.authType, authConfig, connector.config, {})?.tokenRenewal,
+    },
+    // The server switch only stops new switches; this one is already made.
+    { variablesEnabled: true },
+  );
+  if (how.mode === 'variables') return null;
+  return how.mode === null
+    ? how.reason
+    : 'This connector now signs users in through the provider, so their own values of its variables are not used.';
 }
 
 /** Every string in a value, with where it is. */
@@ -221,7 +338,11 @@ export function planUserVariableSwitch(
     };
   }
 
-  const misplaced = userVariablePlacementProblem(names, { baseUrl, config: input.config }, input.toolMappings);
+  const misplaced = userVariablePlacementProblem(
+    names,
+    { baseUrl, config: input.config, authConfig, headers },
+    input.toolMappings,
+  );
   if (misplaced) return { error: misplaced };
 
   const leaves: Array<{ path: string; text: string }> = [];

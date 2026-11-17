@@ -74,7 +74,11 @@ import { ArgumentPatternError, catalogPatternViolations } from './catalog-patter
 import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { effectiveVariables, userVariableNames } from '../connectors/user-credential.util';
-import { unreferencedUserVariables, userVariablePlacementProblem } from '../connectors/user-variable-switch.util';
+import {
+  unreferencedUserVariables,
+  userVariableEligibilityProblem,
+  userVariablePlacementProblem,
+} from '../connectors/user-variable-switch.util';
 import { ToolRateLimitService } from './tool-rate-limit.service';
 import { connectorErrorWhen, connectorLargeIntegers } from '../connectors/error-when.util';
 import {
@@ -619,7 +623,13 @@ export class DynamicMcpTools {
         }
         // Nor may one of them have moved to where it would choose the server
         // (the address, a setting, the start of this tool's path).
-        const misplaced = userVariablePlacementProblem(userVariables, tool.connectorConfig, [tool.endpointMapping]);
+        const misplaced =
+          userVariableEligibilityProblem({
+            type: tool.connectorType,
+            authType: String(tool.connectorConfig.authType),
+            authConfig: tool.connectorConfig.authConfig,
+            config: tool.connectorConfig.config,
+          }) ?? userVariablePlacementProblem(userVariables, tool.connectorConfig, [tool.endpointMapping]);
         if (misplaced) {
           throw new Error(
             `${misplaced} No request was sent to the API. A workspace administrator has to change the connector, ` +
