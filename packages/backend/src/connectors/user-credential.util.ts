@@ -93,6 +93,9 @@ export const USER_VARS_FIELD = 'userVars';
 /** What a connector variable may be called. `amcp.*` is the caller context, never a variable. */
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,99}$/;
 
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+
 /** At most this many variables per user, and this long each. */
 export const MAX_USER_VARIABLES = 20;
 export const MAX_USER_VARIABLE_LENGTH = 8192;
@@ -285,6 +288,9 @@ export function cleanUserVariables(
     const text = typeof value === 'string' ? value.trim() : '';
     if (!text) return { error: `A value for ${name} is required.` };
     if (text.length > MAX_USER_VARIABLE_LENGTH) return { error: `The value of ${name} is too long.` };
+    // A line break or another control character has no place in a key or a
+    // password, and in a header or a URL it would start a second one.
+    if (CONTROL_CHARACTER.test(text)) return { error: `The value of ${name} contains a line break or control character.` };
     values[name] = text;
   }
   return { values };

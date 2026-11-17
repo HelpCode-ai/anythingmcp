@@ -3,6 +3,7 @@ import {
   checkUserVariableNames,
   planUserVariableSwitch,
   unreferencedUserVariables,
+  userVariablePlacementProblem,
 } from './user-variable-switch.util';
 
 /**
@@ -151,6 +152,70 @@ describe('planUserVariableSwitch', () => {
     expect(checkUserVariableNames(Array.from({ length: 21 }, (_, i) => `V${i}`))).toEqual({
       error: expect.stringContaining('At most'),
     });
+  });
+});
+
+describe('userVariablePlacementProblem', () => {
+  const NAMES = ['ACME_TOKEN'];
+
+  it('accepts a per-user variable in the path of the address, the headers, the sign-in and a tool', () => {
+    expect(userVariablePlacementProblem(NAMES, { baseUrl: 'https://api.example.test/bot{{ACME_TOKEN}}' })).toBeNull();
+    expect(userVariablePlacementProblem(NAMES, { baseUrl: '{{ACME_URL}}/v1/{{ ACME_TOKEN }}' })).toBeNull();
+    expect(
+      userVariablePlacementProblem(NAMES, { baseUrl: 'https://api.example.test' }, [
+        { method: 'GET', path: '/users/{{ACME_TOKEN}}/orders' },
+      ]),
+    ).toBeNull();
+    expect(
+      userVariablePlacementProblem(NAMES, {
+        baseUrl: 'imaps://mail.example.test:993',
+        config: { email: { imapHost: 'mail.example.test', fromAddress: '{{ACME_TOKEN}}' }, mcpFixedArguments: { k: '{{ACME_TOKEN}}' } },
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses it where it would choose the server', () => {
+    for (const baseUrl of [
+      'https://{{ACME_TOKEN}}.example.test/api',
+      'https://api.example.test:{{ACME_TOKEN}}/api',
+      'https://user:{{ACME_TOKEN}}@api.example.test/api',
+      '{{ACME_TOKEN}}',
+      '{{ ACME_TOKEN }}/api',
+      'https://api.example.test{{ACME_TOKEN}}',
+    ]) {
+      expect(userVariablePlacementProblem(NAMES, { baseUrl })).toEqual(expect.stringContaining("part of the connector's address"));
+    }
+  });
+
+  it('refuses it in the settings every user shares', () => {
+    expect(
+      userVariablePlacementProblem(NAMES, { baseUrl: 'imaps://mail.example.test', config: { email: { imapHost: '{{ACME_TOKEN}}' } } }),
+    ).toEqual(expect.stringContaining('settings'));
+    expect(
+      userVariablePlacementProblem(NAMES, { baseUrl: 'https://mcp.example.test', config: { mcpPath: '/{{ACME_TOKEN}}' } }),
+    ).toEqual(expect.stringContaining('settings'));
+    // The list of names itself is not a use.
+    expect(userVariablePlacementProblem(NAMES, { baseUrl: 'https://x.test', config: { userVariables: ['{{ACME_TOKEN}}'] } })).toBeNull();
+  });
+
+  it("refuses it at the start of a tool's path, where https:// would replace the address", () => {
+    expect(
+      userVariablePlacementProblem(NAMES, { baseUrl: 'https://api.example.test' }, [{ method: 'GET', path: ' {{ACME_TOKEN}}/orders' }]),
+    ).toEqual(expect.stringContaining("path starts with {{ACME_TOKEN}}"));
+  });
+
+  it('is refused by the switch too', () => {
+    const out = planUserVariableSwitch({
+      authType: 'NONE',
+      envVars: { ACME_TOKEN: 'shop' },
+      authConfig: null,
+      baseUrl: 'https://{{ACME_TOKEN}}.example.test/api',
+      headers: null,
+      config: null,
+      toolMappings: [],
+      names: NAMES,
+    });
+    expect(out).toEqual({ error: expect.stringContaining("part of the connector's address") });
   });
 });
 

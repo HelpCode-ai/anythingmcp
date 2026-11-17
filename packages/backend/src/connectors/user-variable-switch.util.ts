@@ -98,6 +98,78 @@ export function unreferencedUserVariables(
   return names.filter((name) => !referenced.has(name));
 }
 
+/** `config` keys a per-user variable may appear under: what a call sends, not where it goes. */
+const USER_VARIABLE_CONFIG_PATHS: ReadonlyArray<readonly string[]> = [
+  ['email', 'fromAddress'],
+  ['email', 'fromName'],
+  ['mcpFixedArguments'],
+];
+
+function withoutPaths(config: unknown, paths: ReadonlyArray<readonly string[]>): unknown {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return config;
+  const out: Record<string, unknown> = { ...(config as Record<string, unknown>) };
+  for (const [head, ...rest] of paths) {
+    if (!(head in out)) continue;
+    if (rest.length === 0) delete out[head];
+    else out[head] = withoutPaths(out[head], [rest]);
+  }
+  return out;
+}
+
+const placeholder = (name: string) => new RegExp(`\\{\\{\\s*${name}\\s*\\}\\}`);
+
+/**
+ * A per-user variable in a place that decides WHERE a call goes, or null.
+ *
+ * Each user's values are their own credential, typed by any member of the
+ * workspace. They may fill in a key, a token, a login. They must not choose
+ * the server: a call also carries what the connector shares (other headers,
+ * a client id, a second secret), and a user who could point it at a host of
+ * their own would receive those. So a per-user variable may not sit in the
+ * address before its path (scheme, host, port), in the connector's settings
+ * (mail hosts and ports, the MCP path, OData settings), or at the start of a
+ * tool's path, where a value beginning with https:// replaces the address.
+ */
+export function userVariablePlacementProblem(
+  names: readonly string[],
+  connector: { baseUrl?: unknown; config?: unknown },
+  toolMappings: unknown[] = [],
+): string | null {
+  if (names.length === 0) return null;
+  const baseUrl = typeof connector.baseUrl === 'string' ? connector.baseUrl.trim() : '';
+  // Everything up to the first "/", "?" or "#" after the scheme: the server.
+  const server = /^(?:[a-z][a-z0-9+.-]*:\/\/)?[^/?#]*/i.exec(baseUrl)?.[0] ?? '';
+  for (const name of names) {
+    if (placeholder(name).test(server)) {
+      return (
+        `${name} is part of the connector's address (${server.slice(0, 80)}). The server is the same for every ` +
+        'user; only what signs them in can be per user.'
+      );
+    }
+  }
+  const settings = withoutPaths(withoutUserVariablesKey(connector.config), USER_VARIABLE_CONFIG_PATHS);
+  const inSettings = new Set(findUnresolvedPlaceholders(settings));
+  const setting = names.find((name) => inSettings.has(name));
+  if (setting) {
+    return (
+      `${setting} is used in the connector's settings (a host, a port or a path), which are the same for every ` +
+      'user; only what signs them in can be per user.'
+    );
+  }
+  for (const mapping of toolMappings) {
+    const path = (mapping as { path?: unknown } | null | undefined)?.path;
+    if (typeof path !== 'string') continue;
+    const atStart = names.find((name) => new RegExp(`^\\s*${placeholder(name).source}`).test(path));
+    if (atStart) {
+      return (
+        `A tool's path starts with {{${atStart}}}, where a value could replace the connector's address. ` +
+        'Put the variable after the first "/" of the path.'
+      );
+    }
+  }
+  return null;
+}
+
 /** Every string in a value, with where it is. */
 function stringLeaves(value: unknown, path: string, out: Array<{ path: string; text: string }>): void {
   if (typeof value === 'string') {
@@ -148,6 +220,9 @@ export function planUserVariableSwitch(
         'goes, then switch.',
     };
   }
+
+  const misplaced = userVariablePlacementProblem(names, { baseUrl, config: input.config }, input.toolMappings);
+  if (misplaced) return { error: misplaced };
 
   const leaves: Array<{ path: string; text: string }> = [];
   stringLeaves(authConfig, 'authConfig', leaves);

@@ -2805,6 +2805,12 @@ example `ACME_API_KEY`, or the user name and password of a mail archive.
   connector's current values, and fail with made-up ones. A test that passes
   without the sign-in (a public health check, a WSDL anyone can read) is
   refused; set a health check path that needs the sign-in.
+- **Only what signs a user in.** A per-user variable can sit in the sign-in,
+  a header, the path of the address or a tool. It cannot be part of the
+  server's address (scheme, host, port), of the connector's settings (mail
+  hosts and ports, the MCP path) or the start of a tool's path: a call also
+  carries what the connector shares, and no user may choose where that goes.
+  Values with a line break or a control character are refused.
 - **Afterwards.** The connector's own values of those variables stay empty,
   whatever is typed into them, and a sign-in field that refers to one cannot
   be overwritten with a fixed value. Switch back to shared to change that.

@@ -74,7 +74,7 @@ import { ArgumentPatternError, catalogPatternViolations } from './catalog-patter
 import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { effectiveVariables, userVariableNames } from '../connectors/user-credential.util';
-import { unreferencedUserVariables } from '../connectors/user-variable-switch.util';
+import { unreferencedUserVariables, userVariablePlacementProblem } from '../connectors/user-variable-switch.util';
 import { ToolRateLimitService } from './tool-rate-limit.service';
 import { connectorErrorWhen, connectorLargeIntegers } from '../connectors/error-when.util';
 import {
@@ -615,6 +615,15 @@ export class DynamicMcpTools {
               `${unused.join(', ')}, but no longer uses ${unused.length === 1 ? 'it' : 'them'}. No request was ` +
               'sent to the API. A workspace administrator has to put the variable back where the credential ' +
               'goes, or switch the connector back to a shared sign-in.',
+          );
+        }
+        // Nor may one of them have moved to where it would choose the server
+        // (the address, a setting, the start of this tool's path).
+        const misplaced = userVariablePlacementProblem(userVariables, tool.connectorConfig, [tool.endpointMapping]);
+        if (misplaced) {
+          throw new Error(
+            `${misplaced} No request was sent to the API. A workspace administrator has to change the connector, ` +
+              'or switch it back to a shared sign-in.',
           );
         }
         ownVariables = await this.userCredentials.variablesForCall({

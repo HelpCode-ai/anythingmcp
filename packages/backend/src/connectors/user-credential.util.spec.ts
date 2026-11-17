@@ -182,5 +182,9 @@ describe('per-user variables', () => {
     expect(cleanUserVariables(['A'], { A: 'x'.repeat(9000) })).toEqual({ error: 'The value of A is too long.' });
     expect(cleanUserVariables(['A'], ['key'])).toEqual({ error: expect.any(String) });
     expect(cleanUserVariables(['A'], { A: 5 })).toEqual({ error: 'A value for A is required.' });
+    expect(cleanUserVariables(['A'], { A: 'key\r\nX-Injected: 1' })).toEqual({
+      error: 'The value of A contains a line break or control character.',
+    });
+    expect(cleanUserVariables(['A'], { A: 'k\u0000' })).toEqual({ error: expect.stringContaining('control character') });
   });
 });

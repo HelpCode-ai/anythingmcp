@@ -137,6 +137,17 @@ describe('DynamicMcpTools — per-user variables', () => {
     expect(userCredentials.variablesForCall).not.toHaveBeenCalled();
   });
 
+  it('sends nothing when a per-user variable has moved into the address', async () => {
+    const tool = makeTool({ baseUrl: 'https://{{ACME_USER}}.example.test/api' });
+    const { executor, calls, userCredentials } = build(tool, { u1: U1 });
+    const res = await executor.executeTool('acme_list_orders', {}, ctx('u1'));
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("part of the connector's address");
+    expect(res.content[0].text).toContain('No request was sent');
+    expect(calls()).toBe(0);
+    expect(userCredentials.variablesForCall).not.toHaveBeenCalled();
+  });
+
   it("keeps the user's own values out of an error that quotes them", async () => {
     const { executor, restEngine } = build(makeTool(), { u1: U1 });
     restEngine.executeWithMeta.mockRejectedValue(new Error('upstream refused key u1-key-0123456789'));

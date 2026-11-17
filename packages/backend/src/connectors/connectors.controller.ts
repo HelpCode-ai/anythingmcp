@@ -121,7 +121,11 @@ import {
   userVariableCredentialsEnabled,
   userVariableNames,
 } from './user-credential.util';
-import { checkUserVariableNames, unreferencedUserVariables } from './user-variable-switch.util';
+import {
+  checkUserVariableNames,
+  unreferencedUserVariables,
+  userVariablePlacementProblem,
+} from './user-variable-switch.util';
 import { withTokenRenewal } from './engines/bearer-token-renewal.service';
 import { describeUserVariables } from './user-variable-fields.util';
 import { connectorConnectUrl } from '../common/url.util';
@@ -1746,6 +1750,15 @@ export class ConnectorsController {
         headers: data.headers ?? connector.headers,
         authConfig: data.authConfig ?? storedAuth,
       });
+      const mergedConfig =
+        dto.config && typeof dto.config === 'object' && !Array.isArray(dto.config)
+          ? { ...((connector.config as Record<string, unknown> | null) ?? {}), ...(dto.config as Record<string, unknown>) }
+          : connector.config;
+      const misplaced = userVariablePlacementProblem(perUser, {
+        baseUrl: data.baseUrl ?? connector.baseUrl,
+        config: mergedConfig,
+      });
+      if (misplaced) throw new BadRequestException(misplaced);
       if (dropped.length > 0) {
         throw new BadRequestException(
           `This connector asks every user for their own ${dropped.join(', ')}. This change would replace ` +

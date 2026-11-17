@@ -597,6 +597,18 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "connectors",
+    "action": "setMyCredential",
+    "method": "PUT",
+    "path": "/api/connectors/:id/my-credential",
+    "summary": "Enter your own values for a connector with per-user variables",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "connectors",
     "action": "getOAuthConfig",
     "method": "GET",
     "path": "/api/connectors/:id/oauth-config",

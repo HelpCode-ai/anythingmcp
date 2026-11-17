@@ -31,7 +31,11 @@ import {
   withoutUserTokens,
 } from './user-credential.util';
 import { userCredentialKey } from '../common/credential-key.util';
-import { planUserVariableSwitch, unreferencedUserVariables } from './user-variable-switch.util';
+import {
+  planUserVariableSwitch,
+  unreferencedUserVariables,
+  userVariablePlacementProblem,
+} from './user-variable-switch.util';
 import { getAdapter } from '../adapters/catalog';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { FilesWorkerClient } from '../file-search/files-worker.client';
@@ -759,6 +763,9 @@ export class ConnectorsService implements OnApplicationBootstrap {
         if (!this.userCredentials) {
           return { ok: false, kind: 'auth_failed', message: 'Per-user sign-in is not available on this server.' };
         }
+        // A user's value never decides where the test connects to.
+        const misplaced = userVariablePlacementProblem(userVariables, connector);
+        if (misplaced) return { ok: false, kind: 'error', message: misplaced };
         if (options.userVariables) {
           envVars = effectiveVariables(envVars, userVariables, options.userVariables);
           // A key of its own: nothing an engine cached for the values the
@@ -1264,6 +1271,12 @@ export class ConnectorsService implements OnApplicationBootstrap {
           `The connector "${connector.name.slice(0, 80)}" asks every user for their own ${unused.join(', ')}, ` +
             'but no longer uses it. No request was sent to the API. Put the variable back where the credential ' +
             'goes, or switch the connector back to a shared sign-in.',
+        );
+      }
+      const misplaced = userVariablePlacementProblem(userVariables, connector, [endpointMapping]);
+      if (misplaced) {
+        throw new Error(
+          `${misplaced} No request was sent to the API. Change the connector, or switch it back to a shared sign-in.`,
         );
       }
       ownVariables = await this.userCredentials.variablesForCall({
