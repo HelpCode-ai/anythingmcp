@@ -1,6 +1,8 @@
 import {
+  BadGatewayException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -134,6 +136,12 @@ export class KgService {
     if (this.redis.isConnected) await this.redis.expire(lockKey, 120);
     try {
       return await this.llmSvc.enrich(organizationId, { force: true });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      // Model or transport failure (e.g. a reply that is not valid JSON):
+      // nothing was written, so tell the user to retry instead of a raw 500.
+      this.logger.warn(`KG LLM enrich failed for ${organizationId}: ${(error as Error)?.message?.slice(0, 200)}`);
+      throw new BadGatewayException('The AI model did not return a usable answer. Please try again.');
     } finally {
       if (this.redis.isConnected) await this.redis.del(lockKey);
     }
