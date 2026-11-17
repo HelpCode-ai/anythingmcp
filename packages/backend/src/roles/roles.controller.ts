@@ -105,8 +105,9 @@ export class RolesController {
     summary: 'List all roles (ADMIN)',
     description:
       'The MCP roles of your workspace plus the built-in system roles. An MCP role is a whitelist of tools: a member ' +
-      'with one or more roles may call only the tools those roles allow (the union); a member with no MCP role keeps ' +
-      'access to every tool of the servers they reach. Separate from the workspace role (ADMIN, EDITOR, VIEWER).',
+      'with one or more roles may call only the tools those roles allow (the union). A member with no MCP role can call ' +
+      'every tool while no role of the workspace has a tool list, and no tool once one has. Separate from the workspace ' +
+      'role (ADMIN, EDITOR, VIEWER); a workspace ADMIN can call every tool.',
   })
   async listRoles(@Req() req: any) {
     return this.rolesService.findAll(req.user.organizationId);
@@ -127,6 +128,46 @@ export class RolesController {
   })
   async createRole(@Req() req: any, @Body() dto: CreateRoleDto) {
     return this.rolesService.create({ ...dto, organizationId: req.user.organizationId });
+  }
+
+  // Declared before `GET :id`, which would otherwise capture "members".
+  @Get('members')
+  @ApiOperation({
+    summary: 'List members with all their MCP roles (ADMIN)',
+    description:
+      'Every member of your workspace with EVERY MCP role they hold in it: `roles[].source` is `manual` (set by an ' +
+      'admin, editable with `PUT /api/roles/assignments/{userId}`) or the identity provider group sync (change it in ' +
+      'the provider\'s role mappings); `roles[].global` marks a grant that applies in every workspace. A member may ' +
+      'call the union of the tools of all their roles. `connectors` lists the connectors those roles grant tools of; ' +
+      'it is null when roles do not limit the member (a workspace ADMIN, or no role while no role of the workspace ' +
+      'has a tool list).',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'array',
+      items: { type: 'object' },
+      example: [
+        {
+          id: 'cmo8a7b6c0000abcdx1y2z3w4',
+          email: 'ana@example.com',
+          name: 'Ana',
+          role: 'VIEWER',
+          active: true,
+          roles: [
+            { roleId: 'cmoc1d2e300e01zrpr3s4t5u6', roleName: 'sales-read-only', source: 'manual', global: false },
+            { roleId: 'cmoc1d2e300e11zrpa1b2c3d4', roleName: 'finance', source: 'entra', global: false },
+          ],
+          connectors: [
+            { id: 'cmob7a1b200c01zrp1a2b3c4d', name: 'CRM' },
+            { id: 'cmob7a1b200c11zrp5e6f7g8h', name: 'ERP' },
+          ],
+        },
+      ],
+    },
+  })
+  async listMembers(@Req() req: any) {
+    return this.rolesService.getMemberAssignments(req.user.organizationId);
   }
 
   @Get(':id')
@@ -265,6 +306,7 @@ export class RolesController {
       userId,
       req.user.organizationId,
     );
+    if (!assignments) throw new NotFoundException('User not found');
     return {
       roleIds: [...new Set(assignments.map((a) => a.roleId))],
       roles: assignments.map((a) => ({

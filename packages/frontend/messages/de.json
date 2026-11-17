@@ -2399,7 +2399,7 @@
     "confirmDelete": "Rolle „{name}“ löschen? Benutzern mit dieser Rolle wird sie entzogen.",
     "deleted": "Rolle gelöscht",
     "toolAccessUpdated": "Tool-Zugriff aktualisiert",
-    "assigned": "MCP-Rolle zugewiesen",
+    "assigned": "MCP-Rollen gespeichert",
     "accessDenied": {
       "title": "Zugriff verweigert",
       "body": "Nur Administratoren können diese Seite aufrufen.",
@@ -2453,7 +2453,20 @@
       "appRole": "App-Rolle",
       "mcpRole": "MCP-Tool-Rolle",
       "fullAccess": "Voller Zugriff (Admin)",
-      "noRestriction": "Keine Rolle"
+      "unionHint": "Ein Mitglied kann die Tools aller seiner Rollen zusammen nutzen. Jede Rolle fügt Tools hinzu, keine nimmt welche weg.",
+      "reach": "Erreichte Connectoren",
+      "fromSso": "aus Single-Sign-On-Gruppe",
+      "allWorkspaces": "alle Workspaces",
+      "allWorkspacesHint": "Diese Rolle gilt in jedem Workspace und kann hier nicht geändert werden.",
+      "ssoHint": "Rollen aus einer Single-Sign-On-Gruppe folgen der Gruppe. Ändern Sie sie unter",
+      "ssoLink": "Einstellungen → Single Sign-On → Rollenzuordnungen",
+      "manualPlaceholder": "Rollen auswählen",
+      "deactivated": "Deaktiviert",
+      "allConnectors": "Alle Connectoren",
+      "noConnectors": "Keine",
+      "connectorCount": "{count, plural, one {# Connector} other {# Connectoren}}",
+      "noRoleOpen": "Keine Rolle. Kann alle Tools nutzen, solange keine Rolle eine Tool-Liste hat.",
+      "noRoleClosed": "Keine Rolle, daher keine Tools."
     }
   },
   "settingsAdmin": {

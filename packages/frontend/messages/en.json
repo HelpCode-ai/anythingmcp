@@ -2399,7 +2399,7 @@
     "confirmDelete": "Delete role \"{name}\"? Users with this role will be unassigned.",
     "deleted": "Role deleted",
     "toolAccessUpdated": "Tool access updated",
-    "assigned": "MCP role assigned",
+    "assigned": "MCP roles saved",
     "accessDenied": {
       "title": "Access Denied",
       "body": "Only administrators can access this page.",
@@ -2453,7 +2453,20 @@
       "appRole": "App Role",
       "mcpRole": "MCP Tool Role",
       "fullAccess": "Full access (admin)",
-      "noRestriction": "No role"
+      "unionHint": "A member can use the tools of all their roles together. Each role adds tools; none takes any away.",
+      "reach": "Connectors reached",
+      "fromSso": "from single sign-on group",
+      "allWorkspaces": "all workspaces",
+      "allWorkspacesHint": "This role applies in every workspace and cannot be changed here.",
+      "ssoHint": "Roles from a single sign-on group follow the group. Change them in",
+      "ssoLink": "Settings → Single sign-on → Role mappings",
+      "manualPlaceholder": "Choose roles",
+      "deactivated": "Deactivated",
+      "allConnectors": "All connectors",
+      "noConnectors": "None",
+      "connectorCount": "{count, plural, one {# connector} other {# connectors}}",
+      "noRoleOpen": "No role. Can use every tool while no role has a tool list.",
+      "noRoleClosed": "No role, so no tools."
     }
   },
   "settingsAdmin": {
