@@ -39,7 +39,7 @@ const USAGE_MARKER = '**Order workflow**';
  * help and verify hints). When one of them changes in the source adapter the
  * script stops, so the wording below is read again before it is regenerated.
  */
-const REVIEWED_SOURCE_SHA256 = '09ed84df109c15dc282e299185074615f74e66acaffad034a665275ca4dcd7d5';
+const REVIEWED_SOURCE_SHA256 = '9e803eb5a80a369b9b065009b30944f36a9308f0126684d2e5f8d7d0b6ef1940';
 
 const COUNTRY = {
   AT: 'Austria', BE: 'Belgium', CA: 'Canada', CH: 'Switzerland', CZ: 'the Czech Republic', DE: 'Germany',

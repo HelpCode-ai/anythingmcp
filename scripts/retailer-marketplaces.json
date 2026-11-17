@@ -109,7 +109,7 @@
       "notes": [
         "Leroy Merlin Poland (a separate shop in PLN) and Romania run on other addresses, which this connector does not reach."
       ],
-      "aliases": ["Leroy Merlin seller API", "Leroy Merlin Mirakl", "ADEO Marketplace", "Bricoman"],
+      "aliases": ["Leroy Merlin seller API", "Leroy Merlin Mirakl", "ADEO Marketplace", "Bricoman", "Tecnomat"],
       "sources": [
         "https://github.com/KPFranceSAS/integration-channel/blob/HEAD/.env",
         "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
@@ -1673,6 +1673,229 @@
         "https://support.channelengine.com/hc/en-us/articles/13791139313949-SalonCentric-marketplace-guide",
         "https://www.mirakl.com/blog/saloncentric-partners-with-mirakl-to-offer-stylists-a-whole-new-way-to-shop",
         "https://www.probeautycentral.saloncentric.com/marketplace"
+      ]
+    },
+    {
+      "slug": "elkjop",
+      "name": "Elkjøp Marketplace",
+      "retailer": "Elkjøp",
+      "region": "no",
+      "brandColor": "#11175E",
+      "monogram": "El",
+      "hosts": [{ "value": "https://partner.elkjopnordic.com", "label": "Norway, Sweden, Denmark and Finland" }],
+      "countries": ["NO", "SE", "DK", "FI"],
+      "countriesNote": "The marketplace trades as Elkjøp in Norway, Elgiganten in Sweden and Denmark and Gigantti in Finland.",
+      "shopIdNeeded": true,
+      "shopIdNote": "Elkjøp opens one shop per country under the same user; the API key is the same, the shop id picks the country.",
+      "access": "Elkjøp selects its partners: apply through its marketplace partner page and Elkjøp reviews the application. Partners are Nordic or European suppliers that keep their own stock and ship each order themselves; product texts are needed in the language of each country.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.elgiganten.se/partner/elgiganten-marketplace-partner",
+      "notes": [
+        "To switch country in the seller back office, use the selector at the top right; each country shows its own shop id under My account > Settings."
+      ],
+      "aliases": ["Elkjop", "Elkjøp Nordic", "Elgiganten", "Elgiganten Marketplace", "Gigantti", "Elkjøp seller API", "Elkjøp Mirakl", "partner.elkjopnordic.com"],
+      "sources": [
+        "https://support.sello.io/hc/en-us/articles/360010747799-Connecting-to-Elkj%C3%B8p-Nordic",
+        "https://support.sello.io/hc/en-us/articles/20754680385170",
+        "https://support.sello.io/hc/en-us/articles/9166941418898-Trigger-a-full-offer-export-for-a-Mirakl-marketplace",
+        "https://e-tailize.com/integrations/selling-on-elkjop/",
+        "https://www.mirakl.com/blogs/marketplace/elkjops-marketplace-scaling-secret-knowing-what-not-to-own/"
+      ]
+    },
+    {
+      "slug": "casa-del-libro",
+      "name": "Casa del Libro Marketplace",
+      "retailer": "Casa del Libro",
+      "region": "es",
+      "brandColor": "#004D43",
+      "monogram": "CL",
+      "hosts": [{ "value": "https://marketplace.casadellibro.com", "label": "Spain" }],
+      "countries": ["ES"],
+      "shopIdNeeded": false,
+      "access": "Casa del Libro reviews each seller application. It has two seller plans: a professional plan with a monthly fee, charged only in months with sales, and an individual plan with a fixed fee per item sold; both pay a 15% commission. Offers attach to products already in the Casa del Libro catalogue, and only the professional plan can create missing products. Sellers ship each order themselves within a 3 to 5 day delivery window.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Casa del Libro seller API", "Casa del Libro vendedores", "casadellibro.com marketplace", "Casa del Libro Mirakl", "Grupo Planeta", "CDL marketplace"],
+      "sources": [
+        "https://crt.sh/?q=%25.casadellibro.com",
+        "https://www.mirakl.com/news/casa-del-libro-launches-new-online-marketplace/",
+        "https://apps.odoo.com/apps/modules/19.0/cognisance_casa_del_libro",
+        "https://e-tailize.com/integrations/casa-del-libro/",
+        "https://github.com/DavisGalla/products-api-push/blob/2ae855fe8c87c320a6b605b0dc17028ea0eb9092/casadellibro_push.py"
+      ]
+    },
+    {
+      "slug": "gacd",
+      "name": "GACD Marketplace",
+      "retailer": "GACD",
+      "region": "fr",
+      "brandColor": "#1A1A1A",
+      "monogram": "GA",
+      "hosts": [{ "value": "https://tdmp.mirakl.net", "label": "France" }],
+      "countries": ["FR"],
+      "shopIdNeeded": false,
+      "access": "GACD opens seller accounts on request: contact its sales team. The marketplace sells to dental practices in France, from dental supplies and equipment to furniture and office products, and GACD only accepts products with an EAN.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["GACD seller API", "GACD marketplace dentaire", "The Dental Marketplace", "TDMP", "GACD Mirakl", "tdmp.mirakl.net"],
+      "sources": [
+        "https://github.com/Ventmere/mirakl/blob/HEAD/mirakl/src/lib.rs",
+        "https://apps.odoo.com/apps/modules/19.0/flexigobe_mirakl_provider_gacd",
+        "https://help.beezup.com/en/articles/5796599-gacd-products-publication",
+        "https://base.com/en-IN/integrations/gacdfr/",
+        "https://www.edesk.com/appstore/gacd/"
+      ]
+    },
+    {
+      "slug": "anwb",
+      "name": "ANWB Marketplace",
+      "retailer": "ANWB",
+      "region": "nl",
+      "brandColor": "#FEDC00",
+      "letterColor": "#003D86",
+      "monogram": "AN",
+      "hosts": [{ "value": "https://anwbnl-prod.mirakl.net", "label": "Netherlands" }],
+      "countries": ["NL"],
+      "shopIdNeeded": false,
+      "access": "ANWB selects its sellers: write to its partner service (`partnerservice@anwb.nl`). The business must be registered in the Netherlands, offer customer service in Dutch and ship orders within five working days. ANWB charges a monthly fee and a commission per sale.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["ANWB webwinkel", "ANWB seller API", "ANWB Mirakl", "ANWB partner", "anwb.nl marketplace"],
+      "sources": [
+        "https://support.channelengine.com/hc/en-us/articles/20986607112477-ANWB-marketplace-guide",
+        "https://e-tailize.com/help/marketplaces/sell-on-anwb/",
+        "https://e-tailize.com/integrations/anwb/"
+      ]
+    },
+    {
+      "slug": "fressnapf",
+      "name": "Fressnapf Marketplace",
+      "retailer": "Fressnapf",
+      "region": "de",
+      "brandColor": "#00652D",
+      "monogram": "Fr",
+      "hosts": [{ "value": "https://fressnapfde-prod.mirakl.net", "label": "Germany and Austria" }],
+      "countries": ["DE", "AT"],
+      "countriesNote": "The marketplace opened on fressnapf.de in 2022 and on fressnapf.at in 2024.",
+      "shopIdNeeded": true,
+      "shopIdNote": "A seller in both Germany and Austria may have one shop per country under the same user; the shop id picks the shop.",
+      "access": "Fressnapf selects its partners through the contact form on its marketplace page, which asks for the addresses of your other marketplace shops, the number of articles and whether an integrator connects you. Partners ship their own orders and take back their own returns.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.fressnapf.de/marktplatz/",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Fressnapf Marktplatz", "Fressnapf seller API", "Fressnapf Partner", "fressnapf.de", "fressnapf.at", "Fressnapf Mirakl"],
+      "sources": [
+        "https://www.fressnapf.de/marktplatz/",
+        "https://www.fressnapf.at/marktplatz/",
+        "https://www.mirakl.com/news/fressnapf-group-launches-mirakl-powered-marketplace/",
+        "https://petworldwide.net/content-1/news/2024/10/31/fressnapf-opens-online-marketplace.html",
+        "https://e-tailize.com/integrations/selling-on-fressnapf/",
+        "https://apps.odoo.com/apps/modules/19.0/cognisance_fressnapf"
+      ]
+    },
+    {
+      "slug": "kruidvat",
+      "name": "Kruidvat Marketplace",
+      "retailer": "Kruidvat",
+      "region": "nl",
+      "brandColor": "#E2001A",
+      "monogram": "Kv",
+      "hosts": [{ "value": "https://kruidvatnl-prod.mirakl.net", "label": "Netherlands" }],
+      "countries": ["NL"],
+      "shopIdNeeded": false,
+      "access": "Kruidvat selects its sellers and reviews each application, including service levels and the product selection. There is no setup or monthly fee, only a commission per sale that depends on the product type. Partner items are sold online only, and the seller ships every order.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Kruidvat seller API", "Kruidvat partner", "kruidvat.nl marketplace", "Kruidvat Mirakl", "A.S. Watson"],
+      "sources": [
+        "https://support.channelengine.com/hc/en-us/articles/13085938631069-Kruidvat-marketplace-guide",
+        "https://e-tailize.com/help/marketplaces/sell-on-kruidvat/",
+        "https://e-tailize.com/integrations/selling-on-kruidvat/"
+      ]
+    },
+    {
+      "slug": "flowers-1800",
+      "name": "1-800-Flowers.com Marketplace",
+      "retailer": "1-800-Flowers.com",
+      "region": "intl",
+      "brandColor": "#65388B",
+      "monogram": "18",
+      "hosts": [{ "value": "https://1800flowers-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "1-800-Flowers.com approves each product for its marketplace assortment; apply with the Start Selling form on its sellers page. The commission is 25 % of the selling price plus shipping, and baby, children's and food products need extra insurance and compliance documents.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.1800flowers.com/sellers",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["1800 Flowers", "1800flowers", "1-800-Flowers", "1-800-Flowers seller API", "1800Flowers Marketplace", "1-800-Flowers Mirakl"],
+      "sources": [
+        "https://www.1800flowers.com/sellers",
+        "https://www.edesk.com/appstore/1800-flowers",
+        "https://flow.space/mirakl",
+        "https://base.com/en-IN/integrations/1800flowers/",
+        "https://www.channelengine.com/en/marketplaces/mirakl",
+        "https://www.retailtouchpoints.com/news/1-800-flowers-com-introduces-marketplace-to-expand-gift-options-support-independent-sellers/125786/"
+      ]
+    },
+    {
+      "slug": "minted",
+      "name": "Minted Marketplace",
+      "retailer": "Minted",
+      "region": "intl",
+      "brandColor": "#1A1A1A",
+      "monogram": "Mi",
+      "hosts": [{ "value": "https://mintedus-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "Minted is curated: makers send an interest form that its merchandising team reviews, then make and ship their own products. Makers keep 75 % of each sale and pay no listing fee.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.minted.com/participate/overview",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Minted seller API", "Minted maker marketplace", "Minted Direct From Artist", "Minted Mirakl"],
+      "sources": [
+        "https://www.channelengine.com/en/marketplaces/mirakl",
+        "https://base.com/en-IN/integrations/mintedus/",
+        "https://www.minted.com/participate/overview",
+        "https://www.retaildive.com/news/minted-launches-wedding-marketplace/689537"
+      ]
+    },
+    {
+      "slug": "parts-town",
+      "name": "Parts Town Marketplace",
+      "retailer": "Parts Town",
+      "region": "intl",
+      "brandColor": "#1A1A1A",
+      "monogram": "PT",
+      "hosts": [{ "value": "https://partstown-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "Parts Town approves both the seller and each product; apply by e-mail (`marketplaceteam@partstown.com`). Sellers are suppliers and distributors of genuine OEM parts and other products for foodservice, HVAC, laundry and plumbing technicians; they set their own prices and shipping and ship the orders themselves. There is no sign-up or monthly fee, only a referral fee by category on each sale.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.partstown.com/marketplace-sellers",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["PartsTown", "Parts Town seller API", "Parts Town Marketplace sellers", "Parts Town Mirakl"],
+      "sources": [
+        "https://www.partstown.com/marketplace-sellers",
+        "https://www.partstown.com/marketplace",
+        "https://www.mirakl.com/blogs/marketplace/airbus-helicopters-and-parts-town-share-how-theyre-delivering-a-better-b2b-digital-buying-experience/",
+        "https://base.com/en-IN/integrations/partstown/",
+        "https://www.channelengine.com/en/marketplaces/mirakl"
       ]
     }
   ]

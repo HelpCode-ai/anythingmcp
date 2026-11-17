@@ -26,6 +26,7 @@ import * as easybill from './de/easybill.json';
 import * as elo from './de/elo.json';
 import * as fastbill from './de/fastbill.json';
 import * as flour from './de/flour.json';
+import * as fressnapf from './de/fressnapf.json';
 import * as getmyinvoices from './de/getmyinvoices.json';
 import * as glsTracking from './de/gls-tracking.json';
 import * as handelsregister from './de/handelsregister.json';
@@ -289,6 +290,7 @@ import * as firecrawl from './intl/firecrawl.json';
 import * as fireflies from './intl/fireflies.json';
 import * as firma from './intl/firma.json';
 import * as fishAudio from './intl/fish-audio.json';
+import * as flowers1800 from './intl/flowers-1800.json';
 import * as flutterwave from './intl/flutterwave.json';
 import * as folk from './intl/folk.json';
 import * as footballCharts from './intl/football-charts.json';
@@ -463,6 +465,7 @@ import * as microsoftTeams from './intl/microsoft-teams.json';
 import * as microsoftTodo from './intl/microsoft-todo.json';
 import * as microsoftWord from './intl/microsoft-word.json';
 import * as mindbody from './intl/mindbody.json';
+import * as minted from './intl/minted.json';
 import * as mintlify from './intl/mintlify.json';
 import * as mirakl from './intl/mirakl.json';
 import * as miraklConnect from './intl/mirakl-connect.json';
@@ -536,6 +539,7 @@ import * as paddle from './intl/paddle.json';
 import * as pagerduty from './intl/pagerduty.json';
 import * as pancake from './intl/pancake.json';
 import * as pandadoc from './intl/pandadoc.json';
+import * as partsTown from './intl/parts-town.json';
 import * as payhip from './intl/payhip.json';
 import * as paypal from './intl/paypal.json';
 import * as pazarama from './intl/pazarama.json';
@@ -816,6 +820,7 @@ import * as teamsystem from './it/teamsystem.json';
 import * as zucchetti from './it/zucchetti.json';
 import * as borme from './es/borme.json';
 import * as bricoDepot from './es/brico-depot.json';
+import * as casaDelLibro from './es/casa-del-libro.json';
 import * as elCorteIngles from './es/el-corte-ingles.json';
 import * as holded from './es/holded.json';
 import * as miravia from './es/miravia.json';
@@ -833,6 +838,7 @@ import * as dolibarr from './fr/dolibarr.json';
 import * as eLeclerc from './fr/e-leclerc.json';
 import * as fnac from './fr/fnac.json';
 import * as frCompanyData from './fr/fr-company-data.json';
+import * as gacd from './fr/gacd.json';
 import * as greenweez from './fr/greenweez.json';
 import * as jardilandGammVert from './fr/jardiland-gamm-vert.json';
 import * as kiabi from './fr/kiabi.json';
@@ -853,9 +859,11 @@ import * as sarenza from './fr/sarenza.json';
 import * as sellsy from './fr/sellsy.json';
 import * as ubaldi from './fr/ubaldi.json';
 import * as afasProfit from './nl/afas-profit.json';
+import * as anwb from './nl/anwb.json';
 import * as bolCom from './nl/bol-com.json';
 import * as droppery from './nl/droppery.json';
 import * as exactOnline from './nl/exact-online.json';
+import * as kruidvat from './nl/kruidvat.json';
 import * as leenBakker from './nl/leen-bakker.json';
 import * as marktplaats from './nl/marktplaats.json';
 import * as moneybird from './nl/moneybird.json';
@@ -877,6 +885,7 @@ import * as stadium from './se/stadium.json';
 import * as vismaEaccounting from './se/visma-eaccounting.json';
 import * as eConomic from './dk/e-conomic.json';
 import * as brreg from './no/brreg.json';
+import * as elkjop from './no/elkjop.json';
 import * as prhYtj from './fi/prh-ytj.json';
 import * as ares from './cz/ares.json';
 import * as apaczka from './pl/apaczka.json';
@@ -1220,6 +1229,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   elo as unknown as AdapterDefinition,
   fastbill as unknown as AdapterDefinition,
   flour as unknown as AdapterDefinition,
+  fressnapf as unknown as AdapterDefinition,
   getmyinvoices as unknown as AdapterDefinition,
   glsTracking as unknown as AdapterDefinition,
   handelsregister as unknown as AdapterDefinition,
@@ -1483,6 +1493,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   fireflies as unknown as AdapterDefinition,
   firma as unknown as AdapterDefinition,
   fishAudio as unknown as AdapterDefinition,
+  flowers1800 as unknown as AdapterDefinition,
   flutterwave as unknown as AdapterDefinition,
   folk as unknown as AdapterDefinition,
   footballCharts as unknown as AdapterDefinition,
@@ -1657,6 +1668,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   microsoftTodo as unknown as AdapterDefinition,
   microsoftWord as unknown as AdapterDefinition,
   mindbody as unknown as AdapterDefinition,
+  minted as unknown as AdapterDefinition,
   mintlify as unknown as AdapterDefinition,
   mirakl as unknown as AdapterDefinition,
   miraklConnect as unknown as AdapterDefinition,
@@ -1730,6 +1742,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   pagerduty as unknown as AdapterDefinition,
   pancake as unknown as AdapterDefinition,
   pandadoc as unknown as AdapterDefinition,
+  partsTown as unknown as AdapterDefinition,
   payhip as unknown as AdapterDefinition,
   paypal as unknown as AdapterDefinition,
   pazarama as unknown as AdapterDefinition,
@@ -2010,6 +2023,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zucchetti as unknown as AdapterDefinition,
   borme as unknown as AdapterDefinition,
   bricoDepot as unknown as AdapterDefinition,
+  casaDelLibro as unknown as AdapterDefinition,
   elCorteIngles as unknown as AdapterDefinition,
   holded as unknown as AdapterDefinition,
   miravia as unknown as AdapterDefinition,
@@ -2027,6 +2041,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   eLeclerc as unknown as AdapterDefinition,
   fnac as unknown as AdapterDefinition,
   frCompanyData as unknown as AdapterDefinition,
+  gacd as unknown as AdapterDefinition,
   greenweez as unknown as AdapterDefinition,
   jardilandGammVert as unknown as AdapterDefinition,
   kiabi as unknown as AdapterDefinition,
@@ -2047,9 +2062,11 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   sellsy as unknown as AdapterDefinition,
   ubaldi as unknown as AdapterDefinition,
   afasProfit as unknown as AdapterDefinition,
+  anwb as unknown as AdapterDefinition,
   bolCom as unknown as AdapterDefinition,
   droppery as unknown as AdapterDefinition,
   exactOnline as unknown as AdapterDefinition,
+  kruidvat as unknown as AdapterDefinition,
   leenBakker as unknown as AdapterDefinition,
   marktplaats as unknown as AdapterDefinition,
   moneybird as unknown as AdapterDefinition,
@@ -2071,6 +2088,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   vismaEaccounting as unknown as AdapterDefinition,
   eConomic as unknown as AdapterDefinition,
   brreg as unknown as AdapterDefinition,
+  elkjop as unknown as AdapterDefinition,
   prhYtj as unknown as AdapterDefinition,
   ares as unknown as AdapterDefinition,
   apaczka as unknown as AdapterDefinition,
