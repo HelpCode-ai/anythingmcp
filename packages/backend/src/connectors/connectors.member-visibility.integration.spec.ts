@@ -226,7 +226,10 @@ const KEY = 'k'.repeat(48);
   const TOOL_KEYS = [...MEMBER_TOOL_FIELDS].sort();
   /** The reduced view: the allowlisted keys of the real row, nothing about where it connects. */
   const expectReduced = (row: any) => {
-    expect(Object.keys(row).sort()).toEqual(CONNECTOR_KEYS);
+    // connectUrl is only there for a connector with per-user credentials.
+    expect(Object.keys(row).sort()).toEqual(
+      row.credentialScope === 'USER' ? CONNECTOR_KEYS : CONNECTOR_KEYS.filter((key) => key !== 'connectUrl'),
+    );
     expect(row.memberView).toBe(true);
     for (const tool of row.tools) expect(Object.keys(tool).sort()).toEqual(TOOL_KEYS);
     for (const key of ['baseUrl', 'config', 'envVars', 'headers', 'instructions', 'mcpServers']) {
