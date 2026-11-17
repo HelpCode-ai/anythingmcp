@@ -64,21 +64,30 @@ function isObject(v: unknown): v is Record<string, unknown> {
  * builtin query and recent-events tools never carry the connection string.
  *
  * The printed pattern drops the query string and fragment: `maskUrlPassword`
- * only masks the userinfo password, so a query parameter such as
- * `?password=…` or `?sslpassword=…` would otherwise print in full in a
- * report that is supposed to carry no secret.
+ * only masks the userinfo password, everything from the first `/` onward
+ * (path, query, fragment) passes through unchanged, so a query parameter
+ * such as `?password=…` or `?sslpassword=…` would otherwise print in full
+ * in a report that is supposed to carry no secret.
+ *
+ * The drop happens on the masked result, never on the raw `baseUrl`:
+ * `maskUrlPassword` finds the password by scanning for `@` up to the first
+ * `/` (not the first `?`), so a password containing a raw, unencoded `?` or
+ * `#` is still masked correctly first; only then is what remains after the
+ * first `/` — now free of any password — safe to cut at its own `?`/`#`.
+ * Splitting the raw string before masking would instead cut the password
+ * itself in two and miss it entirely.
  */
 function scanDatabaseConnector(connector: ConnectorRow): ScanFinding[] {
-  const withoutQuery = (connector.baseUrl ?? '').split(/[?#]/)[0];
-  const masked = maskUrlPassword(withoutQuery);
-  if (masked === withoutQuery) return [];
+  const baseUrl = connector.baseUrl ?? '';
+  const masked = maskUrlPassword(baseUrl);
+  if (masked === baseUrl) return [];
   return [
     {
       connectorId: connector.id,
       workspaceId: connector.organizationId,
       field: 'baseUrl',
       kind: 'database_url_password',
-      pattern: masked,
+      pattern: masked.split(/[?#]/)[0],
       adapterSlug: slugOf(connector),
     },
   ];

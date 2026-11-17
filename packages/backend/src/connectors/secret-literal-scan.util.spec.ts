@@ -102,14 +102,39 @@ describe('scanConnector', () => {
     });
 
     it('finds nothing for a userinfo-free URL even when the query string looks secret-ish', () => {
-      // The query string is dropped before checking, not inspected for secrets
-      // of its own — only the userinfo password is this check's job.
+      // The query string is never inspected for secrets of its own — only
+      // the userinfo password is this check's job; it is dropped from the
+      // printed pattern, not from what is checked for a password.
       expect(
         scanConnector(
           connector({ type: 'DATABASE', baseUrl: 'postgresql://db.example.com:5432/shop?sslpassword=anothersecret' }),
           [],
         ),
       ).toEqual([]);
+    });
+
+    it('still finds and masks a password that itself contains a raw ? or #', () => {
+      // maskUrlPassword finds the password by scanning up to the first `/`,
+      // not the first `?`, so a password with a literal `?` or `#` in it is
+      // masked whole. Dropping the query string from the raw string before
+      // masking (instead of from the masked result) would cut the password
+      // in two here and report nothing at all — the exact mistake this
+      // locks in against.
+      const found = scanConnector(
+        connector({ type: 'DATABASE', baseUrl: 'postgresql://app:weird?pass#1@db.example.com:5432/shop' }),
+        [],
+      );
+      expect(found).toEqual([
+        {
+          connectorId: 'c1',
+          workspaceId: 'org1',
+          field: 'baseUrl',
+          kind: 'database_url_password',
+          pattern: 'postgresql://app:********@db.example.com:5432/shop',
+          adapterSlug: null,
+        },
+      ]);
+      expect(JSON.stringify(found)).not.toContain('weird?pass#1');
     });
 
     it('does not inspect tools: the connection string is the only field that can carry a password', () => {
