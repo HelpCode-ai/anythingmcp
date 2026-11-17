@@ -47,8 +47,8 @@ function splitHost(text: string): { head: string; rest: string } {
   return { head: text.slice(0, end), rest: text.slice(end) };
 }
 
-/** Without trailing slashes, in one pass. */
-function trimTrailingSlashes(text: string): string {
+/** Without trailing slashes, in one pass (no regex: `/\/+$/` is quadratic). */
+export function trimTrailingSlashes(text: string): string {
   let end = text.length;
   while (end > 0 && text[end - 1] === '/') end--;
   return text.slice(0, end);
