@@ -102,9 +102,11 @@ caller's own permissions.
 
 ## Connectors without a provider sign-in: per-user values
 
-> Self-hosted: on with an Enterprise licence. AnythingMCP Cloud: not switched
-> on yet. Set through the API for now; the dashboard and the connect page get
-> their forms in a later release.
+> A preview, off by default: set `USER_VARIABLE_CREDENTIALS=true` on a
+> self-hosted server with an Enterprise licence. Not switched on for
+> AnythingMCP Cloud yet. Everything is set through the API for now; the
+> dashboard and the connect page get their forms in a later release, so the
+> link in the "connect first" error does not open a form yet.
 
 A connector that signs in with an API key, a token or a user name and password
 has no provider sign-in to send each user through. There, per-user means every
@@ -119,9 +121,15 @@ example `ACME_API_KEY`, or the user name and password of a mail archive.
   connectors that receive webhooks stay shared: they work without a caller.
 - **Switching.** `PATCH /api/connectors/:id/credential-scope` with
   `{ "credentialScope": "USER", "userVariables": ["ACME_API_KEY"] }`. The
-  connection test must pass with the connector's current values first, because
-  it is how each user's values are checked later. The connector must use each
-  variable as `{{NAME}}` somewhere (address, headers, sign-in or tools).
+  connector must use each variable as `{{NAME}}` somewhere (address, headers,
+  sign-in or tools). The connection test is how each user's values are checked
+  later, so it has to tell right from wrong first: it must pass with the
+  connector's current values, and fail with made-up ones. A test that passes
+  without the sign-in (a public health check, a WSDL anyone can read) is
+  refused; set a health check path that needs the sign-in.
+- **Afterwards.** The connector's own values of those variables stay empty,
+  whatever is typed into them, and a sign-in field that refers to one cannot
+  be overwritten with a fixed value. Switch back to shared to change that.
 - **What the switch removes.** The connector's own values of those variables,
   everywhere they are stored. A call never falls back to them: a user who has
   not entered their own gets the "connect first" error with the link to the

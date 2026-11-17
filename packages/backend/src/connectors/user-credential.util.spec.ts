@@ -132,11 +132,13 @@ describe('per-user variables', () => {
     expect(out).toEqual({ mode: null, reason: expect.stringContaining('API keys, passwords') });
   });
 
-  it('is on for a self-hosted server and off on Cloud unless set', () => {
-    expect(userVariableCredentialsEnabled({})).toBe(true);
+  it('is off unless switched on, on Cloud and self-hosted alike', () => {
+    expect(userVariableCredentialsEnabled({})).toBe(false);
     expect(userVariableCredentialsEnabled({ DEPLOYMENT_MODE: 'cloud' })).toBe(false);
-    expect(userVariableCredentialsEnabled({ DEPLOYMENT_MODE: 'cloud', USER_VARIABLE_CREDENTIALS: 'true' })).toBe(true);
     expect(userVariableCredentialsEnabled({ USER_VARIABLE_CREDENTIALS: 'false' })).toBe(false);
+    expect(userVariableCredentialsEnabled({ USER_VARIABLE_CREDENTIALS: 'yes' })).toBe(false);
+    expect(userVariableCredentialsEnabled({ USER_VARIABLE_CREDENTIALS: 'true' })).toBe(true);
+    expect(userVariableCredentialsEnabled({ DEPLOYMENT_MODE: 'cloud', USER_VARIABLE_CREDENTIALS: ' TRUE ' })).toBe(true);
   });
 
   it("resolves a per-user variable from the caller's own value, never from the connector's", () => {

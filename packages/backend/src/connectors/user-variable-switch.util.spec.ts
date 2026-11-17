@@ -115,6 +115,20 @@ describe('planUserVariableSwitch', () => {
     expect(out).toEqual({ error: expect.stringContaining('still stored in headers.x-api-key') });
   });
 
+  it('finds the old value as it reads inside a URL', () => {
+    const out = planUserVariableSwitch({
+      authType: 'NONE',
+      envVars: { ACME_PASSWORD: 'p@ss/word+1' },
+      authConfig: { password: '{{ACME_PASSWORD}}' },
+      baseUrl: 'https://admin:p%40ss%2Fword%2B1@api.example.test',
+      headers: null,
+      config: null,
+      toolMappings: [],
+      names: ['ACME_PASSWORD'],
+    });
+    expect(out).toEqual({ error: expect.stringContaining('still stored in baseUrl') });
+  });
+
   it('counts a variable only a tool uses as used', () => {
     const out = planUserVariableSwitch({
       authType: 'NONE',

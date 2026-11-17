@@ -517,6 +517,19 @@ export class ODataEngine {
     return entries;
   }
 
+  /**
+   * Drop what is cached under a credential key that will not be used again
+   * (a one-off connection test of values not stored yet): the two caches keep
+   * entries until the same key overwrites them.
+   */
+  forget(connectorId: string): void {
+    for (const cache of [this.catalogCache, this.metadataCache] as Array<Map<string, unknown>>) {
+      for (const key of [...cache.keys()]) {
+        if (key.startsWith(`${connectorId}|`)) cache.delete(key);
+      }
+    }
+  }
+
   private async metadata(
     config: ODataCallConfig,
     settings: ODataSettings,

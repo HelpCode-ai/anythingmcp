@@ -162,17 +162,16 @@ export interface UserCredentialModeOptions {
 }
 
 /**
- * Whether connectors may be switched to per-user variables on this server
- * (`USER_VARIABLE_CREDENTIALS`). Unset, it is on for a self-hosted server and
- * off on Cloud. Off only refuses new switches and new values: a connector
- * already switched keeps asking each caller for their own, since its own
- * values are gone and must not come back as a fallback.
+ * Whether connectors may be switched to per-user variables on this server:
+ * only with `USER_VARIABLE_CREDENTIALS=true`. Off (the default, on Cloud and
+ * self-hosted alike, until the connect page and the dashboard have their
+ * forms) only refuses new switches and new values: a connector already
+ * switched keeps asking each caller for their own, since its own values are
+ * gone and must not come back as a fallback.
  */
 export function userVariableCredentialsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const flag = (env.USER_VARIABLE_CREDENTIALS ?? '').trim().toLowerCase();
-  if (flag === 'true' || flag === '1') return true;
-  if (flag === 'false' || flag === '0') return false;
-  return env.DEPLOYMENT_MODE !== 'cloud';
+  return flag === 'true' || flag === '1';
 }
 
 /**

@@ -90,6 +90,16 @@ function idsForLog(ids: string[], max = 20): string {
   return ` (${ids.slice(0, max).join(', ')}${more})`;
 }
 
+/** A connector's fields as a switch to per-user variables would store them (previewUserVariableSwitch). */
+export interface UserVariableSwitchPreview {
+  credentialScope: 'USER';
+  config: Prisma.JsonValue;
+  envVars: Prisma.JsonValue;
+  authConfig?: string;
+  baseUrl?: string;
+  headers?: Prisma.JsonValue;
+}
+
 @Injectable()
 export class ConnectorsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ConnectorsService.name);
@@ -493,36 +503,29 @@ export class ConnectorsService implements OnApplicationBootstrap {
    * user's own sign-in is removed: nothing uses it any more, and the
    * connector needs one authorization of its own again.
    */
-  async setCredentialScope(
-    id: string,
+  /**
+   * What a switch of the credential scope writes. Nothing is stored here.
+   * With `wanted` (per-user variables) it empties the connector's own values
+   * of them and makes sure they are stored nowhere else, and throws when that
+   * cannot be guaranteed (user-variable-switch.util).
+   */
+  private scopeChange(
+    connector: Connector,
     scope: 'SHARED' | 'USER',
-    /**
-     * `userVariables`: the variables each user enters for themselves, for a
-     * connector that is not a browser OAuth2 one. The connector's own values
-     * of them are emptied in the same write, for the reason its tokens are:
-     * a call must never carry them for someone who has not entered their own.
-     * The caller has checked the names (ConnectorsController).
-     */
-    options: { userVariables?: readonly string[] } = {},
-  ): Promise<Connector> {
-    const connector = await this.findByIdInternal(id);
-    const wanted = scope === 'USER' ? [...(options.userVariables ?? [])] : [];
-    const current = userVariableNames(connector.config);
-    const sameVariables = wanted.length === current.length && wanted.every((name) => current.includes(name));
-    if (connector.credentialScope === scope && sameVariables) return connector;
-
-    let client: Record<string, unknown> | null = connector.authConfig
-      ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
-      : null;
-    if (scope === 'USER' && client) client = withoutUserTokens(client);
+    wanted: string[],
+  ): Prisma.ConnectorUpdateInput {
+    // Read only on the way to per-user. Back to shared must work whatever is
+    // stored (an auth config that cannot be decrypted, a lapsed licence).
+    let client: Record<string, unknown> | null =
+      scope === 'USER' && connector.authConfig
+        ? withoutUserTokens(JSON.parse(decrypt(connector.authConfig, this.encryptionKey)))
+        : null;
     const data: Prisma.ConnectorUpdateInput = { credentialScope: scope };
     const config =
       connector.config && typeof connector.config === 'object' && !Array.isArray(connector.config)
         ? { ...(connector.config as Record<string, unknown>) }
         : {};
     if (wanted.length > 0) {
-      // Empties the connector's own values and makes sure they are stored
-      // nowhere else; refuses the switch when that cannot be guaranteed.
       const slug = config.adapterSlug;
       const planned = planUserVariableSwitch({
         names: wanted,
@@ -549,6 +552,46 @@ export class ConnectorsService implements OnApplicationBootstrap {
       data.config = config as Prisma.InputJsonValue;
     }
     if (scope === 'USER' && client) data.authConfig = encrypt(JSON.stringify(client), this.encryptionKey);
+    return data;
+  }
+
+  /**
+   * The connector as a switch to per-user variables would store it, without
+   * storing it: for testing the connection in that state first
+   * (testConnection `as`). Throws what the switch itself would refuse.
+   */
+  async previewUserVariableSwitch(id: string, userVariables: readonly string[]): Promise<UserVariableSwitchPreview> {
+    const connector = await this.findByIdInternal(id);
+    const data = this.scopeChange(connector, 'USER', [...userVariables]);
+    return {
+      credentialScope: 'USER',
+      config: data.config as Prisma.JsonValue,
+      envVars: data.envVars as Prisma.JsonValue,
+      ...(typeof data.authConfig === 'string' ? { authConfig: data.authConfig } : {}),
+      ...(typeof data.baseUrl === 'string' ? { baseUrl: data.baseUrl } : {}),
+      ...(data.headers !== undefined ? { headers: data.headers as Prisma.JsonValue } : {}),
+    };
+  }
+
+  async setCredentialScope(
+    id: string,
+    scope: 'SHARED' | 'USER',
+    /**
+     * `userVariables`: the variables each user enters for themselves, for a
+     * connector that is not a browser OAuth2 one. The connector's own values
+     * of them are emptied in the same write, for the reason its tokens are:
+     * a call must never carry them for someone who has not entered their own.
+     * The caller has checked the names (ConnectorsController).
+     */
+    options: { userVariables?: readonly string[] } = {},
+  ): Promise<Connector> {
+    const connector = await this.findByIdInternal(id);
+    const wanted = scope === 'USER' ? [...(options.userVariables ?? [])] : [];
+    const current = userVariableNames(connector.config);
+    const sameVariables = wanted.length === current.length && wanted.every((name) => current.includes(name));
+    if (connector.credentialScope === scope && sameVariables) return connector;
+
+    const data = this.scopeChange(connector, scope, wanted);
     const updated = await this.prisma.connector.update({ where: { id }, data });
     this.oauth2TokenService?.forget(id);
     await this.authStatus?.clear(id);
@@ -638,7 +681,15 @@ export class ConnectorsService implements OnApplicationBootstrap {
      * not saved yet (a connector with per-user variables), instead of the
      * stored ones.
      */
-    options: { userId?: string; userVariables?: Record<string, string> } = {},
+    options: {
+      userId?: string;
+      userVariables?: Record<string, string>;
+      /**
+       * Test the connector as it would be stored after a change that is not
+       * written yet (previewUserVariableSwitch), instead of as it is.
+       */
+      as?: UserVariableSwitchPreview;
+    } = {},
   ): Promise<{
     ok: boolean;
     message: string;
@@ -664,7 +715,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
     httpStatus?: number;
     suggestedFix?: { action: string; hostname?: string; url?: string };
   }> {
-    const connector = await this.findById(id);
+    const stored = await this.findById(id);
+    const connector = options.as ? { ...stored, ...options.as } : stored;
 
     // File Search: the worker connects and lists the folder; this process never does.
     if ((connector.type as string) === 'FILE_SEARCH') {
@@ -691,6 +743,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
       }
     }
 
+    // The key of a test with values not stored yet; what engines cached under it is dropped afterwards.
+    let oneOffKey: string | undefined;
     try {
       // Same substitution the tool path does, so Test connection exercises the
       // credentials the workspace actually has rather than the placeholders the
@@ -710,6 +764,7 @@ export class ConnectorsService implements OnApplicationBootstrap {
           // A key of its own: nothing an engine cached for the values the
           // user had before may answer for the new ones.
           credentialKey = `${userCredentialKey(connector.id, options.userId ?? 'unsaved')}:check:${randomUUID()}`;
+          oneOffKey = credentialKey;
         } else {
           try {
             const own = await this.userCredentials.variablesForCall({
@@ -902,6 +957,11 @@ export class ConnectorsService implements OnApplicationBootstrap {
       return { ok: true, kind: 'ok', message: 'Connection successful' };
     } catch (error: any) {
       return this.classifyTestError(error, connector.healthcheckPath || '/');
+    } finally {
+      if (oneOffKey) {
+        this.odataEngine?.forget(oneOffKey);
+        this.oauth2TokenService?.forget(oneOffKey);
+      }
     }
   }
 
@@ -1338,7 +1398,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
       connectorId: credentialKey ?? connector.id,
       errorWhen: connectorErrorWhen(connector.config),
       largeIntegers: connectorLargeIntegers(connector.config),
-      logSecrets: connectorSecretValues(connector),
+      // The caller's own values included, when the connector asks for them.
+      logSecrets: connectorSecretValues({ ...connector, envVars }),
       // Lets the test run take an uploaded file (amcp-file:) of this workspace.
       organizationId: connector.organizationId,
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL

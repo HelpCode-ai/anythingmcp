@@ -156,8 +156,12 @@ export function planUserVariableSwitch(
   for (const name of names) {
     const old = input.envVars[name];
     if (typeof old !== 'string' || old === '') continue;
-    const hit = leaves.find(
-      (leaf) => leaf.text === old || (old.length >= SUBSTRING_CHECK_MIN_LENGTH && leaf.text.includes(old)),
+    // Also as it reads inside a URL (`p%40ss` for `p@ss`).
+    const forms = [...new Set([old, encodeURIComponent(old)])];
+    const hit = leaves.find((leaf) =>
+      forms.some(
+        (form) => leaf.text === form || (form.length >= SUBSTRING_CHECK_MIN_LENGTH && leaf.text.includes(form)),
+      ),
     );
     if (hit) {
       return {

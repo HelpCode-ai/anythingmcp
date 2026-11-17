@@ -111,6 +111,14 @@ describe('ConnectorsService with per-user variables', () => {
       expect(userCredentials.removeAll).toHaveBeenCalledWith('c1', 'org1');
     });
 
+    it('goes back to shared even when the stored auth config cannot be read', async () => {
+      const { service, prisma } = setup({ ...switched(), authConfig: 'not-something-this-key-decrypts' });
+      await service.setCredentialScope('c1', 'SHARED');
+      const { data } = prisma.connector.update.mock.calls[0][0];
+      expect(data.credentialScope).toBe('SHARED');
+      expect(data).not.toHaveProperty('authConfig');
+    });
+
     it('switches a provider sign-in connector as before, without touching variables or settings', async () => {
       const oauth = archive({
         type: 'MCP',
@@ -124,6 +132,38 @@ describe('ConnectorsService with per-user variables', () => {
       const { data } = prisma.connector.update.mock.calls[0][0];
       expect(Object.keys(data).sort()).toEqual(['authConfig', 'credentialScope']);
       expect(JSON.parse(decrypt(data.authConfig, KEY))).toEqual({ clientId: 'client-1' });
+    });
+  });
+
+  describe('previewUserVariableSwitch', () => {
+    it('returns what the switch would store, and stores nothing', async () => {
+      const { service, prisma } = setup(archive());
+      const preview = await service.previewUserVariableSwitch('c1', ['ARCHIVE_USERNAME', 'ARCHIVE_PASSWORD']);
+      expect(preview.credentialScope).toBe('USER');
+      expect(preview.envVars).toEqual({ ARCHIVE_USERNAME: '', ARCHIVE_PASSWORD: '' });
+      expect((preview.config as any).userVariables).toEqual(['ARCHIVE_USERNAME', 'ARCHIVE_PASSWORD']);
+      expect(prisma.connector.update).not.toHaveBeenCalled();
+    });
+
+    it('lets the connection be tested in that state, with values that are nobody\'s', async () => {
+      const { service, emailEngine } = setup(archive());
+      jest.spyOn(service, 'findById').mockResolvedValue(archive() as any);
+      const preview = await service.previewUserVariableSwitch('c1', ['ARCHIVE_USERNAME', 'ARCHIVE_PASSWORD']);
+      await service.testConnection('c1', {
+        userId: 'u-admin',
+        as: preview,
+        userVariables: { ARCHIVE_USERNAME: 'amcp-check-1', ARCHIVE_PASSWORD: 'amcp-check-2' },
+      });
+      // Not the connector's stored login, although it is still stored.
+      expect(emailEngine.testConnection.mock.calls[0][0].authConfig).toEqual({
+        username: 'amcp-check-1',
+        password: 'amcp-check-2',
+      });
+    });
+
+    it('refuses what the switch would refuse', async () => {
+      const { service } = setup(archive());
+      await expect(service.previewUserVariableSwitch('c1', ['NOT_USED_ANYWHERE'])).rejects.toThrow(BadRequestException);
     });
   });
 
