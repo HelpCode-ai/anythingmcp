@@ -6875,7 +6875,7 @@ should see what their AI client can use, and their own calls, nothing more.
 | Mode | What a member who is not an admin sees |
 |---|---|
 | **Open** (default) | Everything in the workspace, as before this setting existed. |
-| **Restricted** | Only their own tool calls, the connectors their MCP roles reach, and the MCP servers that hold one of those connectors. Of a connector they do not own: its name, its status and the tools they may use, not its settings. |
+| **Restricted** | Only their own tool calls, the connectors their MCP roles reach, and the MCP servers they own. Of a connector they do not own: its name, its status and the tools they may use, not its settings. Never another member's MCP server. |
 
 Admins always see everything, in both modes. "Member" below means a VIEWER or
 an EDITOR of the workspace. An EDITOR also keeps seeing what they own.
@@ -6888,23 +6888,31 @@ workspace until an admin switches it.
 
 | Area | Open | Restricted, member |
 |---|---|---|
-| Audit log (`GET /api/audit/invocations`) | Every call of the workspace, with the caller and the full input and output | Only the calls the member made. Calls without a user (for example a static key) are hidden. The page says "You see your own calls. Workspace admins see all calls." |
-| Analytics, stats, tool performance (`/api/audit/stats`, `/analytics`, `/breakdowns`, `/tool-performance`) | Workspace-wide numbers, including calls per user | The same numbers, counted over the member's own calls only. The "by user" panel is hidden; the API's `byUser` holds only the member's own row. |
+| Audit log (`GET /api/audit/invocations`) | Every call of the workspace, with the caller and the full input and output | Only the calls the member made. Calls without a user (for example a static key) are hidden. A call made through an MCP server the member does not own keeps its content, but `mcpServer` and `mcpServerId` are null; `mcpServerId=` of such a server matches nothing. The page says "You see your own calls. Workspace admins see all calls." |
+| Analytics, stats, tool performance (`/api/audit/stats`, `/analytics`, `/breakdowns`, `/tool-performance`) | Workspace-wide numbers, including calls per user and per server | The same numbers, counted over the member's own calls only. The "by user" panel is hidden; the API's `byUser` holds only the member's own row. Only the member's own servers are named: `byServer` counts calls through any other server in one row with `id: null` ("Other server or none"), and tool performance reports them with `mcpServerId: null`. |
 | Connectors (`GET /api/connectors`, `/health-check`) | Every connector with all of its tools and settings | Connectors the member owns, or that hold at least one tool their roles allow. A connector they own comes back in full. One they do not own comes back in the [reduced view](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#what-a-member-sees-of-a-shared-connector>), with only the allowed tools. |
-| Connector and tool detail (`/api/connectors/:id`, its per-user sign-in, tools) | Any connector of the workspace | 404 for a connector the member cannot see, with the same body as an unknown id. A member cannot tell "hidden" from "does not exist". A connector they can see but do not own comes back in the reduced view. |
+| Connector and tool detail (`/api/connectors/:id`, its per-user sign-in, tools) | Any connector of the workspace | 404 for a connector the member cannot see, with the same body as an unknown id. A member cannot tell "hidden" from "does not exist". A connector they can see but do not own comes back in the reduced view. On a connector they own, `mcpServers` lists only the servers they own. |
 | Connector settings (`/api/connectors/:id/oauth-config`) | Any connector of the workspace | Only for a connector the member owns; 404 for the others, visible or not. |
 | Owner-or-admin reads (`/api/connectors/:id/webhook/url`, `/webhook/events`, `/catalog-diff`, a tool's `/annotations` and `/response-mapping`) | Owner or admin only (403 for other members) | 404 for a connector the member cannot see, and for a tool outside their roles on a connector they do not own; otherwise as in Open. |
 | Exports (`/api/connectors/export-all`, `/:id/export`) | Every connector, secrets masked unless admin | Only connectors the member owns; 404 for the others. |
-| File Search (`/api/file-search/connectors/:id` and its tree, problems, runs, scans and access rules) | Any File Search connector of the workspace | 404 for a connector the member cannot see. |
-| MCP servers (`GET /api/mcp-servers`, `/:id`, `/:id/activity`) | Every server, with the names of all its connectors | Servers the member owns, or that hold a connector they can see. Connector names and counts list only those connectors. 404 for the others. |
-| Server picker (`GET /api/mcp-connections/targets`, the OAuth consent page) | Every active server of each workspace the user belongs to | Per workspace, by that workspace's own mode and the user's role there. A grant (`PUT /api/mcp-connections/:clientId`) drops a hidden server like an unknown id. |
+| File Search (`/api/file-search/connectors/:id` and everything below it: overview, tree, problems, runs, scans, sync, schedule, description, access rules) | Any File Search connector of the workspace | 404 unless the member owns the connector, including a File Search connector shared with them through their roles: these routes show the source's address, every folder and file name and the role rules, more than the tools let their AI client read. They use the File Search tools instead. `capabilities` and `policy` (plan, limits, aggregate usage) are unchanged. |
+| MCP servers (`GET /api/mcp-servers`, `/:id`, `/:id/activity`, and `PUT`/`DELETE` `/:id`, `PUT /:id/connectors`) | Every server, with the names of all its connectors | Only the servers the member owns, never another member's server, not even one holding a connector they can see. On their own servers, connector names and counts list only the connectors they can see. Every other server answers 404 with the body of an unknown id, on reads and writes. Assigning a connector they cannot see to their own server answers 404 like an unknown connector. |
+| Server picker (`GET /api/mcp-connections/targets`, the OAuth consent page) | Every active server of each workspace the user belongs to | Per workspace, by that workspace's own mode and the user's role there: only their own servers, plus the whole-workspace choice. A grant (`PUT /api/mcp-connections/:clientId`) drops another member's server like an unknown id. The consent page does not name a requested server the user may not see. |
+| Connections and keys (`GET /api/mcp-connections`, `GET`/`POST /api/mcp-keys`) | The user's own connections and keys | Still only their own. A server they do not own is left out of a connection's `servers` and is `null` as a key's `mcpServer`. Creating a key for such a server answers 404, like an unknown server. |
+| Knowledge graph and skills (`GET /api/knowledge-graph`, `/skills`, `/skills/:id/versions`), learning projects (`/api/learning/projects`, `/:id`, `/:id/lessons`, lessons, topic preview and publish) | Admins and editors | Admins only: 403 for editors. These answers are other members' work (skills and lessons learned from their requests, the graph of every connector). A member's own learning projects (`/api/learning/me`) and their own learning setting are unchanged. |
+| Plan fit (`GET /api/license/plan-fit`, Cloud) | Any member | Admins only (403): it names every connector and MCP server of the workspace. |
+| Catalog (`/api/adapters/popular-connectors`, `/starter-pack`) | `installed` for every connector of the workspace | `installed` only for connectors the member can see. |
 | Members, invitations, roles, identity providers (`/api/users`, `/api/roles`, ...) | Admins only | Admins only (unchanged) |
-| MCP endpoint (`/mcp`, `/mcp/<serverId>`) | Tools filtered by MCP roles | Unchanged: roles already decide what an AI client can list and call. |
+| MCP endpoint (`/mcp`, `/mcp/<serverId>`) | Tools filtered by MCP roles | Unchanged: roles already decide what an AI client can list and call. The server links the workspace connection hands to the model (`anythingmcp_get_configuration_url`) list only the member's own servers. |
 
-Writes are not part of this setting. Changing or deleting a connector or a
-server stays limited to its owner or an admin, in both modes. The dashboard
-shows Edit, Test, Variables, Delete and the other controls that change a
-connector only to its owner and to admins, in both modes.
+Writes keep their rules: changing or deleting a connector or a server stays
+limited to its owner or an admin, in both modes. In restricted mode a server
+the member does not own answers 404 before that rule could answer 403. The
+dashboard shows Edit, Test, Variables, Delete and the other controls that
+change a connector only to its owner and to admins, in both modes. Testing new
+values for an existing connector (`POST /api/adapters/:slug/verify` with
+`connectorId`) runs with that connector's stored credentials, so it is
+limited to its owner or an admin as well, in both modes (404 for anyone else).
 
 ### What a member sees of a shared connector
 
@@ -6946,9 +6954,8 @@ endpoint it gets the allowed tools with their parameters, as before.
 
 File Search connectors: the reduced view applies to the connector itself, and
 the dashboard does not show its Files panel in the reduced view. The File
-Search endpoints of a connector a member can see
-(`/api/file-search/connectors/:id` and below) still answer as described in the
-table above.
+Search endpoints (`/api/file-search/connectors/:id` and below) answer 404 for
+every File Search connector the member does not own, as in the table above.
 
 A restricted member who sees no connector or server gets "Nothing has been
 shared with you yet. Ask a workspace admin for a role." on the Connectors and
@@ -6968,16 +6975,33 @@ Restricted mode hides identities and content, not every number:
 
 - **Aggregate counts.** `GET /api/license/usage` keeps returning the
   workspace's number of connectors, servers and users. These carry no identity.
-- **A server's own activity.** For a server the member can see,
-  `GET /api/mcp-servers/:id/activity` returns the server's two numbers (calls
-  in the last 30 days, time of the last call), counted over all callers.
-- **Other members' default servers.** Each invited member gets a server named
-  `Default (<name>)`. In restricted mode it stays hidden unless it holds a
-  connector the caller can see; then the caller sees it, and with it the
-  member's name. To avoid this, put shared connectors on **team servers**
-  (for example "Sales", "Finance") instead of on members' default servers.
+- **Their own servers' activity.** For a server the member owns,
+  `GET /api/mcp-servers/:id/activity` and the list's `usage` return the
+  server's two numbers (calls in the last 30 days, time of the last call),
+  counted over all callers.
 - **The member's own calls**, with their full input and output. They made
-  those calls.
+  those calls, including through a server they do not own (that server is not
+  named).
+
+## How a restricted member connects their AI client
+
+A restricted member never sees another member's MCP server, so team servers
+(for example "Sales", "Finance") and other members' `Default (<name>)` servers
+are not listed to them and cannot be picked when they connect. They connect
+in one of two ways:
+
+- **The workspace connection** (the shared `/mcp` endpoint, "Everything in
+  this workspace" on the consent page): every tool their roles allow, from
+  every connector, with no server to pick. When their own server is the only
+  one on offer, the consent page grants the workspace connection without
+  asking.
+- **Their own server**, typically the `Default (<name>)` server every invited
+  member gets. An admin can put shared connectors on it; the member then sees
+  those connectors on it as far as their roles reach.
+
+Connections made before the workspace was switched to restricted keep working:
+the MCP endpoint is unchanged and roles still decide the tools. The dashboard
+just no longer names a server the member does not own.
 
 ## Set it up with roles and SSO group mapping
 
@@ -6991,10 +7015,15 @@ of its tools. So set up the roles first, then switch the mode:
 2. **Make members Viewer** (or Editor if they create connectors themselves)
    under **Settings → Users**. Admins are never restricted, so keep the admin
    role for the people who manage the workspace.
-3. **Assign the roles.** By hand under **Settings → Users**, or from your
-   directory: map SSO groups to MCP roles under **Settings → Single sign-on →
-   Role mappings** ([SSO guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/sso.md#3-map-directory-groups-to-roles>)).
-   Set the workspace role of those mappings to Viewer as well.
+3. **Assign the roles.** By hand under **Settings → Roles → User MCP Role
+   Assignment**, or from your directory: map SSO groups to MCP roles under
+   **Settings → Single sign-on → Role mappings**
+   ([SSO guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/sso.md#3-map-directory-groups-to-roles>)). Set the workspace
+   role of those mappings to Viewer as well. A member can hold several roles
+   and reaches the connectors of all of them together. The assignment table
+   shows every role of each member: roles from a single sign-on group are
+   marked and can only be changed in the role mappings, and the last column
+   counts the connectors the member's roles reach.
 4. **Switch to Restricted** under **Settings → Organization → Security →
    Member visibility**, and save.
 
@@ -7006,6 +7035,20 @@ warns about this and links to **Settings → Roles**.
 Once any role in the workspace has a tool list, a member with **no** role gets
 no tools on the MCP endpoint, and so sees only the connectors they own in
 restricted mode.
+
+## Route decisions (for contributors)
+
+Every HTTP route of the API has a written member-visibility decision in
+`packages/backend/src/settings/member-visibility.routes.ts`: narrowed by
+member visibility (`scoped`), refused to restricted members
+(`admin-when-restricted`, enforced by `MemberVisibilityInterceptor`),
+admin-only, owner-or-admin, the caller's own data, governed by its own access
+model, workspace settings and aggregate counts, not reached with a member's
+session (public, token or provider routes), or the MCP endpoint (roles).
+`member-visibility.routes.spec.ts` reads every controller through Nest's
+route metadata and fails when a route has no decision, so a new route that
+returns workspace data cannot reach a restricted member unnoticed. Add the
+decision when you add the route.
 
 ## Propagation
 
@@ -7570,14 +7613,16 @@ Resolution rules:
 - A user in several mapped groups receives the **union** of their MCP roles and
   the **most privileged** workspace role.
 - Roles an admin assigned by hand are **never** removed by a sync, and vice
-  versa.
+  versa. **Settings → Roles → User MCP Role Assignment** shows both kinds for
+  each member; synced roles are marked `from single sign-on group` and can
+  only be changed here, in the mappings.
 - A sync will **not** demote the last remaining admin of a workspace. The
   attempt is refused and audited as `LAST_ADMIN_PROTECTION_TRIGGERED`.
 
 The same MCP roles can also decide what members see in the dashboard: with
 [member visibility](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md>) set to Restricted, a
 member who is not an admin sees only their own tool calls, the connectors
-their roles reach and the MCP servers that hold one of them. Map groups to
+their roles reach and the MCP servers they own. Map groups to
 the Viewer workspace role and to MCP roles with tool lists, then switch the
 mode under **Settings → Organization → Security**.
 
@@ -8913,6 +8958,10 @@ Export your key as `AMCP_MCP_API_KEY` (or `AMCP_ACCESS_TOKEN` when the server op
 | GET | `/api/roles/:id/tools` | List tool access for a role |
 | PUT | `/api/roles/:id/tools` | Set tool access whitelist |
 | PUT | `/api/roles/:id/tools/:toolId/rate-limit` | Update rate limits on an existing tool grant |
+| GET | `/api/roles/members` | List members with every MCP role they hold and the connectors those roles reach |
+| GET | `/api/roles/assignments/:userId` | List a member's MCP roles, with where each comes from |
+| PUT | `/api/roles/assignments/:userId` | Replace a member's manual MCP roles |
+| PUT | `/api/roles/assign/:userId` | Deprecated: set one MCP role. Use `PUT /api/roles/assignments/:userId` |
 
 ### Create Role with Tool Whitelist
 
@@ -8931,12 +8980,42 @@ curl -s -X PUT http://localhost:4000/api/roles/$ROLE_ID/tools \
   -d '{"toolIds": ["tool-id-1", "tool-id-2", "tool-id-3"]}'
 ```
 
+### Assign roles to members
+
+A member can hold several MCP roles and may call the **union** of their tools:
+each role adds tools, none takes any away. A role comes from one of two
+sources:
+
+- `manual`: set by an admin, under **Settings → Roles** or with
+  `PUT /api/roles/assignments/:userId`.
+- the single sign-on group sync (for example `entra`): set by the
+  provider's role mappings ([SSO guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/sso.md#3-map-directory-groups-to-roles>)).
+  Change these in the mappings, not on the member.
+
+`PUT /api/roles/assignments/:userId` replaces only the member's **manual**
+roles in your workspace; roles from group sync stay.
+
+```bash
+curl -s -X PUT http://localhost:4000/api/roles/assignments/$USER_ID \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"roleIds": ["'$ROLE_ID'"]}'
+```
+
+`GET /api/roles/members` returns every member of your workspace with all their
+roles (`roles[]`: `roleId`, `roleName`, `source`, and `global` for a grant that
+applies in every workspace) and `connectors`, the connectors those roles reach.
+`connectors` is `null` when roles do not limit the member: a workspace ADMIN,
+or a member with no role while no role of the workspace has a tool list.
+`GET /api/users` also returns all roles of each member in `mcpRoles`; its
+`mcpRoleId` and `mcpRole` fields are deprecated and hold one role at most.
+
 ### Per-tool rate limits
 
 An administrator can set optional minute and hour limits on an existing
-role/tool grant. The editor UI is planned separately; configure limits through
-the API for now. `GET /api/roles/:id/tools` returns `callsPerMinute` and
-`callsPerHour` on each grant.
+role/tool grant, under **Settings → Roles → Manage tools** or through the API.
+`GET /api/roles/:id/tools` returns `callsPerMinute` and `callsPerHour` on each
+grant.
 
 ```bash
 curl -s -X PUT "http://localhost:4000/api/roles/$ROLE_ID/tools/tool-id-1/rate-limit" \
@@ -8997,8 +9076,8 @@ call, so cached presence never replaces the caller's current role policy.
 | PUT | `/api/admin/settings/member-visibility` | Admin: set `{ "mode": "open" }` or `{ "mode": "restricted" }` |
 
 In a workspace set to `restricted`, a member who is not an admin gets only
-their own calls from the audit endpoints, only the connectors and MCP servers
-their roles reach, and 404 for the others. A connector they can see but do not
+their own calls from the audit endpoints, only the connectors their roles
+reach, only the MCP servers they own, and 404 for the others. A connector they can see but do not
 own comes back in a reduced view marked `memberView: true`: `id`, `name`,
 `type`, `icon`, `isActive`, `credentialScope`, `setupStatus`, `authStatus`,
 `authStatusCode`, and of each allowed tool `id`, `name`, `description` and

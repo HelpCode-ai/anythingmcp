@@ -453,6 +453,7 @@ export const MEMBER_VISIBILITY_ROUTES: Readonly<Record<string, RouteVisibility>>
   'McpApiKeysController.revokeKey': own(),
   'McpApiKeysController.deleteKey': own(),
   'RolesController.listRoles': admin(),
+  'RolesController.listMembers': admin(),
   'RolesController.createRole': admin(),
   'RolesController.getRole': admin(),
   'RolesController.updateRole': admin(),
