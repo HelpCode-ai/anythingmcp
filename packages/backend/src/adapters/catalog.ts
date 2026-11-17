@@ -82,6 +82,7 @@ import * as zalandoZds from './de/zalando-zds.json';
 import * as zammad from './de/zammad.json';
 import * as znuny from './de/znuny.json';
 import * as bAndQ from './gb/b-and-q.json';
+import * as brandalley from './gb/brandalley.json';
 import * as companiesHouse from './gb/companies-house.json';
 import * as debenhams from './gb/debenhams.json';
 import * as fruugo from './gb/fruugo.json';
@@ -157,6 +158,7 @@ import * as bitbucket from './intl/bitbucket.json';
 import * as bitrix24 from './intl/bitrix24.json';
 import * as blibli from './intl/blibli.json';
 import * as blockcypher from './intl/blockcypher.json';
+import * as bloomingdales from './intl/bloomingdales.json';
 import * as bluesky from './intl/bluesky.json';
 import * as boldsign from './intl/boldsign.json';
 import * as bonanza from './intl/bonanza.json';
@@ -420,6 +422,7 @@ import * as livedune from './intl/livedune.json';
 import * as lodgify from './intl/lodgify.json';
 import * as lokalise from './intl/lokalise.json';
 import * as loops from './intl/loops.json';
+import * as lowes from './intl/lowes.json';
 import * as loyverse from './intl/loyverse.json';
 import * as lusha from './intl/lusha.json';
 import * as macys from './intl/macys.json';
@@ -604,6 +607,7 @@ import * as salesflare from './intl/salesflare.json';
 import * as salesforce from './intl/salesforce.json';
 import * as salesforceCommerceCloud from './intl/salesforce-commerce-cloud.json';
 import * as salesloft from './intl/salesloft.json';
+import * as saloncentric from './intl/saloncentric.json';
 import * as salsify from './intl/salsify.json';
 import * as sanity from './intl/sanity.json';
 import * as sapC4c from './intl/sap-c4c.json';
@@ -674,6 +678,7 @@ import * as stripe from './intl/stripe.json';
 import * as substack from './intl/substack.json';
 import * as sumup from './intl/sumup.json';
 import * as supabase from './intl/supabase.json';
+import * as superPharm from './intl/super-pharm.json';
 import * as surveymonkey from './intl/surveymonkey.json';
 import * as synology from './intl/synology.json';
 import * as synologyFileSearch from './intl/synology-file-search.json';
@@ -805,6 +810,7 @@ import * as arubaFatturazione from './it/aruba-fatturazione.json';
 import * as bricobravo from './it/bricobravo.json';
 import * as eprice from './it/eprice.json';
 import * as fattureInCloud from './it/fatture-in-cloud.json';
+import * as ibs from './it/ibs.json';
 import * as openapiCompany from './it/openapi-company.json';
 import * as teamsystem from './it/teamsystem.json';
 import * as zucchetti from './it/zucchetti.json';
@@ -837,6 +843,9 @@ import * as manomano from './fr/manomano.json';
 import * as natureEtDecouvertes from './fr/nature-et-decouvertes.json';
 import * as octopia from './fr/octopia.json';
 import * as pennylane from './fr/pennylane.json';
+import * as pixmania from './fr/pixmania.json';
+import * as placeDesTendances from './fr/place-des-tendances.json';
+import * as printemps from './fr/printemps.json';
 import * as privateSportShop from './fr/private-sport-shop.json';
 import * as qonto from './fr/qonto.json';
 import * as rueDuCommerce from './fr/rue-du-commerce.json';
@@ -861,7 +870,9 @@ import * as teamleader from './be/teamleader.json';
 import * as tidely from './be/tidely.json';
 import * as bexio from './ch/bexio.json';
 import * as shab from './ch/shab.json';
+import * as ahlens from './se/ahlens.json';
 import * as fortnox from './se/fortnox.json';
+import * as hmHome from './se/hm-home.json';
 import * as stadium from './se/stadium.json';
 import * as vismaEaccounting from './se/visma-eaccounting.json';
 import * as eConomic from './dk/e-conomic.json';
@@ -869,6 +880,7 @@ import * as brreg from './no/brreg.json';
 import * as prhYtj from './fi/prh-ytj.json';
 import * as ares from './cz/ares.json';
 import * as apaczka from './pl/apaczka.json';
+import * as blackRedWhite from './pl/black-red-white.json';
 import * as ceneo from './pl/ceneo.json';
 import * as ceneoOrders from './pl/ceneo-orders.json';
 import * as empik from './pl/empik.json';
@@ -1264,6 +1276,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   zammad as unknown as AdapterDefinition,
   znuny as unknown as AdapterDefinition,
   bAndQ as unknown as AdapterDefinition,
+  brandalley as unknown as AdapterDefinition,
   companiesHouse as unknown as AdapterDefinition,
   debenhams as unknown as AdapterDefinition,
   fruugo as unknown as AdapterDefinition,
@@ -1339,6 +1352,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bitrix24 as unknown as AdapterDefinition,
   blibli as unknown as AdapterDefinition,
   blockcypher as unknown as AdapterDefinition,
+  bloomingdales as unknown as AdapterDefinition,
   bluesky as unknown as AdapterDefinition,
   boldsign as unknown as AdapterDefinition,
   bonanza as unknown as AdapterDefinition,
@@ -1602,6 +1616,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   lodgify as unknown as AdapterDefinition,
   lokalise as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
+  lowes as unknown as AdapterDefinition,
   loyverse as unknown as AdapterDefinition,
   lusha as unknown as AdapterDefinition,
   macys as unknown as AdapterDefinition,
@@ -1786,6 +1801,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   salesforce as unknown as AdapterDefinition,
   salesforceCommerceCloud as unknown as AdapterDefinition,
   salesloft as unknown as AdapterDefinition,
+  saloncentric as unknown as AdapterDefinition,
   salsify as unknown as AdapterDefinition,
   sanity as unknown as AdapterDefinition,
   sapC4c as unknown as AdapterDefinition,
@@ -1856,6 +1872,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   substack as unknown as AdapterDefinition,
   sumup as unknown as AdapterDefinition,
   supabase as unknown as AdapterDefinition,
+  superPharm as unknown as AdapterDefinition,
   surveymonkey as unknown as AdapterDefinition,
   synology as unknown as AdapterDefinition,
   synologyFileSearch as unknown as AdapterDefinition,
@@ -1987,6 +2004,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   bricobravo as unknown as AdapterDefinition,
   eprice as unknown as AdapterDefinition,
   fattureInCloud as unknown as AdapterDefinition,
+  ibs as unknown as AdapterDefinition,
   openapiCompany as unknown as AdapterDefinition,
   teamsystem as unknown as AdapterDefinition,
   zucchetti as unknown as AdapterDefinition,
@@ -2019,6 +2037,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   natureEtDecouvertes as unknown as AdapterDefinition,
   octopia as unknown as AdapterDefinition,
   pennylane as unknown as AdapterDefinition,
+  pixmania as unknown as AdapterDefinition,
+  placeDesTendances as unknown as AdapterDefinition,
+  printemps as unknown as AdapterDefinition,
   privateSportShop as unknown as AdapterDefinition,
   qonto as unknown as AdapterDefinition,
   rueDuCommerce as unknown as AdapterDefinition,
@@ -2043,7 +2064,9 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   tidely as unknown as AdapterDefinition,
   bexio as unknown as AdapterDefinition,
   shab as unknown as AdapterDefinition,
+  ahlens as unknown as AdapterDefinition,
   fortnox as unknown as AdapterDefinition,
+  hmHome as unknown as AdapterDefinition,
   stadium as unknown as AdapterDefinition,
   vismaEaccounting as unknown as AdapterDefinition,
   eConomic as unknown as AdapterDefinition,
@@ -2051,6 +2074,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   prhYtj as unknown as AdapterDefinition,
   ares as unknown as AdapterDefinition,
   apaczka as unknown as AdapterDefinition,
+  blackRedWhite as unknown as AdapterDefinition,
   ceneo as unknown as AdapterDefinition,
   ceneoOrders as unknown as AdapterDefinition,
   empik as unknown as AdapterDefinition,

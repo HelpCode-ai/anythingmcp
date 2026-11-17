@@ -1398,6 +1398,282 @@
         "https://e-tailize.com/integrations/ldlc/",
         "https://www.ldlc.com/aide/189-devenez-revendeur/"
       ]
+    },
+    {
+      "slug": "pixmania",
+      "name": "Pixmania Marketplace",
+      "retailer": "Pixmania",
+      "region": "fr",
+      "brandColor": "#006A38",
+      "monogram": "Px",
+      "hosts": [{ "value": "https://pixplace.pixmania.com", "label": "France, Spain and Italy" }],
+      "countries": ["FR", "ES", "IT"],
+      "countriesNote": "One shop sells in France, Spain and Italy; Spain and Italy are separate sales channels of the same shop, each with its own prices.",
+      "shopIdNeeded": false,
+      "access": "Pixmania selects its sellers; write to its partnerships team (`partenariats@pixmania.com`). Once accepted, the business completes its identity checks with the payment provider in the seller back office before it can sell. Pixmania charges a monthly fee and a commission per sale.",
+      "keyPath": "your e-mail address (top of the page) > My user settings > API key",
+      "sellerHelpUrl": "https://pixmania.atlassian.net/wiki/spaces/OV/overview",
+      "notes": [],
+      "aliases": ["Pixmania seller API", "Pixmania vendeur", "Pixmania Mirakl", "PixPlace", "pixplace.pixmania.com", "Pixmania marketplace France"],
+      "sources": [
+        "https://pixmania.atlassian.net/wiki/spaces/OV/pages/999129138/Onboarding+d+taill",
+        "https://pixmania.atlassian.net/wiki/spaces/OV/pages/65208395/Guide+d+int+gration+produits",
+        "https://pixmania.atlassian.net/wiki/spaces/OV/pages/224722947/Ouverture+d+un+Nouveau+Canal+de+Vente",
+        "https://help.lengow.com/hc/en-us/articles/15711182103836-Pixmania-Mirakl-Starting-with-Pixmania",
+        "https://support.channelengine.com/hc/en-us/articles/12375428321949-Pixmania-marketplace-guide"
+      ]
+    },
+    {
+      "slug": "printemps",
+      "name": "Printemps Marketplace",
+      "retailer": "Printemps",
+      "region": "fr",
+      "brandColor": "#1A1A1A",
+      "monogram": "Pr",
+      "hosts": [{ "value": "https://partners.printemps.com", "label": "France and Belgium" }],
+      "countries": ["FR", "BE"],
+      "countriesNote": "France is the main channel; Belgium is a second sales channel of the same shop that Printemps switches on.",
+      "shopIdNeeded": false,
+      "access": "Printemps hand-picks partner brands for fashion, beauty and home and signs a contract with each; there is no public application form. Partners ship from a warehouse in the EU within 72 hours, handle returns themselves and serve customers in French and English. Printemps charges a monthly subscription and a commission per sale.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Printemps seller API", "Printemps.com marketplace", "Printemps vendeur", "Printemps Mirakl", "partners.printemps.com", "Groupe Printemps"],
+      "sources": [
+        "https://crt.sh/?q=printemps.com",
+        "https://help.lengow.com/hc/en-us/articles/10469243536668-Printemps-Mirakl-Starting-with-Printemps",
+        "https://help.lengow.com/hc/en-us/articles/10912477435676-Printemps-Mirakl-Connection-settings",
+        "https://e-tailize.com/integrations/selling-on-printemps/"
+      ]
+    },
+    {
+      "slug": "place-des-tendances",
+      "name": "Place des Tendances Marketplace",
+      "retailer": "Place des Tendances",
+      "region": "fr",
+      "brandColor": "#1A1A1A",
+      "monogram": "PT",
+      "hosts": [{ "value": "https://partners.placedestendances.com", "label": "France" }],
+      "countries": ["FR"],
+      "countriesNote": "The shop is French; Place des Tendances also delivers to customers in other European countries.",
+      "shopIdNeeded": false,
+      "access": "Place des Tendances selects its sellers; send a letter of interest with your brand's details to `marketplace@placedestendances.com`. Sellers pay a monthly subscription and a commission per sale and must meet response-time and shipping-time targets.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.placedestendances.com/fr/en/marketplace-place-des-tendances",
+      "notes": [],
+      "aliases": ["Place des Tendances seller API", "PlaceDesTendances", "PDT marketplace", "Place des Tendances vendeur", "Place des Tendances Mirakl", "partners.placedestendances.com"],
+      "sources": [
+        "https://crt.sh/?q=placedestendances.com",
+        "https://help.lengow.com/hc/en-us/articles/10502748090908-Place-des-Tendances-Mirakl-Starting-with-Place-des-Tendances",
+        "https://support.channelengine.com/hc/en-us/articles/32048796506653-Place-des-Tendances-marketplace-guide",
+        "https://www.republikgroup.com/articles/0631c4f3-eab8-f111-a6a9-6045bdf5ca6d/Comment%20Place%20des%20Tendances%20se%20repositionne%20avec%20sa%20marketplace"
+      ]
+    },
+    {
+      "slug": "super-pharm",
+      "name": "Super-Pharm Marketplace",
+      "retailer": "Super-Pharm",
+      "region": "intl",
+      "brandColor": "#1A1A1A",
+      "monogram": "SP",
+      "hosts": [{ "value": "https://superpharm-prod.mirakl.net", "label": "Israel" }],
+      "countries": ["IL"],
+      "countriesNote": "This is the marketplace of shop.super-pharm.co.il in Israel; the Polish Super-Pharm site does not take marketplace sellers.",
+      "shopIdNeeded": false,
+      "access": "Super-Pharm approves each seller before it can list; sellers keep their own stock and deliver to customers in Israel themselves, and Super-Pharm takes a commission on each sale.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["Super Pharm", "SuperPharm", "Super-Pharm Israel", "Super-Pharm Online", "Super-Pharm seller API", "Super-Pharm Mirakl"],
+      "sources": [
+        "https://github.com/noamtamari/Brand-Duplicator-Checker/blob/6ab649752e9121fe4d21c844b93048608860f160/src/brand-duplicate/brand-catalogue-loader.ts",
+        "https://blog.mirakl.com/leading-pharmacy-chain-super-pharm-embraces-the-platform-revolution",
+        "https://en.globes.co.il/en/article-1001315883",
+        "https://shop.super-pharm.co.il/llms.txt"
+      ]
+    },
+    {
+      "slug": "lowes",
+      "name": "Lowe's Marketplace",
+      "retailer": "Lowe's",
+      "region": "intl",
+      "brandColor": "#004990",
+      "monogram": "Lo",
+      "hosts": [{ "value": "https://lowesus-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "Lowe's selects its sellers through the application on its marketplace page; the business must be registered in the US with a US address, a W-9 and an EIN, ship from the US with UPS, USPS or FedEx (parcels within 24 business hours, freight within three business days) and print GS1-certified UPC codes on its products.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.lowes.com/marketplace",
+      "notes": [],
+      "aliases": ["Lowes", "Lowe's seller API", "Lowes Marketplace", "Lowe's Marketplace US", "Lowe's Mirakl"],
+      "sources": [
+        "https://github.com/ShahidBaig/eSyncMate_V2/blob/HEAD/CLAUDE.md",
+        "https://support.channelengine.com/hc/en-us/articles/27898226498589-Lowe-s-marketplace-guide",
+        "https://www.mirakl.com/blogs/marketplace/lowes-partners-with-mirakl-to-accelerate-its-online-marketplace/",
+        "https://www.digitalcommerce360.com/2025/05/21/lowes-online-marketplace-mirakl/"
+      ]
+    },
+    {
+      "slug": "ibs",
+      "name": "IBS.it Marketplace",
+      "retailer": "IBS.it",
+      "region": "it",
+      "brandColor": "#1A1A1A",
+      "monogram": "IB",
+      "hosts": [{ "value": "https://ibs-prod.mirakl.net", "label": "Italy" }],
+      "countries": ["IT"],
+      "shopIdNeeded": false,
+      "access": "IBS.it accepts professional sellers and confirms each seller's eligibility before the first listing; the catalogue covers books, music, film, games, stationery and gifts.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.ibs.it/about/marketplace",
+      "notes": [],
+      "aliases": ["IBS", "IBS seller API", "Internet Bookshop Italia", "IBS Marketplace", "IBS.it venditori", "IBS Mirakl"],
+      "sources": [
+        "https://github.com/djimenezp/MpOrderCollector/blob/HEAD/marketplace/mirakl_api.py",
+        "https://help.lengow.com/hc/en-us/articles/4411830381458-IBS-Mirakl",
+        "https://www.lengow.com/it/integrations/ibs-it"
+      ]
+    },
+    {
+      "slug": "hm-home",
+      "name": "H&M Home Marketplace",
+      "retailer": "H&M Home",
+      "region": "se",
+      "brandColor": "#CC071E",
+      "monogram": "HM",
+      "hosts": [{ "value": "https://hmhome-prod.mirakl.net", "label": "All countries" }],
+      "countries": ["DK", "FI", "DE", "IT", "PL", "PT", "ES", "SE", "GB"],
+      "countriesNote": "One shop sells to all nine countries, with a price per country.",
+      "shopIdNeeded": false,
+      "access": "H&M Home chooses the brands it sells next to its own range and reviews each application; it charges no setup, monthly or commission fee, the margin is agreed per brand, with invoices every two weeks and 30-day payment terms.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [],
+      "aliases": ["H&M Home seller API", "HM Home", "H&M Home partner brands", "H&M Home Mirakl"],
+      "sources": [
+        "https://github.com/kuna-rajora/ODOO-AGENTIC-KIT/blob/HEAD/src/tools/log_analyzer_framework/log_files/May/odoo.log.2025-05-21",
+        "https://support.channelengine.com/hc/en-us/articles/4409485397149-H-M-marketplace-guide",
+        "https://e-tailize.com/integrations/selling-on-hm-home/"
+      ]
+    },
+    {
+      "slug": "ahlens",
+      "name": "Åhléns Marketplace",
+      "retailer": "Åhléns",
+      "region": "se",
+      "brandColor": "#ED1C24",
+      "monogram": "Åh",
+      "hosts": [{ "value": "https://ahlens-prod.mirakl.net", "label": "Sweden" }],
+      "countries": ["SE"],
+      "shopIdNeeded": false,
+      "access": "Åhléns selects its sellers: write to its marketplace team with a short description of your brand and a link to your website. Orders must ship within six days, product images must be square and descriptions must be in Swedish. Åhléns charges a monthly fee and a commission per sale.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Ahlens", "Åhlens", "Ahléns", "Åhléns seller API", "Åhléns marknadsplats", "Åhléns Mirakl"],
+      "sources": [
+        "https://support.channelengine.com/hc/en-us/articles/4409485126173-%C3%85hl%C3%A9ns-marketplace-guide",
+        "https://e-tailize.com/integrations/selling-on-ahlens/"
+      ]
+    },
+    {
+      "slug": "black-red-white",
+      "name": "Black Red White Marketplace",
+      "retailer": "Black Red White",
+      "region": "pl",
+      "brandColor": "#1A1A1A",
+      "monogram": "BR",
+      "hosts": [{ "value": "https://blackredwhitepl-prod.mirakl.net", "label": "Poland" }],
+      "countries": ["PL"],
+      "shopIdNeeded": false,
+      "access": "Black Red White selects the sellers of the brw.pl marketplace (furniture, home and garden); contact Black Red White to find out whether your products are eligible.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["BRW", "brw.pl", "BRW marketplace", "Black Red White seller API", "Black Red White Mirakl", "BlackRedWhite"],
+      "sources": [
+        "https://www.wiadomoscihandlowe.pl/e-commerce-i-e-grocery/black-red-white-uruchamia-wlasny-marketplace-ilu-sprzedawcow-wystawi-swoje-produkty-na-nowej-platformie-2488093",
+        "https://www.univio.com/case-studies/450-more-products-with-marketplace-integration/",
+        "https://base.com/pl-PL/integracje/blackredwhitepl/",
+        "https://github.com/kogutu/AllMarketMeble/blob/33d4a5fee3e941e4139ab87e10c77b0593083788/lib/marketplaces/mirakl/operators.ts"
+      ]
+    },
+    {
+      "slug": "brandalley",
+      "name": "BrandAlley Marketplace",
+      "retailer": "BrandAlley",
+      "region": "gb",
+      "brandColor": "#1A1A1A",
+      "monogram": "BA",
+      "hosts": [{ "value": "https://brandalleyuk-prod.mirakl.net", "label": "United Kingdom and France" }],
+      "countries": ["GB", "FR"],
+      "countriesNote": "Orders come from the UK and France; prices are in pounds and euros.",
+      "shopIdNeeded": false,
+      "access": "BrandAlley curates the range together with each seller; contact BrandAlley to request a seller account. Sellers who sell to UK customers must comply with UK VAT rules. BrandAlley charges a commission per sale and a monthly fee that depends on the seller.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Brand Alley", "BrandAlley UK", "brandalley.co.uk", "BrandAlley seller API", "BrandAlley Mirakl"],
+      "sources": [
+        "https://support.channelengine.com/hc/en-us/articles/24589101258397-BrandAlley-marketplace-guide",
+        "https://e-tailize.com/integrations/selling-on-brandalley/"
+      ]
+    },
+    {
+      "slug": "bloomingdales",
+      "name": "Bloomingdale's Marketplace",
+      "retailer": "Bloomingdale's",
+      "region": "intl",
+      "brandColor": "#000000",
+      "monogram": "Bl",
+      "hosts": [{ "value": "https://bloomingdalesus-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "Bloomingdale's selects its sellers and chooses its assortment separately from Macy's; sellers need a US business with a US tax id and a US-dollar bank account, a US warehouse that ships within two business days with tracking, and a GS1-registered 12-digit UPC on every item.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": null,
+      "notes": [
+        "Bloomingdale's has its own seller back office and API key, separate from Macy's.",
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Bloomingdales", "Bloomingdale's seller API", "Bloomingdales Marketplace", "Bloomies", "Bloomingdale's Mirakl"],
+      "sources": [
+        "https://support.channelengine.com/hc/en-us/articles/30171886460317-Bloomingdale-s-marketplace-guide",
+        "https://support.storeautomator.com/hc/en-us/articles/11956598109212-How-to-Download-and-Create-Bloomingdale-s-Offer-Templates-on-StoreAutomator",
+        "https://e-tailize.com/integrations/selling-on-bloomingdales/",
+        "https://base.com/en-IN/integrations/bloomingdalesus/",
+        "https://www.mirakl.com/resources/how-bloomingdales-scaling-customer-marketplace"
+      ]
+    },
+    {
+      "slug": "saloncentric",
+      "name": "SalonCentric Marketplace",
+      "retailer": "SalonCentric",
+      "region": "intl",
+      "brandColor": "#1A1A1A",
+      "monogram": "SC",
+      "hosts": [{ "value": "https://saloncentricus-prod.mirakl.net", "label": "United States" }],
+      "countries": ["US"],
+      "shopIdNeeded": false,
+      "access": "SalonCentric reviews applications sent through its Become a Seller form; sellers need a US distribution centre or 3PL that ships single items to all 48 contiguous states, UPC codes on their products, a US bank account and their own order and customer service teams.",
+      "keyPath": "your user name (top right) > My user settings > API key",
+      "sellerHelpUrl": "https://www.saloncentric.com/marketplace-become-a-seller.html",
+      "notes": [
+        "The seller address of this connector is the one the platform assigns to this retailer; no seller guide names it yet. If your seller back office opens at a different address, tell us in the chat so we can correct it."
+      ],
+      "aliases": ["Salon Centric", "SalonCentric seller API", "SalonCentric vendor", "SalonCentric Mirakl"],
+      "sources": [
+        "https://support.channelengine.com/hc/en-us/articles/13791139313949-SalonCentric-marketplace-guide",
+        "https://www.mirakl.com/blog/saloncentric-partners-with-mirakl-to-offer-stylists-a-whole-new-way-to-shop",
+        "https://www.probeautycentral.saloncentric.com/marketplace"
+      ]
     }
   ]
 }
