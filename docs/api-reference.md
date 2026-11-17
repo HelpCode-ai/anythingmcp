@@ -489,8 +489,8 @@ call, so cached presence never replaces the caller's current role policy.
 | PUT | `/api/admin/settings/member-visibility` | Admin: set `{ "mode": "open" }` or `{ "mode": "restricted" }` |
 
 In a workspace set to `restricted`, a member who is not an admin gets only
-their own calls from the audit endpoints, only the connectors and MCP servers
-their roles reach, and 404 for the others. A connector they can see but do not
+their own calls from the audit endpoints, only the connectors their roles
+reach, only the MCP servers they own, and 404 for the others. A connector they can see but do not
 own comes back in a reduced view marked `memberView: true`: `id`, `name`,
 `type`, `icon`, `isActive`, `credentialScope`, `setupStatus`, `authStatus`,
 `authStatusCode`, and of each allowed tool `id`, `name`, `description` and
