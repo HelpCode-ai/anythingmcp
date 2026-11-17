@@ -72,8 +72,10 @@ export class ToolRegistry {
   private readonly logger = new Logger(ToolRegistry.name);
   // Keyed by tool.id (globally unique) to prevent cross-org name collisions
   private readonly toolsById = new Map<string, RegisteredTool>();
-  // Secondary index by name for backward-compatible lookups (within a filtered set)
-  private readonly toolsByName = new Map<string, RegisteredTool[]>();
+  // Secondary index by name for backward-compatible lookups (within a filtered
+  // set). A Map per name, like the other indexes, so dropping one tool from a
+  // name shared by thousands of installs of a catalog adapter costs O(1).
+  private readonly toolsByName = new Map<string, Map<string, RegisteredTool>>();
   // Per-organization and per-connector indexes, so a request reads its own
   // tools instead of copying and filtering the whole registry (134k tools on
   // Cloud in Nov 2026, once per /mcp request). Each keeps the registry's
@@ -107,33 +109,37 @@ export class ToolRegistry {
     this.toolsById.set(tool.id, tool);
     this.addToIndex(this.toolsByOrg, tool.organizationId, tool);
     this.addToIndex(this.toolsByConnector, tool.connectorId, tool);
-    // Append to name index (multiple tools can share a name across orgs)
-    const existing = this.toolsByName.get(tool.name) || [];
-    existing.push(tool);
-    this.toolsByName.set(tool.name, existing);
+    // Name index (multiple tools can share a name across orgs). A tool
+    // registered again under the same id replaces its old entry in place, so
+    // the name keeps one entry per tool and its first-registered order.
+    if (previous && previous.name !== tool.name) {
+      this.removeFromIndex(this.toolsByName, previous.name, tool.id);
+    }
+    this.addToIndex(this.toolsByName, tool.name, tool);
     this.logger.debug(`Registered MCP tool: ${tool.name} (${tool.id})`);
   }
 
   /**
    * Unregister all tools belonging to a connector.
+   *
+   * Reads only that connector's tools through the per-connector index. It
+   * used to walk the whole registry and then rebuild the name index from
+   * scratch: two passes over every tool of every organization (316k on Cloud
+   * in Nov 2026) for each reload, and a dashboard tool toggle reloads its
+   * connector. A burst of toggles, or a registry catch-up after a busy day,
+   * then held the event loop long enough to slow every /mcp request.
    */
   unregisterConnectorTools(connectorId: string): void {
-    for (const [id, tool] of this.toolsById.entries()) {
-      if (tool.connectorId === connectorId) {
-        this.toolsById.delete(id);
-        this.order.delete(id);
-        this.removeFromIndex(this.toolsByOrg, tool.organizationId, id);
-        this.logger.debug(`Unregistered MCP tool: ${tool.name} (${id})`);
-      }
+    const tools = this.toolsByConnector.get(connectorId);
+    if (!tools) return;
+    for (const [id, tool] of tools) {
+      this.toolsById.delete(id);
+      this.order.delete(id);
+      this.removeFromIndex(this.toolsByOrg, tool.organizationId, id);
+      this.removeFromIndex(this.toolsByName, tool.name, id);
+      this.logger.debug(`Unregistered MCP tool: ${tool.name} (${id})`);
     }
     this.toolsByConnector.delete(connectorId);
-    // Rebuild name index
-    this.toolsByName.clear();
-    for (const tool of this.toolsById.values()) {
-      const existing = this.toolsByName.get(tool.name) || [];
-      existing.push(tool);
-      this.toolsByName.set(tool.name, existing);
-    }
   }
 
   /**
@@ -142,9 +148,11 @@ export class ToolRegistry {
    */
   getTool(name: string, connectorIds?: string[]): RegisteredTool | undefined {
     const candidates = this.toolsByName.get(name);
-    if (!candidates || candidates.length === 0) return undefined;
-    if (!connectorIds) return candidates[0];
-    return candidates.find((t) => connectorIds.includes(t.connectorId));
+    if (!candidates) return undefined;
+    for (const t of candidates.values()) {
+      if (!connectorIds || connectorIds.includes(t.connectorId)) return t;
+    }
+    return undefined;
   }
 
   /**
@@ -159,8 +167,11 @@ export class ToolRegistry {
     organizationId: string,
   ): RegisteredTool | undefined {
     const candidates = this.toolsByName.get(name);
-    if (!candidates || candidates.length === 0) return undefined;
-    return candidates.find((t) => t.organizationId === organizationId);
+    if (!candidates) return undefined;
+    for (const t of candidates.values()) {
+      if (t.organizationId === organizationId) return t;
+    }
+    return undefined;
   }
 
   /**
@@ -227,7 +238,7 @@ export class ToolRegistry {
    * exposed in the upstream MCP library's (single-tenant) registry.
    */
   countByName(name: string): number {
-    return this.toolsByName.get(name)?.length ?? 0;
+    return this.toolsByName.get(name)?.size ?? 0;
   }
 
   /**
@@ -237,8 +248,8 @@ export class ToolRegistry {
    */
   countByConnector(): Map<string, number> {
     const counts = new Map<string, number>();
-    for (const tool of this.toolsById.values()) {
-      counts.set(tool.connectorId, (counts.get(tool.connectorId) ?? 0) + 1);
+    for (const [connectorId, tools] of this.toolsByConnector) {
+      counts.set(connectorId, tools.size);
     }
     return counts;
   }
