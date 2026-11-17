@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import type { Prisma } from '../generated/prisma/client';
 import { McpServerService } from '../mcp-server/mcp-server.service';
 import { encrypt } from '../common/crypto/encryption.util';
 import { ConfigService } from '@nestjs/config';
@@ -198,8 +199,8 @@ export class AdaptersService {
    * `installed` marks the ones the workspace already has, so the page can
    * show them as done instead of offering a duplicate.
    */
-  async starterPack(organizationId: string): Promise<StarterPackItem[]> {
-    const installed = await this.installedAdapterSlugs(organizationId);
+  async starterPack(organizationId: string, visible: Prisma.ConnectorWhereInput = {}): Promise<StarterPackItem[]> {
+    const installed = await this.installedAdapterSlugs(organizationId, visible);
     const items: StarterPackItem[] = [];
     for (const entry of STARTER_PACK) {
       const adapter = getAdapter(entry.slug);
@@ -226,10 +227,13 @@ export class AdaptersService {
    * ./popular-connectors.ts), each with what its setup asks for and whether
    * this workspace already has it.
    */
-  async popularConnectors(organizationId: string): Promise<PopularConnectorItem[]> {
+  async popularConnectors(
+    organizationId: string,
+    visible: Prisma.ConnectorWhereInput = {},
+  ): Promise<PopularConnectorItem[]> {
     const [ranked, installed] = await Promise.all([
       this.rankedPopularSlugs(),
-      this.installedAdapterSlugs(organizationId),
+      this.installedAdapterSlugs(organizationId, visible),
     ]);
     const items: PopularConnectorItem[] = [];
     for (const slug of [...ranked, ...POPULAR_FALLBACK]) {
@@ -329,10 +333,26 @@ export class AdaptersService {
     }
   }
 
-  /** Catalog slugs this workspace already has a connector for. */
-  async installedAdapterSlugs(organizationId: string): Promise<Set<string>> {
+  /** The owner of a connector of this workspace, or null when there is none. */
+  async connectorOwnerId(organizationId: string, connectorId: string): Promise<string | null> {
+    const row = await this.prisma.connector.findFirst({
+      where: { id: connectorId, organizationId },
+      select: { userId: true },
+    });
+    return row?.userId ?? null;
+  }
+
+  /**
+   * Catalog slugs this workspace already has a connector for. `visible`
+   * (member visibility's `connectorWhere`) narrows it to the connectors the
+   * caller may see, so "installed" never reveals a connector hidden from them.
+   */
+  async installedAdapterSlugs(
+    organizationId: string,
+    visible: Prisma.ConnectorWhereInput = {},
+  ): Promise<Set<string>> {
     const rows = await this.prisma.connector.findMany({
-      where: { organizationId },
+      where: Object.keys(visible).length ? { AND: [{ organizationId }, visible] } : { organizationId },
       select: { config: true },
     });
     const slugs = new Set<string>();

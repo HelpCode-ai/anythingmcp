@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
-import { roles, connectors, tools as toolsApi, users } from '@/lib/api';
-import { AppSelect } from '@/components/ui/select';
+import { roles, connectors, tools as toolsApi } from '@/lib/api';
+import { MemberRoleAssignments } from '@/components/member-role-assignments';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,21 +41,13 @@ function parseLimit(value: string): number | null | undefined {
   return n >= 1 && n <= 2147483647 ? n : undefined;
 }
 
-interface UserItem {
-  id: string;
-  email: string;
-  name: string | null;
-  role: string;
-  mcpRoleId: string | null;
-  mcpRole: { id: string; name: string } | null;
-}
-
 export default function SettingsRolesPage() {
   const t = useTranslations('settingsRoles');
   const { token, user: currentUser } = useAuth();
   const [roleList, setRoleList] = useState<RoleItem[]>([]);
   const [allTools, setAllTools] = useState<ToolItem[]>([]);
-  const [userList, setUserList] = useState<UserItem[]>([]);
+  // Bumped on every reload so the member table refetches with the roles.
+  const [reloadKey, setReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
@@ -82,13 +74,12 @@ export default function SettingsRolesPage() {
   const loadData = async () => {
     if (!token) return;
     try {
-      const [roleData, connectorData, userData] = await Promise.all([
+      const [roleData, connectorData] = await Promise.all([
         roles.list(token),
         connectors.list(token),
-        users.list(token),
       ]);
       setRoleList(roleData);
-      setUserList(userData);
+      setReloadKey((k) => k + 1);
 
       // Flatten all tools from connectors
       const allToolsList: ToolItem[] = [];
@@ -208,23 +199,6 @@ export default function SettingsRolesPage() {
       setMsg(t('error', { message: err.message }));
     } finally {
       setSavingTools(false);
-    }
-  };
-
-  const handleAssignRole = async (userId: string, roleId: string | null) => {
-    if (!token) return;
-    try {
-      await roles.assignToUser(userId, roleId, token);
-      setUserList((prev) =>
-        prev.map((u) =>
-          u.id === userId
-            ? { ...u, mcpRoleId: roleId, mcpRole: roleId ? roleList.find((r) => r.id === roleId) ? { id: roleId, name: roleList.find((r) => r.id === roleId)!.name } : null : null }
-            : u,
-        ),
-      );
-      setMsg(t('assigned'));
-    } catch (err: any) {
-      setMsg(t('error', { message: err.message }));
     }
   };
 
@@ -605,47 +579,12 @@ export default function SettingsRolesPage() {
               <p className="text-xs text-[var(--text-2)] mt-1">
                 {t('assign.intro')}
               </p>
+              <p className="text-xs text-[var(--text-2)] mt-1" data-testid="roles-union-hint">
+                {t('assign.unionHint')}
+              </p>
             </div>
 
-            <div className="border border-[var(--border)] rounded-[9px] overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
-                <thead className="bg-[var(--surface-2)]">
-                  <tr className="text-[var(--text-2)]">
-                    <th className="text-left px-4 py-3 font-semibold">{t('assign.user')}</th>
-                    <th className="text-left px-4 py-3 font-semibold">{t('assign.appRole')}</th>
-                    <th className="text-left px-4 py-3 font-semibold">{t('assign.mcpRole')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {userList.map((u) => (
-                    <tr key={u.id} className="border-t border-[var(--border)]">
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-[var(--text)]">{u.email}</span>
-                        {u.name && <span className="text-xs text-[var(--text-3)] ml-2">{u.name}</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone="neutral">{u.role}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        {u.role === 'ADMIN' ? (
-                          <span className="text-xs text-[var(--text-3)]">{t('assign.fullAccess')}</span>
-                        ) : (
-                          <AppSelect
-                            value={u.mcpRoleId || ''}
-                            onValueChange={(v) => handleAssignRole(u.id, v || null)}
-                            className="h-8 rounded-[9px] border border-[var(--border)] px-2 text-xs bg-[var(--surface)] text-[var(--text)]"
-                            options={[
-                              { value: '', label: t('assign.noRestriction') },
-                              ...roleList.map((r) => ({ value: r.id, label: r.name })),
-                            ]}
-                          />
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <MemberRoleAssignments token={token} roleList={roleList} reloadKey={reloadKey} onMessage={setMsg} />
           </Card>
         </>
       )}

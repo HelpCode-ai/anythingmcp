@@ -9,8 +9,9 @@ export const EXPORT_FORMAT_VERSION = '1.0';
  * One connector as it appears in an export file. authConfig is never
  * exported. Secret env vars and headers are kept only when `includeSecrets`
  * is set (admins); otherwise they are left empty and named in
- * `maskedEnvVars` / `maskedHeaders`, and a DATABASE connection string comes
- * back with its password masked.
+ * `maskedEnvVars` / `maskedHeaders`, a DATABASE connection string comes
+ * back with its password masked, and a secret in an HTTP base URL as
+ * `********`.
  */
 export function toExportEntry(c: any, includeSecrets: boolean) {
   const masked = includeSecrets ? null : toPublicConnector(c);
@@ -22,7 +23,7 @@ export function toExportEntry(c: any, includeSecrets: boolean) {
     authType: c.authType,
     specUrl: c.specUrl,
     headers: masked ? masked.headers : c.headers,
-    config: c.config,
+    config: masked ? masked.config : c.config,
     envVars: masked ? masked.envVars : c.envVars,
     ...(masked
       ? { maskedEnvVars: masked.maskedEnvVars, maskedHeaders: masked.maskedHeaders }

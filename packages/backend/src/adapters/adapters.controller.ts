@@ -7,6 +7,7 @@ import {
   Req,
   UseGuards,
   ForbiddenException,
+  NotFoundException,
   BadRequestException,
   HttpCode,
   HttpException,
@@ -24,6 +25,7 @@ import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { ProductEventService, ProductEvents, scrubProviderMessage } from '../audit/product-event.service';
 import { providerErrorCode } from '../mcp-server/error-hints';
 import { STARTER_PACK_MAX_INSTALL } from './starter-pack';
+import { MemberVisibilityService, connectorWhere } from '../settings/member-visibility.service';
 
 // Public endpoints (no auth required) — used by the marketing website.
 //
@@ -160,7 +162,19 @@ export class AdaptersController {
     private readonly licenseGuard: LicenseGuardService,
     private readonly mcpServers: McpServersService,
     private readonly productEvents: ProductEventService,
+    // Not @Optional: Nest refuses to boot without it. It is missing only in
+    // unit specs that build the controller by hand and predate the setting.
+    private readonly visibility?: MemberVisibilityService,
   ) {}
+
+  /**
+   * Member visibility: the connectors whose adapter counts as "installed" for
+   * the caller. `{}` (every connector of the workspace) for admins and open
+   * workspaces; in a restricted one, only the connectors the member may see.
+   */
+  private async visibleConnectors(req: any) {
+    return this.visibility ? connectorWhere(await this.visibility.scopeFor(req.user)) : {};
+  }
 
   // Declared before `:slug`, which would otherwise take these paths for an
   // adapter slug.
@@ -169,10 +183,14 @@ export class AdaptersController {
     summary: 'Apps new workspaces connect and get working',
     description:
       'Catalog adapters ranked by how many workspaces had a successful call on them in the last 30 days ' +
-      '(aggregate counts only), with what each setup asks for and whether this workspace already has it.',
+      '(aggregate counts only), with what each setup asks for and whether this workspace already has it. ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets `installed` only for ' +
+      'connectors they can see.',
   })
   async popularConnectors(@Req() req: any) {
-    return { items: await this.adaptersService.popularConnectors(req.user.organizationId) };
+    return {
+      items: await this.adaptersService.popularConnectors(req.user.organizationId, await this.visibleConnectors(req)),
+    };
   }
 
   @Get('match-url')
@@ -193,11 +211,14 @@ export class AdaptersController {
     summary: 'Connectors offered to a new workspace',
     description:
       'Keyless connectors that install in one click, with whether this workspace already has each one, ' +
-      'plus the connector allowance of the current plan so the page never preselects more than will fit.',
+      'plus the connector allowance of the current plan so the page never preselects more than will fit. ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets `installed` only for ' +
+      'connectors they can see.',
   })
   async starterPack(@Req() req: any) {
+    const visible = await this.visibleConnectors(req);
     const [items, usage] = await Promise.all([
-      this.adaptersService.starterPack(req.user.organizationId),
+      this.adaptersService.starterPack(req.user.organizationId, visible),
       // Usage is cloud/licence-specific; on a plan with no cap `max` is null.
       this.licenseGuard
         .getUsage(req.user.sub, req.user.organizationId)
@@ -353,7 +374,8 @@ export class AdaptersController {
     description:
       'Runs the adapter\'s safe read call against an in-memory connector. Nothing is stored. ' +
       'ok=true: it worked; ok=false: a value is missing or the API refused; ok=null: nothing to try yet (needs a sign-in at the provider, or no safe call).\n\n' +
-      'Pass `connectorId` to test new values for an existing connector of this adapter. Each try is a real call to the ' +
+      'Pass `connectorId` to test new values for an existing connector of this adapter (its owner or an admin; 404 ' +
+      'for anyone else). Each try is a real call to the ' +
       'provider: at most 20 tries a minute per user (429 beyond). VIEWERs get 403.',
   })
   @ApiBody({
@@ -388,6 +410,14 @@ export class AdaptersController {
   ) {
     if (req.user.role === 'VIEWER') {
       throw new ForbiddenException('Viewers cannot modify connectors');
+    }
+    // Testing values for an existing connector fills the empty fields with
+    // what it stores, so it runs with that connector's credentials: only for
+    // its owner or an admin, like saving them. Anyone else gets the answer of
+    // an unknown connector.
+    if (typeof body?.connectorId === 'string' && req.user.role !== 'ADMIN') {
+      const owner = await this.adaptersService.connectorOwnerId(req.user.organizationId, body.connectorId);
+      if (owner !== req.user.sub) throw new NotFoundException('Connector not found');
     }
     // Each try is a real call to the provider; a form does not need more.
     if (!this.verifyLimiter.take(req.user.sub)) {

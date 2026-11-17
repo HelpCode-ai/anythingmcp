@@ -111,7 +111,8 @@ describe('AdaptersController — starter pack', () => {
       items: pack,
       connectors: { current: 0, max: 2, remaining: 2 },
     });
-    expect((adaptersService as any).starterPack).toHaveBeenCalledWith('org1');
+    // No member visibility service in this unit: every connector counts.
+    expect((adaptersService as any).starterPack).toHaveBeenCalledWith('org1', {});
   });
 
   it('reports an uncapped plan as unlimited remaining', async () => {

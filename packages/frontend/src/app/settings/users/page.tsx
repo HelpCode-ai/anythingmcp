@@ -22,6 +22,7 @@ import { AppSelect } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
+import { RoleChips } from '@/components/member-role-assignments';
 import { useEdition } from '@/lib/use-edition';
 import { EnterpriseNotice } from '@/components/enterprise-notice';
 
@@ -615,8 +616,9 @@ export default function SettingsUsersPage() {
                   <td className="px-4 py-3">
                     {u.role === 'ADMIN' ? (
                       <span className="text-xs text-[var(--text-3)]">{t('table.fullAccess')}</span>
-                    ) : u.mcpRole ? (
-                      <Badge tone="info">{u.mcpRole.name}</Badge>
+                    ) : u.mcpRoles?.length ? (
+                      // Every role, not the deprecated single `mcpRole`: access is their union.
+                      <RoleChips roles={u.mcpRoles} />
                     ) : (
                       <span
                         className="text-xs text-[var(--text-3)]"

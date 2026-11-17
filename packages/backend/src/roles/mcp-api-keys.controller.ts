@@ -7,12 +7,18 @@ import {
   Param,
   Req,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
 import { ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiSecurity, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { IsString, IsOptional, IsIn } from 'class-validator';
 import { McpApiKeysService } from './mcp-api-keys.service';
+import {
+  MemberVisibilityService,
+  canSeeServer,
+  type VisibilityScope,
+} from '../settings/member-visibility.service';
 import type { McpApiKeyScope } from '../generated/prisma/client';
 
 class CreateKeyDto {
@@ -49,20 +55,62 @@ class CreateKeyDto {
 @UseGuards(JwtOrManagementKeyGuard)
 @Controller('api/mcp-keys')
 export class McpApiKeysController {
-  constructor(private readonly keysService: McpApiKeysService) {}
+  constructor(
+    private readonly keysService: McpApiKeysService,
+    // Not @Optional: Nest refuses to boot without it. It is missing only in
+    // unit specs that build the controller by hand and predate the setting.
+    private readonly visibility?: MemberVisibilityService,
+  ) {}
+
+  /**
+   * Member visibility: of `serverIds`, the servers the caller may not see. In
+   * a restricted workspace where the caller is not an admin, that is every
+   * server they do not own; each workspace follows its own mode and the
+   * caller's role there. A server in a workspace the caller is not an active
+   * member of counts as hidden. Empty for admins and open workspaces.
+   */
+  private async hiddenServers(req: any, serverIds: string[]): Promise<Set<string>> {
+    const hidden = new Set<string>();
+    if (!this.visibility || serverIds.length === 0) return hidden;
+    const scopes = new Map<string, VisibilityScope>();
+    for (const server of await this.keysService.serverFacts(req.user.sub, serverIds)) {
+      if (server.ownerId === req.user.sub) continue;
+      if (!server.role) {
+        hidden.add(server.id);
+        continue;
+      }
+      let scope = scopes.get(server.organizationId);
+      if (!scope) {
+        scope = await this.visibility.scopeFor({
+          sub: req.user.sub,
+          role: server.role,
+          organizationId: server.organizationId,
+        });
+        scopes.set(server.organizationId, scope);
+      }
+      if (!canSeeServer(scope, { userId: server.ownerId })) hidden.add(server.id);
+    }
+    return hidden;
+  }
 
   @Get()
   @ApiOperation({
     summary: 'List my MCP API keys',
     description:
       'Your own keys in every scope, with name, scope, server, active flag and last use. The key value is masked ' +
-      '(only its last 8 characters are shown); the full value is returned once, at creation.',
+      '(only its last 8 characters are shown); the full value is returned once, at creation. In a workspace with ' +
+      'restricted member visibility where you are not an admin, `mcpServer` is null on a key for a server you do not own.',
   })
   async listKeys(@Req() req: any) {
     const keys = await this.keysService.listByUser(req.user.sub);
+    const hidden = await this.hiddenServers(
+      req,
+      keys.map((k) => k.mcpServerId).filter((id): id is string => !!id),
+    );
     // Mask keys for display: show only last 8 chars
     return keys.map((k) => ({
       ...k,
+      ...(k.mcpServerId && hidden.has(k.mcpServerId) ? { mcpServer: null } : {}),
       key: `mcp_${'•'.repeat(24)}${k.key.slice(-8)}`,
     }));
   }
@@ -77,7 +125,9 @@ export class McpApiKeysController {
       '- `scope: "MANAGEMENT_READ"`: this API, `GET`/`HEAD` only, e.g. for dashboards and audits.\n' +
       '- `scope: "MANAGEMENT_ADMIN"`: this API, any method. Only admins can create one (403 otherwise).\n\n' +
       'A key always acts with its owner\'s role and never grants more. `amcp login --browser` creates a management key ' +
-      'for the CLI the same way. Revoke with `POST /api/mcp-keys/{id}/revoke`.',
+      'for the CLI the same way. Revoke with `POST /api/mcp-keys/{id}/revoke`.\n\n' +
+      '404 when `mcpServerId` is not a server of a workspace you belong to; in a workspace with restricted member ' +
+      'visibility where you are not an admin, also for a server you do not own.',
   })
   @ApiBody({
     type: CreateKeyDto,
@@ -113,6 +163,11 @@ export class McpApiKeysController {
     // more than they have (the runtime RolesGuard would deny it anyway).
     if (scope === 'MANAGEMENT_ADMIN' && req.user.role !== 'ADMIN') {
       throw new ForbiddenException('MANAGEMENT_ADMIN scope requires an admin role');
+    }
+    // Restricted member visibility: another member's server answers like an
+    // unknown one (the service's 404).
+    if (dto.mcpServerId && (await this.hiddenServers(req, [dto.mcpServerId])).has(dto.mcpServerId)) {
+      throw new NotFoundException('MCP server not found');
     }
     // Returns the full key — user must save it, it won't be shown again
     return this.keysService.generate(
