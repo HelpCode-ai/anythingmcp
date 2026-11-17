@@ -76,6 +76,25 @@ export function audienceVisibility(access?: FolderAccess | null): Record<string,
   };
 }
 
+/**
+ * Audience and folder rules together. A skill drafted for the caller is
+ * theirs whatever its folder's role limit: the expert of a learning project
+ * gets their own lessons back even in a folder limited to roles they lack
+ * (#1770). Every other skill also needs a folder the caller may see.
+ */
+export function skillVisibility(access?: FolderAccess | null): Record<string, unknown> {
+  const inFolders = folderVisibility(access);
+  const userId = access?.userId;
+  const forEveryone: Record<string, unknown> = userId
+    ? {
+        audienceUserId: null,
+        NOT: { publishedOfTopics: { some: { draftSkill: { audienceUserId: userId } } } },
+      }
+    : { audienceUserId: null };
+  const others = Object.keys(inFolders).length ? { AND: [forEveryone, inFolders] } : forEveryone;
+  return userId ? { OR: [{ audienceUserId: userId }, others] } : others;
+}
+
 /** The skills a caller may see: the server's own and its visible connectors'. */
 function visibleWhere(
   organizationId: string,
@@ -83,7 +102,6 @@ function visibleWhere(
   connectorIds: string[],
   folders?: FolderAccess | null,
 ) {
-  const inFolders = folderVisibility(folders);
   return {
     // Re-stated rather than trusted from the ids, so a stray id can never
     // pull another workspace's skills in.
@@ -96,9 +114,9 @@ function visibleWhere(
       { mcpServerId: { in: serverIds.length ? serverIds : ['__none__'] } },
       { connectorId: { in: connectorIds.length ? connectorIds : ['__none__'] } },
     ],
-    // A draft is served to its member only; skills in folders limited to
-    // roles the caller lacks are not there.
-    AND: [audienceVisibility(folders), ...(Object.keys(inFolders).length ? [inFolders] : [])],
+    // A draft is served to its member only; other skills in folders limited
+    // to roles the caller lacks are not there.
+    AND: [skillVisibility(folders)],
   };
 }
 

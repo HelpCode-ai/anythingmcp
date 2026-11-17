@@ -85,6 +85,13 @@ function table(name: string, db: Record<string, any[]>, clock: { t: number }, un
       rows().push(row);
       return row;
     }),
+    createMany: jest.fn(async ({ data }: any) => {
+      for (const d of data) {
+        const now = new Date(clock.t++);
+        rows().push({ id: `${name}-${rows().length + 1}`, createdAt: now, updatedAt: now, ...DEFAULTS[name], ...d });
+      }
+      return { count: data.length };
+    }),
     update: jest.fn(async ({ where, data }: any) => {
       const row = byWhere(where)[0];
       if (!row) throw new Error(`${name}: row to update not found`);
@@ -159,6 +166,7 @@ function make(opts: { max?: number | null; full?: boolean; optOut?: boolean; pub
     ],
     knowledgeFolder: [
       { id: 'f-1', organizationId: ORG },
+      { id: 'f-2', organizationId: ORG },
       { id: 'f-B', organizationId: 'org-B' },
     ],
   };
@@ -673,6 +681,122 @@ describe('LearningService publishing', () => {
     expect(db.learningLesson).toHaveLength(0);
     expect(db.kgSkillSuggestion).toHaveLength(1);
     expect(db.kgSkillSuggestion[0].learningProjectId).toBeNull();
+  });
+});
+
+describe('LearningService topics set by an admin', () => {
+  const TOPICS = [
+    { title: 'Windows: spare parts', whenToUse: 'Quotes for spare parts of old windows', folderId: 'f-2' },
+    { title: 'Back office' },
+  ];
+
+  it('creates a project with its topics, each in its own folder or the project\'s', async () => {
+    const { svc, db, ctx, events } = make();
+    const p = await svc.create(ORG, { name: 'P', userId: EXPERT, mcpServerId: SERVER, folderId: 'f-1', topics: TOPICS }, ctx);
+    expect(db.learningTopic).toEqual([
+      expect.objectContaining({
+        projectId: p.id,
+        title: 'Windows: spare parts',
+        key: 'windows spare parts',
+        whenToUse: 'Quotes for spare parts of old windows',
+        folderId: 'f-2',
+      }),
+      expect.objectContaining({ projectId: p.id, title: 'Back office', key: 'back office', whenToUse: '', folderId: null }),
+    ]);
+    expect(events()).toEqual(['LEARNING_PROJECT_CREATED']);
+  });
+
+  it('creates nothing when a topic is listed twice, has no title or names a folder of another workspace', async () => {
+    const { svc, db, ctx } = make({ max: null });
+    const base = { name: 'P', userId: EXPERT, mcpServerId: SERVER };
+    await expect(
+      svc.create(ORG, { ...base, topics: [{ title: 'Back office' }, { title: 'back  office!' }] }, ctx),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.create(ORG, { ...base, topics: [{ title: '  ' }] }, ctx)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.create(ORG, { ...base, topics: [{ title: 'X topic', folderId: 'f-B' }] }, ctx)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(db.learningProject).toHaveLength(0);
+    expect(db.learningTopic).toHaveLength(0);
+  });
+
+  it('files lessons under a topic set in advance and its skills in the topic\'s folder', async () => {
+    const { svc, db, started } = make();
+    const active = await started({ folderId: 'f-1', topics: TOPICS });
+    // The model names the topic with other spacing and case: same topic.
+    const a = await svc.record(active, rule('Order sash hinges by the groove width', { topic: 'windows - spare parts' }));
+    expect(a.topicId).toBe(db.learningTopic[0].id);
+    expect(db.learningTopic).toHaveLength(2);
+    const draft = db.kgSkillSuggestion.find((s) => s.audienceUserId === EXPERT);
+    expect(draft).toEqual(expect.objectContaining({ folderId: 'f-2', title: 'Windows: spare parts' }));
+
+    await svc.confirm(active, [{ id: a.id, verdict: 'confirm' }], EXPERT);
+    const res = await svc.publish(ORG, a.topicId, { actorUserId: ADMIN });
+    expect(db.kgSkillSuggestion.find((s) => s.id === res.skillId).folderId).toBe('f-2');
+
+    // A topic without a folder of its own uses the project's.
+    const b = await svc.record(active, rule('Answer delivery questions with the order date', { topic: 'Back office' }));
+    expect(db.kgSkillSuggestion.find((s) => s.audienceUserId === EXPERT && s.title === 'Back office').folderId).toBe('f-1');
+    expect(b.topicId).toBe(db.learningTopic[1].id);
+  });
+
+  it('adds a topic to a running project, once', async () => {
+    const { svc, db, ctx, started } = make();
+    const active = await started();
+    const t = await svc.addTopic(ORG, active.projectId, { title: 'Shop support', folderId: 'f-2' });
+    expect(t).toEqual(expect.objectContaining({ projectId: active.projectId, key: 'shop support', folderId: 'f-2' }));
+    // The expert's model sees it at once.
+    expect((await svc.activeFor(ORG, EXPERT, SERVER))!.topics.map((x) => x.title)).toEqual(['Shop support']);
+    await expect(svc.addTopic(ORG, active.projectId, { title: 'shop support' })).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.addTopic('org-B', active.projectId, { title: 'Other' })).rejects.toBeInstanceOf(NotFoundException);
+    await svc.setStatus(ORG, active.projectId, 'ended', ctx);
+    await expect(svc.addTopic(ORG, active.projectId, { title: 'Late' })).rejects.toBeInstanceOf(ConflictException);
+    expect(db.learningTopic).toHaveLength(1);
+  });
+
+  it('renames and moves a topic, and its draft and published skills follow', async () => {
+    const { svc, db, started } = make();
+    const active = await started({ folderId: 'f-1' });
+    const a = await svc.record(active, rule('Check the groove width before choosing a hinge'));
+    await svc.confirm(active, [{ id: a.id, verdict: 'confirm' }], EXPERT);
+    const { skillId } = await svc.publish(ORG, a.topicId, { actorUserId: ADMIN });
+    const draft = () => db.kgSkillSuggestion.find((s) => s.audienceUserId === EXPERT);
+    const published = () => db.kgSkillSuggestion.find((s) => s.id === skillId);
+
+    await svc.updateTopic(ORG, a.topicId, { folderId: 'f-2' }, { actorUserId: ADMIN });
+    expect(draft().folderId).toBe('f-2');
+    expect(published().folderId).toBe('f-2');
+    // Filing elsewhere is not a new version.
+    expect(db.kgSkillVersion).toHaveLength(0);
+
+    await svc.updateTopic(ORG, a.topicId, { title: 'Window hinges', whenToUse: 'Quotes with hinges' }, { actorUserId: ADMIN });
+    expect(db.learningTopic[0]).toEqual(expect.objectContaining({ title: 'Window hinges', key: 'window hinges' }));
+    expect(draft()).toEqual(expect.objectContaining({ title: 'Window hinges', whenToUse: 'Quotes with hinges' }));
+    expect(published()).toEqual(expect.objectContaining({ title: 'Window hinges', whenToUse: 'Quotes with hinges' }));
+    expect(db.kgSkillVersion).toEqual([expect.objectContaining({ skillId, editedByUserId: ADMIN })]);
+    // Lessons the model files under the new name still land here.
+    const b = await svc.record(active, rule('Hinges for sash windows come in pairs', { topic: 'window hinges' }));
+    expect(b.topicId).toBe(a.topicId);
+
+    // Back to the project's folder.
+    await svc.updateTopic(ORG, a.topicId, { folderId: null }, { actorUserId: ADMIN });
+    expect(draft().folderId).toBe('f-1');
+    expect(db.learningTopic[0].folderId).toBeNull();
+  });
+
+  it('refuses a name another topic of the project has, a folder of another workspace, and other workspaces', async () => {
+    const { svc, started } = make();
+    const active = await started({ topics: [{ title: 'Hinges' }, { title: 'Shutters' }] });
+    const { db } = { db: (svc as any).prisma };
+    const topics = await db.learningTopic.findMany({ where: { projectId: active.projectId } });
+    const ctx = { actorUserId: ADMIN };
+    await expect(svc.updateTopic(ORG, topics[1].id, { title: 'hinges' }, ctx)).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.updateTopic(ORG, topics[1].id, { folderId: 'f-B' }, ctx)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.updateTopic('org-B', topics[1].id, { title: 'X' }, ctx)).rejects.toBeInstanceOf(NotFoundException);
+    // Its own name in other spelling is fine.
+    await expect(svc.updateTopic(ORG, topics[1].id, { title: 'SHUTTERS' }, ctx)).resolves.toEqual(
+      expect.objectContaining({ title: 'SHUTTERS' }),
+    );
   });
 });
 

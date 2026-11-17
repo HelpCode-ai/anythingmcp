@@ -4036,7 +4036,23 @@
       "publishedMsg": "Pubblicato: {count} lezione/i sono ora una skill per tutti su questo server.",
       "nothing": "Ancora nulla di confermato da pubblicare.",
       "dropped": "{count} lezione/i più vecchie non entravano nel testo e sono state lasciate fuori.",
-      "viewSkill": "Apri AI Skills"
+      "viewSkill": "Apri AI Skills",
+      "titleLabel": "Argomento",
+      "titleHint": "es. Ricambi per finestre vecchie",
+      "whenLabel": "Quando usarla",
+      "whenHint": "Quando l'assistente di un collega deve usare questa skill",
+      "folderLabel": "Archivia le skill in",
+      "projectFolder": "La cartella del progetto",
+      "add": "Aggiungi un argomento",
+      "addHint": "Imposta gli argomenti in anticipo: l'assistente del membro archivia le lezioni prima sotto questi argomenti e ne apre uno nuovo solo se nessuno è adatto.",
+      "added": "Argomento \"{title}\" aggiunto.",
+      "edit": "Modifica",
+      "save": "Salva",
+      "saved": "Salvato. Le skill dell'argomento seguono il nuovo nome e la nuova cartella.",
+      "cancel": "Annulla",
+      "inFolder": "Cartella: {name}",
+      "inProjectFolder": "Cartella: {name} (progetto)",
+      "noFolder": "Nessuna cartella"
     },
     "lessons": {
       "filter": {
@@ -4080,7 +4096,7 @@
     "settings": {
       "name": "Nome",
       "folder": "Archivia le skill in",
-      "folderHint": "Vale per gli argomenti avviati da ora in poi.",
+      "folderHint": "Vale per gli argomenti senza una cartella propria, avviati da ora in poi.",
       "endsAt": "Termina il",
       "tags": "Etichette",
       "publishMode": "Pubblicazione",

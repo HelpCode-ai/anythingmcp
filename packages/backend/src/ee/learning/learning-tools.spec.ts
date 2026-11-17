@@ -6,8 +6,11 @@ import {
   LEARNING_CONFIRM_TOOL,
   LEARNING_RECORD_TOOL,
   LEARNING_REVIEW_TOOL,
+  READ_REMINDER_INTERVAL_MS,
   learningFooter,
   learningInstruction,
+  readReminderDue,
+  resetReadReminders,
 } from './learning-tools';
 
 const ACTIVE = {
@@ -99,7 +102,9 @@ describe('learning tools on the MCP endpoint', () => {
     // The name is admin text: quotes cannot break out of the sentence.
     expect(record.description).toContain(`Learning project "Old window 'hardware'" is on for this user: they agreed on 2026-11-15`);
     expect(record.description).toContain('No names of customers');
-    expect((record.inputSchema as any).properties.topic.description).toContain('Existing topics: "Old windows"');
+    expect((record.inputSchema as any).properties.topic.description).toContain(
+      'Topics of this project: "Old windows" (Quotes for old windows)',
+    );
     expect((record.inputSchema as any).required).toEqual(expect.arrayContaining(['topic', 'kind', 'text']));
     expect(tools.find((t) => t.name === LEARNING_REVIEW_TOOL)!.annotations?.readOnlyHint).toBe(true);
   });
@@ -174,20 +179,34 @@ describe('learning tools on the MCP endpoint', () => {
     expect(JSON.parse(text(confirm))).toEqual({ confirmed: 1, rejected: 0, corrected: 0, notFound: [] });
   });
 
-  it('reminds the model after a tool that may change something, not after one that only reads', async () => {
+  it('reminds the model after every tool that may change something, after a read at most every ten minutes', async () => {
+    resetReadReminders();
     const { client } = await connect({ learning: ACTIVE });
-    const write: any = await client.callTool({ name: 'create_quote', arguments: {} });
-    expect(text(write)).toContain(learningFooter(ACTIVE as any));
     const read: any = await client.callTool({ name: 'get_quote', arguments: {} });
-    expect(text(read)).not.toContain('Learning project');
+    expect(text(read)).toContain(learningFooter(ACTIVE as any));
+    const readAgain: any = await client.callTool({ name: 'get_quote', arguments: {} });
+    expect(text(readAgain)).not.toContain('Learning project');
+    for (let i = 0; i < 2; i++) {
+      const write: any = await client.callTool({ name: 'create_quote', arguments: {} });
+      expect(text(write)).toContain(learningFooter(ACTIVE as any));
+    }
+  });
+
+  it('never reminds a caller without a project, after a read or a write', async () => {
+    resetReadReminders();
+    const { client } = await connect({});
+    for (const name of ['get_quote', 'create_quote']) {
+      const r: any = await client.callTool({ name, arguments: {} });
+      expect(text(r)).not.toContain('Learning project');
+    }
   });
 
   it('re-registers a tool in a live session when the reminder appears or goes', async () => {
-    const plain = (await connect({})).entries.find((e: any) => e.name === 'create_quote').sig;
-    const withProject = (await connect({ learning: ACTIVE })).entries.find((e: any) => e.name === 'create_quote').sig;
-    expect(withProject).not.toBe(plain);
-    const read = (await connect({ learning: ACTIVE })).entries.find((e: any) => e.name === 'get_quote').sig;
-    expect(read).toBe((await connect({})).entries.find((e: any) => e.name === 'get_quote').sig);
+    for (const name of ['create_quote', 'get_quote']) {
+      const plain = (await connect({})).entries.find((e: any) => e.name === name).sig;
+      const withProject = (await connect({ learning: ACTIVE })).entries.find((e: any) => e.name === name).sig;
+      expect(withProject).not.toBe(plain);
+    }
   });
 
   it('leaves a connector tool that already has one of the names alone', async () => {
@@ -208,6 +227,23 @@ describe('learning tools on the MCP endpoint', () => {
       await connect({ learning: { ...ACTIVE, topics: [...ACTIVE.topics, { id: 't2', title: 'Shutters', whenToUse: '' }] } })
     ).entries.find((e: any) => e.name === LEARNING_RECORD_TOOL).sig;
     expect(two).not.toBe(one);
+    // Also when an admin changes when a topic applies.
+    const reworded = (
+      await connect({ learning: { ...ACTIVE, topics: [{ ...ACTIVE.topics[0], whenToUse: 'Spare parts' }] } })
+    ).entries.find((e: any) => e.name === LEARNING_RECORD_TOOL).sig;
+    expect(reworded).not.toBe(one);
+  });
+});
+
+describe('readReminderDue', () => {
+  it('is due once per interval and per project', () => {
+    resetReadReminders();
+    const t0 = 1_000_000;
+    expect(readReminderDue('p1', t0)).toBe(true);
+    expect(readReminderDue('p1', t0 + 1000)).toBe(false);
+    expect(readReminderDue('p2', t0 + 1000)).toBe(true);
+    expect(readReminderDue('p1', t0 + READ_REMINDER_INTERVAL_MS - 1)).toBe(false);
+    expect(readReminderDue('p1', t0 + READ_REMINDER_INTERVAL_MS)).toBe(true);
   });
 });
 

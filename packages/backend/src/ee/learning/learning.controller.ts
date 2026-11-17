@@ -7,8 +7,10 @@ import { LearningActionContext, LearningService } from './learning.service';
 import {
   CreateLearningProjectDto,
   LearningConsentDto,
+  LearningTopicDto,
   LearningWithdrawDto,
   UpdateLearningProjectDto,
+  UpdateLearningTopicDto,
   UpdateLessonDto,
 } from './learning.dto';
 
@@ -152,6 +154,20 @@ export class LearningController {
   @ApiOperation({ summary: 'Confirm, reject, reopen or reword one lesson' })
   setLesson(@Req() req: any, @Param('id') id: string, @Body() body: UpdateLessonDto) {
     return this.learning.setLesson(req.user.organizationId, id, body, this.ctx(req));
+  }
+
+  @Post('projects/:id/topics')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Add a topic to a learning project, optionally filed in its own folder' })
+  addTopic(@Req() req: any, @Param('id') id: string, @Body() body: LearningTopicDto) {
+    return this.learning.addTopic(req.user.organizationId, id, body);
+  }
+
+  @Patch('topics/:id')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Rename a topic, change when it applies, or file its skills in another folder' })
+  updateTopic(@Req() req: any, @Param('id') id: string, @Body() body: UpdateLearningTopicDto) {
+    return this.learning.updateTopic(req.user.organizationId, id, body, this.ctx(req));
   }
 
   @Get('topics/:id/preview')

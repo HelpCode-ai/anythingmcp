@@ -102,9 +102,18 @@ type TopicRow = {
   projectId: string;
   title: string;
   whenToUse: string;
+  folderId: string | null;
   draftSkillId: string | null;
   publishedSkillId: string | null;
 };
+
+/** A topic an admin sets on a project (#1770). */
+export interface TopicInput {
+  title: string;
+  whenToUse?: string;
+  /** Where the topic's skills are filed; empty = the project's folder. */
+  folderId?: string | null;
+}
 
 function cleanText(raw: unknown, max: number): string {
   if (typeof raw !== 'string') return '';
@@ -178,6 +187,7 @@ export class LearningService {
       tags?: unknown;
       publishMode?: string;
       showExpertName?: boolean;
+      topics?: TopicInput[];
     },
     ctx: LearningActionContext,
   ) {
@@ -185,6 +195,8 @@ export class LearningService {
     await this.access.assertCanOpen(organizationId);
     const name = cleanText(input.name, 120);
     if (!name) throw new BadRequestException('A learning project needs a name.');
+    // Checked before anything is written, so a bad topic creates nothing.
+    const topics = await this.topicInputs(organizationId, input.topics ?? []);
 
     const [member, server] = await Promise.all([
       this.prisma.organizationMember.findUnique({
@@ -230,11 +242,109 @@ export class LearningService {
         createdByUserId: ctx.actorUserId,
       },
     });
+    if (topics.length) {
+      await this.prisma.learningTopic.createMany({
+        data: topics.map((t) => ({ organizationId, projectId: project.id, ...t })),
+      });
+    }
     await this.log(SecurityEvents.LEARNING_PROJECT_CREATED, organizationId, ctx, input.userId, {
       projectId: project.id,
       mcpServerId: input.mcpServerId,
+      topics: topics.length,
     });
     return project;
+  }
+
+  // ── Topics (admins) ──────────────────────────────────────────────────────
+
+  /** Add a topic to a project, so the expert's model files lessons under it. */
+  async addTopic(organizationId: string, projectId: string, input: TopicInput) {
+    const project = await this.owned(organizationId, projectId);
+    if (project.status === 'ended') throw new ConflictException('This learning project has ended.');
+    const [topic] = await this.topicInputs(organizationId, [input]);
+    const [taken, count] = await Promise.all([
+      this.prisma.learningTopic.findUnique({
+        where: { projectId_key: { projectId, key: topic.key } },
+        select: { id: true },
+      }),
+      this.prisma.learningTopic.count({ where: { organizationId, projectId } }),
+    ]);
+    if (taken) throw new ConflictException(`This project already has the topic "${topic.title}".`);
+    if (count >= LEARNING_LIMITS.topics) {
+      throw new BadRequestException(`This learning project has ${LEARNING_LIMITS.topics} topics, its limit.`);
+    }
+    const created = await this.prisma.learningTopic.create({
+      data: { organizationId, projectId, ...topic },
+    });
+    this.forgetActive(project);
+    return created;
+  }
+
+  /**
+   * Rename a topic, change when its skill applies, or file it in another
+   * folder. Its draft and published skills follow; a new title or "when to
+   * use" gives the published skill a new version.
+   */
+  async updateTopic(
+    organizationId: string,
+    topicId: string,
+    patch: { title?: string; whenToUse?: string; folderId?: string | null },
+    ctx: LearningActionContext,
+  ) {
+    const topic = await this.ownedTopic(organizationId, topicId);
+    const project = await this.owned(organizationId, topic.projectId);
+    const data: Record<string, unknown> = {};
+    if (typeof patch.title === 'string') {
+      const { title, key } = this.topicTitle(patch.title);
+      if (title !== topic.title) {
+        const taken = await this.prisma.learningTopic.findUnique({
+          where: { projectId_key: { projectId: topic.projectId, key } },
+          select: { id: true },
+        });
+        if (taken && taken.id !== topic.id) {
+          throw new ConflictException(`This project already has the topic "${title}".`);
+        }
+        data.title = title;
+        data.key = key;
+      }
+    }
+    if (typeof patch.whenToUse === 'string') {
+      const whenToUse = this.topicWhen(patch.whenToUse);
+      if (whenToUse !== topic.whenToUse) data.whenToUse = whenToUse;
+    }
+    const moves = patch.folderId !== undefined;
+    if (moves) data.folderId = await this.ownFolder(organizationId, patch.folderId);
+    if (!Object.keys(data).length) return topic;
+
+    const updated = await this.prisma.learningTopic.update({ where: { id: topicId }, data });
+    const skillIds = [topic.draftSkillId, topic.publishedSkillId].filter((x): x is string => !!x);
+    if (moves && skillIds.length) {
+      // Filing elsewhere is not a content change: no new version.
+      await this.prisma.kgSkillSuggestion.updateMany({
+        where: { organizationId, id: { in: skillIds } },
+        data: { folderId: (data.folderId as string | null) ?? project.folderId },
+      });
+    }
+    const content: Record<string, string> = {};
+    if (data.title !== undefined) content.title = updated.title;
+    if (data.whenToUse !== undefined) content.whenToUse = updated.whenToUse;
+    if (Object.keys(content).length) {
+      if (topic.draftSkillId) {
+        await this.prisma.kgSkillSuggestion.updateMany({
+          where: { organizationId, id: topic.draftSkillId },
+          data: content,
+        });
+      }
+      if (topic.publishedSkillId) {
+        const published = await this.prisma.kgSkillSuggestion.findFirst({
+          where: { id: topic.publishedSkillId, organizationId },
+          select: { id: true },
+        });
+        if (published) await this.skills.update(organizationId, published.id, content, ctx.actorUserId);
+      }
+    }
+    this.forgetActive(project);
+    return updated;
   }
 
   async update(
@@ -376,6 +486,7 @@ export class LearningService {
       this.prisma.learningTopic.findMany({
         where: { organizationId, projectId: id },
         orderBy: { createdAt: 'asc' },
+        include: { folder: { select: { id: true, name: true } } },
       }),
       this.prisma.learningLesson.groupBy({
         by: ['topicId', 'status'],
@@ -396,6 +507,8 @@ export class LearningService {
           id: t.id,
           title: t.title,
           whenToUse: t.whenToUse,
+          // Null: the skills go into the project's folder.
+          folder: t.folder ?? null,
           draftSkillId: t.draftSkillId,
           publishedSkillId: t.publishedSkillId,
           publishedAt: t.publishedAt,
@@ -952,7 +1065,7 @@ export class LearningService {
         data: {
           organizationId,
           mcpServerId: project.mcpServerId,
-          folderId: project.folderId,
+          folderId: topic.folderId ?? project.folderId,
           ...content,
           confidence: 1,
           evidenceCount: rendered.included,
@@ -1016,7 +1129,7 @@ export class LearningService {
       data: {
         organizationId,
         mcpServerId: project.mcpServerId,
-        folderId: project.folderId,
+        folderId: topic.folderId ?? project.folderId,
         ...content,
         confidence: 1,
         status: 'applied',
@@ -1034,12 +1147,7 @@ export class LearningService {
   }
 
   private async topicFor(project: ProjectRow, rawTitle: string, rawWhen?: string): Promise<TopicRow> {
-    const title = cleanText(rawTitle, LEARNING_LIMITS.title).replace(/\n/g, ' ');
-    const key = skillKey(title).slice(0, LEARNING_LIMITS.title);
-    if (!key) throw new BadRequestException('A lesson needs a topic.');
-    if (looksLikeSecret(title) || looksLikeInjection(title)) {
-      throw new BadRequestException('A topic is a short name for a kind of work.');
-    }
+    const { title, key } = this.topicTitle(rawTitle, 'A lesson needs a topic.');
     const found = await this.prisma.learningTopic.findUnique({
       where: { projectId_key: { projectId: project.id, key } },
     });
@@ -1052,13 +1160,48 @@ export class LearningService {
         `This learning project has ${LEARNING_LIMITS.topics} topics, its limit. File the lesson under an existing topic.`,
       );
     }
-    const whenToUse = cleanText(rawWhen, LEARNING_LIMITS.whenToUse).replace(/\n/g, ' ');
-    if (whenToUse && (looksLikeSecret(whenToUse) || looksLikeInjection(whenToUse))) {
-      throw new BadRequestException('"whenToUse" says when the skill applies.');
-    }
+    const whenToUse = this.topicWhen(rawWhen);
     return this.prisma.learningTopic.create({
       data: { organizationId: project.organizationId, projectId: project.id, title, key, whenToUse },
     });
+  }
+
+  private topicTitle(raw: unknown, missing = 'A topic needs a title.'): { title: string; key: string } {
+    const title = cleanText(raw, LEARNING_LIMITS.title).replace(/\n/g, ' ');
+    const key = skillKey(title).slice(0, LEARNING_LIMITS.title);
+    if (!key) throw new BadRequestException(missing);
+    if (looksLikeSecret(title) || looksLikeInjection(title)) {
+      throw new BadRequestException('A topic is a short name for a kind of work.');
+    }
+    return { title, key };
+  }
+
+  private topicWhen(raw: unknown): string {
+    const whenToUse = cleanText(raw, LEARNING_LIMITS.whenToUse).replace(/\n/g, ' ');
+    if (whenToUse && (looksLikeSecret(whenToUse) || looksLikeInjection(whenToUse))) {
+      throw new BadRequestException('"whenToUse" says when the skill applies.');
+    }
+    return whenToUse;
+  }
+
+  /** Admin-set topics, checked: titles unique within the list, folders of this workspace. */
+  private async topicInputs(organizationId: string, raw: TopicInput[]) {
+    if (!Array.isArray(raw)) return [];
+    if (raw.length > LEARNING_LIMITS.topics) {
+      throw new BadRequestException(`A learning project holds at most ${LEARNING_LIMITS.topics} topics.`);
+    }
+    const out: Array<{ title: string; key: string; whenToUse: string; folderId: string | null }> = [];
+    for (const t of raw) {
+      const { title, key } = this.topicTitle(t?.title);
+      if (out.some((o) => o.key === key)) throw new BadRequestException(`The topic "${title}" is listed twice.`);
+      out.push({
+        title,
+        key,
+        whenToUse: this.topicWhen(t?.whenToUse),
+        folderId: await this.ownFolder(organizationId, t?.folderId),
+      });
+    }
+    return out;
   }
 
   private topicLessons(organizationId: string, topicId: string) {

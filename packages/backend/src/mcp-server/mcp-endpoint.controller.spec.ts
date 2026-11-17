@@ -1,4 +1,5 @@
 import { Client } from '@modelcontextprotocol/client';
+import { resetReadReminders } from '../ee/learning/learning-tools';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { McpEndpointController } from './mcp-endpoint.controller';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
@@ -1565,6 +1566,39 @@ describe('McpEndpointController — resources and instructions follow the tool p
     await client.callTool({ name: 'crm_get', arguments: {} });
     expect((exec.mock.calls[1] as any[])[2]).toEqual(expect.objectContaining({ learnable: false }));
     await client.close();
+  });
+
+  it('reminds a learning project\'s expert after a read tool at most every ten minutes', async () => {
+    resetReadReminders();
+    const exec = jest.fn(async () => ({ content: [{ type: 'text', text: 'ok' }] }));
+    (controller as any).toolExecutor = { executeTool: exec };
+    const active = {
+      projectId: 'lp-1',
+      organizationId: ORG_A,
+      userId: 'u-1',
+      mcpServerId: 'srv-1',
+      name: 'Pricing',
+      consentAt: new Date('2026-11-17T00:00:00Z'),
+      full: true,
+      topics: [],
+    };
+    (controller as any).learning = { activeFor: jest.fn().mockResolvedValue(active) };
+    const client = await connect(['crm_get']);
+    const first: any = await client.callTool({ name: 'crm_get', arguments: {} });
+    const texts = (r: any) => r.content.map((c: any) => c.text);
+    expect(texts(first)).toEqual(['ok', expect.stringContaining('call learning_record')]);
+    // The next read result within ten minutes carries no reminder.
+    const second: any = await client.callTool({ name: 'crm_get', arguments: {} });
+    expect(texts(second)).toEqual(['ok']);
+    await client.close();
+
+    // Somebody without a learning project never gets it.
+    resetReadReminders();
+    (controller as any).learning = { activeFor: jest.fn().mockResolvedValue(null) };
+    const other = await connect(['crm_get']);
+    const plain: any = await other.callTool({ name: 'crm_get', arguments: {} });
+    expect(texts(plain)).toEqual(['ok']);
+    await other.close();
   });
 
   it('adds what the workspace remembers to kg_how_to_obtain, within the caller\'s memory access', async () => {

@@ -1664,6 +1664,8 @@ export interface LearningTopic {
   id: string;
   title: string;
   whenToUse: string;
+  /** Where the topic's skills are filed; null: the project's folder. */
+  folder: { id: string; name: string } | null;
   draftSkillId: string | null;
   publishedSkillId: string | null;
   publishedAt: string | null;
@@ -1700,6 +1702,13 @@ export interface MyLearningProject {
   showExpertName: boolean;
 }
 
+/** A topic an admin sets on a project. */
+export interface LearningTopicInput {
+  title: string;
+  whenToUse?: string;
+  folderId?: string | null;
+}
+
 export interface LearningProjectInput {
   name: string;
   userId: string;
@@ -1709,6 +1718,7 @@ export interface LearningProjectInput {
   tags?: string[];
   publishMode?: 'manual' | 'confirmed';
   showExpertName?: boolean;
+  topics?: LearningTopicInput[];
 }
 
 export const learning = {
@@ -1744,6 +1754,10 @@ export const learning = {
   },
   setLesson: (token: string, lessonId: string, body: { status?: 'draft' | 'confirmed' | 'rejected'; text?: string }) =>
     request<LearningLesson>(`/api/learning/lessons/${lessonId}`, { token, method: 'PATCH', body }),
+  addTopic: (token: string, projectId: string, body: LearningTopicInput) =>
+    request<{ id: string }>(`/api/learning/projects/${projectId}/topics`, { token, method: 'POST', body }),
+  updateTopic: (token: string, topicId: string, body: Partial<LearningTopicInput>) =>
+    request<{ id: string }>(`/api/learning/topics/${topicId}`, { token, method: 'PATCH', body }),
   preview: (token: string, topicId: string) =>
     request<{ topic: { id: string; title: string }; instruction: string; body: string | null; included: number; dropped: number }>(
       `/api/learning/topics/${topicId}/preview`,

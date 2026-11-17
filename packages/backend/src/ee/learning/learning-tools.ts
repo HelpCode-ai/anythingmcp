@@ -51,6 +51,30 @@ export function learningFooter(active: ActiveLearning): string {
   );
 }
 
+/** A read result carries the reminder at most this often per project (#1770). */
+export const READ_REMINDER_INTERVAL_MS = 10 * 60_000;
+const READ_REMINDER_MAX = 5000;
+const lastReadReminder = new Map<string, number>();
+
+/**
+ * Whether a read tool's result should carry the reminder now. An expert who
+ * mostly reads (reports, price lists, read-only SQL) would otherwise never
+ * see it; on every read result it would be noise. Per process: after a
+ * restart, or on another instance, the next read result carries it again.
+ */
+export function readReminderDue(projectId: string, now = Date.now()): boolean {
+  const last = lastReadReminder.get(projectId);
+  if (last !== undefined && now - last < READ_REMINDER_INTERVAL_MS) return false;
+  if (lastReadReminder.size >= READ_REMINDER_MAX) lastReadReminder.clear();
+  lastReadReminder.set(projectId, now);
+  return true;
+}
+
+/** For tests. */
+export function resetReadReminders(): void {
+  lastReadReminder.clear();
+}
+
 function ok(value: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
 }
@@ -74,8 +98,14 @@ export function learningToolEntries(svc: LearningService, active: ActiveLearning
   const name = oneLine(active.name, 80);
   const topics = active.topics.map((t) => oneLine(t.title, LEARNING_LIMITS.title));
   const topicList = topics.length
-    ? `Existing topics: ${topics.slice(0, 20).map((t) => `"${t}"`).join(', ')}${topics.length > 20 ? ', …' : ''}. ` +
-      'Use one of them when the lesson belongs there; a new name starts a new skill.'
+    ? `Topics of this project: ${active.topics
+        .slice(0, 20)
+        .map((t) => {
+          const when = oneLine(t.whenToUse ?? '', 80);
+          return `"${oneLine(t.title, LEARNING_LIMITS.title)}"${when ? ` (${when})` : ''}`;
+        })
+        .join(', ')}${topics.length > 20 ? ', …' : ''}. ` +
+      'File the lesson under the one it belongs to, with its exact name; start a new topic only when none fits.'
     : 'No topic yet: name the kind of work this lesson is about, e.g. "Quotes for old windows".';
   const base = `${active.projectId}:${name}`;
   const current = () => svc.activeFor(active.organizationId, active.userId, active.mcpServerId);
@@ -83,7 +113,7 @@ export function learningToolEntries(svc: LearningService, active: ActiveLearning
   return [
     {
       name: LEARNING_RECORD_TOOL,
-      sig: `${LEARNING_RECORD_TOOL}:${base}:${topics.join('|')}`,
+      sig: `${LEARNING_RECORD_TOOL}:${base}:${topicList}`,
       register: (mcpServer: McpServer) =>
         mcpServer.registerTool(
           LEARNING_RECORD_TOOL,

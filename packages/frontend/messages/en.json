@@ -4036,7 +4036,23 @@
       "publishedMsg": "Published: {count} lesson(s) are now a skill for everyone on this server.",
       "nothing": "Nothing confirmed to publish yet.",
       "dropped": "{count} older lesson(s) did not fit in the text and were left out.",
-      "viewSkill": "Open AI Skills"
+      "viewSkill": "Open AI Skills",
+      "titleLabel": "Topic",
+      "titleHint": "e.g. Spare parts for old windows",
+      "whenLabel": "When to use",
+      "whenHint": "When a colleague's assistant should use this skill",
+      "folderLabel": "File the skills in",
+      "projectFolder": "The project's folder",
+      "add": "Add a topic",
+      "addHint": "Set the topics in advance: the member's assistant files lessons under them first and starts a new topic only when none fits.",
+      "added": "Topic \"{title}\" added.",
+      "edit": "Edit",
+      "save": "Save",
+      "saved": "Saved. The topic's skills follow the new name and folder.",
+      "cancel": "Cancel",
+      "inFolder": "Folder: {name}",
+      "inProjectFolder": "Folder: {name} (project)",
+      "noFolder": "No folder"
     },
     "lessons": {
       "filter": {
@@ -4080,7 +4096,7 @@
     "settings": {
       "name": "Name",
       "folder": "File the skills in",
-      "folderHint": "Applies to topics started from now on.",
+      "folderHint": "Applies to topics without a folder of their own, started from now on.",
       "endsAt": "Ends on",
       "tags": "Labels",
       "publishMode": "Publishing",

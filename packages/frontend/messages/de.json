@@ -4036,7 +4036,23 @@
       "publishedMsg": "Veröffentlicht: {count} Lektion(en) sind jetzt ein Skill für alle auf diesem Server.",
       "nothing": "Noch nichts Bestätigtes zu veröffentlichen.",
       "dropped": "{count} ältere Lektion(en) passten nicht in den Text und wurden weggelassen.",
-      "viewSkill": "AI Skills öffnen"
+      "viewSkill": "AI Skills öffnen",
+      "titleLabel": "Thema",
+      "titleHint": "z. B. Ersatzteile für alte Fenster",
+      "whenLabel": "Wann verwenden",
+      "whenHint": "Wann der Assistent eines Kollegen diesen Skill nutzen soll",
+      "folderLabel": "Skills ablegen in",
+      "projectFolder": "Ordner des Projekts",
+      "add": "Thema hinzufügen",
+      "addHint": "Legen Sie die Themen vorab fest: Der Assistent des Mitglieds ordnet Lektionen zuerst diesen Themen zu und beginnt nur dann ein neues Thema, wenn keines passt.",
+      "added": "Thema „{title}“ hinzugefügt.",
+      "edit": "Bearbeiten",
+      "save": "Speichern",
+      "saved": "Gespeichert. Die Skills des Themas übernehmen den neuen Namen und Ordner.",
+      "cancel": "Abbrechen",
+      "inFolder": "Ordner: {name}",
+      "inProjectFolder": "Ordner: {name} (Projekt)",
+      "noFolder": "Kein Ordner"
     },
     "lessons": {
       "filter": {
@@ -4080,7 +4096,7 @@
     "settings": {
       "name": "Name",
       "folder": "Skills ablegen in",
-      "folderHint": "Gilt für Themen, die ab jetzt begonnen werden.",
+      "folderHint": "Gilt für Themen ohne eigenen Ordner, die ab jetzt begonnen werden.",
       "endsAt": "Endet am",
       "tags": "Labels",
       "publishMode": "Veröffentlichung",
