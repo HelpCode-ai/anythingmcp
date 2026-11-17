@@ -397,6 +397,7 @@ export const MEMBER_VISIBILITY_ROUTES: Readonly<Record<string, RouteVisibility>>
   'LicenseController.registerCommunity': admin(),
   'ReactivationController.view': noSession('reactivation token'),
   'ReactivationController.checkout': noSession('reactivation token'),
+  'ReactivationController.claim': noSession('reactivation token'),
   'ReactivationController.event': noSession('reactivation token'),
   'TrialExtensionController.confirm': noSession('signed e-mail link'),
   'TrialExtensionController.extend': noSession('signed e-mail link'),

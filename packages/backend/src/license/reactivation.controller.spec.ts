@@ -34,6 +34,8 @@ interface MakeOpts {
   tokenMember?: any;
   firstAdmin?: any;
   checkout?: () => Promise<any>;
+  /** What LicenseService.claimPaidLicenceFor does for the workspace. */
+  claim?: (organizationId: string) => Promise<boolean>;
   /** Adapter slugs of the workspace's connectors (null: a hand-made one). */
   connectors?: Array<string | null>;
   /** What the licence site answers for a win-back code. */
@@ -72,6 +74,7 @@ function make(opts: MakeOpts = {}) {
     createCheckoutIntent: jest.fn<Promise<any>, [any]>(
       opts.checkout ?? (async () => ({ url: 'https://checkout.stripe.test/s1', trial: false })),
     ),
+    claimPaidLicenceFor: jest.fn<Promise<boolean>, [string]>(opts.claim ?? (async () => false)),
   };
   const licenseGuard = {
     getUsage: jest.fn().mockResolvedValue({
@@ -416,6 +419,51 @@ describe('ReactivationController', () => {
         BadGatewayException,
       );
       expect(licenseService.createCheckoutIntent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/license/reactivate/:token/claim', () => {
+    it('binds the licence the workspace just bought and answers active', async () => {
+      const t = make({ lastInactive: license('trial', { status: 'expired', expiresAt: ended }) });
+      t.licenseService.claimPaidLicenceFor.mockImplementation(async () => {
+        // The binding makes the paid licence the workspace's current one.
+        t.licenseService.getCurrentLicense.mockResolvedValue(license('starter'));
+        return true;
+      });
+      await expect(t.controller.claim(token())).resolves.toEqual({ state: 'active' });
+      expect(t.licenseService.claimPaidLicenceFor).toHaveBeenCalledWith('org-1');
+    });
+
+    it('answers the unchanged state while the payment has not reached the licence site', async () => {
+      const t = make({ lastInactive: license('trial', { status: 'expired', expiresAt: ended }) });
+      await expect(t.controller.claim(token())).resolves.toEqual({ state: 'trial-ended' });
+      expect(t.licenseService.claimPaidLicenceFor).toHaveBeenCalledTimes(1);
+    });
+
+    it('asks nothing for a workspace that is already active', async () => {
+      const t = make({ current: license('starter') });
+      await expect(t.controller.claim(token())).resolves.toEqual({ state: 'active' });
+      expect(t.licenseService.claimPaidLicenceFor).not.toHaveBeenCalled();
+    });
+
+    it('keeps answering when the claim itself fails', async () => {
+      const t = make({
+        lastInactive: license('trial', { status: 'expired', expiresAt: ended }),
+        claim: async () => {
+          throw new Error('site down');
+        },
+      });
+      await expect(t.controller.claim(token())).resolves.toEqual({ state: 'trial-ended' });
+    });
+
+    it('answers 404 for an invalid token, a deleted workspace and on self-hosted', async () => {
+      const bad = make();
+      await expect(bad.controller.claim('x'.repeat(40))).rejects.toThrow(NotFoundException);
+      const gone = make({ org: null });
+      await expect(gone.controller.claim(token())).rejects.toThrow(NotFoundException);
+      const selfHosted = make({ cloud: false });
+      await expect(selfHosted.controller.claim(token())).rejects.toThrow(NotFoundException);
+      for (const t of [bad, gone, selfHosted]) expect(t.licenseService.claimPaidLicenceFor).not.toHaveBeenCalled();
     });
   });
 
