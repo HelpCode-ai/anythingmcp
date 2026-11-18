@@ -380,6 +380,17 @@ const TELEGRAM_CHAT_HINT =
   'the user has sent the bot a message; @usernames only work for public channels. ' +
   'Ask the user to do that instead of trying other ids.';
 
+const TELEGRAM_NO_CHAT_HINT =
+  'The call named no chat and this connector has no default chat ' +
+  '(TELEGRAM_DEFAULT_CHAT_ID is empty), so Telegram got an empty chat_id. Pass chat_id: ' +
+  'ask the user to press Start in the bot\'s chat, read the id with telegram_bot_get_updates, ' +
+  'and tell them they can save it as the default chat in the connector\'s settings.';
+
+const OUTLOOK_SEARCH_SKIP_HINT =
+  'Microsoft Graph does not page a search with skip. Call again with the same search and ' +
+  'top, without skip, and pass skip_token: the $skiptoken value of the @odata.nextLink in ' +
+  'the previous answer. Retrying with skip fails the same way.';
+
 const TELEGRAM_SUPERGROUP_HINT =
   'The group became a supergroup and has a new chat id: it is the ' +
   '`migrate_to_chat_id` in this answer (it starts with -100). Send to that id; ' +
@@ -791,6 +802,11 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
     if (woo === WOOCOMMERCE_UNKNOWN_KEY_HINT) return WOOCOMMERCE_UNKNOWN_KEY_TOOL_HINT;
   }
 
+  // Graph refuses $skip together with $search; the adapter's skip_token pages it.
+  if (/SearchWithSkip/.test(text) && (input.adapterSlug === 'microsoft-outlook' || hostMatches(input.host, 'graph.microsoft.com'))) {
+    return OUTLOOK_SEARCH_SKIP_HINT;
+  }
+
   if (input.adapterSlug === 'atlassian') {
     if (/missing the scope claim|Unable to resolve user scopes/i.test(text)) {
       return ATLASSIAN_UNSCOPED_TOKEN_HINT;
@@ -879,6 +895,9 @@ function ruleHint(input: ErrorHintInput, text: string): string | undefined {
     }
     if (/failed to get HTTP URL content|wrong file identifier\/HTTP URL specified/i.test(text)) {
       return TELEGRAM_URL_CONTENT_HINT;
+    }
+    if (/chat_id is empty/i.test(text)) {
+      return TELEGRAM_NO_CHAT_HINT;
     }
     if (/chat not found|bot is not a member|can't initiate conversation|need administrator rights|bot was blocked by the user/i.test(text)) {
       return TELEGRAM_CHAT_HINT;

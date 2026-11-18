@@ -511,8 +511,24 @@ describe('deriveErrorHint — SQL-backed customer APIs', () => {
         deriveErrorHint({ host, status: 400, body: { description: 'Bad Request: failed to get HTTP URL content' } }),
       ).toMatch(/public https link/);
     });
+    it('asks for a chat_id when the connector has no default chat', () => {
+      expect(
+        deriveErrorHint({ host, status: 400, body: { ok: false, error_code: 400, description: 'Bad Request: chat_id is empty' } }),
+      ).toMatch(/TELEGRAM_DEFAULT_CHAT_ID is empty.*telegram_bot_get_updates/);
+    });
     it('stays quiet for another host answering Not Found', () => {
       expect(deriveErrorHint({ host: 'api.example.com', status: 404, body: '"Not Found"' })).toBeUndefined();
+    });
+  });
+
+  describe('Outlook search paging', () => {
+    const body = { error: { code: 'SearchWithSkip', message: 'This request does not support skip with search.' } };
+    it('points at skip_token when Graph refuses skip with search', () => {
+      expect(deriveErrorHint({ adapterSlug: 'microsoft-outlook', host: 'graph.microsoft.com', status: 400, body })).toMatch(/skip_token.*\$skiptoken/);
+      expect(deriveErrorHint({ host: 'graph.microsoft.com', status: 400, body })).toMatch(/without skip/);
+    });
+    it('stays quiet for the same code from another API', () => {
+      expect(deriveErrorHint({ host: 'api.example.com', status: 400, body })).toBeUndefined();
     });
   });
 
