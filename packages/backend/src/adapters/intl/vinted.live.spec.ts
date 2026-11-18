@@ -27,6 +27,8 @@ const a = adapter as unknown as {
   slug: string;
   selfHostOnly?: boolean;
   requiredEnvVars: string[];
+  optionalEnvVars?: string[];
+  envVarMeta?: Record<string, { kind?: string; secret?: boolean; pattern?: string; options?: Array<{ value: string; label: string }> }>;
   probe?: { tool: string; params: Record<string, unknown> };
   connector: {
     baseUrl: string;
@@ -40,6 +42,7 @@ const a = adapter as unknown as {
       method: string;
       path: string;
       queryParams?: Record<string, string>;
+      headers?: Record<string, string>;
     };
     responseMapping?: { transform?: { mode?: string; expression?: string } };
   }>;
@@ -98,6 +101,25 @@ describe("vinted adapter — static spec conformance", () => {
     expect(q["attribute_ids[catalog]"]).toBe("$catalog_ids");
     expect(q["attribute_ids[status]"]).toBe("$status_ids");
     expect(Object.keys(q)).not.toContain("brand_ids");
+  });
+
+  it("picks the market with Vinted's locale header, France when the variable is empty", () => {
+    // Every Vinted host serves the same French catalog in EUR; the website
+    // chooses the market with a `locale` request header (en-GB: UK listings
+    // in GBP, pl-PL: PLN, ...). `${...}` drops the header when unset.
+    expect(a.optionalEnvVars).toEqual(["VINTED_MARKET"]);
+    for (const t of a.tools) {
+      expect(t.endpointMapping.headers).toEqual({ locale: "${VINTED_MARKET}" });
+    }
+    const meta = a.envVarMeta!.VINTED_MARKET;
+    expect(meta.kind).toBe("setting");
+    expect(meta.secret).toBe(false);
+    const values = meta.options!.map((o) => o.value);
+    expect(values.length).toBeGreaterThanOrEqual(2);
+    expect(values.length).toBeLessThanOrEqual(20);
+    expect(new Set(values).size).toBe(values.length);
+    expect(values).toEqual(expect.arrayContaining(["fr-FR", "en-GB", "de-DE", "pl-PL"]));
+    for (const v of values) expect(v).toMatch(new RegExp(meta.pattern!));
   });
 
   it("every tool ships a JMESPath mapping that compiles", () => {
@@ -161,6 +183,19 @@ maybe("vinted adapter — live smoke test", () => {
     });
     expect(page2.items.length).toBeGreaterThan(0);
     expect(page2.pagination.current_page).toBe(2);
+  }, 30000);
+
+  it("search_items in the UK market: GBP prices and English titles", async () => {
+    // The tool caller merges the connector's variables into the arguments
+    // (DynamicMcpTools.injectEnvVars), which fills `${VINTED_MARKET}`.
+    const raw = await engine.execute(
+      cfg as any,
+      tool("vinted_search_items").endpointMapping as any,
+      { search_text: "jacket", per_page: 5, status_ids: "6", VINTED_MARKET: "en-GB" },
+    );
+    const res = applyResponseTransform(raw, tool("vinted_search_items").responseMapping).value as any;
+    expect(res.items.length).toBeGreaterThan(0);
+    expect(res.items.every((i: any) => i.currency === "GBP")).toBe(true);
   }, 30000);
 
   it("get_filters: brand options with ids and counts", async () => {
