@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client';
 import { FileSearchRepository, type FileTx } from './file-search.repository';
+import { GLOB_SAFETY } from './file-search-selection';
 
 /**
  * The read side of File Search (#1384): the SQL behind the MCP tools. Runs
@@ -224,7 +225,7 @@ export class FileSearchQueryService {
     return this.run(scope, async (tx) => {
       if (p.glob) {
         const { default: picomatch } = await import('picomatch');
-        const isMatch = picomatch(p.glob, { nocase: true, dot: false, basename: !p.glob.includes('/') });
+        const isMatch = picomatch(p.glob, { ...GLOB_SAFETY, nocase: true, dot: false, basename: !p.glob.includes('/') });
         const rows = await tx.$queryRaw<Array<Record<string, unknown>>>(Prisma.sql`
           SELECT e.path, e.size, e.mtime, e.status FROM file_entries e
           WHERE ${scopeSql('e', scope, p.path)} AND ${entryFilters('e', p)}

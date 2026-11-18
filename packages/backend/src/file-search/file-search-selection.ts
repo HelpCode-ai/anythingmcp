@@ -3,6 +3,17 @@ import { TEXT_EXTENSIONS, isJunkName, type FileSearchConfig } from './file-searc
 import { trimSlashes } from './file-search-config';
 
 /**
+ * Options every picomatch call on a user- or model-supplied pattern must carry.
+ * Extglobs (`+(…)`, `*(…)`, `@(…)`) compile to regular expressions that can
+ * backtrack for seconds on short paths and block the event loop; nobody needs
+ * them to pick files, so they are matched literally.
+ */
+export const GLOB_SAFETY = { noextglob: true } as const;
+
+/** Longest glob a File Search tool call may pass. */
+export const MAX_GLOB_LENGTH = 300;
+
+/**
  * What gets indexed, and how much that is (#1385). Shared by the wizard API
  * (live budget bar) and the worker (walk filter and quota check), so the
  * number the admin sees is the number the sync enforces.
@@ -67,7 +78,7 @@ export interface PathFilter {
 }
 
 export function buildFilter(config: FileSearchConfig, now = new Date()): PathFilter {
-  const opts = { dot: false, nocase: true };
+  const opts = { ...GLOB_SAFETY, dot: false, nocase: true };
   const include = picomatch(config.include?.length ? config.include : ['**/*'], opts);
   const exclude = config.exclude?.length ? picomatch(config.exclude, opts) : () => false;
   const excludedFolders = (config.exclude ?? []).filter((g) => g.endsWith('/**')).map((g) => g.slice(0, -3).toLowerCase());

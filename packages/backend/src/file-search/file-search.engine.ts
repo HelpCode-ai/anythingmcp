@@ -8,6 +8,7 @@ import { FileShareService, mimeFor } from './file-share.service';
 import { FileSearchRepository } from './file-search.repository';
 import { isFileSearchMethod, type FileSearchMethod } from './file-search-builtins';
 import { VIEWABLE_EXTENSIONS, extOf } from './file-search.types';
+import { MAX_GLOB_LENGTH } from './file-search-selection';
 
 /**
  * Executes the `file_*` tools of a FILE_SEARCH connector (#1384). Reads the
@@ -130,6 +131,9 @@ export class FileSearchEngine {
         // Without a name or glob every file would match: say what to pass instead.
         if (!str(p.name) && !str(p.glob) && p.sort !== 'newest') {
           return { error: 'Pass `name` (words of the file or folder name) or `glob` (e.g. "**/*.pdf"); for the newest files pass sort: "newest".' };
+        }
+        if ((str(p.glob)?.length ?? 0) > MAX_GLOB_LENGTH) {
+          return { error: `glob is longer than ${MAX_GLOB_LENGTH} characters. Pass a shorter pattern, or name.` };
         }
         return this.query.find(scope, {
           name: str(p.name),
