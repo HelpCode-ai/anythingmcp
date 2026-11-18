@@ -163,6 +163,7 @@ const ROUTES: Record<string, string> = {
   walmart_marketplace_get_promotional_prices: 'GET /v3/promo/sku/{sku}',
   walmart_marketplace_submit_item_feed: 'POST /v3/feeds',
   walmart_marketplace_submit_price_feed: 'POST /v3/feeds',
+  walmart_marketplace_update_lag_time: 'POST /v3/feeds',
   walmart_marketplace_list_feeds: 'GET /v3/feeds',
   walmart_marketplace_get_feed_status: 'GET /v3/feeds/{feed_id}',
   walmart_marketplace_request_report: 'POST /v3/reports/reportRequests',
@@ -184,6 +185,7 @@ const SWITCHED_OFF = [
   'walmart_marketplace_retire_item',
   'walmart_marketplace_submit_item_feed',
   'walmart_marketplace_submit_price_feed',
+  'walmart_marketplace_update_lag_time',
 ];
 
 describe('walmart-marketplace adapter: static contract', () => {
@@ -519,6 +521,28 @@ describe('walmart-marketplace adapter: static contract', () => {
     await call('walmart_marketplace_submit_item_feed', { feed_type: 'MP_MAINTENANCE', feed: { MPItemFeedHeader: { version: '5.0' }, MPItem: [] } });
     expect(sent().params).toEqual({ feedType: 'MP_MAINTENANCE' });
     expect(sent().data).toEqual({ MPItemFeedHeader: { version: '5.0' }, MPItem: [] });
+
+    ok(200, { feedId: 'F1' });
+    const lag = await call('walmart_marketplace_update_lag_time', {
+      items: [
+        { sku: 'SKU-1', fulfillmentLagTime: 1 },
+        { sku: 'SKU-2', fulfillmentLagTime: 2, shipNode: '721407' },
+      ],
+    });
+    expect(String(sent().method).toUpperCase()).toBe('POST');
+    expect(sent().url).toBe(`${BASE}/v3/feeds`);
+    expect(sent().params).toEqual({ feedType: 'lagtime' });
+    expect(header(sent(), 'Content-Type')).toBe('application/json');
+    expect(sent().data).toEqual({
+      LagTimeHeader: { version: '1.0' },
+      lagTime: [
+        { sku: 'SKU-1', fulfillmentLagTime: 1 },
+        { sku: 'SKU-2', fulfillmentLagTime: 2, shipNode: '721407' },
+      ],
+    });
+    expect(JSON.stringify(lag)).toContain('F1');
+    expect(tool('walmart_marketplace_update_lag_time').description).toContain('walmart_marketplace_get_feed_status');
+    expect(annotationsOf(tool('walmart_marketplace_update_lag_time'))).toMatchObject({ readOnlyHint: false, destructiveHint: true });
 
     ok();
     await call('walmart_marketplace_request_report', { report_type: 'ITEM', exclude_columns: ['Shelf Name'] });

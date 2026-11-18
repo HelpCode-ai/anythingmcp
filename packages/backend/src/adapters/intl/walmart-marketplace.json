@@ -2,7 +2,7 @@
   "slug": "walmart-marketplace",
   "name": "Walmart Marketplace",
   "description": "Walmart Marketplace API for US sellers: orders with acknowledge and ship with tracking, returns, items and catalog search, inventory, prices, bulk feeds, on-request reports, WFS inbound shipments and shipping settings. Client ID and secret.",
-  "instructions": "## Walmart Marketplace\nThis connector works with the **Walmart Marketplace API** for sellers on the **US marketplace** (`https://marketplace.walmartapis.com`): orders, returns, items, inventory, prices, feeds, on-request reports, Walmart Fulfillment Services (WFS) and shipping settings. Walmart Canada and Walmart Mexico have their own APIs and are not covered.\n\n**Setup (about 5 minutes)**\n1. Sign in at https://developer.walmart.com with your **Seller Center** login (choose Marketplace seller).\n2. Open **My Account**, then **API Keys** (key management), and create or copy the **production** client ID and client secret.\n3. Paste the client ID into `WALMART_CLIENT_ID` and the client secret into `WALMART_CLIENT_SECRET`.\n\nThe connector exchanges them at `POST /v3/token` (HTTP Basic, client credentials) for an access token that lasts **15 minutes**, reuses it until shortly before it expires and fetches a new one by itself. Every call carries `WM_SEC.ACCESS_TOKEN`, `WM_SVC.NAME` and a new `WM_QOS.CORRELATION_ID`. Use your own seller client credentials: Delegated Access keys for solution providers are being retired (new ones can no longer be created, existing ones stop working after 30 April 2027).\n\n**Where to start**: `walmart_marketplace_list_released_orders` (orders waiting for you), then `walmart_marketplace_get_order`. `walmart_marketplace_list_items` lists your catalog and `walmart_marketplace_get_inventory` the stock of a SKU.\n\n**Orders**: `walmart_marketplace_list_orders` (all statuses), `walmart_marketplace_list_released_orders` (lines in Created), `walmart_marketplace_get_order`. A line goes **Created, Acknowledged, Shipped, Delivered**, or **Cancelled**. Acknowledge new orders promptly with `walmart_marketplace_acknowledge_order`, then ship each line with `walmart_marketplace_ship_order_line` (carrier, method, tracking number, ship time in epoch milliseconds); shipping captures the customer payment. `walmart_marketplace_cancel_order_line` and `walmart_marketplace_refund_order_lines` are installed switched off: a cancellation hurts your seller metrics and a refund moves money. Order lists reach 180 days back, at most 10,000 orders, and default to the last 7 days.\n\n**Paging**: orders and returns answer with `meta.nextCursor`, a ready query string that starts with `?`. Pass it unchanged as `next_cursor` and leave the other filters out. Items use `nextCursor` (start with `*`, valid 2 minutes) or limit and offset.\n\n**Returns**: `walmart_marketplace_list_returns` (statuses INITIATED, DELIVERED, COMPLETED). `walmart_marketplace_refund_return` is switched off because it refunds the customer.\n\n**Items and catalog**: `walmart_marketplace_list_items`, `walmart_marketplace_get_item`, `walmart_marketplace_count_items`, `walmart_marketplace_search_my_catalog` (your catalog with filters such as UNPUBLISHED items) and `walmart_marketplace_search_walmart_catalog` (the public Walmart.com catalog by keyword, UPC or GTIN). `walmart_marketplace_retire_item` is switched off: retiring removes the listing.\n\n**Inventory and prices**: `walmart_marketplace_get_inventory`, `walmart_marketplace_get_inventory_by_ship_node`, `walmart_marketplace_update_inventory` (absolute quantity, unit EACH), `walmart_marketplace_get_wfs_inventory` (stock held by WFS). `walmart_marketplace_update_price` sets the BASE price of one SKU in USD (100 calls per hour); `walmart_marketplace_get_promotional_prices` shows sale prices.\n\n**Feeds**: bulk changes go through feeds. `walmart_marketplace_submit_item_feed` and `walmart_marketplace_submit_price_feed` are installed switched off, because one feed changes many live listings and bulk price feeds are limited per hour and per day (10 per hour, shared by all price and promotion feeds). Check results with `walmart_marketplace_list_feeds` and `walmart_marketplace_get_feed_status` (per-item errors with include_details).\n\n**Reports**: `walmart_marketplace_request_report`, then `walmart_marketplace_list_report_requests` or `walmart_marketplace_get_report_request` until READY, then `walmart_marketplace_get_report_download_url`. Status and download calls are limited to 20 per hour each, so wait several minutes between checks. The link is a short-lived zipped CSV.\n\n**WFS**: `walmart_marketplace_list_inbound_shipments`, `walmart_marketplace_list_inbound_shipment_items`, `walmart_marketplace_create_inbound_shipment_label` (receiving labels as PDF or ZPL, free).\n\n**Settings (read only)**: `walmart_marketplace_list_ship_nodes` (ship node ids), `walmart_marketplace_list_carrier_methods`, `walmart_marketplace_list_shipping_templates`, `walmart_marketplace_get_lag_time` (20 calls per hour).\n\n**Rate limits**: each API has its own token bucket (all orders 5,000 per minute, released orders 60 per minute, ship, acknowledge and cancel 60 per minute, inventory 200 per minute, items 300 per minute). A 429 means the bucket is empty; the headers `x-current-token-count` and `X-Next-Replenishment-Time` say when to retry.\n\n**Formats**: dates are ISO 8601 in UTC; order dates in answers are epoch milliseconds. Money is in USD. SKUs are your own seller SKUs; Walmart ids are purchaseOrderId (orders), returnOrderId (returns), wpid and itemId (catalog). Errors come back as `errors.error[]` with code, field and description; a 400 INVALID_REQUEST_HEADER usually means a token or header problem.",
+  "instructions": "## Walmart Marketplace\nThis connector works with the **Walmart Marketplace API** for sellers on the **US marketplace** (`https://marketplace.walmartapis.com`): orders, returns, items, inventory, prices, feeds, on-request reports, Walmart Fulfillment Services (WFS) and shipping settings. Walmart Canada and Walmart Mexico have their own APIs and are not covered.\n\n**Setup (about 5 minutes)**\n1. Sign in at https://developer.walmart.com with your **Seller Center** login (choose Marketplace seller).\n2. Open **My Account**, then **API Keys** (key management), and create or copy the **production** client ID and client secret.\n3. Paste the client ID into `WALMART_CLIENT_ID` and the client secret into `WALMART_CLIENT_SECRET`.\n\nThe connector exchanges them at `POST /v3/token` (HTTP Basic, client credentials) for an access token that lasts **15 minutes**, reuses it until shortly before it expires and fetches a new one by itself. Every call carries `WM_SEC.ACCESS_TOKEN`, `WM_SVC.NAME` and a new `WM_QOS.CORRELATION_ID`. Use your own seller client credentials: Delegated Access keys for solution providers are being retired (new ones can no longer be created, existing ones stop working after 30 April 2027).\n\n**Where to start**: `walmart_marketplace_list_released_orders` (orders waiting for you), then `walmart_marketplace_get_order`. `walmart_marketplace_list_items` lists your catalog and `walmart_marketplace_get_inventory` the stock of a SKU.\n\n**Orders**: `walmart_marketplace_list_orders` (all statuses), `walmart_marketplace_list_released_orders` (lines in Created), `walmart_marketplace_get_order`. A line goes **Created, Acknowledged, Shipped, Delivered**, or **Cancelled**. Acknowledge new orders promptly with `walmart_marketplace_acknowledge_order`, then ship each line with `walmart_marketplace_ship_order_line` (carrier, method, tracking number, ship time in epoch milliseconds); shipping captures the customer payment. `walmart_marketplace_cancel_order_line` and `walmart_marketplace_refund_order_lines` are installed switched off: a cancellation hurts your seller metrics and a refund moves money. Order lists reach 180 days back, at most 10,000 orders, and default to the last 7 days.\n\n**Paging**: orders and returns answer with `meta.nextCursor`, a ready query string that starts with `?`. Pass it unchanged as `next_cursor` and leave the other filters out. Items use `nextCursor` (start with `*`, valid 2 minutes) or limit and offset.\n\n**Returns**: `walmart_marketplace_list_returns` (statuses INITIATED, DELIVERED, COMPLETED). `walmart_marketplace_refund_return` is switched off because it refunds the customer.\n\n**Items and catalog**: `walmart_marketplace_list_items`, `walmart_marketplace_get_item`, `walmart_marketplace_count_items`, `walmart_marketplace_search_my_catalog` (your catalog with filters such as UNPUBLISHED items) and `walmart_marketplace_search_walmart_catalog` (the public Walmart.com catalog by keyword, UPC or GTIN). `walmart_marketplace_retire_item` is switched off: retiring removes the listing.\n\n**Inventory and prices**: `walmart_marketplace_get_inventory`, `walmart_marketplace_get_inventory_by_ship_node`, `walmart_marketplace_update_inventory` (absolute quantity, unit EACH), `walmart_marketplace_get_wfs_inventory` (stock held by WFS). `walmart_marketplace_update_price` sets the BASE price of one SKU in USD (100 calls per hour); `walmart_marketplace_get_promotional_prices` shows sale prices.\n\n**Feeds**: bulk changes go through feeds. `walmart_marketplace_submit_item_feed`, `walmart_marketplace_submit_price_feed` and `walmart_marketplace_update_lag_time` (fulfillment lag time of many SKUs in one lagtime feed) are installed switched off, because one feed changes many live listings and bulk price feeds are limited per hour and per day (10 per hour, shared by all price and promotion feeds). Check results with `walmart_marketplace_list_feeds` and `walmart_marketplace_get_feed_status` (per-item errors with include_details).\n\n**Reports**: `walmart_marketplace_request_report`, then `walmart_marketplace_list_report_requests` or `walmart_marketplace_get_report_request` until READY, then `walmart_marketplace_get_report_download_url`. Status and download calls are limited to 20 per hour each, so wait several minutes between checks. The link is a short-lived zipped CSV.\n\n**WFS**: `walmart_marketplace_list_inbound_shipments`, `walmart_marketplace_list_inbound_shipment_items`, `walmart_marketplace_create_inbound_shipment_label` (receiving labels as PDF or ZPL, free).\n\n**Settings (read only)**: `walmart_marketplace_list_ship_nodes` (ship node ids), `walmart_marketplace_list_carrier_methods`, `walmart_marketplace_list_shipping_templates`, `walmart_marketplace_get_lag_time` (20 calls per hour). Lag time is changed with the `walmart_marketplace_update_lag_time` feed: 0 or 1 day for any item, 2 days or more only with Walmart approval.\n\n**Rate limits**: each API has its own token bucket (all orders 5,000 per minute, released orders 60 per minute, ship, acknowledge and cancel 60 per minute, inventory 200 per minute, items 300 per minute). A 429 means the bucket is empty; the headers `x-current-token-count` and `X-Next-Replenishment-Time` say when to retry.\n\n**Formats**: dates are ISO 8601 in UTC; order dates in answers are epoch milliseconds. Money is in USD. SKUs are your own seller SKUs; Walmart ids are purchaseOrderId (orders), returnOrderId (returns), wpid and itemId (catalog). Errors come back as `errors.error[]` with code, field and description; a 400 INVALID_REQUEST_HEADER usually means a token or header problem.",
   "aliases": [
     "Walmart",
     "Walmart Seller",
@@ -1382,6 +1382,68 @@
         "bodyMapping": {
           "__raw": "$feed"
         }
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_update_lag_time",
+      "description": "Set the fulfillment lag time (days between order and shipment) of one or more SKUs in one bulk feed (feedType lagtime). Sends {\"LagTimeHeader\": {\"version\": \"1.0\"}, \"lagTime\": [{\"sku\": \"SKU-1\", \"fulfillmentLagTime\": 1}]}. 0 or 1 day is allowed for every item; 2 days or more needs Walmart approval for the item's category, otherwise the line fails or falls back to Walmart's default. Answers with a feedId: Walmart applies the feed asynchronously, so check the per-SKU result with walmart_marketplace_get_feed_status (include_details) and confirm with walmart_marketplace_get_lag_time. Installed switched off: one feed changes the promised ship date of many live listings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "One entry per SKU: {\"sku\": \"SKU-1\", \"fulfillmentLagTime\": 1}, optionally with \"shipNode\". Batch all changes into one call.",
+            "minItems": 1,
+            "maxItems": 10000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "description": "Your seller SKU exactly as in Seller Center (sku from walmart_marketplace_list_items).",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "fulfillmentLagTime": {
+                  "type": "integer",
+                  "description": "New lag time in whole days, 0 or more. 2 or more needs Walmart approval for the category.",
+                  "minimum": 0
+                },
+                "shipNode": {
+                  "type": "string",
+                  "description": "Ship node id (from walmart_marketplace_list_ship_nodes), only when you ship this SKU from several nodes and want to set one node; omit otherwise."
+                }
+              },
+              "required": [
+                "sku",
+                "fulfillmentLagTime"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/feeds",
+        "queryParams": {
+          "feedType": "lagtime"
+        },
+        "bodyMapping": {
+          "LagTimeHeader": {
+            "version": "1.0"
+          },
+          "lagTime": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
       },
       "enabled": false
     },
