@@ -189,7 +189,7 @@ Everything runs on your infrastructure, so you decide what leaves it. OAuth2, ro
 
 The same MCP server works in every client that speaks MCP, so you build a connector once:
 
-- **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](<https://claude.ai/directory/anythingmcp>). [Claude setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>) · [custom connectors for Claude](<https://anythingmcp.com/claude-connectors>) · [every connector's Claude guide](<https://anythingmcp.com/guides/clients/claude>)
+- **Claude.** Add the server URL as a **custom connector** under **Plugins** (still called **Customize** on some plans) → **Connectors**; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](<https://claude.ai/directory/anythingmcp>). [Claude setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>) · [custom connectors for Claude](<https://anythingmcp.com/claude-connectors>) · [every connector's Claude guide](<https://anythingmcp.com/guides/clients/claude>)
 - **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT Plugin Directory](<https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121>) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*Add → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/chatgpt.md>) · [ChatGPT apps and connectors](<https://anythingmcp.com/chatgpt-apps>) · [every connector's ChatGPT guide](<https://anythingmcp.com/guides/clients/chatgpt>)
 - **Meta Muse.** In Muse, open *Settings → Connectors → Add custom connector*, paste the server URL and sign in to AnythingMCP. [Muse setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/muse.md>) · [every connector's Muse guide](<https://anythingmcp.com/guides/clients/muse>)
 - **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/guides.md>), and a guide for every connector in [Copilot](<https://anythingmcp.com/guides/clients/copilot>), [Gemini](<https://anythingmcp.com/guides/clients/gemini>) and [Cursor](<https://anythingmcp.com/guides/clients/cursor>).
@@ -902,7 +902,7 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 
 ### How do I create a custom connector for Claude?
 
-Run AnythingMCP (self-hosted or [Cloud](<https://cloud.anythingmcp.com>)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Customize → Connectors*. On AnythingMCP Cloud you can instead add AnythingMCP from the [Claude Directory](<https://claude.ai/directory/anythingmcp>) in one click. No code required — the [Claude guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>) walks through it in ~5 minutes.
+Run AnythingMCP (self-hosted or [Cloud](<https://cloud.anythingmcp.com>)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under **Plugins** (still called **Customize** on some plans) → **Connectors**. On AnythingMCP Cloud you can instead add AnythingMCP from the [Claude Directory](<https://claude.ai/directory/anythingmcp>) in one click. No code required — the [Claude guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>) walks through it in ~5 minutes.
 
 ### Can I build a ChatGPT app from my existing API?
 
@@ -6027,7 +6027,7 @@ There is also a shared endpoint, `https://<your-host>/mcp`. When a client connec
 
 AnythingMCP is listed in Claude's connector directory: [claude.ai/directory/anythingmcp](<https://claude.ai/directory/anythingmcp>). This is the fastest path if you use AnythingMCP Cloud.
 
-1. Open [the AnythingMCP listing](<https://claude.ai/directory/anythingmcp>), or in Claude open **Customize → Connectors**, browse the connectors and search for AnythingMCP.
+1. Open [the AnythingMCP listing](<https://claude.ai/directory/anythingmcp>), or in Claude open **Plugins** (still called **Customize** on some plans) → **Connectors**, browse the connectors and search for AnythingMCP.
 2. Click **Connect**.
 3. Sign in to AnythingMCP Cloud and approve access. If you have several MCP servers, choose the ones Claude may reach.
 
@@ -6043,18 +6043,32 @@ The listing always connects to AnythingMCP Cloud. For a self-hosted instance, us
 
 Adds one specific MCP server, on Cloud or on a self-hosted instance.
 
-1. In Claude, open **Customize → Connectors**.
-2. Click **+**, then **Add custom connector**.
-3. Enter a name and paste the endpoint URL, `https://<your-host>/mcp/<server-id>`, then click **Add**.
-4. Click **Connect**, sign in to AnythingMCP and approve access.
+1. In Claude, open **Plugins** (still called **Customize** on some plans) → **Connectors**.
+2. Click **+ Add**, then **Add custom connector**.
+3. Enter a name (for example AnythingMCP) and paste the endpoint URL, `https://<your-host>/mcp/<server-id>`, then click **Continue**.
+4. Keep the detected authentication settings and click **Continue**.
+5. Choose **Sign in now**, keep the default OAuth client and click **Add**.
+6. Sign in to AnythingMCP and approve access.
+
+Claude is replacing **Customize** with a single **Plugins** page that holds skills, connectors and plugins. Most plans have it since November 9, 2026; Enterprise plans get it from November 30, 2026. Until then some accounts still show **Customize**: the steps are the same.
 
 Connectors added on claude.ai also appear in Claude Desktop and the mobile apps. The **Add to Claude** button in the server's Quick Connect panel opens the same dialog.
+
+### Team and Enterprise plans
+
+On Team and Enterprise plans, an owner adds the custom connector once for the whole organization:
+
+1. Open **Organization settings → Connectors**.
+2. Click **Add**, hover **Custom** and select **Web**.
+3. Enter a name and the endpoint URL, then finish the same steps as above.
+
+Members then open **Plugins** (or **Customize**) → **Connectors**, find the connector, click **Connect**, sign in to AnythingMCP and approve access.
 
 Claude connects to custom connectors from Anthropic's cloud, so a self-hosted instance must be reachable on a **public HTTPS URL**; `localhost` does not work here. See the [Deployment Guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md>).
 
 ### Claude Desktop and `claude_desktop_config.json`
 
-Use **Customize → Connectors** in Claude Desktop as well. The `claude_desktop_config.json` file only launches local (stdio) commands: a remote URL entry in it is skipped as "not a valid MCP server configuration".
+Use **Plugins** (or **Customize**) → **Connectors** in Claude Desktop as well. The `claude_desktop_config.json` file only launches local (stdio) commands: a remote URL entry in it is skipped as "not a valid MCP server configuration".
 
 If you must use the config file, bridge the remote server through the [`mcp-remote`](<https://www.npmjs.com/package/mcp-remote>) package (requires Node.js), then restart Claude Desktop:
 
@@ -9486,9 +9500,9 @@ tools always read the current version).
 
 **claude.ai caches the tool list.** After you add the first skill to a server,
 turn on learning or memory for a user, or upgrade AnythingMCP, claude.ai keeps
-offering the tools it listed before. Refresh them under *Customize →
-Connectors →* the connector *→ ⋮ → Refresh tools list*; new chats then get the
-current tools and descriptions.
+offering the tools it listed before. Refresh them under **Plugins** (or
+**Customize**) → **Connectors** → the connector → **⋮** → **Refresh tools
+list**; new chats then get the current tools and descriptions.
 
 ---
 
@@ -9608,8 +9622,9 @@ only those the user's access level allows. The shared `/mcp` endpoint is
 unchanged.
 
 claude.ai caches a connector's tool list: after memory is turned on for a user,
-refresh it under *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
-list* before the memory tools appear in new chats.
+refresh it under **Plugins** (or **Customize**) → **Connectors** → the
+connector → **⋮** → **Refresh tools list** before the memory tools appear in
+new chats.
 
 | Tool | Offered from | What it does |
 |---|---|---|
@@ -9797,8 +9812,8 @@ be kept and chooses **Accept** or **Decline**. The notice they accepted is
 stored with the project.
 
 After accepting, they refresh the connector's tool list in their AI client
-(in claude.ai: *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
-list*) and work as usual.
+(in claude.ai: **Plugins** (or **Customize**) → **Connectors** → the connector
+→ **⋮** → **Refresh tools list**) and work as usual.
 
 At any time they can **Stop** the project on the same page, and choose to
 erase everything that was not published. Their opt-out of
