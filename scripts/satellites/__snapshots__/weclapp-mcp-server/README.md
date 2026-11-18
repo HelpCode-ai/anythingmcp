@@ -37,7 +37,7 @@ npm install && node scripts/smoke.mjs
 
 ## Connect Claude, ChatGPT, Copilot or Cursor
 
-- **Claude (claude.ai, Desktop, mobile):** *Customize → Connectors → Add custom connector*, paste your MCP server URL and sign in. Claude connects from Anthropic's cloud, so the URL must be public HTTPS: your AnythingMCP Cloud URL, or your own instance behind TLS.
+- **Claude (claude.ai, Desktop, mobile):** **Plugins** (or **Customize**) → **Connectors** → **+ Add** → **Add custom connector**, paste your MCP server URL and sign in. Claude connects from Anthropic's cloud, so the URL must be public HTTPS: your AnythingMCP Cloud URL, or your own instance behind TLS.
 - **Claude Code:**
 
   ```bash

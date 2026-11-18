@@ -85,8 +85,8 @@ be kept and chooses **Accept** or **Decline**. The notice they accepted is
 stored with the project.
 
 After accepting, they refresh the connector's tool list in their AI client
-(in claude.ai: *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
-list*) and work as usual.
+(in claude.ai: **Plugins** (or **Customize**) → **Connectors** → the connector
+→ **⋮** → **Refresh tools list**) and work as usual.
 
 At any time they can **Stop** the project on the same page, and choose to
 erase everything that was not published. Their opt-out of

@@ -218,9 +218,9 @@ tools always read the current version).
 
 **claude.ai caches the tool list.** After you add the first skill to a server,
 turn on learning or memory for a user, or upgrade AnythingMCP, claude.ai keeps
-offering the tools it listed before. Refresh them under *Customize →
-Connectors →* the connector *→ ⋮ → Refresh tools list*; new chats then get the
-current tools and descriptions.
+offering the tools it listed before. Refresh them under **Plugins** (or
+**Customize**) → **Connectors** → the connector → **⋮** → **Refresh tools
+list**; new chats then get the current tools and descriptions.
 
 ---
 

@@ -295,7 +295,7 @@ export default function McpServerDetailPage() {
   // IMPORTANT: Claude *Desktop* does NOT accept this — its
   // claude_desktop_config.json only spawns local stdio commands, so a remote
   // http/url entry is silently skipped ("not a valid MCP server
-  // configuration"). For Claude Desktop use Customize → Connectors, or
+  // configuration"). For Claude Desktop use Plugins (or Customize) → Connectors, or
   // the mcp-remote bridge (claudeDesktopBridge* below).
   const claudeConfigOAuth = `{
   "mcpServers": {

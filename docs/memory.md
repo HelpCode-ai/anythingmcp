@@ -21,8 +21,9 @@ only those the user's access level allows. The shared `/mcp` endpoint is
 unchanged.
 
 claude.ai caches a connector's tool list: after memory is turned on for a user,
-refresh it under *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
-list* before the memory tools appear in new chats.
+refresh it under **Plugins** (or **Customize**) → **Connectors** → the
+connector → **⋮** → **Refresh tools list** before the memory tools appear in
+new chats.
 
 | Tool | Offered from | What it does |
 |---|---|---|

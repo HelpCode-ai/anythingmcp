@@ -39,7 +39,7 @@ const T = {
       `Without credentials it prints the install link instead: \`http://localhost:3000/connectors/store?install=${slug}\`. Then check the whole chain:`,
     connect: 'Connect Claude, ChatGPT, Copilot or Cursor',
     connectItems: (repo) => [
-      `**Claude (claude.ai, Desktop, mobile):** *Customize → Connectors → Add custom connector*, paste your MCP server URL and sign in. Claude connects from Anthropic's cloud, so the URL must be public HTTPS: your AnythingMCP Cloud URL, or your own instance behind TLS.`,
+      `**Claude (claude.ai, Desktop, mobile):** **Plugins** (or **Customize**) → **Connectors** → **+ Add** → **Add custom connector**, paste your MCP server URL and sign in. Claude connects from Anthropic's cloud, so the URL must be public HTTPS: your AnythingMCP Cloud URL, or your own instance behind TLS.`,
       `**Claude Code:**\n\n  \`\`\`bash\n  claude mcp add --transport http ${repo} http://localhost:4000/mcp --header "X-API-Key: <MCP_API_KEY>"\n  \`\`\``,
       `**Cursor** (\`.cursor/mcp.json\`) and **VS Code / GitHub Copilot** (\`.vscode/mcp.json\`, key \`servers\` instead of \`mcpServers\`, plus \`"type": "http"\`):\n\n  \`\`\`json\n  { "mcpServers": { "${repo}": { "url": "http://localhost:4000/mcp", "headers": { "X-API-Key": "<MCP_API_KEY>" } } } }\n  \`\`\``,
       '**ChatGPT:** add the public HTTPS URL as a connector (app) in ChatGPT\'s settings. A `localhost` URL does not work there.',
@@ -99,7 +99,7 @@ const T = {
       `Ohne Zugangsdaten gibt es stattdessen den Installationslink aus: \`http://localhost:3000/connectors/store?install=${slug}\`. Danach die ganze Kette prüfen:`,
     connect: 'Claude, ChatGPT, Copilot oder Cursor verbinden',
     connectItems: (repo) => [
-      `**Claude (claude.ai, Desktop, Mobil):** *Customize → Connectors → Add custom connector*, MCP-Server-URL einfügen und anmelden. Claude verbindet sich aus der Cloud von Anthropic, die URL muss also öffentlich per HTTPS erreichbar sein: deine AnythingMCP-Cloud-URL oder deine eigene Instanz mit TLS.`,
+      `**Claude (claude.ai, Desktop, Mobil):** **Plugins** (oder **Customize**) → **Connectors** → **+ Add** → **Add custom connector**, MCP-Server-URL einfügen und anmelden. Claude verbindet sich aus der Cloud von Anthropic, die URL muss also öffentlich per HTTPS erreichbar sein: deine AnythingMCP-Cloud-URL oder deine eigene Instanz mit TLS.`,
       `**Claude Code:**\n\n  \`\`\`bash\n  claude mcp add --transport http ${repo} http://localhost:4000/mcp --header "X-API-Key: <MCP_API_KEY>"\n  \`\`\``,
       `**Cursor** (\`.cursor/mcp.json\`) und **VS Code / GitHub Copilot** (\`.vscode/mcp.json\`, Schlüssel \`servers\` statt \`mcpServers\`, dazu \`"type": "http"\`):\n\n  \`\`\`json\n  { "mcpServers": { "${repo}": { "url": "http://localhost:4000/mcp", "headers": { "X-API-Key": "<MCP_API_KEY>" } } } }\n  \`\`\``,
       '**ChatGPT:** die öffentliche HTTPS-URL in den ChatGPT-Einstellungen als Connector (App) hinzufügen. Eine `localhost`-URL funktioniert dort nicht.',
