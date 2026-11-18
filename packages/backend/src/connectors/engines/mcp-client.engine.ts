@@ -10,7 +10,7 @@ import { withMcpFixedArguments } from '../mcp-connector-config.util';
 
 /** Pages of tools/list followed at most (MCP pagination). */
 const MAX_TOOL_LIST_PAGES = 50;
-/** Remote cleanup must not hold a completed tool call indefinitely. */
+/** Bound background cleanup before aborting the local transport. */
 const SESSION_TERMINATION_TIMEOUT_MS = 5_000;
 
 @Injectable()
@@ -113,13 +113,13 @@ export class McpClientEngine {
               arguments: args,
             });
           } finally {
-            await this.closeSession(retryClient, retryTransport);
+            void this.closeSession(retryClient, retryTransport);
           }
         }
       }
       throw error;
     } finally {
-      await this.closeSession(client, transport);
+      void this.closeSession(client, transport);
     }
   }
 
@@ -202,7 +202,7 @@ export class McpClientEngine {
           : {}),
       }));
     } finally {
-      await this.closeSession(client, transport);
+      void this.closeSession(client, transport);
     }
   }
 
@@ -221,7 +221,11 @@ export class McpClientEngine {
       if (timer !== undefined) clearTimeout(timer);
       // Also abort a DELETE that exceeded the deadline. Its rejection is still
       // observed by Promise.race, so it cannot become an unhandled rejection.
-      await client.close().catch(() => undefined);
+      try {
+        await client.close();
+      } catch {
+        // Background cleanup must not produce an unhandled rejection.
+      }
     }
   }
 

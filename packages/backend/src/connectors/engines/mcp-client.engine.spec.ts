@@ -58,6 +58,7 @@ describe('McpClientEngine endpoint resolution', () => {
   describe('session cleanup', () => {
     it('terminates the session before locally closing the client', async () => {
       await engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {});
+      await new Promise((resolve) => setImmediate(resolve));
       expect(transport.terminateSession).toHaveBeenCalledTimes(1);
       expect(transport.terminateSession.mock.invocationCallOrder[0]).toBeLessThan(client.close.mock.invocationCallOrder[0]);
     });
@@ -79,15 +80,44 @@ describe('McpClientEngine endpoint resolution', () => {
       expect(client.close).toHaveBeenCalledTimes(1);
     });
 
-    it('bounds remote cleanup and still closes locally if termination never answers', async () => {
+    it.each(['execute', 'listTools'] as const)('returns from %s before a hanging cleanup reaches its deadline', async (operation) => {
       jest.useFakeTimers();
       try {
         transport.terminateSession.mockReturnValue(new Promise<void>(() => undefined));
-        const call = engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {});
+        const call = operation === 'execute'
+          ? engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {})
+          : engine.listTools(config('https://mcp.example.com'));
+        const settled = jest.fn();
+        const outcome = call.then(settled);
         await jest.advanceTimersByTimeAsync(0);
+        expect(settled).toHaveBeenCalledWith(operation === 'execute' ? { content: [] } : []);
+        await outcome;
         expect(client.close).not.toHaveBeenCalled();
         await jest.advanceTimersByTimeAsync(5_000);
-        await expect(call).resolves.toEqual({ content: [] });
+        expect(client.close).toHaveBeenCalledTimes(1);
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it.each(['execute', 'listTools'] as const)('rejects %s without waiting for hanging cleanup', async (operation) => {
+      jest.useFakeTimers();
+      try {
+        const original = new Error('upstream request failed');
+        if (operation === 'execute') client.callTool.mockRejectedValueOnce(original);
+        else client.listTools.mockRejectedValueOnce(original);
+        transport.terminateSession.mockReturnValue(new Promise<void>(() => undefined));
+        const call = operation === 'execute'
+          ? engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {})
+          : engine.listTools(config('https://mcp.example.com'));
+        const rejected = jest.fn();
+        const outcome = call.catch(rejected);
+        await jest.advanceTimersByTimeAsync(0);
+        expect(rejected).toHaveBeenCalledWith(original);
+        await outcome;
+        expect(client.close).not.toHaveBeenCalled();
+        await jest.advanceTimersByTimeAsync(5_000);
         expect(client.close).toHaveBeenCalledTimes(1);
         expect(jest.getTimerCount()).toBe(0);
       } finally {

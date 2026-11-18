@@ -86,14 +86,15 @@ most servers listen.
 
 ### Remote session cleanup
 
-After discovery or a tool call, the bridge asks the remote server to terminate
-its HTTP session before closing the local client. This also applies to failed
+After discovery or a tool call, the bridge terminates its HTTP session in the
+background before closing the local client. This also applies to failed
 calls and each client used by an OAuth retry. Servers that issue no session ID
 receive no termination request.
 
 Cleanup is best effort: an unsupported or failed `DELETE` does not replace the
-tool result or its original error. The bridge waits at most five seconds for
-termination, then closes the local transport so cleanup cannot hang the call.
+tool result or its original error. Results and errors return without waiting
+for cleanup. Background termination has a five-second deadline, after which
+the bridge closes the local transport and aborts the pending request.
 This behavior is the same on Cloud and self-hosted installations.
 
 ### Endpoint Mapping

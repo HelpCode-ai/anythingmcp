@@ -18,8 +18,7 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
   let stateful: boolean;
   let deleteStatus: number;
   let deleteHangs: boolean;
-  let deleteClosed: Promise<void>;
-  let markDeleteClosed: () => void;
+  let deleteClosures: Promise<void>[];
   let callStatus: number;
   let listStatus: number;
   let responseMode: 'json' | 'sse';
@@ -30,6 +29,29 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
   const mapping = { method: 'echo', path: '/mcp' };
   const config = () => ({ baseUrl, authType: 'NONE' });
 
+  // execute/listTools now finish before the background DELETE reaches HTTP.
+  async function waitForDeletes(count = 1): Promise<void> {
+    const deadline = Date.now() + 2_000;
+    while (requests.filter((r) => r.method === 'DELETE').length < count) {
+      if (Date.now() >= deadline) throw new Error(`Expected ${count} background DELETE request(s)`);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  async function withoutWaitingForCleanup<T>(operation: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Operation waited for session cleanup')), 2_000);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
   beforeEach(async () => {
     sessions = new Set();
     requests = [];
@@ -37,7 +59,7 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
     stateful = true;
     deleteStatus = 200;
     deleteHangs = false;
-    deleteClosed = new Promise<void>((resolve) => { markDeleteClosed = resolve; });
+    deleteClosures = [];
     callStatus = 200;
     listStatus = 200;
     responseMode = 'json';
@@ -54,7 +76,7 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
       if (req.method === 'GET') { res.writeHead(405).end(); return; }
       if (req.method === 'DELETE') {
         if (deleteHangs) {
-          res.once('close', markDeleteClosed);
+          deleteClosures.push(new Promise<void>((resolve) => { res.once('close', resolve); }));
           return;
         }
         if (deleteStatus === 200 && session) sessions.delete(session);
@@ -116,6 +138,7 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
   it.each(['json', 'sse'] as const)('terminates the upstream session after a successful %s tool call', async (mode) => {
     responseMode = mode;
     await expect(engine.execute(config(), mapping, {})).resolves.toEqual(result);
+    await waitForDeletes();
     expect(requests.filter((r) => r.method === 'DELETE').map((r) => r.session)).toEqual(['bridge-test-1']);
     expect(sessions.size).toBe(0);
   });
@@ -124,6 +147,7 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
     await expect(engine.listTools(config())).resolves.toEqual([
       { name: 'echo', description: '', inputSchema: { type: 'object' } },
     ]);
+    await waitForDeletes();
     expect(sessions.size).toBe(0);
     expect(requests.filter((r) => r.method === 'DELETE')).toHaveLength(1);
   });
@@ -131,12 +155,14 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
   it('terminates the upstream session when a tool request fails', async () => {
     callStatus = 500;
     await expect(engine.execute(config(), mapping, {})).rejects.toThrow(/upstream fixture failure/);
+    await waitForDeletes();
     expect(sessions.size).toBe(0);
   });
 
   it('terminates the discovery session when tools/list fails', async () => {
     listStatus = 500;
     await expect(engine.listTools(config())).rejects.toThrow(/discovery fixture failure/);
+    await waitForDeletes();
     expect(sessions.size).toBe(0);
   });
 
@@ -148,6 +174,7 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
       authConfig: { tokenUrl: `${baseUrl}/token`, refreshToken: 'test-refresh-token' },
       connectorId: 'test-connector',
     }, mapping, {})).resolves.toEqual(result);
+    await waitForDeletes(2);
     expect(renewAfterRejection).toHaveBeenCalledTimes(1);
     expect(requests.filter((r) => r.method === 'DELETE')).toEqual(expect.arrayContaining([
       { method: 'DELETE', session: 'bridge-test-1', authorization: 'Bearer old-test-token' },
@@ -159,14 +186,31 @@ describe('McpClientEngine remote session lifecycle (real HTTP transport)', () =>
   it.each([405, 500])('keeps the tool result when the server refuses termination with HTTP %s', async (status) => {
     deleteStatus = status;
     await expect(engine.execute(config(), mapping, {})).resolves.toEqual(result);
+    await waitForDeletes();
     expect(requests.filter((r) => r.method === 'DELETE')).toHaveLength(1);
   });
 
   it('aborts a hanging DELETE after the cleanup deadline and preserves the result', async () => {
     deleteHangs = true;
-    await expect(engine.execute(config(), mapping, {})).resolves.toEqual(result);
-    await deleteClosed;
+    await expect(withoutWaitingForCleanup(engine.execute(config(), mapping, {}))).resolves.toEqual(result);
+    await waitForDeletes();
+    expect(sessions.size).toBe(1);
+    await Promise.all(deleteClosures);
     expect(requests.filter((r) => r.method === 'DELETE')).toHaveLength(1);
+  }, 15_000);
+
+  it('returns an OAuth retry result while both session DELETEs are hanging', async () => {
+    deleteHangs = true;
+    unauthorizedCalls = 1;
+    await expect(withoutWaitingForCleanup(engine.execute({
+      baseUrl,
+      authType: 'OAUTH2',
+      authConfig: { tokenUrl: `${baseUrl}/token`, refreshToken: 'test-refresh-token' },
+      connectorId: 'test-connector',
+    }, mapping, {}))).resolves.toEqual(result);
+    await waitForDeletes(2);
+    expect(sessions.size).toBe(2);
+    await Promise.all(deleteClosures);
   }, 15_000);
 
   it('sends no DELETE when the upstream is stateless', async () => {
