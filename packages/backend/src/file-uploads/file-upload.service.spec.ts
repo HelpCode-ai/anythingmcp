@@ -211,6 +211,15 @@ describe('FileUploadService', () => {
     expect(prisma.fileUpload.rows[0].state).toBe('ready');
   });
 
+  it('says a reference is not uploaded yet while its link still waits, and unknown otherwise', async () => {
+    const link = await svc.createLink({ organizationId: ORG, filename: 'cover.png' });
+    await expect(svc.resolveForEngine(link.file_ref, ORG)).rejects.toThrow(/not been uploaded yet/);
+    await expect(svc.publicUrl(link.file_ref, ORG)).rejects.toThrow(/not been uploaded yet/);
+    await expect(svc.resolveForEngine(link.file_ref, OTHER)).rejects.toThrow(/unknown or has expired/);
+    prisma.fileUpload.rows[0].uploadBy = new Date(Date.now() - 1000);
+    await expect(svc.resolveForEngine(link.file_ref, ORG)).rejects.toThrow(/unknown or has expired/);
+  });
+
   it('marks the link failed when storage fails after the link expired', async () => {
     const storage = (svc as any).storageInstance as FileStorage;
     jest.spyOn(storage, 'putStream').mockImplementation(async (_key: string, body: Readable) => {

@@ -46,6 +46,9 @@ const PURGED_RETENTION_MS = 30 * 24 * 3600_000;
 /** The same text for unknown, used, expired or foreign references: no existence oracle. */
 const UNKNOWN_REF =
   `This file reference is unknown or has expired. Upload the file again with ${FILE_UPLOAD_LINK_TOOL}.`;
+const NOT_UPLOADED_YET =
+  'This file has not been uploaded yet: its upload link is still waiting for the file. ' +
+  'Wait until the upload box shows it is done or the user says so, then call the tool again with the same file_ref.';
 
 export interface UploadedFile {
   buffer: Buffer;
@@ -395,6 +398,16 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /** Why a reference has no ready file: still waiting for its upload, or unknown/expired. */
+  private async missingRefMessage(ref: string, organizationId: string): Promise<string> {
+    const m = FILE_REF_RE.exec(ref.trim());
+    if (!m) return UNKNOWN_REF;
+    const waiting = await this.prisma.fileUpload.findFirst({
+      where: { id: m[1], organizationId, state: { in: ['pending', 'uploading'] }, uploadBy: { gt: new Date() } },
+    });
+    return waiting ? NOT_UPLOADED_YET : UNKNOWN_REF;
+  }
+
   /**
    * For the REST engine: the bytes behind `amcp-file:<id>`, only for a tool
    * call of the workspace that uploaded it.
@@ -402,7 +415,7 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
   async resolveForEngine(ref: string, organizationId: string | undefined): Promise<UploadedFile> {
     if (!organizationId) throw new Error(UNKNOWN_REF);
     const row = await this.readyRow(ref, organizationId);
-    if (!row) throw new Error(UNKNOWN_REF);
+    if (!row) throw new Error(await this.missingRefMessage(ref, organizationId));
     const { stream } = await this.storage.open(row.storageKey);
     const chunks: Buffer[] = [];
     for await (const c of stream) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
@@ -420,7 +433,7 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
   async publicUrl(ref: string, organizationId: string) {
     if (!this.enabled()) throw new ForbiddenException('File uploads are switched off on this instance.');
     const row = await this.readyRow(ref, organizationId);
-    if (!row) throw new NotFoundException(UNKNOWN_REF);
+    if (!row) throw new NotFoundException(await this.missingRefMessage(ref, organizationId));
     if (!publicAllowed(row.filename, row.mimeType)) {
       throw new BadRequestException(
         'Public links are only made for images (JPG, PNG, GIF, WebP), videos (MP4, MOV) and PDFs whose content matches the extension. ' +
