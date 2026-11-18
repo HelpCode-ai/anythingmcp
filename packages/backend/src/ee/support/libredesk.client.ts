@@ -16,6 +16,8 @@ export interface LibredeskMessage {
 export interface LibredeskConversation {
   uuid: string;
   inbox_channel?: string;
+  /** Open, Replied, Snoozed, Resolved or Closed. */
+  status?: string;
   tags?: string[] | null;
   contact?: {
     id: number;

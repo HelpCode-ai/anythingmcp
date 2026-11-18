@@ -7,6 +7,8 @@ import type { DeskMessage } from './support-telegram-setup.service';
 /** One notice per conversation in this window, however often it is handed off. */
 const NOTICE_WINDOW_MS = 6 * 60 * 60_000;
 const SEEN_MAX = 2_000;
+/** Conversation statuses in which nobody is waiting for a person. */
+const CLOSED_STATUSES = new Set(['resolved', 'closed']);
 
 /**
  * What the customer reads when the desk's AI assistant hands the chat to a
@@ -59,6 +61,10 @@ export class SupportHandoffNoticeService {
     if (!assistant || !msg?.conversation_uuid) return false;
     // The handoff note: private, written by the AI assistant's user.
     if (!msg.private || msg.sender_type !== 'agent' || msg.sender_id !== assistant) return false;
+    // Activity rows ("marked the conversation as Resolved", "Assigned to
+    // Support team") are private and carry the assistant as sender too. A
+    // resolve after a customer's "Thanks" is not a handoff (2026-11-18).
+    if (msg.type === 'activity') return false;
     const uuid = msg.conversation_uuid;
     const last = this.noticed.get(uuid);
     if (last !== undefined && now - last < NOTICE_WINDOW_MS) return false;
@@ -68,6 +74,11 @@ export class SupportHandoffNoticeService {
     try {
       const conv = await desk.conversation(uuid);
       if (!conv || conv.inbox_channel !== 'livechat') return false;
+      // A resolved or closed conversation waits for nobody.
+      if (CLOSED_STATUSES.has((conv.status || '').toLowerCase())) {
+        this.forget(uuid, last);
+        return false;
+      }
       const notes = await desk.privateNotes(uuid).catch(() => []);
       const lang = triageLanguage(notes.map((n) => n.text_content || n.content));
       const text = HANDOFF_NOTICES[lang ?? 'en'] ?? HANDOFF_NOTICES.en;
@@ -77,6 +88,12 @@ export class SupportHandoffNoticeService {
       this.logger.warn(`Handoff notice for ${uuid} failed: ${compactError((err as Error).message)}`);
       return false;
     }
+  }
+
+  /** Undo remember() when no notice was sent, so a later handoff still gets one. */
+  private forget(uuid: string, previous: number | undefined) {
+    if (previous === undefined) this.noticed.delete(uuid);
+    else this.noticed.set(uuid, previous);
   }
 
   private remember(uuid: string, now: number) {
