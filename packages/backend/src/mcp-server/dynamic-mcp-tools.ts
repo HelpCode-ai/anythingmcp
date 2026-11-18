@@ -1557,6 +1557,8 @@ export class DynamicMcpTools {
         'x-ratelimit-reset',
         'www-authenticate',
         'content-type',
+        // Intuit's per-request correlation id, which its support asks for.
+        'intuit_tid',
       ];
       for (const key of headerKeys) {
         const value = res.headers?.[key];

@@ -959,13 +959,16 @@ export class RestEngine {
           // every retry used to look identical to one that failed outright —
           // there was no way to tell a flaky upstream from a broken connector.
           if (transient) {
+            // Intuit's per-request correlation id (not a secret): its support
+            // asks for it to trace a failed call.
+            const tid = (error as AxiosError).response?.headers?.['intuit_tid'];
             this.logger.warn(
               // The status first: axios also sets a code on HTTP errors
               // (ERR_BAD_REQUEST for a 429), which hid the status here.
               `Gave up after ${attempt + 1} attempts on a transient upstream failure: ${
                 (error as AxiosError).response?.status ??
                 (error as AxiosError).code
-              } ${method} ${logUrl}`,
+              } ${method} ${logUrl}${tid ? ` intuit_tid=${String(tid)}` : ''}`,
             );
           }
           throw this.describeConnectionError(error, attempt + 1, method);
