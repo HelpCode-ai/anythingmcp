@@ -1,0 +1,79 @@
+{
+  "slug": "loom",
+  "name": "Loom (agent memory)",
+  "aliases": [
+    "ClickHouse Loom"
+  ],
+  "description": "Connect to your own Loom agent memory server over MCP. Discover its tools to retrieve saved context and, with an explicitly authorized token, save or update memory within the selected namespaces.",
+  "instructions": "## Loom (agent memory)\nConnect to your own [Loom](https://github.com/ClickHouse/loom) deployment over its Streamable HTTP MCP endpoint.\n\n**Setup**\n1. In Loom, open **Settings > Tokens > New token** and create a dedicated token. Select only the intended namespaces with the `viewer` role for read-only access. Grant write roles only when you explicitly want the assistant to save or change memory. Avoid a wildcard namespace scope.\n2. Set `LOOM_MCP_URL` to the full HTTPS endpoint, for example `https://loom.example.com/mcp`. Keep any reverse-proxy path. Optional `toolset` and `schema_profile` query parameters select the listed tools and schema shape; they do not grant permissions. Never put a token in the URL.\n3. Paste the token into `LOOM_MCP_TOKEN` without the `Bearer` prefix. AnythingMCP sends it in the `Authorization: Bearer` header.\n4. Install the connector. AnythingMCP discovers the deployment's tools through `tools/list`. Use **Discover tools** after changing the server's toolset. The catalog snapshot contains only `loom_activate`, which reads the session primer; discovery supplies the actual tools and schemas. The discovered list may include write tools, so use the scoped token to enforce read-only access.\n\n**Reachability**\nOn AnythingMCP Cloud, Loom must be reachable over public HTTPS. A loopback-only Loom server works only with self-hosted AnythingMCP and an appropriate network route; localhost inside an AnythingMCP container is that container, not the host running Loom. This preset requires HTTPS in both deployment modes. Follow the [MCP bridge guide](https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md) for network setup.\n\n**One connector, one identity**\nEvery caller of this connector acts as the Loom identity represented by its one token. Create separate connectors with separate tokens for different principals. Restrict access to each connector accordingly.\n\nBefore relying on the connection, check discovery, an allowed read, and refusal outside the token's namespace scope. If writes are authorized, also check a permitted write and retrieval from another session. No live AnythingMCP-to-Loom connection has been verified for this preset.",
+  "region": "intl",
+  "category": "knowledge",
+  "icon": "loom",
+  "docsUrl": "https://github.com/ClickHouse/loom/blob/v1.2.0/docs/reference/mcp.md",
+  "prerequisites": "Your own Loom deployment with a reachable HTTPS MCP endpoint, and a dedicated bearer token scoped to the intended namespaces. Use viewer roles unless writes are explicitly wanted. AnythingMCP Cloud requires public HTTPS; loopback-only servers require self-hosted AnythingMCP with an appropriate network route.",
+  "requiredEnvVars": [
+    "LOOM_MCP_URL",
+    "LOOM_MCP_TOKEN"
+  ],
+  "envVarMeta": {
+    "LOOM_MCP_URL": {
+      "label": "Loom MCP endpoint",
+      "kind": "address",
+      "secret": false,
+      "help": "Full HTTPS endpoint, including /mcp or your reverse-proxy path. Optional toolset and schema_profile query parameters are allowed. Never include a token or URL credentials.",
+      "example": "https://loom.example.com/mcp",
+      "pattern": "^https://[^\\s/?#@]+/[^\\s?#]+(?:\\?(?:toolset|schema_profile)=[a-z0-9_+,%.-]+(?:&(?:toolset|schema_profile)=[a-z0-9_+,%.-]+)*)?$",
+      "patternMessage": "Use the full HTTPS MCP endpoint without URL credentials or a fragment. Only toolset and schema_profile query parameters are allowed."
+    },
+    "LOOM_MCP_TOKEN": {
+      "label": "Dedicated Loom bearer token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Create a token in Loom Settings > Tokens > New token. Scope it to the intended namespaces with viewer roles unless writes are wanted. Paste only the token, without Bearer.",
+      "pattern": "^\\S+$",
+      "patternMessage": "Paste the token alone, without Bearer or spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Loom refused the bearer token. Check that it is valid and has not expired or been revoked, then replace LOOM_MCP_TOKEN.",
+      "field": "LOOM_MCP_TOKEN"
+    },
+    "unreachable": {
+      "hint": "Check the complete HTTPS MCP endpoint and the network route from AnythingMCP. Cloud cannot reach a loopback-only Loom server.",
+      "field": "LOOM_MCP_URL"
+    }
+  },
+  "connector": {
+    "name": "Loom (agent memory)",
+    "type": "MCP",
+    "baseUrl": "{{LOOM_MCP_URL}}",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{LOOM_MCP_TOKEN}}"
+    },
+    "config": {
+      "mcpToolPrefix": "loom_"
+    }
+  },
+  "tools": [
+    {
+      "name": "loom_activate",
+      "description": "Read the Loom session primer with the token identity's saved profile, preferences and context. Call when the user asks to activate Loom; subsequent tools come from your server's discovery.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "endpointMapping": {
+        "method": "loom_activate",
+        "path": "/mcp"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    }
+  ]
+}

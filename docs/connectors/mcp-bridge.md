@@ -243,6 +243,7 @@ declares none, so a refused token is reported on the setup form before anything 
 
 | Adapter | Endpoint | Auth |
 |---------|----------|------|
+| [Loom (agent memory)](loom.md) | Your complete HTTPS MCP endpoint, e.g. `https://loom.example.com/mcp` | Bearer (dedicated, namespace-scoped token) |
 | Splunk | `https://<host>:8089/services/mcp` | Bearer (encrypted MCP token) |
 | Linear | `https://mcp.linear.app/mcp` | Bearer (API key) |
 | GitHub | `https://api.githubcopilot.com/mcp/` | Bearer (personal access token) |
