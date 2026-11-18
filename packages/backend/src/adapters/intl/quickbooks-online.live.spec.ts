@@ -16,8 +16,9 @@ import { getAdapter, listAdapters } from '../catalog';
  *      client authentication at the token endpoint, the base URL built from
  *      the environment (production or sandbox) and the realm id, minorversion
  *      75 on every call, the query endpoint, the create and sparse-update
- *      bodies, the errorWhen rule for a Fault in a 200 answer, and which tools
- *      install switched off (send invoice, delete invoice).
+ *      bodies (customer, invoice, payment applied to an invoice), the
+ *      errorWhen rule for a Fault in a 200 answer, and which tools install
+ *      switched off (send invoice, delete invoice).
  *
  *   2. Live: skipped unless QBO_ACCESS_TOKEN and QBO_REALM_ID are set. An
  *      access token of a sandbox company (Intuit's OAuth 2.0 Playground gives
@@ -171,13 +172,16 @@ describe('quickbooks-online adapter: static spec conformance', () => {
     for (const t of a.tools) expect(`${t.name}:${t.endpointMapping.queryParams?.minorversion}`).toBe(`${t.name}:75`);
   });
 
-  it('installs send and delete switched off, and keeps invoice and customer creation on', () => {
+  it('installs send and delete switched off, and keeps invoice, payment and customer creation on', () => {
     expect(a.tools.filter((t) => t.enabled === false).map((t) => t.name).sort()).toEqual(['qbo_delete_invoice', 'qbo_send_invoice']);
     expect(a.instructions).toMatch(/Switched off at install\*\*: `qbo_send_invoice`/);
     expect(a.instructions).toMatch(/no drafts/);
     expect(annotationsOf(tool('qbo_delete_invoice')).destructiveHint).toBe(true);
     expect(annotationsOf(tool('qbo_update_customer')).destructiveHint).toBe(true);
     expect(annotationsOf(tool('qbo_create_invoice')).destructiveHint).toBe(false);
+    expect(tool('qbo_create_payment').enabled).toBeUndefined();
+    expect(annotationsOf(tool('qbo_create_payment')).readOnlyHint).toBe(false);
+    expect(annotationsOf(tool('qbo_create_payment')).destructiveHint).toBe(false);
   });
 
   it('marks queries, records and reports read-only', () => {
@@ -221,6 +225,7 @@ describe('quickbooks-online adapter: static spec conformance', () => {
     ['qbo_create_customer', { display_name: 'Acme' }, 'POST', '/customer'],
     ['qbo_update_customer', { id: '58', sync_token: '0' }, 'POST', '/customer'],
     ['qbo_create_invoice', { customer_id: '58', lines: [] }, 'POST', '/invoice'],
+    ['qbo_create_payment', { customer_id: '58', total_amt: 150 }, 'POST', '/payment'],
     ['qbo_send_invoice', { id: '130' }, 'POST', '/invoice/130/send'],
     ['qbo_delete_invoice', { id: '130', sync_token: '2' }, 'POST', '/invoice'],
     ['qbo_report_profit_and_loss', {}, 'GET', '/reports/ProfitAndLoss'],
@@ -272,6 +277,46 @@ describe('quickbooks-online adapter: static spec conformance', () => {
     const lines = [{ DetailType: 'SalesItemLineDetail', Amount: 200, SalesItemLineDetail: { ItemRef: { value: '1' }, Qty: 2, UnitPrice: 100 } }];
     await call('qbo_create_invoice', { customer_id: '58', lines, due_date: '2026-11-01', additional_fields: { CustomerMemo: { value: 'Thanks' } } });
     expect(sent().data).toEqual({ CustomerRef: { value: '58' }, Line: lines, DueDate: '2026-11-01', CustomerMemo: { value: 'Thanks' } });
+  });
+
+  it('records a payment applied to an invoice with the references as given', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    const lines = [{ Amount: 150, LinkedTxn: [{ TxnId: '130', TxnType: 'Invoice' }] }];
+    await call('qbo_create_payment', {
+      customer_id: '58',
+      total_amt: 150,
+      lines,
+      txn_date: '2026-11-18',
+      payment_method_ref: { value: '2' },
+      deposit_to_account_ref: { value: '35' },
+      payment_ref_num: 'CHK-1001',
+      private_note: 'Paid by check',
+      currency_ref: { value: 'USD' },
+      additional_fields: { ExchangeRate: 1, TotalAmt: 999 },
+    });
+    expect(sent().params).toEqual({ minorversion: '75' });
+    expect(sent().data).toEqual({
+      CustomerRef: { value: '58' },
+      TotalAmt: 150,
+      Line: lines,
+      TxnDate: '2026-11-18',
+      PaymentMethodRef: { value: '2' },
+      DepositToAccountRef: { value: '35' },
+      PaymentRefNum: 'CHK-1001',
+      PrivateNote: 'Paid by check',
+      CurrencyRef: { value: 'USD' },
+      ExchangeRate: 1,
+    });
+  });
+
+  it('records an unapplied payment with only the required fields, and no longer calls payments out of scope', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    await call('qbo_create_payment', { customer_id: '58', total_amt: 75.5 });
+    expect(sent().data).toEqual({ CustomerRef: { value: '58' }, TotalAmt: 75.5 });
+    expect(tool('qbo_create_payment').parameters.required).toEqual(['customer_id', 'total_amt']);
+    expect(a.instructions).toMatch(/LinkedTxn/);
+    expect(a.instructions).not.toMatch(/Out of scope here\*\*:[^\n]*payments/);
+    expect(a.instructions).toMatch(/Out of scope here\*\*:[^\n]*bank feeds/);
   });
 
   it('sends an invoice with an empty octet-stream body, and deletes with operation=delete', async () => {
