@@ -11,7 +11,8 @@ import { OrgSettingsService } from './org-settings.service';
  *               workspace (the behaviour before this setting existed)
  *   restricted  a member who is not an admin sees only what their AI client
  *               can use: their own calls, the connectors their roles reach,
- *               and the servers that hold one of those connectors
+ *               and the MCP servers they own (never another member's server,
+ *               even one holding a connector they may see)
  *
  * Stored in `org_settings` under `member_visibility`. No row, or any value
  * other than `restricted`, reads as `open`, so a workspace that never touched
@@ -107,19 +108,26 @@ export function toolWhere(scope: VisibilityScope, connector: { userId: string })
 }
 
 /**
- * Prisma `where` for MCP servers the scope may see: owned by the caller, or
- * holding at least one connector the caller may see. `{}` when not
- * restricted. A server with no connector is visible to its owner only. Always
- * combine it with the `organizationId` filter using AND.
+ * Prisma `where` for MCP servers the scope may see: in restricted mode only the
+ * servers the caller owns. `{}` when not restricted.
+ *
+ * A server's name ("Default (Alice)"), its endpoint path, its connectors and
+ * its usage describe another member's setup, so a restricted member never
+ * sees a server of someone else, not even one holding a connector they may
+ * see: they reach shared connectors through the workspace connection or their
+ * own server. Inside their own servers they still see only the connectors
+ * `connectorWhere` allows. Always combine it with the `organizationId` filter
+ * using AND.
  */
 export function serverWhere(scope: VisibilityScope): Prisma.McpServerConfigWhereInput {
   if (!scope.restricted) return {};
-  return {
-    OR: [
-      { userId: scope.userId },
-      { connectors: { some: { connector: connectorWhere(scope) } } },
-    ],
-  };
+  return { userId: scope.userId };
+}
+
+/** In-memory twin of `serverWhere` for one server row. */
+export function canSeeServer(scope: VisibilityScope, server: { userId: string | null }): boolean {
+  if (!scope.restricted) return true;
+  return server.userId === scope.userId;
 }
 
 /**

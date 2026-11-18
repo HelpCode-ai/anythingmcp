@@ -111,6 +111,13 @@ describe('odooNoDatabaseAdvice (a tool call answered "No database is selected")'
 });
 
 describe('odooOrigin', () => {
+  it('trims a long run of trailing slashes in linear time (CodeQL js/polynomial-redos)', () => {
+    const started = Date.now();
+    expect(odooOrigin('not a url' + '/'.repeat(100_000))).toBe('not a url');
+    expect(odooOrigin('erp.example.com/json/2///')).toBe('erp.example.com');
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it("drops the JSON-2 path, where Odoo's web routes are not served", () => {
     expect(odooOrigin('https://binikit.odoo.com/json/2')).toBe('https://binikit.odoo.com');
     expect(odooOrigin('https://erp.example.com:8069/')).toBe('https://erp.example.com:8069');

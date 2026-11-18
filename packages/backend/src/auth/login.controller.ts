@@ -306,7 +306,8 @@ export class LoginController {
   /**
    * The name of the MCP server this client asked for (RFC 8707 `resource`),
    * for the consent text. Only for a signed-in user who belongs to that
-   * server's workspace: the page is otherwise unauthenticated.
+   * server's workspace and may see it (member visibility: a restricted member
+   * is shown only their own servers): the page is otherwise unauthenticated.
    */
   private async requestedServerName(req: Request, userId: string | undefined): Promise<string | null> {
     if (!userId) return null;
@@ -323,7 +324,9 @@ export class LoginController {
         where: { userId, organizationId: server.organizationId, deactivatedAt: null },
         select: { userId: true },
       });
-      return member ? server.name : null;
+      if (!member) return null;
+      const visible = await this.grants.keepVisible(userId, [{ id: serverId, organizationId: server.organizationId }]);
+      return visible.length > 0 ? server.name : null;
     } catch {
       return null;
     }
@@ -509,8 +512,9 @@ export class LoginController {
       this.configService.get<string>('MCP_SERVER_NAME') || 'AnythingMCP';
 
     // CSRF: the signed cookie must match the form field. Reject before doing
-    // anything with the submitted credentials.
-    if (!this.verifyCsrf(req, body.csrf)) {
+    // anything with the submitted credentials. A POST without a form body
+    // (bots, replayed requests) has no body at all: treat it the same way.
+    if (!body || !this.verifyCsrf(req, body.csrf)) {
       this.logger.warn('Rejected login with missing/invalid CSRF token');
       res.clearCookie('login_csrf');
       return res.redirect(
@@ -1614,7 +1618,12 @@ export class LoginController {
     // Nothing to choose between: one server, or one workspace whose servers are
     // the only thing on offer. Grant it and carry on without a screen.
     if (servers.length <= 1) {
-      if (servers.length === 1) {
+      if (targets.length === 1 && (await this.grants.restrictedIn(userId, targets[0].organizationId))) {
+        // Member visibility: a restricted member is offered only their own
+        // server, which often holds none of the connectors shared with them.
+        // The whole workspace gives them every tool their roles allow.
+        await this.grants.grantWholeOrganization(consent.clientId, userId, targets[0].organizationId);
+      } else if (servers.length === 1) {
         await this.grants.grantServers(consent.clientId, userId, [servers[0].id]);
       } else if (targets.length === 1) {
         // No servers yet — grant the workspace, so a server created later is
@@ -1690,7 +1699,7 @@ export class LoginController {
     @Body() body: { servers?: string | string[]; workspace?: string; csrf?: string },
     @Res() res: Response,
   ) {
-    if (!this.verifyCsrf(req, body.csrf)) {
+    if (!body || !this.verifyCsrf(req, body.csrf)) {
       this.logger.warn('Rejected server selection with missing/invalid CSRF token');
       res.clearCookie('login_csrf');
       return res.redirect(

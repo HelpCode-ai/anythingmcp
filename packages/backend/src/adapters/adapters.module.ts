@@ -17,9 +17,10 @@ import { LicenseModule } from '../license/license.module';
 import { McpServersModule } from '../mcp-servers/mcp-servers.module';
 import { ConnectorsModule } from '../connectors/connectors.module';
 import { SettingsModule } from '../settings/settings.module';
+import { MemberVisibilityModule } from '../settings/member-visibility.module';
 
 @Module({
-  imports: [McpServerModule, LicenseModule, McpServersModule, ConnectorsModule, SettingsModule],
+  imports: [McpServerModule, LicenseModule, McpServersModule, ConnectorsModule, SettingsModule, MemberVisibilityModule],
   controllers: [
     AdaptersPublicController,
     AdaptersController,

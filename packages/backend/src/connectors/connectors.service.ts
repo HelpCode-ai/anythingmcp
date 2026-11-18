@@ -19,6 +19,8 @@ import { SoapEngine, WsdlReadError } from './engines/soap.engine';
 import { wsdlUrlForLog } from './parsers/wsdl.parser';
 import { connectorSecretValues } from './connector-secrets.util';
 import { moveUrlCredentials, urlUserinfo } from './database-url-credentials.util';
+import { BASE_URL_SECRET_RULES, baseUrlSecrets } from './base-url-secrets.util';
+import { SECRET_GUARDED_TYPES, SecretExtractor } from './secret-extraction.util';
 import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine, assertSafeSqlIdentifierVars } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
@@ -74,6 +76,12 @@ function errorKind(err: unknown): string {
   return typeof name === 'string' && name ? name : 'Error';
 }
 
+/** A catalog connector's install-time base URL (`config.baseUrlBaseline`), or null. */
+function baselineOf(config: unknown): string | null {
+  const value = (config as { baseUrlBaseline?: unknown } | null | undefined)?.baseUrlBaseline;
+  return typeof value === 'string' ? value : null;
+}
+
 /** Connector ids for a log line: the first few, then how many more. */
 function idsForLog(ids: string[], max = 20): string {
   if (ids.length === 0) return '';
@@ -111,10 +119,14 @@ export class ConnectorsService implements OnApplicationBootstrap {
   onApplicationBootstrap() {
     // Not awaited, so a large table never holds up the start. The pass
     // catches its own errors; the catch here is for anything it did not
-    // foresee, so that nothing it does can stop the boot.
-    void this.repairDatabaseUrlCredentials().catch((err) =>
-      this.logger.error(`Database connection strings not checked: ${errorKind(err)}`),
-    );
+    // foresee, so that nothing it does can stop the boot. The base URL pass
+    // runs after the database one, so the two never read the table at once.
+    void this.repairDatabaseUrlCredentials()
+      .catch((err) =>
+        this.logger.error(`Database connection strings not checked: ${errorKind(err)}`),
+      )
+      .then(() => this.repairBaseUrlSecrets())
+      .catch((err) => this.logger.error(`Base URL secrets not checked: ${errorKind(err)}`));
   }
 
   async findAll(): Promise<Connector[]> {
@@ -438,6 +450,137 @@ export class ConnectorsService implements OnApplicationBootstrap {
     const summary =
       `Database connection strings: credentials of ${moved.length} connector${moved.length === 1 ? '' : 's'} ` +
       `moved into the encrypted auth config${idsForLog(moved)}; ` +
+      `${leftAsIs.length} left as is${idsForLog(leftAsIs)}; ` +
+      `${failed.length} failed${idsForLog(failed)}`;
+    if (failed.length > 0) this.logger.warn(summary);
+    else this.logger.log(summary);
+    return { moved, leftAsIs, failed };
+  }
+
+  /**
+   * Move the secrets still written in stored HTTP base URLs (a Bitrix24,
+   * Slack, Discord, Teams, Zapier or Make webhook token, a Telegram bot
+   * token, a `?api_key=` value, `user:password@`) into the connector's
+   * encrypted variables, leaving `{{VAR}}` in the URL. A save has done this
+   * since the extraction existed (SecretExtractor), and for webhook URLs and
+   * userinfo since its rules learned them; connectors stored before kept the
+   * secret in the plaintext `base_url` until someone saved them. This does
+   * it for them at boot, like `repairDatabaseUrlCredentials`.
+   *
+   * - The rules are a save's, minus the long-random-token heuristic
+   *   (base-url-secrets.util.ts): nobody sees a notice for what this pass
+   *   moves, so it only moves shapes that are certain. Only the secret
+   *   segment moves; host and path stay readable. `config.baseUrlBaseline`
+   *   (catalog connectors) holds the same URL and gets the same variable.
+   * - Calls are unchanged: `{{VAR}}` in a base URL is replaced verbatim from
+   *   the variables on every call (env-interpolation.util.ts), so the URL
+   *   sent is byte for byte the one stored before. A variable that already
+   *   holds the value is reused.
+   * - Variables are read as stored and decrypted strictly: a row whose
+   *   variables cannot be decrypted is never written (its secret stays, and
+   *   stays masked on read).
+   * - Instance-level maintenance, outside `tenantTx`, like the database
+   *   pass. Each row is written by id, and only if its base URL and
+   *   `updatedAt` are still what was read, so a save in between, or a
+   *   second instance running the same pass, wins. A second run finds
+   *   nothing to move.
+   * - Never throws. Logs connector ids and counts only: no URL, variable
+   *   value or error message.
+   */
+  async repairBaseUrlSecrets(): Promise<{
+    moved: string[];
+    leftAsIs: string[];
+    failed: string[];
+  }> {
+    const moved: string[] = [];
+    const leftAsIs: string[] = [];
+    const failed: string[] = [];
+    type Row = {
+      id: string;
+      name: string;
+      type: string;
+      baseUrl: string;
+      config: unknown;
+      updatedAt: Date;
+    };
+    let candidates: Row[];
+    let storedEnv: Map<string, unknown>;
+    try {
+      const rows: Row[] = await this.prisma.connector.findMany({
+        where: { type: { in: [...SECRET_GUARDED_TYPES] as ConnectorType[] } },
+        select: { id: true, name: true, type: true, baseUrl: true, config: true, updatedAt: true },
+        orderBy: { id: 'asc' },
+      });
+      candidates = rows.filter(
+        (r) => baseUrlSecrets(r.baseUrl).length > 0 || baseUrlSecrets(baselineOf(r.config)).length > 0,
+      );
+      storedEnv = new Map();
+      if (candidates.length > 0) {
+        // Raw on purpose: what is stored, before the at-rest extension, so
+        // that "cannot be decrypted" is told apart from "no variables".
+        const ids = candidates.map((r) => r.id);
+        const envRows = await this.prisma.$queryRaw<Array<{ id: string; env_vars: unknown }>>`
+          SELECT id, env_vars FROM connectors WHERE id = ANY(${ids})`;
+        for (const r of envRows) storedEnv.set(r.id, r.env_vars);
+      }
+    } catch (err) {
+      this.logger.error(`Base URL secrets not checked: ${errorKind(err)}`);
+      return { moved, leftAsIs, failed };
+    }
+
+    for (const row of candidates) {
+      const env = openEnvVarsStrict(storedEnv.get(row.id));
+      if (env === null) {
+        failed.push(row.id);
+        this.logger.warn(
+          `Connector ${row.id}: its variables could not be read (wrong ENCRYPTION_KEY?), the secret in its base URL is left as is`,
+        );
+        continue;
+      }
+      try {
+        const strings = Object.fromEntries(
+          Object.entries(env).filter(([, v]) => typeof v === 'string'),
+        ) as Record<string, string>;
+        const secrets = new SecretExtractor(row.name, strings);
+        const baseUrl = secrets.extractUrl(row.baseUrl, 'baseUrl', BASE_URL_SECRET_RULES);
+        const baseline = baselineOf(row.config);
+        const cleanedBaseline =
+          baseline === null
+            ? null
+            : secrets.extractUrl(baseline, 'config.baseUrlBaseline', BASE_URL_SECRET_RULES);
+        if (baseUrl === row.baseUrl && cleanedBaseline === baseline) {
+          leftAsIs.push(row.id);
+          continue;
+        }
+        const data: Prisma.ConnectorUpdateManyMutationInput = { baseUrl };
+        if (Object.keys(secrets.newEnvVars).length > 0) {
+          // Every stored key is kept, non-string values included; the
+          // extension encrypts the whole object on write.
+          data.envVars = { ...env, ...secrets.newEnvVars } as Prisma.InputJsonValue;
+        }
+        if (cleanedBaseline !== baseline) {
+          data.config = {
+            ...(row.config as Record<string, unknown>),
+            baseUrlBaseline: cleanedBaseline,
+          } as Prisma.InputJsonValue;
+        }
+        const { count } = await this.prisma.connector.updateMany({
+          where: { id: row.id, baseUrl: row.baseUrl, updatedAt: row.updatedAt },
+          data,
+        });
+        // No row: it was saved, or repaired by another instance, in between.
+        (count > 0 ? moved : leftAsIs).push(row.id);
+      } catch (err) {
+        failed.push(row.id);
+        this.logger.warn(
+          `Connector ${row.id}: moving the secret in its base URL failed (${errorKind(err)}), the connector is left as is`,
+        );
+      }
+    }
+
+    const summary =
+      `Base URL secrets: secrets of ${moved.length} connector${moved.length === 1 ? '' : 's'} ` +
+      `moved into encrypted variables${idsForLog(moved)}; ` +
       `${leftAsIs.length} left as is${idsForLog(leftAsIs)}; ` +
       `${failed.length} failed${idsForLog(failed)}`;
     if (failed.length > 0) this.logger.warn(summary);

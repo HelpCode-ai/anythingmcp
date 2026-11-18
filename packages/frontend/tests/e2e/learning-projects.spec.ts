@@ -17,6 +17,7 @@ interface Setup {
   allowance?: { max: number | null; full: boolean; plan: string; used: number };
   projects?: any[];
   mine?: any[];
+  folders?: any[];
 }
 
 const PROJECT = {
@@ -42,6 +43,7 @@ const TOPIC = {
   id: 't1',
   title: 'Old windows',
   whenToUse: 'Quotes for old windows',
+  folder: null,
   draftSkillId: 'sk-d',
   publishedSkillId: null,
   publishedAt: null,
@@ -102,6 +104,8 @@ async function fakeSession(page: Page, setup: Setup) {
       return json({ topic: { id: 't1', title: 'Old windows' }, instruction: 'x', body: '## Rules\n- Check the groove width first', included: 1, dropped: 0 });
     }
     if (p === '/api/learning/topics/t1/publish') return json({ skillId: 'sk-p', lessons: 1, dropped: 0 });
+    if (p === '/api/learning/projects/p1/topics' && method === 'POST') return json({ id: 't2' });
+    if (p === '/api/learning/topics/t1' && method === 'PATCH') return json({ id: 't1' });
     if (p === '/api/learning/me') return json(state.mine);
     if (/^\/api\/learning\/projects\/[^/]+\/(consent|withdraw)$/.test(p)) {
       state.mine = [];
@@ -114,7 +118,7 @@ async function fakeSession(page: Page, setup: Setup) {
       ]);
     }
     if (p === '/api/mcp-servers') return json([{ id: 's1', name: 'Sales server' }]);
-    if (p === '/api/knowledge-folders') return json({ folders: [], restrictionsAvailable: false });
+    if (p === '/api/knowledge-folders') return json({ folders: setup.folders ?? [], restrictionsAvailable: false });
     if (p === '/api/users/me/onboarding-state') return json({ onboardingCompletedAt: '2026-01-01T00:00:00Z' });
     if (p === '/api/users/me') return json(user);
     if (p === '/api/organizations/current') return json({ id: 'o1', name: 'Acme', createdAt: '2026-01-01' });
@@ -190,6 +194,9 @@ test('an editor confirms a lesson, previews the topic and publishes it, without 
 
   const topic = page.getByTestId('learning-topic');
   await expect(topic).toContainText('Confirmed changes to publish');
+  // Topics are set by admins.
+  await expect(topic.getByRole('button', { name: 'Edit' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '+ Add a topic' })).toHaveCount(0);
   await topic.getByRole('button', { name: 'Preview' }).click();
   await expect(topic).toContainText('Check the groove width first');
   await topic.getByRole('button', { name: 'Publish' }).click();
@@ -205,6 +212,55 @@ test('an editor confirms a lesson, previews the topic and publishes it, without 
   await expect
     .poll(() => calls.find((c) => c.method === 'PATCH' && c.path === '/api/learning/lessons/l1')?.body)
     .toEqual({ status: 'confirmed' });
+});
+
+test('an admin adds a topic in its own folder and moves an existing one', async ({ page }) => {
+  const folder = (id: string, name: string) => ({
+    id,
+    parentId: null,
+    name,
+    description: null,
+    roleIds: [],
+    path: name,
+    depth: 0,
+    skillCount: 0,
+    memoryCount: 0,
+  });
+  const { calls } = await fakeSession(page, {
+    role: 'ADMIN',
+    projects: [PROJECT],
+    folders: [folder('f-win', 'Windows'), folder('f-shop', 'Shop support')],
+  });
+  await page.goto('/knowledge-graph/learning/p1');
+
+  const topic = page.getByTestId('learning-topic');
+  await expect(topic).toContainText('No folder');
+  await page.getByRole('button', { name: '+ Add a topic' }).click();
+  const form = page.getByTestId('learning-topic-form');
+  await form.getByRole('textbox', { name: 'Topic' }).fill('Shop support');
+  await form.getByRole('textbox', { name: 'When to use' }).fill('Questions about the web shop');
+  await form.getByRole('combobox', { name: 'File the skills in' }).click();
+  await page.getByRole('option', { name: 'Shop support' }).click();
+  await form.getByRole('button', { name: 'Add a topic' }).click();
+  await expect(page.getByText('Topic "Shop support" added.')).toBeVisible();
+  expect(calls.find((c) => c.method === 'POST' && c.path === '/api/learning/projects/p1/topics')?.body).toEqual({
+    title: 'Shop support',
+    whenToUse: 'Questions about the web shop',
+    folderId: 'f-shop',
+  });
+
+  await topic.getByRole('button', { name: 'Edit' }).click();
+  const edit = topic.getByTestId('learning-topic-form');
+  await expect(edit.getByRole('textbox', { name: 'Topic' })).toHaveValue('Old windows');
+  await edit.getByRole('combobox', { name: 'File the skills in' }).click();
+  await page.getByRole('option', { name: 'Windows' }).click();
+  await edit.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText("Saved. The topic's skills follow the new name and folder.")).toBeVisible();
+  expect(calls.find((c) => c.method === 'PATCH' && c.path === '/api/learning/topics/t1')?.body).toEqual({
+    title: 'Old windows',
+    whenToUse: 'Quotes for old windows',
+    folderId: 'f-win',
+  });
 });
 
 test('the member reads what is kept and accepts in their profile; the notice they saw is what is sent', async ({ page }) => {

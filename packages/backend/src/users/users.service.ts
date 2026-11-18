@@ -72,6 +72,15 @@ export class UsersService {
             name: true,
             mcpRoleId: true,
             mcpRole: { select: { id: true, name: true } },
+            // Every MCP role the member holds here: grants of this workspace
+            // plus grants with no workspace, which apply everywhere. Access
+            // is their union, so the deprecated single `mcpRole` alone hid
+            // roles granted by a single sign-on group.
+            roleAssignments: {
+              where: { OR: [{ organizationId }, { organizationId: null }] },
+              select: { roleId: true, source: true, organizationId: true, role: { select: { name: true } } },
+              orderBy: { createdAt: 'asc' },
+            },
             createdAt: true,
             updatedAt: true,
           },
@@ -87,6 +96,12 @@ export class UsersService {
       organizationId,
       mcpRoleId: m.user.mcpRoleId,
       mcpRole: m.user.mcpRole,
+      mcpRoles: m.user.roleAssignments.map((a) => ({
+        roleId: a.roleId,
+        roleName: a.role.name,
+        source: a.source,
+        global: a.organizationId === null,
+      })),
       createdAt: m.user.createdAt,
       updatedAt: m.user.updatedAt,
       joinedAt: m.joinedAt,

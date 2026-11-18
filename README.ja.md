@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は Claude、ChatGPT、Copilot、Gemini を ERP、E コマース、REST、SOAP、SQL の各システムと社内のファイルサーバーにつなぎます。877 のコネクターに加え、社内メモリ、AI スキル、ファイル検索も備えています。" width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.ja.png" alt="AnythingMCP は Claude、ChatGPT、Copilot、Gemini を ERP、E コマース、REST、SOAP、SQL の各システムと社内のファイルサーバーにつなぎます。901 のコネクターに加え、社内メモリ、AI スキル、ファイル検索も備えています。" width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP：企業の頭脳になるオープンソースの MCP ゲートウェイ</h1>
@@ -11,6 +11,7 @@
       <img src="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending" alt="GitHub Trending Repository of the Day" height="64" />
     </picture>
   </a>
+  <a href="https://www.producthunt.com/products/anythingmcp?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-anythingmcp" target="_blank" rel="noopener noreferrer"><img alt="AnythingMCP - Open-source MCP gateway and company brain | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1321607&amp;theme=light&amp;t=1795006241059"></a>
 </p>
 
 <p align="center">
@@ -20,7 +21,7 @@
 <p align="center">
   <strong>AnythingMCP は、オープンソースのセルフホスト型 MCP ゲートウェイです。MCP サーバーを書かずに、Claude、ChatGPT、Copilot、Gemini を、自社で使っているソフトウェアやファイルサーバー上の文書につなぎます。</strong><br/>
   ゲートウェイの上には企業の頭脳を保持します。システム同士のつながりを表すナレッジグラフ、AI スキル、社内メモリです。すべての AI クライアントで共有され、ユーザーごとのロールで範囲が制限されます。<br/>
-  SAP、Odoo、weclapp、Amazon Seller などを含む 877 種類の既製アダプターで 12,000 以上のツールを提供しており、うち 46 は API キー不要です。
+  SAP、Odoo、weclapp、Amazon Seller などを含む 901 種類の既製アダプターで 12,000 以上のツールを提供しており、うち 46 は API キー不要です。
 </p>
 
 <p align="center">
@@ -139,7 +140,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 ## コネクターカタログ
 
-877 個のアダプターで 12,000 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
+901 個のアダプターで 12,000 以上のツールを提供しています。どのアダプターにも [anythingmcp.com/ja/guides](https://anythingmcp.com/ja/guides) に 7 言語の設定ガイドがあります。
 
 | カテゴリー | 例 |
 |---|---|

@@ -318,7 +318,9 @@ const KEY = 'k'.repeat(48);
       });
 
       it.each(['ADMIN', 'EDITOR', 'VIEWER'])('%s: File Search read routes', async (who) => {
-        const expected = visibleFor(who, mode, state);
+        // Restricted: File Search detail only for a connector the member owns,
+        // never for one shared through their roles. Both fixtures are OTHER's.
+        const expected = mode === 'restricted' && who !== 'ADMIN' ? [] : visibleFor(who, mode, state);
         expect(await get(who, '/api/file-search/connectors/no-such-connector/tree')).toEqual({ status: 404, body: unknownFsBody });
         for (const c of ['fs', 'fsHidden']) {
           for (const path of ['', '/tree', '/problems', '/runs', '/access-rules', '/scans/no-such-scan']) {

@@ -119,9 +119,11 @@ const INVALID_LINK = 'This link is invalid or has expired.';
  *   Never an address, a user or workspace id, or a licence key.
  * - POST opens a pay-now Stripe Checkout for the workspace's administrator,
  *   with the same refusals as POST /api/license/checkout-link. The paid
- *   licence names the workspace, so the unclaimed-licence sweep
- *   (license-unclaimed.ts) binds it within a few minutes even when nobody
- *   signs in afterwards.
+ *   licence names the workspace.
+ * - POST claim is what the page calls when the buyer is back from Stripe: it
+ *   binds that licence at once (LicenseService.claimPaidLicenceFor). When
+ *   the buyer never comes back, the unclaimed-licence sweep
+ *   (license-unclaimed.ts) binds it within a few minutes.
  *
  * No session: the token (reactivation-token.ts) names the workspace and is
  * the only credential, as with the trial extension link.
@@ -271,6 +273,30 @@ export class ReactivationController {
         'The checkout could not be opened right now. Please try again in a moment.',
       );
     }
+  }
+
+  @Post(':token/claim')
+  @HttpCode(200)
+  // The page asks every few seconds after a payment, for a few minutes.
+  @Throttle({ default: { limit: 40, ttl: 60_000 } })
+  @ApiParam({ name: 'token', description: 'The reactivation link token' })
+  @ApiOperation({
+    summary:
+      'Cloud, no sign-in: back from Stripe, switch the workspace on with the licence it just bought (404 for an invalid or expired link)',
+  })
+  async claim(@Param('token') token: string): Promise<{ state: ReactivationState }> {
+    const { organizationId } = this.check(token);
+    const org = await this.prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true } });
+    if (!org) throw new NotFoundException(INVALID_LINK);
+    // Only a licence the site sold for this very workspace is bound, so the
+    // link gives its holder nothing but what was paid for. A workspace that
+    // is already active has nothing to claim.
+    let { state } = await this.stateOf(organizationId);
+    if (state !== 'active') {
+      const bound = await this.licenseService.claimPaidLicenceFor(organizationId).catch(() => false);
+      if (bound) ({ state } = await this.stateOf(organizationId));
+    }
+    return { state };
   }
 
   @Post(':token/event')

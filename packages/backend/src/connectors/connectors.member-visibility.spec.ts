@@ -82,15 +82,18 @@ const RULES: Record<string, Record<string, { path: string; rule: Rule }>> = {
     getAnnotations: { path: ':toolId/annotations', rule: 'visible-then-owner' },
     getResponseMapping: { path: ':toolId/response-mapping', rule: 'visible-then-owner' },
   },
+  // File Search detail describes the source beyond what the tools return
+  // (address, every folder and file, role rules): restricted members reach
+  // it only for a connector they own, even one shared with them.
   FileSearchController: {
     capabilities: { path: 'capabilities', rule: 'no-connector-data' },
     getPolicy: { path: 'policy', rule: 'no-connector-data' },
-    overview: { path: 'connectors/:id', rule: 'visible' },
-    getScan: { path: 'connectors/:id/scans/:scanId', rule: 'visible' },
-    tree: { path: 'connectors/:id/tree', rule: 'visible' },
-    problems: { path: 'connectors/:id/problems', rule: 'visible' },
-    runs: { path: 'connectors/:id/runs', rule: 'visible' },
-    getRules: { path: 'connectors/:id/access-rules', rule: 'visible' },
+    overview: { path: 'connectors/:id', rule: 'owned' },
+    getScan: { path: 'connectors/:id/scans/:scanId', rule: 'owned' },
+    tree: { path: 'connectors/:id/tree', rule: 'owned' },
+    problems: { path: 'connectors/:id/problems', rule: 'owned' },
+    runs: { path: 'connectors/:id/runs', rule: 'owned' },
+    getRules: { path: 'connectors/:id/access-rules', rule: 'owned' },
   },
 };
 
@@ -163,10 +166,12 @@ function world() {
   const servers = [
     { id: 'srv-shared', userId: OTHER, organizationId: ORG, connectorIds: ['shared'] },
     { id: 'srv-hidden', userId: OTHER, organizationId: ORG, connectorIds: ['hidden', 'shared'] },
-    { id: 'srv-mine', userId: OTHER, organizationId: ORG, connectorIds: ['mine'] },
+    { id: 'srv-mine', userId: ME, organizationId: ORG, connectorIds: ['mine'] },
+    // Another member's server holding the caller's own connector.
+    { id: 'srv-team', userId: OTHER, organizationId: ORG, connectorIds: ['mine'] },
   ];
   connectors.find((c) => c.id === 'shared')!.mcpServers = [{ mcpServerId: 'srv-shared' }, { mcpServerId: 'srv-hidden' }];
-  connectors.find((c) => c.id === 'mine')!.mcpServers = [{ mcpServerId: 'srv-mine' }];
+  connectors.find((c) => c.id === 'mine')!.mcpServers = [{ mcpServerId: 'srv-mine' }, { mcpServerId: 'srv-team' }];
   return { connectors, servers };
 }
 
@@ -329,7 +334,7 @@ const BY_ID: Record<string, (c: Ctx, role: string, id: string) => Promise<unknow
 const NOT_GET_BY_ID: Record<string, Rule> = {
   'ConnectorsController.deleteMyCredential': 'visible',
   'ConnectorsController.initiateOAuth': 'visible',
-  'FileSearchController.syncNow': 'visible',
+  'FileSearchController.syncNow': 'owned',
 };
 
 function firstToolOf(c: Ctx, connectorId: string): string {
@@ -469,9 +474,12 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
       });
 
       it('GET /api/connectors/:id names only MCP servers the caller can see', async () => {
-        // The caller's own connector: the server that holds it, in every mode.
+        // The caller's own connector: restricted, only the servers they own
+        // hold it as far as they can tell; otherwise every server that does.
         const own: any = await c.connectors.findOne(req(role), 'mine');
-        expect(own.mcpServers).toEqual([{ mcpServerId: 'srv-mine' }]);
+        expect(own.mcpServers).toEqual(
+          restricted ? [{ mcpServerId: 'srv-mine' }] : [{ mcpServerId: 'srv-mine' }, { mcpServerId: 'srv-team' }],
+        );
         const got = await outcome(c.connectors.findOne(req(role), 'shared'));
         if (!visible.includes('shared')) {
           expect(got.ok).toBe(false);
@@ -845,11 +853,16 @@ describe('reduced view of a connector the restricted member does not own', () =>
       const text = async (c: Ctx, r: string) =>
         JSON.stringify([
           ((await c.connectors.list(req(r), {} as any)) as any[]).find((x) => x.id === 'mine'),
-          await c.connectors.findOne(req(r), 'mine'),
           await c.tools.list(req(r), 'mine'),
         ]);
       const own = await text(member, role);
       expect(own).toBe(await text(admin, 'ADMIN'));
+      // The detail too, except for the MCP servers holding it: another
+      // member's server is not named to a restricted member.
+      const memberDetail: any = await member.connectors.findOne(req(role), 'mine');
+      const adminDetail: any = await admin.connectors.findOne(req('ADMIN'), 'mine');
+      expect(adminDetail.mcpServers).toEqual([{ mcpServerId: 'srv-mine' }, { mcpServerId: 'srv-team' }]);
+      expect(memberDetail).toEqual({ ...adminDetail, mcpServers: [{ mcpServerId: 'srv-mine' }] });
       expect(own).toContain('"baseUrl":"https://api.example.invalid"');
       expect(own).toContain('"endpointMapping"');
       expect(own).not.toContain('memberView');

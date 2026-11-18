@@ -50,7 +50,12 @@ export class McpConnectionsController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'AI clients connected to the shared /mcp endpoint' })
+  @ApiOperation({
+    summary: 'AI clients connected to the shared /mcp endpoint',
+    description:
+      'Your own connections only. In a workspace with restricted member visibility where you are not an admin, a ' +
+      'granted server you do not own is left out of `servers`.',
+  })
   async list(@Req() req: any) {
     const userId = req.user.sub;
     const grants = await this.grants.listForUser(userId);
@@ -79,7 +84,9 @@ export class McpConnectionsController {
     ]);
 
     const clientName = new Map(clients.map((c) => [c.clientId, c.clientName]));
-    const serverById = new Map(servers.map((s) => [s.id, s]));
+    // Named only when member visibility lets this user see the server.
+    const shown = new Set((await this.grants.keepVisible(userId, servers)).map((s) => s.id));
+    const serverById = new Map(servers.filter((s) => shown.has(s.id)).map((s) => [s.id, s]));
     const orgName = new Map(organizations.map((o) => [o.id, o.name]));
 
     return grants.map((g) => ({
@@ -104,9 +111,9 @@ export class McpConnectionsController {
   @ApiOperation({
     summary: 'Workspaces and MCP servers this user can grant access to',
     description:
-      'In a workspace with restricted member visibility where you are not an admin, only the servers you own or that ' +
-      'hold a connector you can see are listed, each counting only those connectors; every workspace follows its own ' +
-      'setting and your role there.',
+      'In a workspace with restricted member visibility where you are not an admin, only the servers you own are ' +
+      'listed, each counting only the connectors you can see; every workspace follows its own setting and your role ' +
+      'there. The whole-workspace choice stays available.',
   })
   async targets(@Req() req: any) {
     return this.grants.listSelectableTargets(req.user.sub);
@@ -121,7 +128,7 @@ export class McpConnectionsController {
       'When both are given, `organizationId` wins. The change applies from the client\'s next request.\n\n' +
       'Answers `{ "ok": true }`, or `{ "ok": false, "reason": … }`: `not-a-member` (you are not in that workspace), ' +
       '`nothing-granted` (you can reach none of the servers; unreachable ids are dropped) or `empty-selection` (neither field given). ' +
-      'In a workspace with restricted member visibility where you are not an admin, a server you cannot see is dropped like an unknown id.\n\n' +
+      'In a workspace with restricted member visibility where you are not an admin, a server you do not own is dropped like an unknown id.\n\n' +
       '```bash\namcp api PUT /api/mcp-connections/$CLIENT_ID --data \'{"serverIds":["cmo9x1k2a0001abcdpq7rs8tu"]}\' --yes\n```',
   })
   @ApiBody({

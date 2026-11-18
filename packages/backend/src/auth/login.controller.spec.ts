@@ -86,6 +86,8 @@ describe('LoginController', () => {
     grantWholeOrganization: jest.Mock;
     listSelectableTargets: jest.Mock;
     resolve: jest.Mock;
+    keepVisible: jest.Mock;
+    restrictedIn: jest.Mock;
   };
 
   beforeEach(() => {
@@ -105,6 +107,9 @@ describe('LoginController', () => {
       listSelectableTargets: jest.fn().mockResolvedValue([]),
       // No grant: the user's own organization, as before grants existed.
       resolve: jest.fn().mockResolvedValue(null),
+      // Member visibility hides nothing unless a test says so.
+      keepVisible: jest.fn(async (_userId: string, servers: unknown[]) => servers),
+      restrictedIn: jest.fn().mockResolvedValue(false),
     };
 
     controller = new LoginController(
@@ -270,6 +275,29 @@ describe('LoginController', () => {
       );
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
       expect(res._redirect).toContain('/auth/login?error=');
+    });
+
+    it('redirects instead of crashing when the POST has no form body', async () => {
+      const res = makeRes();
+      await controller.handleLogin(
+        makeReq({ signedCookies: { login_csrf: 'tok' } }),
+        undefined as any,
+        res,
+      );
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(res._redirect).toContain('/auth/login?error=');
+      expect(res._cleared).toContain('login_csrf');
+    });
+
+    it('redirects instead of crashing when the server selection has no form body', async () => {
+      const res = makeRes();
+      await controller.handleServerSelection(
+        makeReq({ signedCookies: { login_csrf: 'tok' } }),
+        undefined as any,
+        res,
+      );
+      expect(res._redirect).toContain('/auth/login?error=');
+      expect(res._cleared).toContain('login_csrf');
     });
   });
 
@@ -2879,6 +2907,12 @@ describe('LoginController', () => {
       expect(p.organizationMember.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ userId: 'u1', organizationId: 'org-1' }) }),
       );
+
+      // A member who may not see the server (restricted member visibility).
+      grants.keepVisible.mockResolvedValueOnce([]);
+      const hidden = await page(make(DEPLOY.cloud, p), req as any);
+      expect(hidden).not.toContain('Sales');
+      expect(grants.keepVisible).toHaveBeenLastCalledWith('u1', [{ id: 'srv-1', organizationId: 'org-1' }]);
 
       p.organizationMember.findFirst.mockResolvedValue(null);
       const outsider = await page(make(DEPLOY.cloud, p), req as any);

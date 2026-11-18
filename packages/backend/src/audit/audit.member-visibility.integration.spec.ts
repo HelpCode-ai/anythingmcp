@@ -254,7 +254,8 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
         [`toolId=${ids.toolMine}`, 2],
         [`connectorId=${ids.connector}`, 2],
         [`connectorId=${ids.otherConnector}`, 0],
-        [`mcpServerId=${ids.server}`, 1],
+        // The admin's server: not the viewer's, so it filters like an unknown id.
+        [`mcpServerId=${ids.server}`, 0],
         ['search=export', 0],
         ['search=crm', 2],
         ['status=TIMEOUT', 0],
@@ -283,19 +284,36 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
       expect(body.topTools).toEqual([{ name: 'crm_search', count: 3, errors: 2, avgDuration: expect.any(Number) }]);
     });
 
+    it('names the server of an own call only when the caller owns that server', async () => {
+      const inv = await get('VIEWER', 'invocations');
+      expect(inv.body).toHaveLength(2); // three calls: one row stands for a repeat
+      // The call through the admin's "Sales" server: counted, server not named.
+      for (const row of inv.body) {
+        expect(row.mcpServerId).toBeNull();
+        expect(row.mcpServer).toBeNull();
+      }
+      expect(JSON.stringify(inv.body)).not.toContain('Sales');
+      // Admins still see it.
+      const adminRows = (await get('ADMIN', 'invocations')).body;
+      expect(adminRows.some((r: any) => r.mcpServer?.name === 'Sales')).toBe(true);
+    });
+
     it('tool performance holds only the caller’s calls, and their own last error', async () => {
       const { body } = await get('VIEWER', 'tool-performance?hours=24');
-      expect(body.items).toHaveLength(2);
-      expect(body.items.every((i: any) => i.toolName === 'crm_search')).toBe(true);
-      const direct = body.items.find((i: any) => i.mcpServerId === null);
-      expect(direct).toMatchObject({ calls: 2, errors: 2, lastError: 'viewer error' });
-      const viaServer = body.items.find((i: any) => i.mcpServerId === ids.server);
-      // The other member's newer TIMEOUT on the same tool and server stays hidden.
-      expect(viaServer).toMatchObject({ calls: 1, errors: 0, lastError: null });
+      // The call through the admin's server joins the calls without a server.
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0]).toMatchObject({
+        toolName: 'crm_search',
+        mcpServerId: null,
+        mcpServerName: null,
+        calls: 3,
+        errors: 2,
+        // The other member's newer TIMEOUT on the same tool stays hidden.
+        lastError: 'viewer error',
+      });
 
       const filtered = await get('VIEWER', `tool-performance?connectorId=${ids.connector}&mcpServerId=${ids.server}`);
-      expect(filtered.body.items).toHaveLength(1);
-      expect(filtered.body.items[0]).toMatchObject({ calls: 1, lastError: null });
+      expect(filtered.body.items).toHaveLength(0);
     });
 
     it('breakdowns hold only the caller’s calls, byUser only their own row', async () => {
@@ -303,6 +321,8 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
       expect(body).toMatchObject({ total: 3, errors: 2 });
       expect(body.byUser).toEqual([{ id: ids.viewer, label: 'viewer', count: 3, errors: 2 }]);
       expect(body.byConnector).toEqual([{ id: ids.connector, label: 'CRM', count: 3, errors: 2 }]);
+      // The admin's server is not named: its call joins the row without a server.
+      expect(body.byServer).toEqual([{ id: null, label: 'Other server or none', count: 3, errors: 2 }]);
     });
 
     it.each(['invocations', 'stats', 'analytics', 'tool-performance', 'breakdowns'])(

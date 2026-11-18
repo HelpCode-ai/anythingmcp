@@ -5,18 +5,26 @@ import { ProductEvents } from '../../audit/product-event.service';
 /**
  * Who gets which onboarding reminder (onboarding-cron.service.ts).
  *
- * Reminder 1 (about an hour after sign-up) is an A/B test with a control
- * group, decided per user:
+ * Reminder 1 (about an hour after sign-up) has a control group, decided per
+ * user:
  *
  * - `holdout`: about 10% get no reminder 1 at all, so its effect can be
  *   measured against nothing;
- * - `A`: today's email (the generic how-to, or the AI-client one);
- * - `B`: the generic how-to replaced by three one-click Claude chats for
- *   setups that need no app approval (QUICK_SETUPS), plus the dashboard.
+ * - `B`: everyone else. A user who connected an AI client gets the AI-client
+ *   email; anyone else gets three one-click Claude chats for setups that need
+ *   no app approval (QUICK_SETUPS), plus the dashboard.
+ *
+ * From 2026-11-02 to 2026-11-17 an arm `A` got the generic how-to instead of
+ * the one-click chats. Read on 2026-11-17 (2,711 users, 7 days): the email as
+ * a whole showed no effect against the holdout (working connector 2.4 % vs
+ * 1.8 %), and B led A among users without an AI client (connector added
+ * 2.8 % vs 1.3 %, not significant), so B is now the only email and the
+ * holdout keeps measuring it. Users counted as `A` before keep that label in
+ * their earlier events.
  *
  * The arm comes from sha256('onboarding-reminder:' + userId): the first byte
- * below HOLDOUT_BYTE_BELOW is the holdout, then the second byte splits the
- * rest in halves. A re-run never moves a user, and the hash is independent of
+ * below HOLDOUT_BYTE_BELOW is the holdout. A re-run never moves a user into
+ * or out of the holdout, and the hash is independent of
  * the win-back one (winback-segment.ts). The cron stores the arm with every
  * reminder it sends or withholds (product events `onboarding_reminder_sent`
  * and `onboarding_reminder_holdout`, metadata.arm), so "a connector within 7
@@ -37,19 +45,20 @@ export const HOLDOUT_BYTE_BELOW = 26;
 
 export function reminderArm(userId: string): ReminderArm {
   const digest = createHash('sha256').update(`onboarding-reminder:${userId}`).digest();
-  if (digest[0] < HOLDOUT_BYTE_BELOW) return 'holdout';
-  return digest[1] < 128 ? 'A' : 'B';
+  return digest[0] < HOLDOUT_BYTE_BELOW ? 'holdout' : 'B';
 }
 
 /**
- * Variant B's one-click requests: catalog connectors (intl/telegram-bot,
- * intl/odoo, intl/shopify) set up with a token or an API key the user creates
- * themselves, with no app review by the provider (unlike Etsy).
+ * The email's one-click requests: catalog connectors (intl/telegram-bot,
+ * intl/odoo, intl/woocommerce) set up with a token or an API key the user
+ * creates themselves, with no app review by the provider (unlike Etsy).
+ * Shopify was here until 2026-11-17: its setup needs an app in Shopify's Dev
+ * Dashboard by the store owner, and the post-approve picker dropped it too.
  */
 export const QUICK_SETUPS: ReadonlyArray<{ adapterSlug: string; label: string; request: string }> = [
   { adapterSlug: 'telegram-bot', label: 'Telegram bot', request: 'Connect my Telegram bot to AnythingMCP' },
   { adapterSlug: 'odoo', label: 'Odoo', request: 'Connect my Odoo to AnythingMCP' },
-  { adapterSlug: 'shopify', label: 'Shopify store', request: 'Connect my Shopify store to AnythingMCP' },
+  { adapterSlug: 'woocommerce', label: 'WooCommerce store', request: 'Connect my WooCommerce store to AnythingMCP' },
 ];
 
 /** A new Claude chat with the request typed in. */

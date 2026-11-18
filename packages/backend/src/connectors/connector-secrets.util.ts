@@ -1,5 +1,6 @@
 import { getAdapter } from '../adapters/catalog';
 import { maskUrlPassword } from './database-url-credentials.util';
+import { hasHttpBaseUrl, maskBaseUrlSecrets } from './base-url-secrets.util';
 
 /**
  * Which connector environment variables and headers hold credentials, and how
@@ -266,7 +267,9 @@ export function maskHeaders(
  * non-secret OAuth settings have their own endpoint (`GET :id/oauth-config`).
  * A DATABASE connection string comes back with its password masked; new
  * connectors no longer store one there (database-url-credentials.util.ts),
- * this covers the ones saved before.
+ * this covers the ones saved before. Likewise a secret in an HTTP base URL
+ * (a webhook token, a key, `user:password@`) comes back as `********`
+ * (base-url-secrets.util.ts).
  */
 export function toPublicConnector<
   T extends ConnectorLike & { envVars?: unknown; authConfig?: unknown },
@@ -285,11 +288,22 @@ export function toPublicConnector<
     webhookSecret: _webhookSecret,
     ...rest
   } = connector as T & { authStatusRef?: unknown; webhookSecret?: unknown };
-  const { type, baseUrl } = connector as { type?: unknown; baseUrl?: unknown };
+  const { type, baseUrl, config } = connector as { type?: unknown; baseUrl?: unknown; config?: unknown };
+  // An HTTP base URL can carry a webhook token, a key or `user:password@`
+  // that was stored before saves moved it into a variable (the start-up
+  // repair moves it too): shown masked to everyone, admins included.
+  const httpMasked = hasHttpBaseUrl(type) && typeof baseUrl === 'string' ? maskBaseUrlSecrets(baseUrl) : null;
+  const baseline = (config as { baseUrlBaseline?: unknown } | null | undefined)?.baseUrlBaseline;
+  const maskedBaseline =
+    hasHttpBaseUrl(type) && typeof baseline === 'string' ? maskBaseUrlSecrets(baseline) : null;
   return {
     ...rest,
     ...(type === 'DATABASE' && typeof baseUrl === 'string'
       ? { baseUrl: maskUrlPassword(baseUrl) }
+      : {}),
+    ...(httpMasked !== null && httpMasked !== baseUrl ? { baseUrl: httpMasked } : {}),
+    ...(maskedBaseline !== null && maskedBaseline !== baseline
+      ? { config: { ...(config as Record<string, unknown>), baseUrlBaseline: maskedBaseline } }
       : {}),
     envVars: env.envVars,
     headers: hdr.headers,

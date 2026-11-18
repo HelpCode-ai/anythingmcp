@@ -201,7 +201,8 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
     );
     return { executor, restEngine, events, prisma };
   }
-  // org-1 is in the 'pricing' arm of the reactivation-link test, org-2 in 'page'.
+  // Every workspace gets the page since the reactivation-link test ended
+  // (2026-11-17); the pricing link is the fallback when no token can be made.
   const ctx = { organizationId: 'org-1', userId: 'u1', oauthClientId: 'cl-1' };
   const pageCtx = { ...ctx, organizationId: 'org-2' };
   const flush = () => new Promise((r) => setImmediate(r));
@@ -213,12 +214,13 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
     process.env.ENCRYPTION_KEY = savedKey;
   });
 
-  it('puts the two test workspaces in different arms', () => {
-    expect(reactivationLinkVariant(ctx.organizationId)).toBe('pricing');
+  it('puts every workspace in the page arm', () => {
+    expect(reactivationLinkVariant(ctx.organizationId)).toBe('page');
     expect(reactivationLinkVariant(pageCtx.organizationId)).toBe('page');
   });
 
-  it("gives a 'pricing' workspace the pricing link and records the blocked call with its variant", async () => {
+  it("gives the pricing link when no token can be made, and records the blocked call as 'pricing'", async () => {
+    delete process.env.ENCRYPTION_KEY;
     const { executor, restEngine, events } = build(new TrialEndedException(ENDED));
     const res = await executor.executeTool('etsy_list_listings', {}, ctx);
     expect(res.isError).toBe(true);
@@ -239,8 +241,10 @@ describe('DynamicMcpTools — a call refused by the licence check', () => {
   });
 
   it("gives a 'page' workspace the no-login page with the same text, and records variant 'page'", async () => {
+    delete process.env.ENCRYPTION_KEY;
     const pricing = build(new TrialEndedException(ENDED));
     const pricingBody = JSON.parse((await pricing.executor.executeTool('etsy_list_listings', {}, ctx)).content[0].text);
+    process.env.ENCRYPTION_KEY = 'trial-blocked-call-spec-key-0123456789';
     const { executor, events } = build(new TrialEndedException(ENDED));
     const res = await executor.executeTool('etsy_list_listings', {}, pageCtx);
     const body = JSON.parse(res.content[0].text);

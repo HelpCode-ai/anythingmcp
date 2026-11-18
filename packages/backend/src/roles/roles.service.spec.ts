@@ -40,6 +40,7 @@ describe('RolesService', () => {
       },
       organizationMember: {
         findUnique: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       userRoleAssignment: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -658,6 +659,142 @@ describe('RolesService', () => {
       await expect(service.setToolAccess('sys', ['t1'], 'org-1')).rejects.toThrow(
         'system role',
       );
+    });
+  });
+
+  describe('getUserRoles', () => {
+    it('returns null for a user outside the organization', async () => {
+      // Grants with no organization apply everywhere; without the membership
+      // check an admin could read them for anyone on the instance.
+      mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+      expect(await service.getUserRoles('u1', 'org-1')).toBeNull();
+      expect(mockPrisma.userRoleAssignment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('lists the org and workspace-independent grants of a member', async () => {
+      mockPrisma.organizationMember.findUnique.mockResolvedValue({ userId: 'u1' });
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([{ roleId: 'r1', source: 'manual', role: { id: 'r1', name: 'Sales' } }]);
+      expect(await service.getUserRoles('u1', 'org-1')).toHaveLength(1);
+      expect(mockPrisma.userRoleAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'u1', OR: [{ organizationId: 'org-1' }, { organizationId: null }] },
+        }),
+      );
+    });
+  });
+
+  describe('getMemberAssignments', () => {
+    const member = (id: string, role: string, deactivatedAt: Date | null = null) => ({
+      role,
+      deactivatedAt,
+      user: { id, email: `${id}@example.com`, name: null },
+    });
+
+    it('returns every assignment of a member, not just one', async () => {
+      // The bug this guards: the roles page showed the deprecated single
+      // `users.mcpRoleId`, so an IdP-synced role widening access was invisible.
+      mockPrisma.organizationMember.findMany.mockResolvedValue([member('u1', 'VIEWER')]);
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
+        { userId: 'u1', roleId: 'r1', source: 'manual', organizationId: 'org-1', role: { name: 'Support' } },
+        { userId: 'u1', roleId: 'r2', source: 'entra', organizationId: 'org-1', role: { name: 'Finance' } },
+        { userId: 'u1', roleId: 'sys', source: 'manual', organizationId: null, role: { name: 'Global' } },
+      ]);
+      mockPrisma.toolRoleAccess.findMany.mockResolvedValue([
+        { roleId: 'r1', tool: { connector: { id: 'c1', name: 'Helpdesk' } } },
+        { roleId: 'r2', tool: { connector: { id: 'c2', name: 'ERP' } } },
+        { roleId: 'r2', tool: { connector: { id: 'c3', name: 'CRM' } } },
+        // Same connector through a second role and a second tool: counted once.
+        { roleId: 'r1', tool: { connector: { id: 'c3', name: 'CRM' } } },
+      ]);
+
+      const [row] = await service.getMemberAssignments('org-1');
+
+      expect(row.roles).toEqual([
+        { roleId: 'r1', roleName: 'Support', source: 'manual', global: false },
+        { roleId: 'r2', roleName: 'Finance', source: 'entra', global: false },
+        { roleId: 'sys', roleName: 'Global', source: 'manual', global: true },
+      ]);
+      expect(row.connectors).toEqual([
+        { id: 'c3', name: 'CRM' },
+        { id: 'c2', name: 'ERP' },
+        { id: 'c1', name: 'Helpdesk' },
+      ]);
+      expect(row.active).toBe(true);
+    });
+
+    it('keeps every query inside the organization', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([member('u1', 'EDITOR'), member('u2', 'VIEWER')]);
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
+        { userId: 'u1', roleId: 'r1', source: 'manual', organizationId: 'org-1', role: { name: 'Support' } },
+      ]);
+
+      await service.getMemberAssignments('org-1');
+
+      expect(mockPrisma.organizationMember.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organizationId: 'org-1' } }),
+      );
+      expect(mockPrisma.userRoleAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: { in: ['u1', 'u2'] }, OR: [{ organizationId: 'org-1' }, { organizationId: null }] },
+        }),
+      );
+      expect(mockPrisma.toolRoleAccess.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { roleId: { in: ['r1'] }, tool: { connector: { organizationId: 'org-1' } } },
+        }),
+      );
+    });
+
+    it('reports admins as not limited by roles, even when they hold some', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([member('a1', 'ADMIN')]);
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
+        { userId: 'a1', roleId: 'r1', source: 'entra', organizationId: 'org-1', role: { name: 'Support' } },
+      ]);
+
+      const [row] = await service.getMemberAssignments('org-1');
+
+      expect(row.connectors).toBeNull();
+      expect(row.roles).toHaveLength(1);
+    });
+
+    it('a member with no role is unrestricted while the org has no whitelist', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([member('u1', 'EDITOR'), member('u2', 'VIEWER')]);
+      mockPrisma.toolRoleAccess.findFirst.mockResolvedValue(null);
+
+      const rows = await service.getMemberAssignments('org-1');
+
+      expect(rows.map((r) => r.connectors)).toEqual([null, null]);
+      expect(mockPrisma.toolRoleAccess.findMany).not.toHaveBeenCalled();
+      // The probe runs once for the whole list, not per member.
+      expect(mockPrisma.toolRoleAccess.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it('a member with no role reaches nothing once the org uses whitelists', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([member('u1', 'EDITOR')]);
+      mockPrisma.toolRoleAccess.findFirst.mockResolvedValue({ id: 'g1' });
+
+      const [row] = await service.getMemberAssignments('org-1');
+
+      expect(row.connectors).toEqual([]);
+      expect(row.roles).toEqual([]);
+    });
+
+    it('a role with an empty whitelist reaches no connector', async () => {
+      mockPrisma.organizationMember.findMany.mockResolvedValue([member('u1', 'VIEWER', new Date())]);
+      mockPrisma.userRoleAssignment.findMany.mockResolvedValue([
+        { userId: 'u1', roleId: 'empty', source: 'manual', organizationId: 'org-1', role: { name: 'Empty' } },
+      ]);
+      mockPrisma.toolRoleAccess.findMany.mockResolvedValue([]);
+
+      const [row] = await service.getMemberAssignments('org-1');
+
+      expect(row.connectors).toEqual([]);
+      expect(row.active).toBe(false);
+    });
+
+    it('returns [] for an organization without members', async () => {
+      expect(await service.getMemberAssignments('org-1')).toEqual([]);
+      expect(mockPrisma.userRoleAssignment.findMany).not.toHaveBeenCalled();
     });
   });
 

@@ -2399,7 +2399,7 @@
     "confirmDelete": "Rolle „{name}“ löschen? Benutzern mit dieser Rolle wird sie entzogen.",
     "deleted": "Rolle gelöscht",
     "toolAccessUpdated": "Tool-Zugriff aktualisiert",
-    "assigned": "MCP-Rolle zugewiesen",
+    "assigned": "MCP-Rollen gespeichert",
     "accessDenied": {
       "title": "Zugriff verweigert",
       "body": "Nur Administratoren können diese Seite aufrufen.",
@@ -2453,7 +2453,20 @@
       "appRole": "App-Rolle",
       "mcpRole": "MCP-Tool-Rolle",
       "fullAccess": "Voller Zugriff (Admin)",
-      "noRestriction": "Keine Rolle"
+      "unionHint": "Ein Mitglied kann die Tools aller seiner Rollen zusammen nutzen. Jede Rolle fügt Tools hinzu, keine nimmt welche weg.",
+      "reach": "Erreichte Connectoren",
+      "fromSso": "aus Single-Sign-On-Gruppe",
+      "allWorkspaces": "alle Workspaces",
+      "allWorkspacesHint": "Diese Rolle gilt in jedem Workspace und kann hier nicht geändert werden.",
+      "ssoHint": "Rollen aus einer Single-Sign-On-Gruppe folgen der Gruppe. Ändern Sie sie unter",
+      "ssoLink": "Einstellungen → Single Sign-On → Rollenzuordnungen",
+      "manualPlaceholder": "Rollen auswählen",
+      "deactivated": "Deaktiviert",
+      "allConnectors": "Alle Connectoren",
+      "noConnectors": "Keine",
+      "connectorCount": "{count, plural, one {# Connector} other {# Connectoren}}",
+      "noRoleOpen": "Keine Rolle. Kann alle Tools nutzen, solange keine Rolle eine Tool-Liste hat.",
+      "noRoleClosed": "Keine Rolle, daher keine Tools."
     }
   },
   "settingsAdmin": {
@@ -4036,7 +4049,23 @@
       "publishedMsg": "Veröffentlicht: {count} Lektion(en) sind jetzt ein Skill für alle auf diesem Server.",
       "nothing": "Noch nichts Bestätigtes zu veröffentlichen.",
       "dropped": "{count} ältere Lektion(en) passten nicht in den Text und wurden weggelassen.",
-      "viewSkill": "AI Skills öffnen"
+      "viewSkill": "AI Skills öffnen",
+      "titleLabel": "Thema",
+      "titleHint": "z. B. Ersatzteile für alte Fenster",
+      "whenLabel": "Wann verwenden",
+      "whenHint": "Wann der Assistent eines Kollegen diesen Skill nutzen soll",
+      "folderLabel": "Skills ablegen in",
+      "projectFolder": "Ordner des Projekts",
+      "add": "Thema hinzufügen",
+      "addHint": "Legen Sie die Themen vorab fest: Der Assistent des Mitglieds ordnet Lektionen zuerst diesen Themen zu und beginnt nur dann ein neues Thema, wenn keines passt.",
+      "added": "Thema „{title}“ hinzugefügt.",
+      "edit": "Bearbeiten",
+      "save": "Speichern",
+      "saved": "Gespeichert. Die Skills des Themas übernehmen den neuen Namen und Ordner.",
+      "cancel": "Abbrechen",
+      "inFolder": "Ordner: {name}",
+      "inProjectFolder": "Ordner: {name} (Projekt)",
+      "noFolder": "Kein Ordner"
     },
     "lessons": {
       "filter": {
@@ -4080,7 +4109,7 @@
     "settings": {
       "name": "Name",
       "folder": "Skills ablegen in",
-      "folderHint": "Gilt für Themen, die ab jetzt begonnen werden.",
+      "folderHint": "Gilt für Themen ohne eigenen Ordner, die ab jetzt begonnen werden.",
       "endsAt": "Endet am",
       "tags": "Labels",
       "publishMode": "Veröffentlichung",

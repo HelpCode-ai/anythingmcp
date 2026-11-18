@@ -134,4 +134,32 @@ describe('chatJson', () => {
       chatJson({ provider: 'openai', model: 'gpt-4o-mini', apiKey: 'sk-x' }, 'sys', 'user'),
     ).rejects.toThrow();
   });
+
+  const anthropic = { provider: 'anthropic' as const, model: 'claude-haiku-4-5', apiKey: 'k' };
+  const anthropicReply = (text: string, stop_reason = 'end_turn') =>
+    okJson({ content: [{ type: 'text', text }], stop_reason, usage: { input_tokens: 1, output_tokens: 2 } });
+
+  it('anthropic: retries once with a higher limit when the reply hits max_tokens', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(anthropicReply('{"links": [{"a":', 'max_tokens'))
+      .mockResolvedValueOnce(anthropicReply('{"links": []}'));
+    const res = await chatJson(anthropic, 'sys', 'user');
+    expect(res.json).toEqual({ links: [] });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const limits = (global.fetch as jest.Mock).mock.calls.map(([, init]) => JSON.parse(init.body).max_tokens);
+    expect(limits).toEqual([4000, 8000]);
+  });
+
+  it('anthropic: does not retry a complete reply', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue(anthropicReply('{"ok": true}'));
+    const res = await chatJson(anthropic, 'sys', 'user');
+    expect(res.json).toEqual({ ok: true });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('anthropic: a reply still cut off after the retry throws a readable error', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue(anthropicReply('{"links": [', 'max_tokens'));
+    await expect(chatJson(anthropic, 'sys', 'user')).rejects.toThrow(/cut off at the token limit/);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
 });

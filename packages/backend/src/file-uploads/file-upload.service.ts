@@ -35,6 +35,9 @@ const PUBLIC_URL_TTL_S = 60 * 60;
 const MAX_PUBLIC_DOWNLOADS = 50;
 /** Uploads received at the same time by one backend process. */
 const MAX_CONCURRENT_UPLOADS = 8;
+/** Tries to copy a received file to storage (Spaces/S3) before giving up. */
+const STORAGE_PUT_ATTEMPTS = 3;
+const STORAGE_RETRY_DELAY_MS = 300;
 const SWEEP_MS = 10 * 60_000;
 const SWEEP_FIRST_MS = 60_000;
 /** Purged rows are kept this long for the audit, then deleted. */
@@ -43,6 +46,9 @@ const PURGED_RETENTION_MS = 30 * 24 * 3600_000;
 /** The same text for unknown, used, expired or foreign references: no existence oracle. */
 const UNKNOWN_REF =
   `This file reference is unknown or has expired. Upload the file again with ${FILE_UPLOAD_LINK_TOOL}.`;
+const NOT_UPLOADED_YET =
+  'This file has not been uploaded yet: its upload link is still waiting for the file. ' +
+  'Wait until the upload box shows it is done or the user says so, then call the tool again with the same file_ref.';
 
 export interface UploadedFile {
   buffer: Buffer;
@@ -279,11 +285,26 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
     this.active++;
     const dir = await mkdtemp(join(tmpdir(), 'amcp-upload-'));
     const tmp = join(dir, 'body');
+    let storageFailed = false;
     try {
       const { bytes, hash, head } = await this.spool(body, tmp, row.maxBytes);
       if (bytes === 0) throw new BadRequestException('The upload was empty. Send the file as the request body (curl -T <file>).');
       const mimeType = mimeForUpload(row.filename, sniffType(head), (n) => mimeFor(n));
-      await this.storage.putStream(row.storageKey, createReadStream(tmp), bytes, mimeType);
+      try {
+        await this.putWithRetry(row.storageKey, tmp, bytes, mimeType);
+      } catch (err) {
+        // The whole file arrived; only storage failed. Keep the link usable.
+        storageFailed = true;
+        this.logger.warn(
+          `File upload: storage failed id=${row.id} org=${row.organizationId} after ${STORAGE_PUT_ATTEMPTS} attempts: ${(err as Error)?.name ?? 'Error'}`,
+        );
+        throw new HttpException(
+          row.uploadBy > new Date()
+            ? 'The file arrived but could not be stored right now. Try again in a minute with the same link.'
+            : 'The file arrived but could not be stored right now. Ask for a new upload link and try again.',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
       const quota = await this.quota(row.organizationId);
       const ttlHours = quota?.ttlHours ?? 8;
       const expiresAt = new Date(Date.now() + ttlHours * 3600_000);
@@ -301,14 +322,32 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
         public_url_possible: publicAllowed(row.filename, mimeType),
       };
     } catch (err) {
+      const retryable = storageFailed && row.uploadBy > new Date();
       await this.prisma.fileUpload
-        .update({ where: { id: row.id }, data: { state: 'failed' } })
+        .update({ where: { id: row.id }, data: { state: retryable ? 'pending' : 'failed' } })
         .catch(() => undefined);
       await this.storage.delete(row.storageKey).catch(() => undefined);
       throw err;
     } finally {
       this.active--;
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Copies the spooled file to storage. A stream body cannot be replayed by the
+   * storage client's own retry, so a passing reset is retried here from the temp
+   * file with a fresh stream.
+   */
+  private async putWithRetry(key: string, path: string, bytes: number, mimeType: string): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.storage.putStream(key, createReadStream(path), bytes, mimeType);
+        return;
+      } catch (err) {
+        if (attempt >= STORAGE_PUT_ATTEMPTS) throw err;
+        await new Promise((r) => setTimeout(r, STORAGE_RETRY_DELAY_MS * attempt));
+      }
     }
   }
 
@@ -359,6 +398,16 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /** Why a reference has no ready file: still waiting for its upload, or unknown/expired. */
+  private async missingRefMessage(ref: string, organizationId: string): Promise<string> {
+    const m = FILE_REF_RE.exec(ref.trim());
+    if (!m) return UNKNOWN_REF;
+    const waiting = await this.prisma.fileUpload.findFirst({
+      where: { id: m[1], organizationId, state: { in: ['pending', 'uploading'] }, uploadBy: { gt: new Date() } },
+    });
+    return waiting ? NOT_UPLOADED_YET : UNKNOWN_REF;
+  }
+
   /**
    * For the REST engine: the bytes behind `amcp-file:<id>`, only for a tool
    * call of the workspace that uploaded it.
@@ -366,7 +415,7 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
   async resolveForEngine(ref: string, organizationId: string | undefined): Promise<UploadedFile> {
     if (!organizationId) throw new Error(UNKNOWN_REF);
     const row = await this.readyRow(ref, organizationId);
-    if (!row) throw new Error(UNKNOWN_REF);
+    if (!row) throw new Error(await this.missingRefMessage(ref, organizationId));
     const { stream } = await this.storage.open(row.storageKey);
     const chunks: Buffer[] = [];
     for await (const c of stream) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
@@ -384,7 +433,7 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
   async publicUrl(ref: string, organizationId: string) {
     if (!this.enabled()) throw new ForbiddenException('File uploads are switched off on this instance.');
     const row = await this.readyRow(ref, organizationId);
-    if (!row) throw new NotFoundException(UNKNOWN_REF);
+    if (!row) throw new NotFoundException(await this.missingRefMessage(ref, organizationId));
     if (!publicAllowed(row.filename, row.mimeType)) {
       throw new BadRequestException(
         'Public links are only made for images (JPG, PNG, GIF, WebP), videos (MP4, MOV) and PDFs whose content matches the extension. ' +

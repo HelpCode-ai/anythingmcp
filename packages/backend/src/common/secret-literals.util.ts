@@ -25,6 +25,8 @@ export type SecretKind =
   | 'jwt'
   | 'secret_query_param'
   | 'credential_header'
+  | 'webhook_token'
+  | 'url_password'
   | 'high_entropy';
 
 export interface SecretFinding {
@@ -301,6 +303,10 @@ function redactShape(kind: SecretKind, value: string, label: string): string {
       return `${label}=***(${n})`;
     case 'credential_header':
       return `${label}: ***(${n})`;
+    case 'webhook_token':
+      return `${label} webhook ***(${n})`;
+    case 'url_password':
+      return `user:***(${n})@`;
     case 'high_entropy':
     default:
       return `***(${n} chars, high-entropy)`;
@@ -333,6 +339,167 @@ function dedupe(findings: SecretFinding[]): SecretFinding[] {
   return out;
 }
 
+/**
+ * Webhook URLs whose path is the credential: whoever holds the URL can post
+ * as the account, so the token in it is a password, not an id. Each rule is
+ * tied to the vendor's own host and the exact path shape the vendor issues,
+ * so an ordinary API base URL never matches. Only the secret segment is
+ * returned; the host and the ids around it stay readable.
+ *
+ * Incoming webhooks that carry their secret in a query parameter (Power
+ * Automate and Logic Apps `sig=`, Google Chat `key=`/`token=`) are found by
+ * the query rule, and Telegram's `bot<token>` by its own rule above.
+ */
+interface WebhookRule {
+  label: string;
+  host: RegExp;
+  /** The secret's offsets within the path, or null. */
+  match: (path: string) => { start: number; end: number } | null;
+}
+
+/**
+ * `prefix` then `secret` (then `/` or the end of the path): the secret's
+ * offsets. `accept`, when given, must also say yes to the secret.
+ */
+function segmentAfter(re: RegExp, accept?: (secret: string) => boolean): WebhookRule['match'] {
+  return (path) => {
+    const m = re.exec(path);
+    if (!m || (accept && !accept(m[2]))) return null;
+    const start = (m.index ?? 0) + m[1].length;
+    return { start, end: start + m[2].length };
+  };
+}
+
+const WEBHOOK_RULES: WebhookRule[] = [
+  // Bitrix24 inbound webhook: /rest/<user id>/<webhook code>/<method>. The
+  // code is random letters and digits; a word there (`/rest/1/department/`)
+  // is not one.
+  {
+    label: 'Bitrix24',
+    host: /(?:^|\.)bitrix24\.[a-z]{2,3}(?:\.[a-z]{2})?$/,
+    match: segmentAfter(
+      /(\/rest\/\d{1,10}\/)([A-Za-z0-9_]{8,64})(?=\/|$)/,
+      (code) => /[A-Za-z]/.test(code) && /[0-9]/.test(code),
+    ),
+  },
+  // Slack incoming webhook (/services/T…/B…/<secret>) and workflow triggers.
+  {
+    label: 'Slack',
+    host: /^hooks\.slack(?:-gov)?\.com$/,
+    match: segmentAfter(
+      /^(\/(?:services|workflows|triggers)\/(?:[A-Za-z0-9]{1,32}\/){1,4})([A-Za-z0-9]{16,128})(?=\/?$)/,
+    ),
+  },
+  // Discord: /api[/v10]/webhooks/<webhook id>/<token>
+  {
+    label: 'Discord',
+    host: /^(?:(?:ptb|canary)\.)?discord(?:app)?\.com$/,
+    match: segmentAfter(/^(\/api(?:\/v\d{1,2})?\/webhooks\/\d{15,22}\/)([A-Za-z0-9_-]{20,128})(?=\/|$)/),
+  },
+  // Microsoft Teams (Office 365 connector): …/IncomingWebhook/<hex>/<guid>[/V2…]
+  {
+    label: 'Microsoft Teams',
+    host: /(?:^|\.)webhook\.office\.com$|^outlook\.office(?:365)?\.com$/,
+    match: (path) => {
+      const marker = '/IncomingWebhook/';
+      const at = path.indexOf(marker);
+      if (at === -1) return null;
+      const start = at + marker.length;
+      const secret = path.slice(start).replace(/\/+$/, '');
+      if (!/^[A-Za-z0-9@._/-]{16,512}$/.test(secret)) return null;
+      return { start, end: start + secret.length };
+    },
+  },
+  // Zapier catch hook: /hooks/catch/<account id>/<hook code>/
+  {
+    label: 'Zapier',
+    host: /^hooks\.zapier\.com$/,
+    match: segmentAfter(/^(\/hooks\/(?:catch|standard)\/\d{1,15}\/)([A-Za-z0-9]{4,64})(?=\/|$)/),
+  },
+  // Make (formerly Integromat) custom webhook: hook.<zone>.make.com/<token>
+  {
+    label: 'Make',
+    host: /^hook\.(?:[a-z0-9-]{1,20}\.)?(?:make\.com|integromat\.com|make\.celonis\.com)$/,
+    match: segmentAfter(/^(\/)([A-Za-z0-9]{16,64})(?=\/|$)/),
+  },
+];
+
+/**
+ * A Bitrix24 webhook on a self-hosted portal (any host): `/rest/<user id>/`
+ * followed by the 16-character webhook code, lower case letters and digits,
+ * with both and not hex only (a hex id is a resource, not a code).
+ */
+const BITRIX_ANY_HOST = /\/rest\/\d{1,10}\/([a-z0-9]{16})(?=[/?#\s"'`]|$)/g;
+
+function isBitrixCode(code: string): boolean {
+  return /[a-z]/.test(code) && /[0-9]/.test(code) && !HEX.test(code);
+}
+
+/** `XXXXXXXX…`, as in vendor docs: an example, not a credential. */
+function isRepeatedChar(value: string): boolean {
+  return /^(.)\1+$/.test(value);
+}
+
+/** An absolute URL in free text: scheme, `://`, then up to the next space or quote. */
+const ABSOLUTE_URL = /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,30}:\/\/[^\s"'<>`]{1,4096}/g;
+
+/** What a masked password slot holds (database-url-credentials.util.ts URL_PASSWORD_MASK). */
+const MASKED_PASSWORD = /^\*+$/;
+
+/**
+ * Secrets in an absolute URL's userinfo and in a known webhook path.
+ * `masked` has its placeholders blanked out; offsets refer to `text`.
+ */
+function findUrlSecrets(text: string, masked: string): SecretFinding[] {
+  const found: SecretFinding[] = [];
+  for (const m of masked.matchAll(ABSOLUTE_URL)) {
+    const url = m[0];
+    const offset = m.index ?? 0;
+    const authStart = url.indexOf('://') + 3;
+    const rest = url.slice(authStart);
+    // The authority ends at the path, the query or the fragment: an `@` in
+    // `?email=a@b.example` is not userinfo.
+    const stop = rest.search(/[/?#]/);
+    const authority = stop === -1 ? rest : rest.slice(0, stop);
+    const at = authority.lastIndexOf('@');
+
+    // scheme://user:password@host: the password, never the user name.
+    if (at > 0) {
+      const userinfo = authority.slice(0, at);
+      const colon = userinfo.indexOf(':');
+      const password = colon === -1 ? '' : userinfo.slice(colon + 1);
+      if (password && !password.includes(FILLER) && !MASKED_PASSWORD.test(password)) {
+        const start = offset + authStart + colon + 1;
+        found.push(finding('url_password', text, start, start + password.length, 'password'));
+      }
+    }
+
+    const host = (at === -1 ? authority : authority.slice(at + 1)).replace(/:\d*$/, '').toLowerCase();
+    if (host.includes(FILLER)) continue;
+    const tail = rest.slice(authority.length);
+    const queryAt = tail.search(/[?#]/);
+    const path = queryAt === -1 ? tail : tail.slice(0, queryAt);
+    const pathOffset = offset + authStart + authority.length;
+    for (const rule of WEBHOOK_RULES) {
+      if (!rule.host.test(host)) continue;
+      const span = rule.match(path);
+      if (!span) continue;
+      const secret = path.slice(span.start, span.end);
+      if (secret.includes(FILLER) || isRepeatedChar(secret)) continue;
+      found.push(
+        finding('webhook_token', text, pathOffset + span.start, pathOffset + span.end, rule.label),
+      );
+    }
+  }
+
+  for (const m of masked.matchAll(BITRIX_ANY_HOST)) {
+    if (!isBitrixCode(m[1])) continue;
+    const start = (m.index ?? 0) + m[0].length - m[1].length;
+    found.push(finding('webhook_token', text, start, start + m[1].length, 'Bitrix24'));
+  }
+  return found;
+}
+
 export interface FindOptions {
   /** Include the high-entropy heuristic (default true). */
   highEntropy?: boolean;
@@ -348,7 +515,9 @@ export function findSecretLiterals(input: string, opts: FindOptions = {}): Secre
   if (typeof input !== 'string' || input.length < 8) return [];
   const text = input.length > MAX_SCAN_LENGTH ? input.slice(0, MAX_SCAN_LENGTH) : input;
   const masked = maskPlaceholders(text);
-  const found: SecretFinding[] = [];
+  // First, so that a webhook token the long-random-token rule would also
+  // catch is reported (and named) as what it is.
+  const found: SecretFinding[] = findUrlSecrets(text, masked);
 
   for (const m of masked.matchAll(TELEGRAM)) {
     // Without `bot` in front, `<digits>:<word>` is also an AWS ARN tail

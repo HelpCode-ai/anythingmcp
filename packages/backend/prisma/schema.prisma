@@ -1781,6 +1781,11 @@ model LearningTopic {
   // "old  windows!" are one topic.
   key              String
   whenToUse        String             @default("") @map("when_to_use") @db.Text
+  // Where this topic's skills are filed; null = the project's folder. NO
+  // ACTION like the other folder links: the folder service moves topics to
+  // the parent before a delete.
+  folderId         String?            @map("folder_id")
+  folder           KnowledgeFolder?   @relation(fields: [folderId], references: [id], onDelete: NoAction)
   draftSkillId     String?            @map("draft_skill_id")
   draftSkill       KgSkillSuggestion? @relation("TopicDraftSkill", fields: [draftSkillId], references: [id], onDelete: SetNull)
   publishedSkillId String?            @map("published_skill_id")
@@ -1794,6 +1799,7 @@ model LearningTopic {
 
   @@unique([projectId, key])
   @@index([organizationId])
+  @@index([folderId])
   @@map("learning_topics")
 }
 
@@ -1954,6 +1960,7 @@ model KnowledgeFolder {
   skills           KgSkillSuggestion[]
   memoryItems      MemoryItem[]
   learningProjects LearningProject[]
+  learningTopics   LearningTopic[]
 
   @@index([organizationId])
   @@index([parentId])

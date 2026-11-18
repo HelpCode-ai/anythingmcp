@@ -173,7 +173,9 @@ export default function LearningProjectPage() {
         ))}
       </div>
 
-      {tab === 'topics' && token && <Topics token={token} topics={project.topics} onChanged={load} />}
+      {tab === 'topics' && token && (
+        <Topics token={token} project={project} canEdit={isAdmin && project.status !== 'ended'} onChanged={load} />
+      )}
       {tab === 'lessons' && token && <Lessons token={token} projectId={project.id} version={version} onChanged={load} />}
       {tab === 'settings' && token && isAdmin && (
         <ProjectSettings token={token} project={project} onSaved={load} />
@@ -191,15 +193,153 @@ function BackLink() {
   );
 }
 
-function Topics({ token, topics, onChanged }: { token: string; topics: LearningTopic[]; onChanged: () => void }) {
+/** Title, "when to use" and folder of a topic, for adding or editing one (admins). */
+function TopicForm({
+  token,
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  token: string;
+  initial?: LearningTopic;
+  submitLabel: string;
+  onSubmit: (body: { title: string; whenToUse: string; folderId: string | null }) => Promise<void>;
+  onCancel?: () => void;
+}) {
+  const t = useTranslations('learning.topics');
+  const { folders } = useKnowledgeFolders(token);
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [whenToUse, setWhenToUse] = useState(initial?.whenToUse ?? '');
+  const [folderId, setFolderId] = useState(initial?.folder?.id ?? '');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const idp = initial ? `lpt-${initial.id}` : 'lpt-new';
+
+  const submit = async () => {
+    setSaving(true);
+    setMsg('');
+    try {
+      await onSubmit({ title: title.trim(), whenToUse: whenToUse.trim(), folderId: folderId || null });
+      if (!initial) {
+        setTitle('');
+        setWhenToUse('');
+        setFolderId('');
+      }
+    } catch (e: any) {
+      setMsg(e.message || '');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2" data-testid="learning-topic-form">
+      <div>
+        <label className={labelCls} htmlFor={`${idp}-title`}>
+          {t('titleLabel')}
+        </label>
+        <input
+          id={`${idp}-title`}
+          value={title}
+          maxLength={80}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder={t('titleHint')}
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <span className={labelCls} id={`${idp}-folder`}>
+          {t('folderLabel')}
+        </span>
+        <AppSelect
+          aria-labelledby={`${idp}-folder`}
+          value={folderId}
+          onValueChange={setFolderId}
+          className={inputCls}
+          options={folderOptions(folders, t('projectFolder'))}
+        />
+      </div>
+      <div className="sm:col-span-2">
+        <label className={labelCls} htmlFor={`${idp}-when`}>
+          {t('whenLabel')}
+        </label>
+        <input
+          id={`${idp}-when`}
+          value={whenToUse}
+          maxLength={300}
+          onChange={(e) => setWhenToUse(e.target.value)}
+          placeholder={t('whenHint')}
+          className={inputCls}
+        />
+      </div>
+      <div className="sm:col-span-2 flex items-center gap-2">
+        <Button size="sm" disabled={saving || title.trim().length < 2} onClick={submit}>
+          {submitLabel}
+        </Button>
+        {onCancel && (
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            {t('cancel')}
+          </Button>
+        )}
+        {msg && <span className="text-[12.5px] text-[var(--text-2)]">{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
+function Topics({
+  token,
+  project,
+  canEdit,
+  onChanged,
+}: {
+  token: string;
+  project: LearningProjectDetail;
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
   const t = useTranslations('learning.topics');
   const locale = useLocale();
+  const topics = project.topics;
   const [preview, setPreview] = useState<{ id: string; body: string | null; dropped: number } | null>(null);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
+  const [editing, setEditing] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const addForm = canEdit && (
+    <Card className="px-[18px] py-4">
+      {adding ? (
+        <>
+          <p className="text-[12.5px] text-[var(--text-2)] mb-3">{t('addHint')}</p>
+          <TopicForm
+            token={token}
+            submitLabel={t('add')}
+            onCancel={() => setAdding(false)}
+            onSubmit={async (body) => {
+              await learningApi.addTopic(token, project.id, body);
+              setMsg(t('added', { title: body.title }));
+              onChanged();
+            }}
+          />
+        </>
+      ) : (
+        <Button size="sm" variant="ghost" onClick={() => setAdding(true)}>
+          + {t('add')}
+        </Button>
+      )}
+    </Card>
+  );
 
   if (!topics.length) {
-    return <Card className="p-6 text-center text-[13px] text-[var(--text-3)]">{t('empty')}</Card>;
+    return (
+      <div className="flex flex-col gap-2.5">
+        {msg && <p className="text-[12.5px] text-[var(--text-2)]">{msg}</p>}
+        <Card className="p-6 text-center text-[13px] text-[var(--text-3)]">{t('empty')}</Card>
+        {addForm}
+      </div>
+    );
   }
 
   const showPreview = async (topicId: string) => {
@@ -249,6 +389,12 @@ function Topics({ token, topics, onChanged }: { token: string; topics: LearningT
                   : t('notPublished')}
                 {' · '}
                 {t('counts', { confirmed: topic.lessons.confirmed, draft: topic.lessons.draft })}
+                {' · '}
+                {topic.folder
+                  ? t('inFolder', { name: topic.folder.name })
+                  : project.folder
+                    ? t('inProjectFolder', { name: project.folder.name })
+                    : t('noFolder')}
               </p>
               {topic.whenToUse && (
                 <p className="text-[12.5px] text-[var(--text-2)] mt-1.5">
@@ -257,6 +403,11 @@ function Topics({ token, topics, onChanged }: { token: string; topics: LearningT
               )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              {canEdit && (
+                <Button size="sm" variant="ghost" onClick={() => setEditing(editing === topic.id ? '' : topic.id)}>
+                  {t('edit')}
+                </Button>
+              )}
               <Button size="sm" variant="ghost" onClick={() => showPreview(topic.id)}>
                 {preview?.id === topic.id ? t('hidePreview') : t('preview')}
               </Button>
@@ -270,6 +421,22 @@ function Topics({ token, topics, onChanged }: { token: string; topics: LearningT
               </Button>
             </div>
           </div>
+          {editing === topic.id && (
+            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+              <TopicForm
+                token={token}
+                initial={topic}
+                submitLabel={t('save')}
+                onCancel={() => setEditing('')}
+                onSubmit={async (body) => {
+                  await learningApi.updateTopic(token, topic.id, body);
+                  setEditing('');
+                  setMsg(t('saved'));
+                  onChanged();
+                }}
+              />
+            </div>
+          )}
           {preview?.id === topic.id && (
             <div className="mt-3">
               {preview.body ? (
@@ -291,6 +458,7 @@ function Topics({ token, topics, onChanged }: { token: string; topics: LearningT
           )}
         </Card>
       ))}
+      {addForm}
     </div>
   );
 }

@@ -324,9 +324,7 @@ export class McpServerService implements OnModuleInit {
   ): Promise<void> {
     const { syncKg = true, notifySessions = true } = opts;
     // Remove old tools from both registries
-    const oldTools = this.toolRegistry
-      .getAllTools()
-      .filter((t) => t.connectorId === connectorId);
+    const oldTools = this.toolRegistry.getToolsForConnectors([connectorId]);
     this.toolRegistry.unregisterConnectorTools(connectorId);
     for (const tool of oldTools) {
       // Only drop from the upstream MCP registry if no other connector

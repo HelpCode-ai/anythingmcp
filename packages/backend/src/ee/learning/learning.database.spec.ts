@@ -19,6 +19,7 @@ const OTHER_ORG = `${TAG}-other-org`;
 const ADMIN = `${TAG}-admin`;
 const EXPERT = `${TAG}-expert`;
 const COLLEAGUE = `${TAG}-colleague`;
+const READER = `${TAG}-reader`;
 const SERVER = `${TAG}-server`;
 
 const access: any = {
@@ -51,6 +52,7 @@ beforeAll(async () => {
     [ADMIN, 'ADMIN'],
     [EXPERT, 'EDITOR'],
     [COLLEAGUE, 'EDITOR'],
+    [READER, 'VIEWER'],
   ] as const) {
     await prisma.user.create({ data: { id, email: `${id}@test.local`, role, organizationId: ORG } });
     await prisma.organizationMember.create({ data: { userId: id, organizationId: ORG, role } });
@@ -61,7 +63,7 @@ beforeAll(async () => {
 afterAll(async () => {
   // Organizations cascade to everything created here; users go last.
   await prisma.organization.deleteMany({ where: { id: { in: [ORG, OTHER_ORG] } } });
-  await prisma.user.deleteMany({ where: { id: { in: [ADMIN, EXPERT, COLLEAGUE] } } });
+  await prisma.user.deleteMany({ where: { id: { in: [ADMIN, EXPERT, COLLEAGUE, READER] } } });
   await prisma.$disconnect();
 });
 
@@ -189,5 +191,78 @@ describe('learning projects on a real database', () => {
     expect(skill).toEqual(expect.objectContaining({ source: 'learning', originUserId: null }));
     expect((await prisma.learningProject.findFirst({ where: { organizationId: ORG } }))?.userId).toBeNull();
     expect((await served(COLLEAGUE)).ids).toEqual([skill.id]);
+  });
+});
+
+/**
+ * Topics set by an admin, each filed in its own folder, and a folder limited
+ * to a role the expert lacks (#1770). Runs after the block above, whose
+ * project has ended: the colleague is the expert here.
+ */
+describe('learning topics in their own folders on a real database', () => {
+  const ROLE = `${TAG}-shop-role`;
+  let folderId: string;
+  let active: { projectId: string; organizationId: string };
+
+  beforeAll(async () => {
+    await prisma.role.create({ data: { id: ROLE, name: ROLE, organizationId: ORG } });
+    await prisma.userRoleAssignment.create({ data: { userId: READER, roleId: ROLE, organizationId: ORG } });
+    folderId = (await prisma.knowledgeFolder.create({ data: { organizationId: ORG, name: 'Shop support', roleIds: [ROLE] } }))
+      .id;
+  });
+
+  it('creates the project with its topics, and the expert gets their draft back in a folder limited to a role they lack', async () => {
+    const project = await learning.create(
+      ORG,
+      {
+        name: 'Shop support',
+        userId: COLLEAGUE,
+        mcpServerId: SERVER,
+        topics: [{ title: 'Shop support', whenToUse: 'Questions about the web shop', folderId }],
+      },
+      { actorUserId: ADMIN },
+    );
+    await learning.consent(ORG, project.id, COLLEAGUE, 'Your lessons on this server are kept as skills.', {
+      actorUserId: COLLEAGUE,
+    });
+    active = { projectId: project.id, organizationId: ORG };
+    const found = await learning.activeFor(ORG, COLLEAGUE, SERVER);
+    expect(found!.topics).toEqual([expect.objectContaining({ title: 'Shop support', whenToUse: 'Questions about the web shop' })]);
+
+    const before = (await served(COLLEAGUE)).ids;
+    const saved = await learning.record(active, {
+      topic: 'shop support',
+      kind: 'rule',
+      text: 'Send portal invitations only to the main contact of a customer',
+    });
+    const draft = await prisma.kgSkillSuggestion.findFirst({ where: { organizationId: ORG, audienceUserId: COLLEAGUE } });
+    expect(draft).toEqual(expect.objectContaining({ folderId, title: 'Shop support' }));
+
+    const expert = await served(COLLEAGUE);
+    expect(expert.ids).toEqual(expect.arrayContaining([draft!.id, ...before]));
+    // Holding the folder's role does not show somebody else's draft.
+    expect((await served(READER)).ids).not.toContain(draft!.id);
+
+    // Published: for the folder's role, still not for the expert's colleagues without it.
+    await learning.confirm(active, [{ id: saved.id, verdict: 'confirm' }], COLLEAGUE);
+    const { skillId } = await learning.publish(ORG, saved.topicId, { actorUserId: ADMIN });
+    expect((await served(READER)).ids).toContain(skillId);
+    const unrelated = await folders.accessFor(ORG, null);
+    expect((await skills.listForCaller(ORG, SERVER, [], undefined, unrelated)).map((x) => x.id)).not.toContain(skillId);
+    // The expert keeps their draft instead of the published copy.
+    const again = await served(COLLEAGUE);
+    expect(again.ids).toContain(draft!.id);
+    expect(again.ids).not.toContain(skillId);
+  });
+
+  it('moves a topic and its skills to another folder', async () => {
+    const [topic] = await prisma.learningTopic.findMany({ where: { organizationId: ORG, projectId: active.projectId } });
+    await learning.updateTopic(ORG, topic.id, { folderId: null, title: 'Web shop support' }, { actorUserId: ADMIN });
+    const rows = await prisma.kgSkillSuggestion.findMany({ where: { organizationId: ORG, learningProjectId: active.projectId } });
+    expect(rows).toHaveLength(2);
+    for (const r of rows) expect(r).toEqual(expect.objectContaining({ folderId: null, title: 'Web shop support' }));
+    // Out of the limited folder: the published skill reaches everyone.
+    const anyone = await folders.accessFor(ORG, null);
+    expect((await skills.listForCaller(ORG, SERVER, [], undefined, anyone)).length).toBeGreaterThan(0);
   });
 });

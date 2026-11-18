@@ -83,20 +83,15 @@ describe('reactivationLinkVariant', () => {
     }
   });
 
-  it('splits workspaces about half and half', () => {
-    let page = 0;
-    const n = 10_000;
-    for (let i = 0; i < n; i++) if (reactivationLinkVariant(`cm${i.toString(36)}xyz`) === 'page') page++;
-    expect(page / n).toBeGreaterThan(0.47);
-    expect(page / n).toBeLessThan(0.53);
+  it('gives every workspace the page since the test ended', () => {
+    for (let i = 0; i < 1_000; i++) expect(reactivationLinkVariant(`cm${i.toString(36)}xyz`)).toBe('page');
   });
 });
 
 describe('trialReactivationUrlFor', () => {
   const env = { ...ENV, FRONTEND_URL: 'https://cloud.test/', MARKETING_URL: 'https://site.test' } as any;
-  const orgOf = (variant: 'page' | 'pricing') => {
-    for (let i = 0; ; i++) if (reactivationLinkVariant(`org-${i}`) === variant) return `org-${i}`;
-  };
+  // Every workspace is in the 'page' arm since the test ended (2026-11-17).
+  const orgOf = (_variant: 'page') => 'org-1';
 
   it("links a 'page' workspace to the no-login page with a token for it and the user", () => {
     const org = orgOf('page');
@@ -107,12 +102,6 @@ describe('trialReactivationUrlFor', () => {
     expect(readReactivationToken(m![1], new Date(), env)).toEqual({ organizationId: org, userId: 'user-1' });
     expect(trialReactivationUrlFor(org, 'user-1', env)).toMatch(/^https:\/\/cloud\.test\/reactivate\//);
     expect(link.url).not.toMatch(/email|@/i);
-  });
-
-  it("links a 'pricing' workspace to the pricing page, unchanged", () => {
-    const org = orgOf('pricing');
-    expect(trialReactivationLink(org, 'user-1', env)).toEqual({ url: trialReactivationUrl(env), variant: 'pricing' });
-    expect(trialReactivationUrlFor(org, 'user-1', env)).toBe(trialReactivationUrl(env));
   });
 
   it("falls back to the pricing page, counted as 'pricing', when no token can be made", () => {

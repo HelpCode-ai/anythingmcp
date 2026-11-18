@@ -63,6 +63,9 @@ export interface LlmResult {
  */
 export const KG_LLM_MAX_OUTPUT_TOKENS = 4000;
 
+/** Ceiling for the single retry when Anthropic stops at the token limit. */
+export const KG_LLM_RETRY_MAX_OUTPUT_TOKENS = 8000;
+
 /** Call the model and parse its reply as JSON. Throws on transport/parse error,
  *  except on the custom path where an unusable reply resolves
  *  `{ json: null, skipped: true }` so callers can return early without
@@ -74,38 +77,54 @@ export async function chatJson(
   maxTokens = KG_LLM_MAX_OUTPUT_TOKENS,
 ): Promise<LlmResult> {
   if (cfg.provider === 'anthropic') {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': cfg.apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: cfg.model,
-        max_tokens: maxTokens,
-        temperature: 0,
-        // System prompt as a cacheable block: the instructions are identical
-        // across calls, so prompt caching serves them at ~0.1x on repeats.
-        // (Only kicks in once the prefix passes the model's cache minimum;
-        // harmless otherwise.) OpenAI/OpenRouter cache automatically.
-        system: [
-          {
-            type: 'text',
-            text: system + '\nRespond with a single JSON object and nothing else.',
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
-        messages: [{ role: 'user', content: user }],
-      }),
-    });
-    if (!r.ok) throw new Error(`LLM ${r.status}: ${(await r.text()).slice(0, 200)}`);
-    const j = await r.json();
-    const text = j.content?.[0]?.text ?? '{}';
-    return {
-      json: JSON.parse(stripFences(text)),
-      usage: { inputTokens: j.usage?.input_tokens, outputTokens: j.usage?.output_tokens },
+    const call = async (limit: number) => {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': cfg.apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: cfg.model,
+          max_tokens: limit,
+          temperature: 0,
+          // System prompt as a cacheable block: the instructions are identical
+          // across calls, so prompt caching serves them at ~0.1x on repeats.
+          // (Only kicks in once the prefix passes the model's cache minimum;
+          // harmless otherwise.) OpenAI/OpenRouter cache automatically.
+          system: [
+            {
+              type: 'text',
+              text: system + '\nRespond with a single JSON object and nothing else.',
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
+          messages: [{ role: 'user', content: user }],
+        }),
+      });
+      if (!r.ok) throw new Error(`LLM ${r.status}: ${(await r.text()).slice(0, 200)}`);
+      return r.json();
     };
+    let j = await call(maxTokens);
+    // A reply cut off at the token limit is half a JSON object: try once more
+    // with more room instead of failing the whole pass on a parse error.
+    if (j.stop_reason === 'max_tokens' && maxTokens < KG_LLM_RETRY_MAX_OUTPUT_TOKENS) {
+      logger.warn(
+        `KG LLM reply hit the ${maxTokens}-token limit (model=${cfg.model}); retrying once with ${KG_LLM_RETRY_MAX_OUTPUT_TOKENS}.`,
+      );
+      j = await call(KG_LLM_RETRY_MAX_OUTPUT_TOKENS);
+    }
+    const text = j.content?.[0]?.text ?? '{}';
+    try {
+      return {
+        json: JSON.parse(stripFences(text)),
+        usage: { inputTokens: j.usage?.input_tokens, outputTokens: j.usage?.output_tokens },
+      };
+    } catch {
+      const cut = j.stop_reason === 'max_tokens' ? ' (cut off at the token limit)' : '';
+      throw new Error(`LLM returned unusable JSON${cut}: ${String(text).slice(0, 200)}`);
+    }
   }
 
   const base =

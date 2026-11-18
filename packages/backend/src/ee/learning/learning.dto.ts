@@ -10,8 +10,57 @@ import {
   MaxLength,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { LEARNING_LIMITS, PUBLISH_MODES } from './learning.service';
+
+export class LearningTopicDto {
+  @ApiProperty({ description: 'Short name of the kind of work, e.g. "Spare parts for old windows".' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(LEARNING_LIMITS.title)
+  title: string;
+
+  @ApiPropertyOptional({ description: 'When a colleague\'s assistant should use the learned skill.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(LEARNING_LIMITS.whenToUse)
+  whenToUse?: string;
+
+  @ApiPropertyOptional({
+    description: 'Folder the topic\'s skills are filed in; empty: the project\'s folder.',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  folderId?: string | null;
+}
+
+export class UpdateLearningTopicDto {
+  @ApiPropertyOptional({ description: 'New name. The topic\'s skills are renamed with it.' })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(LEARNING_LIMITS.title)
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(LEARNING_LIMITS.whenToUse)
+  whenToUse?: string;
+
+  @ApiPropertyOptional({
+    description: 'Folder for the topic\'s skills; null: the project\'s folder. Its existing skills move with it.',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsString()
+  folderId?: string | null;
+}
 
 export class CreateLearningProjectDto {
   @ApiProperty({ description: 'Name of the project, e.g. "Hardware for old windows".' })
@@ -59,6 +108,17 @@ export class CreateLearningProjectDto {
   @IsOptional()
   @IsBoolean()
   showExpertName?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Topics set in advance: the member\'s assistant files lessons under them first.',
+    type: [LearningTopicDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(LEARNING_LIMITS.topics)
+  @ValidateNested({ each: true })
+  @Type(() => LearningTopicDto)
+  topics?: LearningTopicDto[];
 }
 
 export class UpdateLearningProjectDto {

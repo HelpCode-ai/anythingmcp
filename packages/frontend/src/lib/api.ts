@@ -1664,6 +1664,8 @@ export interface LearningTopic {
   id: string;
   title: string;
   whenToUse: string;
+  /** Where the topic's skills are filed; null: the project's folder. */
+  folder: { id: string; name: string } | null;
   draftSkillId: string | null;
   publishedSkillId: string | null;
   publishedAt: string | null;
@@ -1700,6 +1702,13 @@ export interface MyLearningProject {
   showExpertName: boolean;
 }
 
+/** A topic an admin sets on a project. */
+export interface LearningTopicInput {
+  title: string;
+  whenToUse?: string;
+  folderId?: string | null;
+}
+
 export interface LearningProjectInput {
   name: string;
   userId: string;
@@ -1709,6 +1718,7 @@ export interface LearningProjectInput {
   tags?: string[];
   publishMode?: 'manual' | 'confirmed';
   showExpertName?: boolean;
+  topics?: LearningTopicInput[];
 }
 
 export const learning = {
@@ -1744,6 +1754,10 @@ export const learning = {
   },
   setLesson: (token: string, lessonId: string, body: { status?: 'draft' | 'confirmed' | 'rejected'; text?: string }) =>
     request<LearningLesson>(`/api/learning/lessons/${lessonId}`, { token, method: 'PATCH', body }),
+  addTopic: (token: string, projectId: string, body: LearningTopicInput) =>
+    request<{ id: string }>(`/api/learning/projects/${projectId}/topics`, { token, method: 'POST', body }),
+  updateTopic: (token: string, topicId: string, body: Partial<LearningTopicInput>) =>
+    request<{ id: string }>(`/api/learning/topics/${topicId}`, { token, method: 'PATCH', body }),
   preview: (token: string, topicId: string) =>
     request<{ topic: { id: string; title: string }; instruction: string; body: string | null; included: number; dropped: number }>(
       `/api/learning/topics/${topicId}/preview`,
@@ -1960,6 +1974,15 @@ export const reactivation = {
     request<{ url: string }>(`/api/license/reactivate/${encodeURIComponent(linkToken)}/checkout`, {
       method: 'POST',
       body,
+    }),
+  /**
+   * Back from Stripe: binds the licence just bought to the workspace and
+   * answers its state. Safe to repeat; the backend asks the licence site at
+   * most once every few seconds.
+   */
+  claim: (linkToken: string) =>
+    request<{ state: ReactivationView['state'] }>(`/api/license/reactivate/${encodeURIComponent(linkToken)}/claim`, {
+      method: 'POST',
     }),
   /** A click on the page (paywall_action). Fire and forget; survives the page closing. */
   track: (
@@ -2359,9 +2382,39 @@ export const roles = {
     limits: { callsPerMinute: number | null; callsPerHour: number | null },
     token: string,
   ) => request(`/api/roles/${id}/tools/${toolId}/rate-limit`, { method: 'PUT', body: limits, token }),
-  assignToUser: (userId: string, roleId: string | null, token: string) =>
-    request(`/api/roles/assign/${userId}`, { method: 'PUT', body: { roleId }, token }),
+  /** Every member with every MCP role they hold in this workspace. */
+  members: (token: string) =>
+    request<MemberRoles[]>('/api/roles/members', { token }),
+  /** Replaces the member's MANUAL roles; roles from single sign-on groups stay. */
+  setUserRoles: (userId: string, roleIds: string[], token: string) =>
+    request<{ message: string; roleIds: string[] }>(`/api/roles/assignments/${userId}`, {
+      method: 'PUT',
+      body: { roleIds },
+      token,
+    }),
 };
+
+/** One MCP role assignment of a member (`GET /api/roles/members`). */
+export interface MemberRoleAssignment {
+  roleId: string;
+  roleName: string;
+  /** 'manual' = set by an admin; anything else comes from a single sign-on group sync. */
+  source: string;
+  /** A grant with no workspace: it applies in every workspace. */
+  global: boolean;
+}
+
+export interface MemberRoles {
+  id: string;
+  email: string;
+  name: string | null;
+  /** Workspace role (ADMIN, EDITOR, VIEWER). */
+  role: string;
+  active: boolean;
+  roles: MemberRoleAssignment[];
+  /** Connectors the member's roles reach; null when roles do not limit the member. */
+  connectors: Array<{ id: string; name: string }> | null;
+}
 
 // MCP API Keys
 /**

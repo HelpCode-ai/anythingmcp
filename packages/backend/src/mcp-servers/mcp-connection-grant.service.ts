@@ -176,8 +176,8 @@ export class McpConnectionGrantService {
    *
    * Member visibility is decided per workspace, by that workspace's own mode
    * and the user's role there: in a restricted workspace where the user is not
-   * an admin, only the servers they own or that hold a connector they may see
-   * are listed, each with the count of those connectors. Feeds both
+   * an admin, only the servers they own are listed, each with the count of its
+   * connectors they may see. Feeds both
    * `GET /api/mcp-connections/targets` and the OAuth consent page's picker.
    */
   async listSelectableTargets(userId: string): Promise<
@@ -261,11 +261,13 @@ export class McpConnectionGrantService {
   /**
    * Of servers the user can already reach (see {@link validateServers}), the
    * ones member visibility lets them see, in the same order. A workspace in
-   * open mode, or where the user is an admin, keeps all of its servers. The
+   * open mode, or where the user is an admin, keeps all of its servers; in a
+   * restricted one a member who is not an admin keeps only their own. The
    * role comes from the membership row; a server whose membership row is
-   * gone is dropped (fail closed).
+   * gone is dropped (fail closed). Also used to name servers to the user
+   * (connections list, consent page).
    */
-  private async keepVisible(
+  async keepVisible(
     userId: string,
     servers: { id: string; organizationId: string }[],
   ): Promise<{ id: string; organizationId: string }[]> {
@@ -295,6 +297,44 @@ export class McpConnectionGrantService {
       visible.forEach((s) => keep.add(s.id));
     }
     return servers.filter((s) => keep.has(s.id));
+  }
+
+  /**
+   * The active servers of one workspace this user may be shown, oldest first:
+   * all of them in open mode or for an admin there, only their own in a
+   * restricted workspace. Empty when they are not an active member. For the
+   * server links handed to the model on the shared endpoint.
+   */
+  async serverNamesFor(userId: string, organizationId: string): Promise<Array<{ id: string; name: string }>> {
+    if (!userId || !organizationId) return [];
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId, deactivatedAt: null },
+      select: { role: true },
+    });
+    if (!membership) return [];
+    const scope: VisibilityScope = this.visibility
+      ? await this.scopeIn(userId, membership.role as string, organizationId)
+      : { restricted: false };
+    return this.prisma.mcpServerConfig.findMany({
+      where: { AND: [{ organizationId, isActive: true }, serverWhere(scope)] },
+      select: { id: true, name: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /**
+   * Whether member visibility narrows this user's view of one workspace (a
+   * member who is not an admin there, in a restricted workspace). False when
+   * they are not an active member.
+   */
+  async restrictedIn(userId: string, organizationId: string): Promise<boolean> {
+    if (!this.visibility || !userId || !organizationId) return false;
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId, deactivatedAt: null },
+      select: { role: true },
+    });
+    if (!membership) return false;
+    return (await this.scopeIn(userId, membership.role as string, organizationId)).restricted;
   }
 
   /** Everything this user has granted, for the dashboard's revoke list. */

@@ -24,7 +24,6 @@ function build(setup: unknown) {
     getConnectorSummaries: jest.fn(async () => []),
     getSharedGuide: jest.fn(async () => undefined),
     getServerNames: jest.fn(async () => []),
-    getServerNamesByOrg: jest.fn(async () => []),
   };
   const controller = new McpEndpointController(
     servers as any,
@@ -36,6 +35,7 @@ function build(setup: unknown) {
     {
       resolve: jest.fn().mockResolvedValue(null),
       clientRedirectUris: jest.fn(async (id?: string) => (id ? (REDIRECTS[id] ?? []) : [])),
+      serverNamesFor: jest.fn(async () => []),
     } as any,
     { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     { get: () => setup } as any,

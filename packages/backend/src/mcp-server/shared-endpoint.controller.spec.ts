@@ -82,7 +82,6 @@ function build(
     ),
     getSharedGuide: jest.fn(async () => undefined),
     getServerNames: jest.fn(async () => []),
-    getServerNamesByOrg: jest.fn(async (org: string) => [{ id: `srv-${org}`, name: 'Default' }]),
   };
   const controller = new McpEndpointController(
     servers as any,
@@ -98,6 +97,7 @@ function build(
     {
       resolve: jest.fn().mockResolvedValue(opts.grant ?? null),
       clientRedirectUris: jest.fn(async (id?: string) => (id ? (REDIRECTS[id] ?? []) : [])),
+      serverNamesFor: jest.fn(async (_userId: string, org: string) => [{ id: `srv-${org}`, name: 'Default' }]),
     } as any,
     { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
   );

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP connects Claude, ChatGPT, Copilot and Gemini to ERP, e-commerce, REST, SOAP and SQL systems and to your file servers: 877 connectors, plus company memory, skills and file search." width="100%" />
+  <img src="https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/badges/banner.png" alt="AnythingMCP connects Claude, ChatGPT, Copilot and Gemini to ERP, e-commerce, REST, SOAP and SQL systems and to your file servers: 901 connectors, plus company memory, skills and file search." width="100%" />
 </p>
 
 <h1 align="center">AnythingMCP: the open-source MCP gateway that becomes your company brain</h1>
@@ -11,6 +11,7 @@
       <img src="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending" alt="GitHub Trending Repository of the Day" height="64" />
     </picture>
   </a>
+  <a href="https://www.producthunt.com/products/anythingmcp?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-anythingmcp" target="_blank" rel="noopener noreferrer"><img alt="AnythingMCP - Open-source MCP gateway and company brain | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1321607&amp;theme=light&amp;t=1795006241059"></a>
 </p>
 
 <p align="center">
@@ -20,7 +21,7 @@
 <p align="center">
   <strong>AnythingMCP is an open-source, self-hosted MCP gateway that connects Claude, ChatGPT, Copilot and Gemini to the software your company runs and to the documents on your file servers, without writing an MCP server.</strong><br/>
   On top of the gateway it keeps your company brain: a knowledge graph of how your systems connect, AI skills and company memory, shared by every AI client and limited by each user's role.<br/>
-  877 ready connectors with 12,000+ tools, among them SAP, Odoo, weclapp and Amazon Seller; 46 need no API key.
+  901 ready connectors with 12,000+ tools, among them SAP, Odoo, weclapp and Amazon Seller; 46 need no API key.
 </p>
 
 <p align="center">
@@ -130,7 +131,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-877 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages. The [full catalog by category](docs/catalog/README.md) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](https://anythingmcp.com/marketplace) has a page for each one.
+901 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](https://anythingmcp.com/guides), in seven languages. The [full catalog by category](docs/catalog/README.md) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](https://anythingmcp.com/marketplace) has a page for each one.
 
 | Category | Examples |
 |---|---|

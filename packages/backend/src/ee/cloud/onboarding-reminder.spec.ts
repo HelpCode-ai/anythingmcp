@@ -4,18 +4,20 @@ import { QUICK_SETUPS, attributedIntent, claudeChatUrl, reminderArm } from './on
 
 describe('onboarding reminder arms', () => {
   it('assigns the same arm to a user on every run', () => {
-    expect(reminderArm('u3')).toBe('A');
+    // u3 was in arm A until the A/B test ended (2026-11-17).
+    expect(reminderArm('u3')).toBe('B');
     expect(reminderArm('u2')).toBe('B');
     expect(reminderArm('u1')).toBe('holdout');
     expect(reminderArm('u3')).toBe(reminderArm('u3'));
   });
 
-  it('holds out about 10% and splits the rest in halves', () => {
+  it('holds out about 10% and gives everyone else arm B', () => {
     const counts = { A: 0, B: 0, holdout: 0 };
     for (let i = 0; i < 20_000; i++) counts[reminderArm(`user-${i}`)]++;
     expect(counts.holdout / 20_000).toBeGreaterThan(0.08);
     expect(counts.holdout / 20_000).toBeLessThan(0.12);
-    expect(Math.abs(counts.A - counts.B) / 20_000).toBeLessThan(0.03);
+    expect(counts.A).toBe(0);
+    expect(counts.B + counts.holdout).toBe(20_000);
   });
 
   it('offers only catalog connectors for the one-click setups', () => {

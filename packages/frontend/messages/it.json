@@ -2399,7 +2399,7 @@
     "confirmDelete": "Eliminare il ruolo \"{name}\"? Gli utenti con questo ruolo non lo avranno più.",
     "deleted": "Ruolo eliminato",
     "toolAccessUpdated": "Accesso agli strumenti aggiornato",
-    "assigned": "Ruolo MCP assegnato",
+    "assigned": "Ruoli MCP salvati",
     "accessDenied": {
       "title": "Accesso negato",
       "body": "Solo gli amministratori possono accedere a questa pagina.",
@@ -2453,7 +2453,20 @@
       "appRole": "Ruolo nell'app",
       "mcpRole": "Ruolo per gli strumenti MCP",
       "fullAccess": "Accesso completo (admin)",
-      "noRestriction": "Nessun ruolo"
+      "unionHint": "Un membro può usare insieme gli strumenti di tutti i suoi ruoli. Ogni ruolo aggiunge strumenti, nessuno ne toglie.",
+      "reach": "Connettori raggiunti",
+      "fromSso": "da gruppo single sign-on",
+      "allWorkspaces": "tutti i workspace",
+      "allWorkspacesHint": "Questo ruolo vale in ogni workspace e non si può cambiare qui.",
+      "ssoHint": "I ruoli da un gruppo single sign-on seguono il gruppo. Si cambiano in",
+      "ssoLink": "Impostazioni → Single sign-on → Associazioni dei ruoli",
+      "manualPlaceholder": "Scegli i ruoli",
+      "deactivated": "Disattivato",
+      "allConnectors": "Tutti i connettori",
+      "noConnectors": "Nessuno",
+      "connectorCount": "{count, plural, one {# connettore} other {# connettori}}",
+      "noRoleOpen": "Nessun ruolo. Può usare tutti gli strumenti finché nessun ruolo ha un elenco di strumenti.",
+      "noRoleClosed": "Nessun ruolo, quindi nessuno strumento."
     }
   },
   "settingsAdmin": {
@@ -4036,7 +4049,23 @@
       "publishedMsg": "Pubblicato: {count} lezione/i sono ora una skill per tutti su questo server.",
       "nothing": "Ancora nulla di confermato da pubblicare.",
       "dropped": "{count} lezione/i più vecchie non entravano nel testo e sono state lasciate fuori.",
-      "viewSkill": "Apri AI Skills"
+      "viewSkill": "Apri AI Skills",
+      "titleLabel": "Argomento",
+      "titleHint": "es. Ricambi per finestre vecchie",
+      "whenLabel": "Quando usarla",
+      "whenHint": "Quando l'assistente di un collega deve usare questa skill",
+      "folderLabel": "Archivia le skill in",
+      "projectFolder": "La cartella del progetto",
+      "add": "Aggiungi un argomento",
+      "addHint": "Imposta gli argomenti in anticipo: l'assistente del membro archivia le lezioni prima sotto questi argomenti e ne apre uno nuovo solo se nessuno è adatto.",
+      "added": "Argomento \"{title}\" aggiunto.",
+      "edit": "Modifica",
+      "save": "Salva",
+      "saved": "Salvato. Le skill dell'argomento seguono il nuovo nome e la nuova cartella.",
+      "cancel": "Annulla",
+      "inFolder": "Cartella: {name}",
+      "inProjectFolder": "Cartella: {name} (progetto)",
+      "noFolder": "Nessuna cartella"
     },
     "lessons": {
       "filter": {
@@ -4080,7 +4109,7 @@
     "settings": {
       "name": "Nome",
       "folder": "Archivia le skill in",
-      "folderHint": "Vale per gli argomenti avviati da ora in poi.",
+      "folderHint": "Vale per gli argomenti senza una cartella propria, avviati da ora in poi.",
       "endsAt": "Termina il",
       "tags": "Etichette",
       "publishMode": "Pubblicazione",

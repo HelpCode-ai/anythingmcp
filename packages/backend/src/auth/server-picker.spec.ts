@@ -18,12 +18,15 @@ function build(
     targets?: any[];
     consent?: any;
     requestedServerId?: string;
+    /** Member visibility narrows the user's view of the workspace. */
+    restricted?: boolean;
   } = {},
 ) {
   const grants = {
     grantServers: jest.fn().mockResolvedValue(['srv-1']),
     grantWholeOrganization: jest.fn().mockResolvedValue(true),
     listSelectableTargets: jest.fn().mockResolvedValue(opts.targets ?? []),
+    restrictedIn: jest.fn().mockResolvedValue(!!opts.restricted),
   };
   const store = {
     getOAuthSession: jest.fn().mockResolvedValue(
@@ -83,6 +86,23 @@ describe('choosing what a client may reach', () => {
     await expect(ask(controller, req, res)).resolves.toBe(false);
 
     expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-1']);
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
+  it('grants a restricted member the whole workspace instead of their one own server', async () => {
+    // Member visibility offers them only their own server, which often holds
+    // none of the connectors shared with them; the workspace connection gives
+    // every tool their roles allow.
+    const { controller, grants, req, res } = build({
+      targets: [workspace('org-A', 'Acme', [server('srv-own', 'Default (Vera)', 0)])],
+      restricted: true,
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.restrictedIn).toHaveBeenCalledWith('u1', 'org-A');
+    expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-1', 'u1', 'org-A');
+    expect(grants.grantServers).not.toHaveBeenCalled();
     expect(res.send).not.toHaveBeenCalled();
   });
 

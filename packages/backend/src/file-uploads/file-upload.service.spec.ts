@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { FileUploadService } from './file-upload.service';
-import { LocalFileStorage } from '../file-search/storage/file-storage';
+import { LocalFileStorage, type FileStorage } from '../file-search/storage/file-storage';
 
 const ORG = 'org-a';
 const OTHER = 'org-b';
@@ -167,6 +167,68 @@ describe('FileUploadService', () => {
     process.env.FILE_UPLOADS_MAX_FILE_BYTES = '100';
     const link = await svc.createLink({ organizationId: ORG, filename: 'big.zip' });
     await expect(svc.receive(tokenOf(link.upload_url), Readable.from([Buffer.alloc(60), Buffer.alloc(60)]), null)).rejects.toThrow(/larger than/);
+    expect(prisma.fileUpload.rows[0].state).toBe('failed');
+  });
+
+  it('retries a passing storage reset from the temp file with a fresh stream', async () => {
+    const storage = (svc as any).storageInstance as FileStorage;
+    const real = storage.putStream.bind(storage);
+    const seen: Readable[] = [];
+    const put = jest.spyOn(storage, 'putStream').mockImplementation(async (key: string, body: Readable, size: number, type: string) => {
+      seen.push(body);
+      if (seen.length === 1) {
+        body.destroy();
+        throw Object.assign(new Error('socket hang up'), { name: 'TimeoutError' });
+      }
+      return real(key, body, size, type);
+    });
+    const link = await svc.createLink({ organizationId: ORG, filename: 'cover.png' });
+    const res = await svc.receive(tokenOf(link.upload_url), Readable.from([PNG]), PNG.length);
+    expect(res).toMatchObject({ file_ref: link.file_ref, bytes: PNG.length });
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(seen[0]).not.toBe(seen[1]);
+    expect(prisma.fileUpload.rows[0].state).toBe('ready');
+    expect((await svc.resolveForEngine(link.file_ref, ORG)).buffer.equals(PNG)).toBe(true);
+  });
+
+  it('answers 503 when storage keeps failing and keeps the link usable for another try', async () => {
+    const storage = (svc as any).storageInstance as FileStorage;
+    const put = jest.spyOn(storage, 'putStream').mockImplementation(async (_key: string, body: Readable) => {
+      body.destroy();
+      throw Object.assign(new Error('socket hang up'), { name: 'TimeoutError' });
+    });
+    const link = await svc.createLink({ organizationId: ORG, filename: 'cover.png' });
+    const token = tokenOf(link.upload_url);
+    const err = await svc.receive(token, Readable.from([PNG]), PNG.length).catch((e) => e);
+    expect(err.getStatus()).toBe(503);
+    expect(err.message).toMatch(/same link/);
+    expect(put).toHaveBeenCalledTimes(3);
+    expect(prisma.fileUpload.rows[0].state).toBe('pending');
+    expect((await svc.linkStatus(token)).state).toBe('waiting');
+
+    put.mockRestore();
+    await expect(svc.receive(token, Readable.from([PNG]), PNG.length)).resolves.toMatchObject({ bytes: PNG.length });
+    expect(prisma.fileUpload.rows[0].state).toBe('ready');
+  });
+
+  it('says a reference is not uploaded yet while its link still waits, and unknown otherwise', async () => {
+    const link = await svc.createLink({ organizationId: ORG, filename: 'cover.png' });
+    await expect(svc.resolveForEngine(link.file_ref, ORG)).rejects.toThrow(/not been uploaded yet/);
+    await expect(svc.publicUrl(link.file_ref, ORG)).rejects.toThrow(/not been uploaded yet/);
+    await expect(svc.resolveForEngine(link.file_ref, OTHER)).rejects.toThrow(/unknown or has expired/);
+    prisma.fileUpload.rows[0].uploadBy = new Date(Date.now() - 1000);
+    await expect(svc.resolveForEngine(link.file_ref, ORG)).rejects.toThrow(/unknown or has expired/);
+  });
+
+  it('marks the link failed when storage fails after the link expired', async () => {
+    const storage = (svc as any).storageInstance as FileStorage;
+    jest.spyOn(storage, 'putStream').mockImplementation(async (_key: string, body: Readable) => {
+      body.destroy();
+      prisma.fileUpload.rows[0].uploadBy = new Date(Date.now() - 1000);
+      throw new Error('reset');
+    });
+    const link = await svc.createLink({ organizationId: ORG, filename: 'cover.png' });
+    await expect(svc.receive(tokenOf(link.upload_url), Readable.from([PNG]), PNG.length)).rejects.toThrow(/new upload link/);
     expect(prisma.fileUpload.rows[0].state).toBe('failed');
   });
 

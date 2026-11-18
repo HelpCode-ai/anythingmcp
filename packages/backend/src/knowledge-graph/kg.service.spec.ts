@@ -183,4 +183,25 @@ describe('KgService — manual curation', () => {
       expect(r.entities.map((e: any) => e.entity)).toEqual(['customer']);
     });
   });
+
+  describe('enrich', () => {
+    const redis = { isConnected: false };
+    function withLlm(enrich: jest.Mock) {
+      return new KgService({} as any, redis as any, {} as any, {} as any, {} as any, { enrich } as any);
+    }
+
+    it('turns a model failure into a 502 with a readable message', async () => {
+      const svc = withLlm(jest.fn().mockRejectedValue(new Error('LLM returned unusable JSON: {"a":')));
+      await expect(svc.enrich(ORG)).rejects.toMatchObject({
+        status: 502,
+        message: 'The AI model did not return a usable answer. Please try again.',
+      });
+    });
+
+    it('keeps HTTP errors such as a disabled workspace as they are', async () => {
+      const conflict = new ConflictException('AI enrichment is disabled for this workspace.');
+      const svc = withLlm(jest.fn().mockRejectedValue(conflict));
+      await expect(svc.enrich(ORG)).rejects.toBe(conflict);
+    });
+  });
 });

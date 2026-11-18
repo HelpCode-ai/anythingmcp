@@ -325,6 +325,10 @@ export default function ConnectorDetailPage() {
   const [importEntitySets, setImportEntitySets] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
   const [msg, setMsg] = useState('');
+  // Result of an import or auto-import, shown in the Tools card next to the
+  // buttons that started it: the page-level message sits far above and went
+  // unnoticed, so a failed import looked like nothing had happened.
+  const [toolsMsg, setToolsMsg] = useState('');
   // The outcome of a Meta sign-in of an Instagram connector (?meta=…), with its next step.
   const [metaSignIn, setMetaSignIn] = useState<{
     status: MetaSignInStatus;
@@ -794,14 +798,14 @@ export default function ConnectorDetailPage() {
 
   const handleImportSpec = async () => {
     if (!token) return;
-    setMsg(t('msg.importingSpec'));
+    setToolsMsg(t('msg.importingSpec'));
     try {
       const result = await connectors.importSpec(id, token);
-      setMsg(withImportNotice(result.message, result));
+      setToolsMsg(withImportNotice(result.message, result));
       fetchConnector();
       promptMcpAssignIfNeeded();
     } catch (err: any) {
-      setMsg(t('msg.importFailed', { message: err.message }));
+      setToolsMsg(t('msg.importFailed', { message: err.message }));
     }
   };
 
@@ -837,6 +841,7 @@ export default function ConnectorDetailPage() {
   const handleImportTools = async () => {
     if (!token) return;
     setImporting(true);
+    setToolsMsg('');
     try {
       const data: { source: string; content?: string; url?: string; service?: string; entitySets?: string[] } = {
         source: importSource,
@@ -848,6 +853,10 @@ export default function ConnectorDetailPage() {
         if (sets.length) data.entitySets = sets;
       } else if (importSource === 'curl' || importSource === 'json' || importSource === 'har') {
         data.content = importContent;
+      } else if ((importSource === 'openapi' || importSource === 'postman') && importContent.trim()) {
+        // A pasted spec wins over the URL: users paste it when the URL does not
+        // load (a site that blocks downloads), often with the URL still filled in.
+        data.content = importContent;
       } else if (importUrl) {
         data.url = importUrl;
       } else if (importContent) {
@@ -855,9 +864,9 @@ export default function ConnectorDetailPage() {
       }
       const result = await connectors.importTools(id, data, token) as any;
       if (result.error) {
-        setMsg(result.error);
+        setToolsMsg(result.error);
       } else {
-        setMsg(withImportNotice(result.message, result));
+        setToolsMsg(withImportNotice(result.message, result));
         setShowImport(false);
         setImportContent('');
         setImportUrl('');
@@ -867,7 +876,7 @@ export default function ConnectorDetailPage() {
         promptMcpAssignIfNeeded();
       }
     } catch (err: any) {
-      setMsg(t('msg.importFailed', { message: err.message }));
+      setToolsMsg(t('msg.importFailed', { message: err.message }));
     } finally {
       setImporting(false);
     }
@@ -2481,6 +2490,15 @@ export default function ConnectorDetailPage() {
             </div>
             )}
           </div>
+
+          {toolsMsg && (
+            <div role="status" className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-2)] p-3 mb-4 text-sm text-[var(--text-2)]">
+              {toolsMsg}
+              <button onClick={() => setToolsMsg('')} className="ml-2 underline">
+                {t('dismiss')}
+              </button>
+            </div>
+          )}
 
           {/* Import Panel */}
           {showImport && (

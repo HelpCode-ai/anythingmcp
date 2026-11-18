@@ -43,6 +43,16 @@ describe('ToolRegistry', () => {
       registry.registerTool(tool1);
       registry.registerTool(tool2);
       expect(registry.getToolCount()).toBe(1);
+      expect(registry.countByName('test_tool')).toBe(1);
+      expect(registry.getTool('test_tool')).toBe(tool2);
+    });
+
+    it('moves a tool re-registered under a new name out of the old name', () => {
+      registry.registerTool(makeTool({ id: 'tool-1', name: 'old_name' }));
+      registry.registerTool(makeTool({ id: 'tool-1', name: 'new_name' }));
+      expect(registry.countByName('old_name')).toBe(0);
+      expect(registry.getTool('old_name')).toBeUndefined();
+      expect(registry.getTool('new_name')?.id).toBe('tool-1');
     });
   });
 
@@ -181,6 +191,57 @@ describe('ToolRegistry', () => {
       expect(registry.getToolsForOrganization('o1')).toEqual([]);
       expect(registry.getToolsForConnectors(['c1'])).toEqual([]);
       expect(registry.getToolsForOrganization('o2').map((x) => x.connectorId)).toEqual(['c2']);
+    });
+
+    it('keeps the other connectors under a shared name, in order, on unregister', () => {
+      const shared = (id: string, connectorId: string, organizationId: string) =>
+        makeTool({ id, connectorId, organizationId, name: 'shared' });
+      registry.registerTool(shared('a', 'c1', 'o1'));
+      registry.registerTool(shared('b', 'c2', 'o2'));
+      registry.registerTool(shared('c', 'c3', 'o3'));
+      registry.unregisterConnectorTools('c1');
+      expect(registry.countByName('shared')).toBe(2);
+      expect(registry.getTool('shared')?.id).toBe('b');
+      expect(registry.getToolForOrg('shared', 'o3')?.id).toBe('c');
+      expect(registry.getToolForOrg('shared', 'o1')).toBeUndefined();
+      registry.unregisterConnectorTools('c2');
+      registry.unregisterConnectorTools('c3');
+      expect(registry.countByName('shared')).toBe(0);
+      expect(registry.getTool('shared')).toBeUndefined();
+    });
+
+    it('counts tools per connector from the index', () => {
+      registry.registerTool(t('a', 'c1', 'o1'));
+      registry.registerTool(t('b', 'c1', 'o1'));
+      registry.registerTool(t('c', 'c2', 'o2'));
+      expect(registry.countByConnector()).toEqual(new Map([['c1', 2], ['c2', 1]]));
+      registry.unregisterConnectorTools('c1');
+      expect(registry.countByConnector()).toEqual(new Map([['c2', 1]]));
+    });
+
+    it('reloads one connector without walking the rest of the registry', () => {
+      // 200k tools in 20k connectors, about the Cloud registry's shape. A
+      // reload used to scan and re-index all of them: 100 reloads took
+      // seconds. Through the connector index they take milliseconds.
+      jest.spyOn((registry as any).logger, 'debug').mockImplementation(() => undefined);
+      for (let c = 0; c < 20_000; c++) {
+        for (let i = 0; i < 10; i++) {
+          registry.registerTool(
+            makeTool({ id: `t${c}-${i}`, connectorId: `c${c}`, organizationId: `o${c % 5000}`, name: `tool_${i}` }),
+          );
+        }
+      }
+      const mine = registry.getToolsForConnectors(['c42']);
+      const started = Date.now();
+      for (let n = 0; n < 100; n++) {
+        registry.unregisterConnectorTools('c42');
+        mine.forEach((tool) => registry.registerTool(tool));
+      }
+      const elapsed = Date.now() - started;
+      if (process.env.REGISTRY_BENCH) console.log(`100 reloads: ${elapsed} ms`);
+      expect(elapsed).toBeLessThan(250);
+      expect(registry.getToolCount()).toBe(200_000);
+      expect(registry.countByName('tool_3')).toBe(20_000);
     });
 
     it('drops a connector\'s tools from both indexes on unregister', () => {

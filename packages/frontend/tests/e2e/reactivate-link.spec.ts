@@ -29,6 +29,7 @@ const CHECKOUT = 'https://checkout.example.test/pay/cs_1';
 async function publicPage(page: Page, views: View[] | 404, opts: { signedIn?: boolean } = {}) {
   const posted: unknown[] = [];
   const events: Array<Record<string, unknown>> = [];
+  const claims: string[] = [];
   let gets = 0;
   await page.route(/\/(api|health)\//, async (route) => {
     const req = route.request();
@@ -42,6 +43,12 @@ async function publicPage(page: Page, views: View[] | 404, opts: { signedIn?: bo
     if (p.startsWith('/api/license/reactivate/') && p.endsWith('/event') && req.method() === 'POST') {
       events.push(req.postDataJSON());
       return route.fulfill({ status: 204 });
+    }
+    if (p.startsWith('/api/license/reactivate/') && p.endsWith('/claim') && req.method() === 'POST') {
+      // Asked before each read: what the next read will answer.
+      claims.push(p);
+      if (views === 404) return json({ message: 'This link is not valid any more.' }, 404);
+      return json({ state: views[Math.min(gets, views.length - 1)].state });
     }
     if (p.startsWith('/api/license/reactivate/') && req.method() === 'POST') {
       posted.push(req.postDataJSON());
@@ -62,7 +69,7 @@ async function publicPage(page: Page, views: View[] | 404, opts: { signedIn?: bo
   await page.context().route('https://checkout.example.test/**', (route) =>
     route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Stripe stub</h1>' }),
   );
-  return { posted, events };
+  return { posted, events, claims };
 }
 
 test.describe('reactivation link (cloud, signed out)', () => {
@@ -139,6 +146,62 @@ test.describe('reactivation link (cloud, signed out)', () => {
     await expect(cta).toBeInViewport({ ratio: 1, timeout: 15_000 });
     const [ctaBox, leadBox] = [await cta.boundingBox(), await page.getByTestId('reactivate-lead').boundingBox()];
     expect(leadBox!.y).toBeLessThan(ctaBox!.y);
+    if (process.env.REACTIVATE_SHOT) {
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-1366-fold.png` });
+      await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-1366-full.png`, fullPage: true });
+    }
+  });
+
+  test('on a desktop "what happens next" is under the plans, not beside the subscribe button', async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    const cta = page.getByRole('button', { name: 'Subscribe to Starter' });
+    await expect(cta).toBeVisible({ timeout: 15_000 });
+    const next = page.getByTestId('reactivate-next');
+    await expect(next).toContainText('What happens next');
+    await expect(next).toContainText('usually within seconds');
+    const [ctaBox, nextBox, trustBox] = [
+      await cta.boundingBox(),
+      await next.boundingBox(),
+      await page.getByTestId('reactivate-trust').boundingBox(),
+    ];
+    // Below the button, in the plans' column; the trust panel keeps the other.
+    expect(nextBox!.y).toBeGreaterThan(ctaBox!.y + ctaBox!.height);
+    expect(nextBox!.x).toBeLessThan(trustBox!.x);
+    expect(nextBox!.x + nextBox!.width).toBeLessThanOrEqual(trustBox!.x);
+  });
+
+  test('on a phone "what happens next" comes after the explanation', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 664 });
+    await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    const lead = page.getByTestId('reactivate-lead');
+    await expect(lead).toBeVisible({ timeout: 15_000 });
+    const [leadBox, nextBox] = [await lead.boundingBox(), await page.getByTestId('reactivate-next').boundingBox()];
+    expect(nextBox!.y).toBeGreaterThan(leadBox!.y);
+  });
+
+  test('names the ways to pay under the subscribe button', async ({ page }) => {
+    await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    const cta = page.getByRole('button', { name: 'Subscribe to Starter' });
+    await expect(cta).toBeVisible({ timeout: 15_000 });
+    const methods = page.getByTestId('pay-methods');
+    await expect(methods).toHaveText(/Pay with\s*Card\s*Apple Pay\s*Google Pay\s*PayPal\s*SEPA/);
+    const [ctaBox, methodsBox] = [await cta.boundingBox(), await methods.boundingBox()];
+    expect(methodsBox!.y).toBeGreaterThan(ctaBox!.y);
+  });
+
+  test('signed out, the sign-in is a quiet link, not a button', async ({ page }) => {
+    await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    const signIn = page.getByRole('banner').getByRole('link', { name: 'Sign in' });
+    await expect(signIn).toBeVisible({ timeout: 15_000 });
+    // No border and no fill: the subscribe button is the page's only button.
+    await expect(signIn).toHaveCSS('border-top-width', '0px');
+    await expect(signIn).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   });
 
   test('someone already signed in is offered their workspace, not a sign-in', async ({ page }) => {
@@ -281,12 +344,34 @@ test.describe('reactivation link (cloud, signed out)', () => {
     await expect(page.getByRole('main').getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
   });
 
-  test('back from Stripe it waits until the workspace is active', async ({ page }) => {
-    // Two answers before the payment lands: React runs the first fetch twice in dev.
-    await publicPage(page, [ENDED, ENDED, { ...ENDED, state: 'active' }]);
+  test('back from Stripe it claims the licence at once and waits until the workspace is active', async ({ page }) => {
+    // React runs the first fetch twice in dev, and the first claim goes out at
+    // once: two more answers keep the waiting notice up for a poll or two.
+    const { claims, posted } = await publicPage(page, [ENDED, ENDED, ENDED, ENDED, { ...ENDED, state: 'active' }]);
     await page.goto('/reactivate/tok_abc?paid=1');
     await expect(page.getByRole('heading', { name: 'Confirming your payment…' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('This usually takes a few seconds.')).toBeVisible();
     await expect(page.getByRole('heading', { name: "Payment received, you're all set" })).toBeVisible({ timeout: 15_000 });
+    expect(claims.length).toBeGreaterThan(0);
+    expect(claims.every((p) => p === '/api/license/reactivate/tok_abc/claim')).toBe(true);
+    // Claiming opens no checkout.
+    expect(posted).toEqual([]);
     if (process.env.REACTIVATE_SHOT) await page.screenshot({ path: `${process.env.REACTIVATE_SHOT}/reactivate-paid.png` });
+  });
+
+  test('back from Stripe it still gets there when the claim fails', async ({ page }) => {
+    await publicPage(page, [ENDED, ENDED, { ...ENDED, state: 'active' }]);
+    // An older backend has no claim route: the sweep binds the licence.
+    await page.route(/\/api\/license\/reactivate\/[^/]+\/claim$/, (route) => route.fulfill({ status: 404, body: '{}' }));
+    await page.goto('/reactivate/tok_abc?paid=1');
+    await expect(page.getByRole('heading', { name: "Payment received, you're all set" })).toBeVisible({ timeout: 20_000 });
+  });
+
+  test('a visit that is not a return from Stripe claims nothing', async ({ page }) => {
+    const { claims } = await publicPage(page, [ENDED]);
+    await page.goto('/reactivate/tok_abc');
+    await expect(page.getByRole('button', { name: 'Subscribe to Starter' })).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(500);
+    expect(claims).toEqual([]);
   });
 });

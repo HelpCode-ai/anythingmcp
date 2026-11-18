@@ -341,4 +341,78 @@ describe('LicenseService — paid licences that never reached their workspace', 
     expect(post).not.toHaveBeenCalled();
     expect(setKey).not.toHaveBeenCalled();
   });
+  describe('claimPaidLicenceFor: the purchase a workspace just made', () => {
+    it("asks the licence site for that workspace only and binds its fresh licence", async () => {
+      const { svc, setKey } = make({ orgs: ['org-b'] });
+      // Sold 10 seconds ago: the sweep would leave it for two minutes.
+      const post = siteLists([
+        { key: KEY_B, email: 'bob@example.org', plan: 'starter', organizationId: 'org-b', createdAt: new Date(NOW.getTime() - 10_000).toISOString() },
+      ]);
+
+      await expect(svc.claimPaidLicenceFor('org-b', NOW)).resolves.toBe(true);
+
+      expect(post).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/license\/unclaimed$/),
+        { organizationId: 'org-b' },
+        expect.objectContaining({ headers: { 'x-amcp-service-token': 'svc-token-0123456789abcdef' } }),
+      );
+      expect(setKey).toHaveBeenCalledWith(KEY_B, 'org-b');
+    });
+
+    it('binds nothing from the general list of an older licence site', async () => {
+      const { svc, setKey } = make({
+        orgs: ['org-b', 'org-c'],
+        users: [{ email: 'ann@example.com', role: 'ADMIN', organizationId: 'org-b', emailVerified: true }],
+      });
+      siteLists([
+        { key: KEY_A, email: 'ann@example.com', plan: 'starter' },
+        { key: KEY_B, email: 'carl@example.org', plan: 'team', organizationId: 'org-c' },
+      ]);
+
+      await expect(svc.claimPaidLicenceFor('org-b', NOW)).resolves.toBe(false);
+      expect(setKey).not.toHaveBeenCalled();
+    });
+
+    it('leaves a workspace that already pays alone', async () => {
+      const { svc, setKey } = make({
+        orgs: ['org-b'],
+        locals: [{ licenseKey: 'AMCP-0000-1111-2222-3333', organizationId: 'org-b', plan: 'starter', status: 'active', expiresAt: null }],
+      });
+      siteLists([{ key: KEY_B, email: 'bob@example.org', plan: 'starter', organizationId: 'org-b' }]);
+
+      await expect(svc.claimPaidLicenceFor('org-b', NOW)).resolves.toBe(false);
+      expect(setKey).not.toHaveBeenCalled();
+    });
+
+    it('asks the site once per workspace in five seconds, whatever the page does', async () => {
+      const { svc } = make({ orgs: ['org-b', 'org-c'] });
+      const post = siteLists([]);
+
+      await svc.claimPaidLicenceFor('org-b', NOW);
+      await svc.claimPaidLicenceFor('org-b', new Date(NOW.getTime() + 4_000));
+      expect(post).toHaveBeenCalledTimes(1);
+      await svc.claimPaidLicenceFor('org-c', new Date(NOW.getTime() + 4_000));
+      expect(post).toHaveBeenCalledTimes(2);
+      await svc.claimPaidLicenceFor('org-b', new Date(NOW.getTime() + 5_000));
+      expect(post).toHaveBeenCalledTimes(3);
+    });
+
+    it('does nothing off Cloud, without the service token, or when the site fails', async () => {
+      const selfHosted = make({ orgs: ['org-b'], isCloud: false });
+      const post = siteLists([{ key: KEY_B, email: 'bob@example.org', plan: 'starter', organizationId: 'org-b' }]);
+      await expect(selfHosted.svc.claimPaidLicenceFor('org-b', NOW)).resolves.toBe(false);
+      expect(post).not.toHaveBeenCalled();
+
+      delete process.env.LICENSE_SERVICE_TOKEN;
+      const noToken = make({ orgs: ['org-b'] });
+      await expect(noToken.svc.claimPaidLicenceFor('org-b', NOW)).resolves.toBe(false);
+      expect(post).not.toHaveBeenCalled();
+
+      process.env.LICENSE_SERVICE_TOKEN = 'svc-token-0123456789abcdef';
+      const down = make({ orgs: ['org-b'] });
+      jest.spyOn(axios, 'post').mockRejectedValue(new Error('timeout'));
+      await expect(down.svc.claimPaidLicenceFor('org-b', NOW)).resolves.toBe(false);
+      expect(down.setKey).not.toHaveBeenCalled();
+    });
+  });
 });

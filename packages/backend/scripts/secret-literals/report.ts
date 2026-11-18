@@ -1,14 +1,20 @@
 /**
  * READ-ONLY report: connectors and tools whose base URL, headers, paths,
  * query parameters, parameter defaults or names hold a secret-looking
- * literal (see src/common/secret-literals.util.ts).
+ * literal (see src/common/secret-literals.util.ts), plus a DATABASE
+ * connector whose connection string still carries its password (see
+ * src/connectors/database-url-credentials.util.ts) — a `database_url_password`
+ * finding, for a row from before that move was added.
  *
  * Prints one JSON line per finding, then a summary. A finding names the
  * connector, the workspace, the field and a redacted pattern
- * (`bot<10 digits>:***(35)`); the secret itself is never printed.
+ * (`bot<10 digits>:***(35)`, or the DATABASE connection string with its
+ * password replaced by `********`); the secret itself is never printed.
  *
  * The queries run inside a READ ONLY transaction, so the script cannot
- * change anything even by mistake. env_vars are not read.
+ * change anything even by mistake. env_vars and a DATABASE connector's
+ * auth_config are not read — the finding only looks at what is still
+ * visible in the plaintext column, not at whether repair could act on it.
  *
  *   DATABASE_URL=postgres://… npx ts-node scripts/secret-literals/report.ts
  *
@@ -24,7 +30,7 @@ import {
   type ToolRow,
 } from '../../src/connectors/secret-literal-scan.util';
 
-const GUARDED = `('REST','SOAP','GRAPHQL','MCP','ODATA')`;
+const GUARDED = `('REST','SOAP','GRAPHQL','MCP','ODATA','DATABASE')`;
 
 export async function report(client: Client, out: (line: string) => void = console.log) {
   await client.query('BEGIN READ ONLY');

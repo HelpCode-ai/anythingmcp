@@ -27,8 +27,14 @@ export interface LicenseWallView {
   recap: LicenseWallRecap | null;
 }
 
-/** Share of workspaces kept on the earlier wall, out of 100. */
-export const CONTROL_PERCENT = 10;
+/**
+ * Share of workspaces kept on the earlier wall, out of 100. 10 from
+ * 2026-11-03; 50 since 2026-11-17, because at 10 the control grew by about
+ * two workspaces a day and a decision was months away. Buckets 10-49 moved
+ * from 'trust' to 'control' then: read the test on workspaces whose first
+ * `license_wall_viewed` is after the change.
+ */
+export const CONTROL_PERCENT = 50;
 
 /** 'control' for about CONTROL_PERCENT% of workspaces, always the same for one. */
 export function wallVariant(organizationId: string): LicenseWallVariant {

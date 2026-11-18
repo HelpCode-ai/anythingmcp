@@ -31,7 +31,7 @@ import { buildFileSearchBuiltinTools } from './file-search-builtins';
 import { clampInterval, nextPlan, SYNC_INTERVALS } from './file-search-quotas';
 import { applySelection, checkQuota, estimate, selectionOf, type CompactListing, type Selection } from './file-search-selection';
 import { CLOUD_PROTOCOLS, FILE_SEARCH_PROTOCOLS, isPausedState, type FileSearchConfig } from './file-search.types';
-import { connectorWhere, type VisibilityScope } from '../settings/member-visibility.service';
+import type { VisibilityScope } from '../settings/member-visibility.service';
 
 /**
  * The setup wizard and the Files tab (#1385). Orchestration only: tests,
@@ -184,14 +184,20 @@ export class FileSearchService {
   }
 
   /**
-   * Member visibility: a File Search connector a restricted member cannot see
-   * (not theirs, and no tool of it allowed by their roles) answers exactly
-   * the 404 of an unknown id. Called by the controller for restricted scopes
-   * only; the workspace filter stays, the visibility filter is added with AND.
+   * Member visibility: in a restricted workspace a member who is not an admin
+   * reaches the File Search routes of a connector only when they own it.
+   * Every other connector answers exactly the 404 of an unknown id, including
+   * one shared with them through their roles: the overview, tree, problems,
+   * runs, scans and access rules describe the source (its address, every
+   * folder and file name, the role rules) beyond what their AI client may
+   * read through the tools, which apply the folder rules. Called by the
+   * controller for restricted scopes only; the workspace filter stays, the
+   * owner filter is added with AND.
    */
   async assertVisible(actor: Actor, id: string, scope: VisibilityScope): Promise<void> {
+    if (!scope.restricted) return;
     const c = await this.prisma.connector.findFirst({
-      where: { AND: [{ id, organizationId: actor.organizationId, type: 'FILE_SEARCH' as any }, connectorWhere(scope)] },
+      where: { AND: [{ id, organizationId: actor.organizationId, type: 'FILE_SEARCH' as any }, { userId: scope.userId }] },
       select: { id: true },
     });
     if (!c) throw new NotFoundException(FILE_SEARCH_CONNECTOR_NOT_FOUND);
