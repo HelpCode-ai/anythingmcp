@@ -1,4 +1,5 @@
-import { applySelection, buildFilter, checkQuota, estimate, selectionOf, type CompactListing } from './file-search-selection';
+import picomatch from 'picomatch';
+import { GLOB_SAFETY, applySelection, buildFilter, checkQuota, estimate, selectionOf, type CompactListing } from './file-search-selection';
 import type { FileSearchConfig } from './file-search.types';
 
 const cfg = (over: Partial<FileSearchConfig> = {}): FileSearchConfig => ({ protocol: 'sftp', rootPath: '/', include: ['**/*'], exclude: [], maxDepth: 32, maxConnections: 1, toolPrefix: 'x', ...over });
@@ -46,5 +47,24 @@ describe('selection', () => {
     const over = checkQuota({ files: 340, bytes: 1 }, 500, null, { files: 200, bytes: 0 });
     expect(over).toEqual({ fits: false, over: [{ limit: 'files', used: 540, max: 500 }] });
     expect(checkQuota({ files: 10, bytes: 2_000 }, null, 1_000).over[0].limit).toBe('bytes');
+  });
+});
+
+describe('glob safety', () => {
+  it('compiles extglob syntax without repetition, so a repeated extglob cannot backtrack', () => {
+    const m = picomatch('+(*a)', { ...GLOB_SAFETY, nocase: true });
+    expect(String(picomatch.makeRe('+(*a)', GLOB_SAFETY))).not.toMatch(/\)\+/);
+    expect(m('+xa')).toBe(true);
+    expect(m('aaaaaaaaaaaaaaaaaaaaaaaab')).toBe(false);
+    const started = Date.now();
+    expect(picomatch('**/+(*a)*', { ...GLOB_SAFETY })(`${'a'.repeat(40)}b`)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it('keeps ordinary globs working in the selection filter', () => {
+    const f = buildFilter(cfg({ include: ['**/*.pdf'], exclude: ['Archiv/**'] }), new Date('2026-11-01'));
+    expect(f.file('Suppliers/Nordtor/Preisliste 2026.PDF', null)).toBe(true);
+    expect(f.file('Archiv/alt.pdf', null)).toBe(false);
+    expect(f.file('Suppliers/list.xlsx', null)).toBe(false);
   });
 });

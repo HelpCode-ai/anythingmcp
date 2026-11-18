@@ -93,3 +93,16 @@ describe('FileSearchEngine file_view', () => {
     expect(worker.render).not.toHaveBeenCalled();
   });
 });
+
+describe('FileSearchEngine file_find', () => {
+  it('refuses an over-long glob before it reaches the matcher', async () => {
+    const { engine, query } = make();
+    (query as any).find = jest.fn().mockResolvedValue({ total: 0, files: [] });
+    const out = (await engine.execute('file_find', { glob: `${'*'.repeat(150)}${'a'.repeat(151)}` }, ctx)) as Record<string, any>;
+    expect(out.error).toMatch(/longer than 300 characters/);
+    expect((query as any).find).not.toHaveBeenCalled();
+
+    await engine.execute('file_find', { glob: 'Suppliers/**/*.pdf' }, ctx);
+    expect((query as any).find).toHaveBeenCalledWith(ctx, expect.objectContaining({ glob: 'Suppliers/**/*.pdf' }));
+  });
+});
