@@ -2545,16 +2545,17 @@ export function injectLoginTokenHeaders(
   const interpolate = loginTokenHeaderInterpolator(token, aud);
   const replaced = loginTokenHeaderCollision(axiosConfig.headers, authConfig);
 
-  const headers: Record<string, unknown> = { ...(axiosConfig.headers as Record<string, unknown> | undefined) };
-  if (authConfig.tokenPlacement !== 'body') {
-    // The token header wins over a connector header of the same name, in any
-    // spelling (axios would otherwise keep whichever came last).
-    for (const name of Object.keys(headers)) {
-      if (name !== headerName && name.toLowerCase() === headerName.toLowerCase()) delete headers[name];
-    }
-    headers[headerName] = interpolate(headerTemplate);
-  }
-  axiosConfig.headers = headers as AxiosRequestConfig['headers'];
+  const current = (axiosConfig.headers ?? {}) as Record<string, unknown>;
+  // The token header wins over a connector header of the same name, in any
+  // spelling (axios would otherwise keep whichever came last).
+  const others = Object.fromEntries(
+    Object.entries(current).filter(([name]) => name.toLowerCase() !== headerName.toLowerCase()),
+  );
+  axiosConfig.headers = (
+    authConfig.tokenPlacement === 'body'
+      ? { ...current }
+      : { ...others, [headerName]: interpolate(headerTemplate) }
+  ) as AxiosRequestConfig['headers'];
   for (const [k, v] of Object.entries(authConfig.extraHeaders || {})) {
     axiosConfig.headers![k] = interpolate(String(v));
   }
